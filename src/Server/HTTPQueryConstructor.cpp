@@ -94,6 +94,29 @@ bool isFullyBackQuotedComponent(const String & component)
     return component.size() >= 2 && component.front() == '`' && component.back() == '`';
 }
 
+/// If `component` is fully back-quoted (`` `name` ``), return the identifier with the surrounding
+/// back-quotes removed and doubled back-quotes unescaped (`` `` `` -> `` ` ``), as in SQL identifier
+/// quoting. Otherwise return it unchanged.
+String unquoteBackQuotedComponent(const String & component)
+{
+    if (!isFullyBackQuotedComponent(component))
+        return component;
+    const String inner = component.substr(1, component.size() - 2);
+    String unquoted;
+    unquoted.reserve(inner.size());
+    for (size_t i = 0; i < inner.size(); ++i)
+    {
+        if (inner[i] == '`' && i + 1 < inner.size() && inner[i + 1] == '`')
+        {
+            unquoted += '`';
+            ++i;
+        }
+        else
+            unquoted += inner[i];
+    }
+    return unquoted;
+}
+
 }
 
 
@@ -164,12 +187,12 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
     /// but allow_table is off, that single component is the database (not the table).
     if (!allow_table && allow_database && non_filter_indices.size() == 1)
     {
-        result.database = components[non_filter_indices[0]];
+        result.database = unquoteBackQuotedComponent(components[non_filter_indices[0]]);
     }
     else
     {
         if (!db_indices.empty())
-            result.database = components[db_indices[0]];
+            result.database = unquoteBackQuotedComponent(components[db_indices[0]]);
         if (table_index >= 0)
         {
             /// Parse table[.format[.compression]] from the last component.
@@ -185,22 +208,9 @@ HTTPPathInfo parseHTTPPath(const String & path, bool allow_database, bool allow_
             /// `compression` URL parameters (or the `format` setting) instead of a path suffix.
             /// A backtick travels in a URL percent-encoded as `%60`; `HTTPHandler` URL-decodes the path
             /// before calling this, so `/db/%60events.JSON%60` arrives here as `` `events.JSON` ``.
-            if (raw.size() >= 2 && raw.front() == '`' && raw.back() == '`')
+            if (isFullyBackQuotedComponent(raw))
             {
-                /// Unescape a doubled backtick (`` `` `` -> `` ` ``), as in SQL identifier quoting.
-                const String inner = raw.substr(1, raw.size() - 2);
-                String unquoted;
-                unquoted.reserve(inner.size());
-                for (size_t i = 0; i < inner.size(); ++i)
-                {
-                    if (inner[i] == '`' && i + 1 < inner.size() && inner[i + 1] == '`')
-                    {
-                        unquoted += '`';
-                        ++i;
-                    }
-                    else
-                        unquoted += inner[i];
-                }
+                const String unquoted = unquoteBackQuotedComponent(raw);
                 result.table = unquoted;
                 result.format = {};
                 result.compression = {};
