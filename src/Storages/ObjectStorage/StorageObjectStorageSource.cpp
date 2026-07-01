@@ -1209,6 +1209,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            /// No cache stage is added in this case, so clear the flag: downstream decisions
+            /// (e.g. whether to issue the initial small-object prefetch) must reflect that the
+            /// read is a plain remote read, not a cached one.
+            use_filesystem_cache = false;
         }
         else
         {
