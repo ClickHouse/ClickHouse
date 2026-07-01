@@ -4076,10 +4076,10 @@ Possible values:
     DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
 When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0) \
-    DECLARE(Bool, enable_sharding_aggregator, false, R"(
+    DECLARE(Bool, enable_sharding_aggregator, true, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
 
-This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
+This is most efficient for high-cardinality keys. Skewed key distributions are handled as well: keys that prove to be very frequent are detected on the fly and spread across all threads instead of overloading a single one, so highly skewed data and queries with very few distinct keys still run in parallel.
 
 Possible values:
 

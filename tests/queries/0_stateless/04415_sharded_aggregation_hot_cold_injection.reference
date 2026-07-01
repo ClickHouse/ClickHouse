@@ -1,0 +1,14 @@
+UInt64 key, multiple aggregates
+1
+String key
+1
+Nullable key (hot NULLs)
+1
+Multi-key GROUP BY
+1
+WITH TOTALS
+1
+Hot key 0 finalized exactly once (vs independent oracle)
+1	1
+Pipeline: cold-shard injection, no global merge
+1	1	1

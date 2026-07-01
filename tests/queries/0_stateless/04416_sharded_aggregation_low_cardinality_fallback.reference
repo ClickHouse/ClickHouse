@@ -1,0 +1,12 @@
+Cheap aggregates under low cardinality (fallback path)
+1
+Large-state aggregate under low cardinality (stays sharded)
+1
+Multi-key low cardinality
+1
+WITH TOTALS
+1
+Result row count is the true cardinality
+1
+Pipeline still sharded (fallback is runtime routing, not a plan change)
+1	1

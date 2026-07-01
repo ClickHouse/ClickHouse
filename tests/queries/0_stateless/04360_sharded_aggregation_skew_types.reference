@@ -1,0 +1,18 @@
+String key
+1
+FixedString key
+1
+Decimal key
+1
+Date key
+1
+Nullable key with NULL hot value
+1
+NULL group finalized exactly once (vs independent oracle)
+1
+Sparse (default-dominated) hot key
+1
+Dense (non-default) hot key
+1
+Pipeline contains skew-split transforms
+1

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -25,7 +26,10 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/BufferedShardByHashTransform.h>
+#include <Processors/Transforms/HotKeyState.h>
+#include <Processors/Transforms/ShardedAggregationSelectors.h>
+#include <Processors/Transforms/BufferedShardingTransform.h>
+#include <Processors/Transforms/ColdShardAggregatingTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
@@ -603,71 +607,203 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         return;
     }
 
-    /// Sharded aggregation: shard rows by hash(key) % N, then aggregate per shard independently.
+    /// Sharded aggregation.
+    ///
+    /// The core idea is that every row is sharded by the hash of its key into one of the aggregating
+    /// shards. This gives each shard a disjoint set of keys, so the shards can be aggregated independently.
+    ///
+    /// The basic sharding approach is vulnerable to skew: when some keys are far more frequent than others,
+    /// the shards they fall into become much larger and slower than the rest. For example, if a single key
+    /// (often a default value or NULL) accounts for 90% of the rows, then one shard holds 90% of the data
+    /// and serializes the whole pipeline.
+    ///
+    /// To avoid that, while sharding we detect which keys are hot by counting them on the fly over the
+    /// first ~130K rows of each stream. Once a key is found to be hot, we send it to the merge path instead
+    /// of a cold shard, so each stream feeds the merge path for the hot keys and N cold shards for the rest.
+    /// (It is the "merge path" because, unlike the hash-disjoint cold shards, the same key can appear on it
+    /// from several streams and so must be merged.)
+    ///
+    /// During the warmup some rows of a hot key may have landed in a cold shard before that key was
+    /// detected (its "residue"). Because cold routing is a deterministic hash, a hot key's residue lives in
+    /// exactly one cold shard. So instead of extracting the residue, we aggregate the hot keys separately
+    /// and then inject each hot key's finished state into the one cold shard that owns it, where its residue
+    /// already sits; the cold shard combines them while finalizing. The number of hot keys is usually very
+    /// small (for example about twice the number of aggregating threads), so the injection is cheap.
+    ///
+    /// The low-cardinality fallback reuses the same merge path: if the warmup finds the key cardinality too
+    /// low for the scatter to be worth its cost, the stream routes *everything* to the merge path, which is
+    /// just default parallel aggregation, sidestepping the scatter entirely.
+
+    /// The pipeline is built in a few top-level steps: shard each stream into N cold shards and a merge path;
+    /// the merge path, which aggregates its keys and scatters their states to the owning cold shards; and the
+    /// cold path, where each `ColdShardAggregatingTransform` aggregates its raw cold rows, injects the
+    /// merge-path states routed to it, and finalizes. There is no cross-shard merge of cold keys.
     if (use_sharded_aggregation)
     {
+        chassert(!should_produce_results_in_order_of_bucket_number);
+
         /// TODO(nihalzp): Compare perf against always choosing a power of two.
-        const size_t num_shards = max_threads;
+        const size_t num_cold_shards = max_threads;
         const size_t num_streams = pipeline.getNumStreams();
 
-        /// Resolve key column positions for BufferedShardByHashTransform.
-        auto stream_header = pipeline.getSharedHeader();
-        ColumnNumbers key_columns;
-        key_columns.reserve(transform_params->params.keys.size());
+        /// Each stream is sharded into one port per cold shard plus a single merge-path port. The cold shards
+        /// are shared between all streams; each stream feeds the merge path through its own port.
+        const size_t ports_per_stream = num_cold_shards + 1;
+
+        const auto input_header = pipeline.getSharedHeader();
+
+        /// Shared aggregation params with finalization off: the merge path emits intermediate states, and
+        /// each cold shard keeps intermediate states too so the injected merge-path states can be combined in
+        /// before it finalizes the keys together with their residue.
+        auto intermediate_transform_params
+            = std::make_shared<AggregatingTransformParams>(input_header, transform_params->params, /*final_=*/false);
+        const auto intermediate_header = std::make_shared<const Block>(intermediate_transform_params->getHeader());
+
+        /// The final output header of each cold shard (finalized aggregate values when `final`).
+        const auto output_header = std::make_shared<const Block>(transform_params->getHeader());
+
+        ColumnNumbers input_key_positions;
+        ColumnNumbers intermediate_key_positions;
+        ColumnsWithTypeAndName key_header;
+        input_key_positions.reserve(transform_params->params.keys.size());
+        intermediate_key_positions.reserve(transform_params->params.keys.size());
+        key_header.reserve(transform_params->params.keys.size());
         for (const auto & key : transform_params->params.keys)
-            key_columns.push_back(stream_header->getPositionByName(key));
-
-        /// Add BufferedShardByHashTransform to each stream (1 input -> num_shards outputs).
-        /// After this the pipeline has num_streams * num_shards output ports.
-        pipeline.transform(
-            [&, stream_header, key_columns](OutputPortRawPtrs ports)
-            {
-                Processors shard_transforms;
-                for (auto * port : ports)
-                {
-                    auto shard_transform = std::make_shared<BufferedShardByHashTransform>(stream_header, num_shards, key_columns);
-                    connect(*port, shard_transform->getInputs().front());
-                    shard_transforms.push_back(shard_transform);
-                }
-                return shard_transforms;
-            });
-
-        /// For each shard, collect outputs from all sharding transforms and merge them with Resize(num_streams -> 1).
-        /// After this the pipeline has num_shards output ports (one per shard).
-        if (num_streams > 1)
         {
-            pipeline.transform(
-                [&, stream_header](OutputPortRawPtrs ports)
-                {
-                    chassert(ports.size() == num_streams * num_shards);
-                    Processors resize_processors;
-
-                    for (size_t shard = 0; shard < num_shards; ++shard)
-                    {
-                        /// Shard k from sharding transform i is at index: i * num_shards + shard
-                        auto resize = std::make_shared<ResizeProcessor>(stream_header, num_streams, 1);
-                        auto & resize_inputs = resize->getInputs();
-                        auto input_it = resize_inputs.begin();
-
-                        /// For shard `s`, connect the `s`-th output of each BufferedShardByHashTransform
-                        /// to this ResizeProcessor input. BufferedShardByHashTransform routes rows by
-                        /// `hash(group_by_key) % num_shards`, so identical GROUP BY keys always
-                        /// land on the same shard.
-                        for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
-                            connect(*ports[stream * num_shards + shard], *input_it);
-
-                        resize_processors.push_back(resize);
-                    }
-
-                    return resize_processors;
-                });
+            input_key_positions.push_back(input_header->getPositionByName(key));
+            intermediate_key_positions.push_back(intermediate_header->getPositionByName(key));
+            key_header.push_back(input_header->getByName(key));
         }
 
-        pipeline.addSimpleTransform(
-            [&](const SharedHeader & shard_header)
-            { return std::make_shared<AggregatingTransform>(shard_header, transform_params, dataflow_cache_updater); });
+        auto hot_key_state = std::make_shared<HotKeyState>(std::move(key_header));
 
-        chassert(!should_produce_results_in_order_of_bucket_number);
+        /// The merge path is reached through the last output port of each stream's sharder (index
+        /// `num_cold_shards`); the cold shards are ports 0 .. `num_cold_shards` - 1.
+        const size_t merge_output = num_cold_shards;
+
+        /// 1. Shard each input stream's rows by key. As the rows stream past, the warmup detector counts
+        ///    keys and promotes hot ones into `hot_key_state`; a row whose key is hot goes to the merge path,
+        ///    and every other row goes to the cold shard chosen from its key hash. A hot key may also be
+        ///    present in its cold shard, but that's not a problem because we will take care of the hot-key
+        ///    residue later. If the warmup finds the key cardinality too low to be worth scattering, the
+        ///    selector instead routes every row to the merge path (default aggregation).
+        pipeline.transform(
+            [&](OutputPortRawPtrs ports)
+            {
+                Processors sharders;
+                for (auto * port : ports)
+                {
+                    auto sharder = std::make_shared<BufferedShardingTransform>(
+                        input_header,
+                        ports_per_stream,
+                        makeInputHotColdSelector(hot_key_state, input_key_positions, num_cold_shards, merge_output));
+                    connect(*port, sharder->getInputs().front());
+                    sharders.push_back(sharder);
+                }
+                return sharders;
+            });
+
+        pipeline.transform(
+            [&](OutputPortRawPtrs ports)
+            {
+                chassert(ports.size() == num_streams * ports_per_stream);
+                Processors processors;
+
+                /// Merge-path block which is similar to the current default GROUP BY.
+                /// The hot keys (and, under the low-cardinality fallback, all keys) take
+                /// the merge path: unlike the hash-disjoint cold shards, the same key can appear here from
+                /// several streams, so its partial states must be merged. For each cold shard `c`,
+                /// `merge_states_for[c]` collects the output ports carrying the merge-path states whose key
+                /// hashes to `c`. The cold path below consumes only these ports and is agnostic to how many
+                /// states per key arrive.
+                std::vector<OutputPortRawPtrs> merge_states_for(num_cold_shards);
+
+                /// 2. Aggregate the merge-path keys through the standard parallel GROUP BY path: one
+                ///    AggregatingTransform per stream sharing `ManyAggregatedData`, so the same key seen in
+                ///    several streams is merged into one intermediate state. The merged states surface on one
+                ///    of the aggregators' output ports (the rest finish empty); we gather them into one stream
+                ///    and scatter each key's state to the cold shard that owns it (the same cold hash as the
+                ///    input routing), where its residue waits.
+                auto merge_data = std::make_shared<ManyAggregatedData>(num_streams);
+                OutputPortRawPtrs merge_aggregator_outputs;
+                merge_aggregator_outputs.reserve(num_streams);
+                for (size_t stream = 0; stream < num_streams; ++stream)
+                {
+                    auto merge_aggregator = std::make_shared<AggregatingTransform>(
+                        input_header, intermediate_transform_params, merge_data, stream, new_merge_threads,
+                        new_temporary_data_merge_threads, /*should_produce_results_in_order_of_bucket_number=*/false,
+                        /*skip_merging=*/false, dataflow_cache_updater);
+                    connect(*ports[stream * ports_per_stream + num_cold_shards], merge_aggregator->getInputs().front());
+                    merge_aggregator_outputs.push_back(&merge_aggregator->getOutputs().front());
+                    processors.push_back(merge_aggregator);
+                }
+
+                auto merge_gather = std::make_shared<ResizeProcessor>(intermediate_header, num_streams, 1);
+                auto merge_gather_input = merge_gather->getInputs().begin();
+                for (auto * out : merge_aggregator_outputs)
+                    connect(*out, *merge_gather_input++);
+                processors.push_back(merge_gather);
+
+                auto merge_scatter = std::make_shared<BufferedShardingTransform>(
+                    intermediate_header, num_cold_shards, makeColdHashSelector(intermediate_key_positions, num_cold_shards));
+                connect(merge_gather->getOutputs().front(), merge_scatter->getInputs().front());
+                processors.push_back(merge_scatter);
+
+                size_t dst_shard = 0;
+                for (auto & out : merge_scatter->getOutputs())
+                    merge_states_for[dst_shard++].push_back(&out);
+
+                /// 3. Each cold shard aggregates its raw cold rows (including the merge-path keys' residue),
+                ///    injects the merge-path states routed to it, and finalizes. Cold keys are disjoint
+                ///    across shards, so no cross-shard merge is needed; only the few states are folded in.
+                for (size_t shard = 0; shard < num_cold_shards; ++shard)
+                {
+                    auto cold_aggregator = std::make_shared<ColdShardAggregatingTransform>(
+                        input_header, intermediate_header, output_header, intermediate_transform_params, final, dataflow_cache_updater);
+
+                    auto & raw_input = cold_aggregator->getInputs().front();
+                    auto & states_input = cold_aggregator->getInputs().back();
+
+                    /// input[0] (raw): gather the shard's port from every stream.
+                    if (num_streams > 1)
+                    {
+                        auto shard_gather = std::make_shared<ResizeProcessor>(input_header, num_streams, 1);
+                        auto input_it = shard_gather->getInputs().begin();
+                        for (size_t stream = 0; stream < num_streams; ++stream, ++input_it)
+                            connect(*ports[stream * ports_per_stream + shard], *input_it);
+                        connect(shard_gather->getOutputs().front(), raw_input);
+                        processors.push_back(shard_gather);
+                    }
+                    else
+                    {
+                        connect(*ports[shard], raw_input);
+                    }
+
+                    /// input[1] (merge-path states): gather every merge-path state port routed to this shard.
+                    /// Driving this off `merge_states_for[shard]` rather than a hard-coded count keeps the cold
+                    /// side unchanged if the merge path is later restructured.
+                    auto & merge_states = merge_states_for[shard];
+                    if (merge_states.size() > 1)
+                    {
+                        auto states_gather = std::make_shared<ResizeProcessor>(intermediate_header, merge_states.size(), 1);
+                        auto input_it = states_gather->getInputs().begin();
+                        for (auto * port : merge_states)
+                            connect(*port, *input_it++);
+                        connect(states_gather->getOutputs().front(), states_input);
+                        processors.push_back(states_gather);
+                    }
+                    else
+                    {
+                        connect(*merge_states.front(), states_input);
+                    }
+
+                    /// The finalized output port is left unconnected; `pipeline.transform` collects it as one
+                    /// of the `num_cold_shards` output streams.
+                    processors.push_back(cold_aggregator);
+                }
+
+                return processors;
+            });
 
         aggregating = collector.detachProcessors(0);
         return;
