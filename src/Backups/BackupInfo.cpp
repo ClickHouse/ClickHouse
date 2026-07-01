@@ -373,7 +373,7 @@ namespace
     String normalizeS3Path(String s)
     {
 #if USE_AWS_S3
-        S3::URI uri("s3://bucket/" + stripURLFragment(s), /* allow_archive_path_syntax = */ false);
+        S3::URI uri("s3://bucket/" + stripS3QueryExceptVersionId(s), /* allow_archive_path_syntax = */ false);
         String result = stripTrailingSlashes(uri.key);
         if (!uri.version_id.empty())
         {
