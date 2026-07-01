@@ -2099,6 +2099,30 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, TransformDateTime64<ToTimeImpl<date_time_overflow_behavior>>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeTime>)
+        {
+            /// Time64 -> Time: drop the sub-second part. Both are timezone-unaware seconds-of-day, so
+            /// no timezone offset is applied (that would silently shift values, cf. issue #104038).
+            /// `TransformTime64` floors towards negative infinity (`-00:00:00.5` -> `-00:00:01`);
+            /// `ToTimeTransform64Signed` clamps to the `Time` range honoring `date_time_overflow_behavior`.
+            using TimeTransform = TransformTime64<ToTimeTransform64Signed<Int64, Int32, date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, TimeTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, TimeTransform(from_scale));
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
+            && std::is_same_v<ToDataType, DataTypeDateTime>)
+        {
+            /// Time64 -> DateTime: reinterpret the whole-second part as seconds-since-epoch (1970-01-01),
+            /// timezone-independent, matching the established Parquet `TIME` -> `DateTime` convention.
+            /// `TransformTime64` floors towards negative infinity; `ToDateTimeImpl` applies the
+            /// `DateTime` range handling honoring `date_time_overflow_behavior`.
+            using DateTimeTransform = TransformTime64<ToDateTimeImpl<date_time_overflow_behavior>>;
+            const UInt32 from_scale = assert_cast<const DataTypeTime64 &>(*arguments[0].type).getScale();
+            return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
+        }
         /// Conversion of Date or DateTime to DateTime64: add zero sub-second part.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
