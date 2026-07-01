@@ -6,6 +6,10 @@ title: 'Machine Learning Functions'
 doc_type: 'reference'
 ---
 
+:::note
+The documentation below is automatically generated from `system.functions`
+:::
+
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.
