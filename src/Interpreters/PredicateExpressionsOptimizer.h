@@ -22,6 +22,13 @@ public:
 
     bool optimize(ASTSelectQuery & select_query);
 
+    /// Move conjuncts of HAVING that reference only GROUP BY keys (no aggregate/window functions)
+    /// into WHERE. This is a semantics-preserving optimization for plain GROUP BY that enables
+    /// pre-aggregation filtering (partition/index pruning). The caller must ensure the query has no
+    /// WITH CUBE/ROLLUP/TOTALS/GROUPING SETS, where a grouping key can be NULL in super-aggregate
+    /// rows and moving the predicate to WHERE would change results.
+    static bool tryMovePredicatesFromHavingToWhere(ASTSelectQuery & select_query, ContextPtr context);
+
 private:
     const bool enable_optimize_predicate_expression;
     const bool enable_optimize_predicate_expression_to_final_subquery;

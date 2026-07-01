@@ -1,0 +1,16 @@
+--- result (enable_optimize_predicate_expression = 1)
+2024-01-05	60002
+--- result (enable_optimize_predicate_expression = 0)
+2024-01-05	60002
+--- shard pruning (enable_optimize_predicate_expression = 1)
+1	0
+--- shard pruning (enable_optimize_predicate_expression = 0)
+0	1
+--- inner-HAVING result (enable_optimize_predicate_expression = 1)
+2024-01-05	60002
+--- inner-HAVING result (enable_optimize_predicate_expression = 0)
+2024-01-05	60002
+--- inner-HAVING shard pruning (enable_optimize_predicate_expression = 1)
+1	0
+--- inner-HAVING shard pruning (enable_optimize_predicate_expression = 0)
+0	1
