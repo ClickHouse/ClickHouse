@@ -2383,6 +2383,14 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::XML::DOMParser dom_parser;
         std::unordered_set<std::string> include_from_paths;
 
+        /// Reference names of *top-level* `<include incl="X"/>` elements found in the server config
+        /// (the main config or a merged `config.d`/`conf.d` fragment). `ConfigProcessor` expands such
+        /// an element by inserting the *children* of node `X` (resolved from the `<include_from>`
+        /// source) into the root, so those child tags become real top-level keys of the merged config
+        /// even when the source is external and not merged. Collected only from server-config files
+        /// (never the users config, whose `<include>` targets a separate tree).
+        std::unordered_set<std::string> top_level_include_refs;
+
         /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
         /// relative segments do not defeat the merge-set membership test below.
         auto to_canonical = [](const fs::path & p) -> std::string
@@ -2400,8 +2408,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
         /// a root the merger accepts. Only such files contribute their top-level tags to the merged
-        /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source.
-        auto scan_file = [&](const fs::path & p) -> bool
+        /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source
+        /// and, when `is_server_file` is set, any top-level `<include incl="X"/>` reference name.
+        auto scan_file = [&](const fs::path & p, bool is_server_file) -> bool
         {
             if (!fs::exists(p) || !fs::is_regular_file(p))
                 return false;
@@ -2424,10 +2433,13 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 /// Pick up a top-level `<include_from>` so we can later parse the source.
                 /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
                 /// in the raw XML (the value lives in the environment, not the document).
+                /// From server-config files also pick up top-level `<include incl="X"/>` reference
+                /// names, whose expansion imports `<X>`'s children as top-level keys (see above).
                 for (auto * child = root->firstChild(); child; child = child->nextSibling())
                 {
-                    if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE
-                        && child->nodeName() == "include_from")
+                    if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
+                        continue;
+                    if (child->nodeName() == "include_from")
                     {
                         String src = child->innerText();
                         if (src.empty())
@@ -2442,6 +2454,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                         }
                         if (!src.empty())
                             include_from_paths.insert(std::move(src));
+                    }
+                    else if (is_server_file && child->nodeName() == "include")
+                    {
+                        auto * elem = static_cast<Poco::XML::Element *>(child);
+                        if (elem->hasAttribute("incl"))
+                        {
+                            String ref = elem->getAttribute("incl");
+                            if (!ref.empty())
+                                top_level_include_refs.insert(std::move(ref));
+                        }
                     }
                 }
                 return true;
@@ -2461,11 +2483,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// A file enters `merge_files` only when `scan_file` confirms the merger would merge it
         /// (matching root), so a fragment the merger would skip cannot exempt its top-level tags.
         fs::path config_dir = fs::path(config_path).remove_filename();
-        if (scan_file(config_path))
+        if (scan_file(config_path, /*is_server_file=*/true))
             merge_files.insert(to_canonical(config_path));
         for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
         {
-            if (scan_file(merge_file))
+            if (scan_file(merge_file, /*is_server_file=*/true))
                 merge_files.insert(to_canonical(merge_file));
         }
 
@@ -2500,34 +2522,62 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// config (already scanned) or there is no separate users config (empty `users_path`).
         if (!users_path.empty() && users_path != fs::path(config_path))
         {
-            scan_file(users_path);
+            scan_file(users_path, /*is_server_file=*/false);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
-                scan_file(merge_file);
+                scan_file(merge_file, /*is_server_file=*/false);
         }
 
         for (const auto & include_from_path : include_from_paths)
         {
             if (!fs::exists(include_from_path) || !fs::is_regular_file(include_from_path))
                 continue;
-            /// Only exempt the source's top-level tags when the source file is itself merged into
-            /// the server config (it lives under `config.d`/`conf.d`, so `ConfigProcessor` copies
-            /// its top-level children into the loaded config). An external `<include_from>` source
-            /// that is *only* a substitution lookup table (e.g. `/etc/metrika.xml`) contributes no
-            /// top-level key to the merged config — `ConfigProcessor::processIncludes` reads it
-            /// solely to resolve `incl` references — so exempting its tags would let a genuinely
-            /// unknown top-level key pass merely because the lookup table happens to define a tag
-            /// of the same name, masking exactly the typo/misplaced-section class this check catches.
-            if (!merge_files.contains(to_canonical(include_from_path)))
+
+            /// A source's own top-level tags become top-level keys of the merged config only when
+            /// the source file is itself merged into the server config (it lives under
+            /// `config.d`/`conf.d`, so `ConfigProcessor` copies its top-level children into the
+            /// loaded config). An external `<include_from>` source that is *only* a substitution
+            /// lookup table (e.g. `/etc/metrika.xml`) contributes no top-level key of its own —
+            /// `ConfigProcessor::processIncludes` reads it solely to resolve `incl` references — so
+            /// exempting its tags would let a genuinely unknown top-level key pass merely because the
+            /// lookup table happens to define a tag of the same name, masking exactly the typo /
+            /// misplaced-section class this check catches. The one way an external source *does*
+            /// contribute a top-level key is a top-level `<include incl="X"/>`, handled below.
+            const bool source_is_merged = merge_files.contains(to_canonical(include_from_path));
+            if (!source_is_merged && top_level_include_refs.empty())
                 continue;
             try
             {
                 Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
-                if (auto * root = include_from_doc->documentElement())
+                auto * root = include_from_doc ? include_from_doc->documentElement() : nullptr;
+                if (!root)
+                    continue;
+
+                /// The source is a merged fragment: `ConfigProcessor` copies every one of its
+                /// top-level tags into the loaded config, so exempt them all.
+                if (source_is_merged)
                 {
                     for (auto * child = root->firstChild(); child; child = child->nextSibling())
                     {
                         if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
                             referenced_top_level_keys.insert(child->nodeName());
+                    }
+                }
+
+                /// A top-level `<include incl="X"/>` is expanded by `doIncludesRecursive` by
+                /// inserting the *children* of node `X` from this `<include_from>` source into the
+                /// root, so those child tags become real top-level keys of the merged config even
+                /// when the source is external and not merged. Resolve `<X>` exactly as the processor
+                /// does (`getRootNode(include_from)->getNodeByPath(name)`) and exempt only the
+                /// imported children — nothing else, so an unrelated typo elsewhere stays rejected.
+                for (const auto & ref : top_level_include_refs)
+                {
+                    if (auto * referenced = root->getNodeByPath(ref))
+                    {
+                        for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
+                        {
+                            if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                                referenced_top_level_keys.insert(child->nodeName());
+                        }
                     }
                 }
             }

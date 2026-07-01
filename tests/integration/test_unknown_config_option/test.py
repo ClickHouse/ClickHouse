@@ -879,6 +879,46 @@ def test_external_include_from_source_does_not_exempt_unknown_key(
         )
 
 
+def test_top_level_include_from_external_source_accepted(
+    start_include_from_external_cluster,
+):
+    # A *top-level* `<include incl="X"/>` element is expanded by `ConfigProcessor` by inserting the
+    # *children* of node `X` (resolved from the external `<include_from>` source) into the root, so
+    # those child tags become real top-level keys of the merged config. This is the one way an
+    # external (non-merged) `<include_from>` source legitimately contributes a top-level key. The
+    # validator must exempt exactly those imported children — otherwise a configuration that was
+    # valid before this check existed now fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`. This is
+    # the positive counterpart to `test_external_include_from_source_does_not_exempt_unknown_key`:
+    # a plain `incl` lookup is still rejected, but a top-level `<include>` substitution is accepted.
+    external_source_path = "/etc/clickhouse-server/external_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my_included_section>imported value</my_included_section>"
+        "</imported_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my_included_section>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: `my_included_section` is exempted as an imported `<include>` child.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
 def test_protocols_nested_handler_prefix_accepted(start_protocols_nested_cluster):
     # The endpoint references the *nested* handler prefix `custom_nested.handlers`. The validator
     # must exempt the top-level component `custom_nested` (otherwise the node rejects `<custom_nested>`)
