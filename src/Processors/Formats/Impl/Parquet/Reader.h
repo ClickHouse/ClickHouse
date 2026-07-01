@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/HashTable/HashSet.h>
 #include <Core/BlockMissingValues.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -504,7 +505,7 @@ struct Reader
     /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
     /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
     /// which case the dictionary can't be used for filtering).
-    std::optional<std::unordered_set<UInt64>> hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
+    std::optional<HashSet<UInt64>> hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
 
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
@@ -554,7 +555,7 @@ private:
         const PrimitiveColumnInfo & column_info;
 
         bool computed = false;
-        std::optional<std::unordered_set<UInt64>> value_hashes;
+        std::optional<HashSet<UInt64>> value_hashes;
 
         DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_)
             : reader(reader_), column(column_), column_info(column_info_) {}

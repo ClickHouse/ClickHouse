@@ -965,7 +965,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     return has_dictionary_data_page;
 }
 
-std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
+std::optional<HashSet<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
 {
     chassert(column.dictionary.isInitialized());
     size_t count = column.dictionary.count;
@@ -986,7 +986,10 @@ std::optional<std::unordered_set<UInt64>> Reader::hashDictionaryValues(ColumnChu
     auto hashes = parquetTryHashColumn(values.get(), &desc);
     if (!hashes.has_value())
         return std::nullopt;
-    std::unordered_set<UInt64> value_hashes(hashes->begin(), hashes->end());
+    HashSet<UInt64> value_hashes;
+    value_hashes.reserve(hashes->size());
+    for (UInt64 h : *hashes)
+        value_hashes.insert(h);
 
     /// The dictionary holds only the non-null values of the column chunk, so we must account for how
     /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
