@@ -397,6 +397,11 @@ template <>
 template <size_t copy_amount>
 struct BootMasks
 {
+    /// The inner dimension and the `pshufb` / `vqtbl1q_u8` shuffle it feeds are 16 bytes wide, so the
+    /// generated masks are only correct for a 16-byte copy. Only `boot_masks<16>` is ever used; guard
+    /// against a future `boot_masks<8>` / `<32>` silently getting wrong masks.
+    static_assert(copy_amount == 16, "BootMasks is only valid for a 16-byte copy amount");
+
     alignas(16) UInt8 boot[copy_amount + 1][16];
     UInt8 shift[copy_amount + 1];
     constexpr BootMasks() : boot{}, shift{}
@@ -429,6 +434,11 @@ template <>
     __msan_unpoison(op, 16);
     match += boot_masks<16>.shift[offset];
 #elif defined(__aarch64__) && defined(__ARM_NEON)
+    /// A non-branchless `vqtbl1q_u8` copyOverlap<16> was previously measured on Graviton 4 to be no
+    /// better than the scalar fallback (geo mean 1.0000x on test.hits): the `offset < 16` branch it
+    /// still carried was the bottleneck, not the copy. This branchless variant removes that branch, so
+    /// the table lookup finally pays off — forced-variant-1 on Graviton 4 (armv8.2-a) vs the scalar
+    /// 16-byte path: RegionID +27%, ResolutionWidth +28%, UserID +9%.
     unalignedStore<uint8x16_t>(op,
         vqtbl1q_u8(unalignedLoad<uint8x16_t>(match), unalignedLoad<uint8x16_t>(boot_masks<16>.boot[offset])));
     __msan_unpoison(op, 16);
