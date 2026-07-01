@@ -50,17 +50,15 @@ public:
     }
 
     static void createInitial(
-        const ObjectStoragePtr & /*object_storage*/,
-        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
-        const ContextPtr & /*local_context*/,
-        const std::optional<ColumnsDescription> & /*columns*/,
-        ASTPtr /*partition_by*/,
+        const ObjectStoragePtr & object_storage,
+        const StorageObjectStorageConfigurationWeakPtr & configuration,
+        const ContextPtr & local_context,
+        const std::optional<ColumnsDescription> & columns,
+        ASTPtr partition_by,
         ASTPtr /*order_by*/,
-        bool /*if_not_exists*/,
+        bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-    {
-    }
+        const StorageID & /*table_id_*/);
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType);
 

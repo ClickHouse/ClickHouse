@@ -83,6 +83,10 @@ class SchemaVisitorData
     friend class SchemaVisitor;
 
 public:
+    /// `engine` is required by FFI helpers such as `ffi::get_from_string_map`. Pass `nullptr` only
+    /// for visit paths that make no engine-bound FFI calls (e.g. partition column extraction).
+    explicit SchemaVisitorData(ffi::SharedExternEngine * engine_) : engine(engine_) {}
+
     struct SchemaResult
     {
         DB::NamesAndTypesList names_and_types;
@@ -142,6 +146,8 @@ private:
     /// because they are not stored in the actual data,
     /// but instead in data paths directories.
     DB::Names partition_columns;
+    /// Engine handle required by v0.23.0 FFI helpers such as `ffi::get_from_string_map`.
+    ffi::SharedExternEngine * engine;
 
     std::exception_ptr visitor_exception;
 
@@ -286,12 +292,17 @@ private:
         return id;
     }
 
-    static std::unique_ptr<std::string> extractPhysicalName(const ffi::CStringMap * metadata)
+    static std::unique_ptr<std::string> extractPhysicalName(
+        const ffi::CStringMap * metadata,
+        SchemaVisitorData * state)
     {
-        std::string * physical_name = static_cast<std::string *>(ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString));
+        std::string * physical_name = static_cast<std::string *>(KernelUtils::unwrapResult(
+            ffi::get_from_string_map(
+                metadata,
+                KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
+                KernelUtils::allocateString,
+                state->engine),
+            "get_from_string_map"));
         return physical_name ? std::unique_ptr<std::string>(physical_name) : nullptr;
     }
 
@@ -313,7 +324,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -346,7 +357,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -427,7 +438,7 @@ private:
         }
 
         const std::string column_name(name.ptr, name.len);
-        const auto physical_name_ptr = extractPhysicalName(metadata);
+        const auto physical_name_ptr = extractPhysicalName(metadata, state);
         const std::string physical_name = physical_name_ptr ? *physical_name_ptr : "";
 
         LOG_TEST(
@@ -561,40 +572,197 @@ DB::NamesAndTypesList SchemaVisitorData::getNamesAndTypesFromList(
     return names_and_types;
 }
 
-std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+std::pair<DB::NamesAndTypesList, DB::NameToNameMap> getTableSchemaFromSnapshot(
+    ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitTableSchema(snapshot, data);
     auto result = data.getSchemaResult();
     return {result.names_and_types, result.physical_names_map};
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan)
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedScan * scan, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitReadSchema(scan, data);
     return data.getSchemaResult().names_and_types;
 }
 
-DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context)
+DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitWriteSchema(write_context, data);
     return data.getSchemaResult().names_and_types;
 }
 
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
-    SchemaVisitorData data;
+    /// Partition column extraction makes no engine-bound FFI calls, so no engine is needed.
+    SchemaVisitorData data(nullptr);
     SchemaVisitor::visitPartitionColumns(snapshot, data);
     return data.getPartitionColumns();
 }
 
-DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema)
+DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine)
 {
-    SchemaVisitorData data;
+    SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
+}
+
+/// =============================================================================
+/// CH -> kernel: schema visitor used by `ffi::get_create_table_builder`.
+///
+/// The kernel calls the function-pointer stored in `EngineSchema::visitor`
+/// once, passing back the opaque `schema` field as the user data. The visitor
+/// must call `ffi::visit_field_*` for every leaf type to register field IDs,
+/// then call `ffi::visit_field_struct` for the top-level struct (anonymous
+/// name) and return its ID.
+/// =============================================================================
+
+namespace
+{
+
+uintptr_t visitFieldFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const std::string & name,
+    const DB::DataTypePtr & full_type);
+
+uintptr_t visitElementFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const DB::DataTypePtr & full_type);
+
+uintptr_t visitFieldFromClickHouseType(
+    ffi::KernelSchemaVisitorState * state,
+    const std::string & name,
+    const DB::DataTypePtr & full_type)
+{
+    bool nullable = full_type->isNullable();
+    DB::DataTypePtr type = nullable ? DB::removeNullable(full_type) : full_type;
+    auto name_slice = KernelUtils::toDeltaString(name);
+
+    auto unwrap = [&](auto result, const char * label)
+    {
+        return KernelUtils::unwrapResult(result, label);
+    };
+
+    switch (type->getTypeId())
+    {
+        case DB::TypeIndex::Int8:
+            return unwrap(ffi::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
+        case DB::TypeIndex::Int16:
+            return unwrap(ffi::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
+        case DB::TypeIndex::Int32:
+            return unwrap(ffi::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
+        case DB::TypeIndex::Int64:
+            return unwrap(ffi::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
+        case DB::TypeIndex::Float32:
+            return unwrap(ffi::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
+        case DB::TypeIndex::Float64:
+            return unwrap(ffi::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
+        case DB::TypeIndex::UInt8:
+            /// ClickHouse stores Bool as UInt8 today.
+            return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
+        case DB::TypeIndex::String:
+        case DB::TypeIndex::FixedString:
+            return unwrap(ffi::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
+        case DB::TypeIndex::Date:
+        case DB::TypeIndex::Date32:
+            return unwrap(ffi::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
+        case DB::TypeIndex::DateTime:
+        case DB::TypeIndex::DateTime64:
+            return unwrap(ffi::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
+        case DB::TypeIndex::Array:
+        {
+            const auto & array_type = assert_cast<const DB::DataTypeArray &>(*type);
+            auto element_id = visitElementFromClickHouseType(state, array_type.getNestedType());
+            return unwrap(
+                ffi::visit_field_array(state, name_slice, element_id, nullable, &KernelUtils::allocateError),
+                "visit_field_array");
+        }
+        case DB::TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DB::DataTypeMap &>(*type);
+            auto key_id = visitElementFromClickHouseType(state, map_type.getKeyType());
+            auto value_id = visitElementFromClickHouseType(state, map_type.getValueType());
+            return unwrap(
+                ffi::visit_field_map(state, name_slice, key_id, value_id, nullable, &KernelUtils::allocateError),
+                "visit_field_map");
+        }
+        case DB::TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DB::DataTypeTuple &>(*type);
+            const auto & element_types = tuple_type.getElements();
+            const auto & element_names = tuple_type.getElementNames();
+            std::vector<uintptr_t> child_ids;
+            child_ids.reserve(element_types.size());
+            for (size_t i = 0; i < element_types.size(); ++i)
+                child_ids.push_back(visitFieldFromClickHouseType(state, element_names[i], element_types[i]));
+            return unwrap(
+                ffi::visit_field_struct(state, name_slice, child_ids.data(), child_ids.size(), nullable, &KernelUtils::allocateError),
+                "visit_field_struct");
+        }
+        case DB::TypeIndex::Decimal32:
+        case DB::TypeIndex::Decimal64:
+        case DB::TypeIndex::Decimal128:
+        case DB::TypeIndex::Decimal256:
+            return unwrap(
+                ffi::visit_field_decimal(
+                    state, name_slice,
+                    static_cast<uint8_t>(DB::getDecimalPrecision(*type)),
+                    static_cast<uint8_t>(DB::getDecimalScale(*type)),
+                    nullable,
+                    &KernelUtils::allocateError),
+                "visit_field_decimal");
+        default:
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
+                type->getName());
+    }
+}
+
+uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, const DB::DataTypePtr & full_type)
+{
+    /// For array elements / map keys & values the kernel expects a synthetic anonymous
+    /// field. We reuse `visitFieldFromClickHouseType` with an empty name.
+    return visitFieldFromClickHouseType(state, /* name */ "", full_type);
+}
+
+/// Stored in `EngineSchema::visitor` and called once by the kernel. No `extern "C"` is needed:
+/// the FFI function-pointer field has C++ language linkage (the generated header is not wrapped
+/// in `extern "C"`), and on the supported ABIs the calling convention matches the kernel's
+/// `extern "C" fn`. Keeping it inside the anonymous namespace gives it internal linkage, which
+/// also satisfies `-Wmissing-prototypes`.
+uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
+{
+    const auto * schema_list = static_cast<const DB::NamesAndTypesList *>(schema_void);
+    std::vector<uintptr_t> field_ids;
+    field_ids.reserve(schema_list->size());
+    for (const auto & col : *schema_list)
+        field_ids.push_back(visitFieldFromClickHouseType(state, col.name, col.type));
+
+    /// Top-level struct has an empty name; the kernel ignores it for the root schema.
+    auto empty_name = KernelUtils::toDeltaString("");
+    return KernelUtils::unwrapResult(
+        ffi::visit_field_struct(
+            state, empty_name, field_ids.data(), field_ids.size(),
+            /* nullable */ false,
+            &KernelUtils::allocateError),
+        "visit_field_struct(top-level)");
+}
+
+}
+
+ffi::EngineSchema buildKernelEngineSchema(const DB::NamesAndTypesList & schema_list)
+{
+    /// `schema` is `void *`; the kernel never mutates it, but the FFI struct field
+    /// is non-const, so cast accordingly. The visitor reads only — there is no
+    /// thread safety concern.
+    return ffi::EngineSchema{
+        /* schema */  const_cast<DB::NamesAndTypesList *>(&schema_list),
+        /* visitor */ &kernelEngineSchemaVisitorTrampoline,
+    };
 }
 
 }

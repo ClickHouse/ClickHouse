@@ -16,8 +16,20 @@ public:
 
     const std::string & getDataPath() const;
 
-    /// Create a transcation.
-    void create();
+    /// Create a transaction for the target table. `table_schema` is the table's logical schema;
+    /// see the implementation for how partitioned vs unpartitioned tables derive the write context.
+    void create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema);
+
+    /// Create a brand-new Delta table at the configured location by writing the
+    /// initial `00000000000000000000.json` commit (Protocol + Metadata actions).
+    /// `schema` is the table schema in ClickHouse types; `partition_columns` is
+    /// the logical PARTITION BY column list. Throws if `_delta_log` already has
+    /// commits at the location.
+    ///
+    /// Note: partition columns are accepted for forward compatibility but not yet
+    /// persisted through the FFI -- the v0.23.0 `get_create_table_builder` does not
+    /// expose `with_data_layout(Partitioned)`. Tracking upstream support.
+    void createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns);
 
     struct CommitFile
     {
@@ -46,7 +58,7 @@ private:
 
     KernelExternEngine engine;
     KernelTransaction transaction;
-    KernelWriteContext write_context;
+    KernelWriteContext unpartitioned_write_context;
     DB::NamesAndTypesList write_schema;
 
     void assertTransactionCreated() const;
