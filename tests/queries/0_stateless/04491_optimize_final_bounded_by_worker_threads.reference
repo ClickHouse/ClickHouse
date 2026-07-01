@@ -1,0 +1,2 @@
+concurrent partition merges within background_pool_size: yes
+1
