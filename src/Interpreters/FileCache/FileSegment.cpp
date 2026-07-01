@@ -742,10 +742,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
-    const bool fully_downloaded = downloaded_size == result_size;
-    if (!fully_downloaded)
-        setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
-
     segment_range.right = segment_range.left + result_size - 1;
 
     if (reserved_size > result_size)
@@ -754,11 +750,11 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         reserved_size = result_size;
     }
 
-    /// Publish DOWNLOADED only after the resize is fully applied (range and reserved_size updated),
-    /// since DOWNLOADED is read without lock and implies a consistent, fully-downloaded segment
-    /// (downloaded_size == range().size()).
+    const bool fully_downloaded = downloaded_size == result_size;
     if (fully_downloaded)
         setDownloadState(State::DOWNLOADED, lock);
+    else
+        setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
