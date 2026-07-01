@@ -1924,7 +1924,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                    Protocol::Server::toString(packet.type));
         }
     }
 }
@@ -2445,7 +2445,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                    Protocol::Server::toString(packet.type));
         }
     }
 }
