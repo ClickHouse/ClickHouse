@@ -154,14 +154,26 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        if Shell.check(
-            "/mc ls clickminio/test | grep -q .",
-            verbose=False,
-            retries=6,
-        ):
-            return True
-        print("Failed to start minio")
-        return False
+        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
+        # listable: the server's S3 disks authenticate at startup and need the
+        # whole user/policy/ACL setup in place. The minio server is nohup'd and
+        # outlives the script, so waiting on the script is safe. Its internal
+        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        try:
+            returncode = self.minio_proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            print("Failed to start minio: setup_minio.sh did not finish in time")
+            self.minio_proc.kill()
+            return False
+        if returncode != 0:
+            print(f"setup_minio.sh exited with code {returncode}")
+            return False
+
+        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
+        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
+            print("Failed to start minio: bucket clickminio/test not reachable")
+            return False
+        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -551,11 +563,92 @@ profiles:
         if not res:
             return False
 
-        # Restart minio with a timeout to avoid hanging forever (see #97647).
-        # If the restart hangs, kill minio and start it again.
-        # We use Popen with start_new_session=True so that on timeout we can
-        # kill the entire process group, avoiding orphaned child processes
-        # that would block communicate() indefinitely (see #98466).
+        return self._restart_minio_to_apply_config()
+
+    def _wait_minio_ready(self, timeout_s):
+        """Poll until the `test` bucket is listable, or `timeout_s` elapses.
+
+        `mc ls` against a down MinIO fails fast (connection refused), so this
+        polls at roughly one-second intervals.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if Shell.check("/mc ls clickminio/test", verbose=False):
+                return True
+            time.sleep(1)
+        return False
+
+    @staticmethod
+    def _minio_binary():
+        """Locate the `minio` binary the same way `setup_minio.sh` does.
+
+        The stateless-test docker image ships it at `/minio`, and a local
+        download (`download_minio`) writes it to `$TEMP_DIR` (== `temp_dir`).
+        `setup_minio.sh` finds it via `PATH="/:.:$PATH"` after `cd "$TEMP_DIR"`,
+        which prefers `/minio`; mirror that precedence here. The Python harness
+        only adds `temp_dir` to `PATH`, not `/`, so a bare `minio` would not
+        resolve to the docker binary - use an explicit path instead.
+        """
+        for path in ("/minio", f"{temp_dir}/minio"):
+            if os.path.exists(path):
+                return path
+        return ""
+
+    def _force_restart_minio(self, attempts=3, ready_timeout_s=60):
+        """Kill any running MinIO and start a fresh instance from the same data
+        directory, so it re-reads the webhook config written by `mc admin config
+        set`.
+
+        Retried because (a) a just-killed MinIO can still hold port 11111 for a
+        moment, making the next `minio server` exit immediately, and (b) MinIO
+        startup can take a while on a loaded sanitizer host. Each attempt kills,
+        restarts, and waits for readiness; a dead or too-slow instance is simply
+        killed and started again on the next iteration.
+        """
+        minio_bin = self._minio_binary()
+        if not minio_bin:
+            print(
+                "ERROR: cannot find the minio binary (looked for /minio and "
+                f"{temp_dir}/minio); cannot restart MinIO"
+            )
+            return False
+        # Start MinIO with the same root credentials `setup_minio.sh` used.
+        # Otherwise it comes up with different root credentials and the
+        # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
+        # so every readiness check below would fail for all retry attempts.
+        # `setup_minio.sh` resolves these as `${MINIO_ROOT_USER:-clickhouse}`;
+        # do the same so a custom value in the environment is honored too.
+        minio_root_user = os.environ.get("MINIO_ROOT_USER", "clickhouse")
+        minio_root_password = os.environ.get("MINIO_ROOT_PASSWORD", "clickhouse")
+        for attempt in range(1, attempts + 1):
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            # Give the OS time to release port 11111 before rebinding.
+            time.sleep(3)
+            Shell.check(
+                f"MINIO_ROOT_USER={minio_root_user} "
+                f"MINIO_ROOT_PASSWORD={minio_root_password} "
+                f"nohup {minio_bin} server --address :11111 {temp_dir}/minio_data "
+                f">> {self.MINIO_LOG} 2>&1 &",
+                verbose=True,
+            )
+            if self._wait_minio_ready(ready_timeout_s):
+                return True
+            print(
+                f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
+                f"(attempt {attempt}/{attempts})"
+            )
+        print("ERROR: Failed to restart MinIO after multiple attempts")
+        return False
+
+    def _restart_minio_to_apply_config(self):
+        # Restart minio so it picks up the webhook config set above. The clean
+        # `mc admin service restart --wait` can hang forever (see #97647), so it
+        # runs under a timeout and, on timeout, is killed by process group to
+        # avoid orphans blocking communicate() (see #98466). Whenever the clean
+        # restart does not cleanly report success with a servable bucket, fall
+        # back to a manual, retried restart, which is the reliable path on
+        # loaded CI hosts (the clean restart routinely exceeds the timeout there;
+        # see the bugfix-validation env-setup flake in PR #108821).
         restart_timeout = 60
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
@@ -584,29 +677,18 @@ profiles:
                 status = json_module.loads(stdout).get("status", "")
             except (json_module.JSONDecodeError, AttributeError):
                 status = stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
+            # `--wait` only guarantees the admin API is back, not that the
+            # bucket is servable yet, so confirm readiness before trusting it.
+            if "success" in status and self._wait_minio_ready(30):
+                return True
             print(
-                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+                f"WARNING: clickminio restart did not report a ready service, status: [{status}]"
             )
-            Shell.check("pkill -9 -f 'minio server'", verbose=True)
-            time.sleep(2)
-            Shell.check(
-                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
-                verbose=True,
-            )
-            # Wait for minio to be ready
-            for _ in range(30):
-                if Shell.check("/mc ls clickminio/test", verbose=False):
-                    status = "success"
-                    break
-                time.sleep(1)
-            else:
-                status = "failed"
+        except (subprocess.TimeoutExpired, OSError):
+            print(f"WARNING: minio restart timed out after {restart_timeout}s")
 
-        res = "success" in status
-        if not res:
-            print(f"ERROR: Failed to restart clickminio, status: {status}")
-        return res
+        print("Falling back to a manual MinIO restart")
+        return self._force_restart_minio()
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
