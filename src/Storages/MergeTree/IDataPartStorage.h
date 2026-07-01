@@ -111,6 +111,12 @@ public:
 
     /// Get a storage for projection.
     virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
+
+    virtual std::shared_ptr<IDataPartStorage> getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
+    {
+        return getProjection(name, use_parent_transaction);
+    }
+
     virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
 
     /// Part directory exists.
@@ -303,6 +309,10 @@ public:
     virtual void createDirectories() = 0;
     virtual void createProjection(const std::string & name) = 0;
 
+    /// Hint for the preferred on-disk order of files. Packed storage uses it to lay out the
+    /// single archive; storages that keep files separately can ignore it (default no-op).
+    virtual void setPreferredFileOrder(const Strings & /*file_names*/) {}
+
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
         size_t buf_size,
@@ -388,6 +398,11 @@ private:
 inline bool isFullPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Full;
+}
+
+inline bool isPackedPartStorage(const IDataPartStorage & storage)
+{
+    return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
 }

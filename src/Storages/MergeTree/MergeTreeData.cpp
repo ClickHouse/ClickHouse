@@ -278,6 +278,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
+    extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
+    extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
+    extern const MergeTreeSettingsUInt32 min_level_for_full_part_storage;
     extern const MergeTreeSettingsUInt64 min_bytes_to_rebalance_partition_over_jbod;
     extern const MergeTreeSettingsUInt64 min_delay_to_insert_ms;
     extern const MergeTreeSettingsUInt64 min_delay_to_mutate_ms;
@@ -5182,13 +5185,17 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
-    return {part_type, PartStorageType::Full};
+    auto storage_type = PartStorageType::Full;
+    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
+        storage_type = PartStorageType::Packed;
+
+    return {part_type, storage_type};
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_) const
+    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, bool part_may_exist_on_disk) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
 void MergeTreeData::changeSettings(
@@ -9631,7 +9638,13 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.metadata_version_to_write.has_value())
     {
         chassert(!params.keep_metadata_version);
-        auto out_metadata = dst_part_storage->writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, getContext()->getWriteSettings());
+
+        dst_part_storage->beginTransaction();
+        auto out_metadata = dst_part_storage->writeFile(
+            IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+            /*buf_size=*/ 4096,
+            getContext()->getWriteSettings());
+
         writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
         out_metadata->finalize();
         if ((*getSettings())[MergeTreeSetting::fsync_after_insert])
@@ -9679,6 +9692,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             }
         }
     }
+
+    auto & destination_storage = dst_data_part->getDataPartStorage();
+    if (destination_storage.hasActiveTransaction())
+        destination_storage.commitTransaction();
 
     /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
     TransactionID tid = params.txn ? params.txn->tid : Tx::NonTransactionalTID;

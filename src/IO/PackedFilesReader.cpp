@@ -66,6 +66,14 @@ size_t PackedFilesReader::getFileSize(const String & file_name) const
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
 }
 
+PackedFilesIO::FileOffset PackedFilesReader::getFileOffsetAndSize(const String & file_name) const
+{
+    if (auto it = index.find(file_name); it != index.end())
+        return it->second;
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
+}
+
 Names PackedFilesReader::getFileNames() const
 {
     Names res;

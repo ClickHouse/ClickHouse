@@ -429,9 +429,16 @@ void MergeTreeTemporaryPart::finalize()
     for (auto & stream : streams)
         stream.finalizer.finish();
 
+    /// Optimize files layout in the storage for better caching
+    auto file_order_hint = part->getPreferredFileOrder();
+    part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
+
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
+    {
+        projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().precommitTransaction();
+    }
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
     /// in-memory index so `getMinMaxIndex()` reloads from disk and applies the 0-level correction.
@@ -655,10 +662,14 @@ Block MergeTreeDataWriter::mergeBlock(
     return header->cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context)
+MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
+    BlockWithPartition & block,
+    StorageMetadataPtr metadata_snapshot,
+    ContextPtr context,
+    bool may_exist)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get());
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_exist);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -666,9 +677,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
-    ContextPtr context)
+    ContextPtr context,
+    bool may_exist)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get());
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_exist);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
@@ -677,7 +689,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String partition_id,
     SourcePartsSetForPatch source_parts_set,
     ContextPtr context,
-    UInt64 block_number)
+    UInt64 block_number,
+    bool may_exist)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -857,7 +870,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings(), /*part_may_exist_on_disk=*/ may_exist)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr))
         .withPartInfo(new_part_info)
         .build();
@@ -905,7 +918,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     /// The name could be non-unique in case of stale files from previous runs.
     String full_path = new_data_part->getDataPartStorage().getFullPath();
 
-    if (new_data_part->getDataPartStorage().exists())
+    if (may_exist && new_data_part->getDataPartStorage().exists())
     {
         LOG_WARNING(log, "Removing old temporary directory {}", full_path);
         data_part_storage->removeRecursive();
