@@ -727,6 +727,10 @@ ALWAYS_INLINE char * ColumnDecimal<T>::serializeValueIntoMemoryAsComparable(size
         memory[0] ^= 0x80;
         return memory + sizeof(Native);
     }
+    else
+    {
+        return IColumn::serializeValueIntoMemoryAsComparable(n, memory);
+    }
 }
 
 template <is_decimal T>
