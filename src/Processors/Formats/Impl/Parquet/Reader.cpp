@@ -984,9 +984,17 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     bool has_dictionary_data_page = false;
     for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
     {
+        /// These fields come from Thrift metadata, so a malformed file can carry out-of-range enum
+        /// values just like `PageHeader` can. Validate them before comparing: `checkThriftEnum` reads
+        /// the underlying integer via `memcpy`, avoiding the `-fsanitize=enum` undefined behavior of
+        /// loading an out-of-range enumerator, and rejects malformed metadata as `INCORRECT_DATA`.
+        checkThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES, "page type");
+        checkThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+        if (s.count < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Negative page count in Parquet metadata");
         if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
             continue;
-        if (s.count <= 0)
+        if (s.count == 0)
             continue;
         if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
             return false;
