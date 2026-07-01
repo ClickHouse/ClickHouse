@@ -95,17 +95,35 @@ ORDER BY k;
 
 -- Stress the ramp-up phase: low threshold + high parallelism + many input chunks forces
 -- `GradualResizeProcessor` to repeatedly cross the activation threshold and promote
--- inactive waiting outputs while data is still flowing. Verifies that the query completes
--- and produces a result.
+-- inactive waiting outputs while data is still flowing.
+--
+-- This case must read from the `MergeTree` source `test_gradual_resize`, NOT from `numbers(...)`:
+-- `numbers` reports `hasEvenlyDistributedRead = true`, so `AggregatingStep` skips the
+-- pre-aggregation `resizeGradual` entirely and the ramp-up path would never run (the case would
+-- then pass even if the ramp-up / `inactive_waiting_outputs` promotion logic were broken or
+-- removed). We assert the gradual path is present (`EXPLAIN PIPELINE`), so this proves the
+-- ramp-up path is actually exercised, and we also verify the query completes and produces a
+-- correct result.
 SET min_rows_per_stream_for_gradual_resize = 100;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET min_outstreams_per_resize_after_split = 0;
 SET max_threads = 8;
+SET optimize_aggregation_in_order = 0;
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, sum(v) AS s
+    FROM test_gradual_resize
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize%';
 
 SELECT count() FROM
 (
-    SELECT k, sum(number) AS s
-    FROM (SELECT number % 1000 AS k, number FROM numbers(100000))
+    SELECT k, sum(v) AS s
+    FROM test_gradual_resize
     GROUP BY k
 );
 
