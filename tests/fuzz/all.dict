@@ -2036,6 +2036,7 @@
 "flameGraphState"
 "flatten"
 "flattenTuple"
+"floatBitTrim"
 "floor"
 "format"
 "formatDateTime"
