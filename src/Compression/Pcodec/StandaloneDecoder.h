@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <type_traits>
 #include <vector>
@@ -194,23 +195,44 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
         if (meta.mode.variant != ModeVariant::IntMult)
             throw PcodecError("pcodec: unexpected mode for integer type");
         L base = static_cast<L>(meta.mode.base_latent);
-        // Reconstruct in an explicitly unsigned accumulator at least 32 bits wide. For sub-32-bit
-        // latents (`U8`/`U16`/`I8`/`I16`, whose `L` is `uint8_t`/`uint16_t`) integer promotion would
-        // otherwise evaluate `pl[i] * base` in signed `int`, and a malformed stream (e.g. with
-        // `pl[i] = base = 65535`) overflows it — undefined behavior rather than the defined modular
-        // reconstruction the format specifies. Valid streams satisfy `pl[i] * base + sec <= max(L)`,
-        // so the wider accumulator produces identical results for them; only malformed input differs.
+        // A valid `IntMult` stream splits each in-range latent `u` as `u = primary * base + secondary`
+        // with `base != 0` and `secondary < base` (see the encoder in `Modes.h::splitForMode`), so the
+        // reconstruction always reproduces `u` and never exceeds the latent width. A malformed stream
+        // can lie — `base == 0`, `secondary >= base`, or a `primary * base + secondary` that overflows
+        // the latent width — and would then fabricate a value by wrapping modularly. Because the shared
+        // `CompressedReadBuffer` dispatches external frames by method byte alone, a checksummed `0x9d`
+        // frame reaches this decoder without `allow_experimental_codecs`, so this is a current
+        // fail-closed boundary, not only a future raw-`.pco` concern. Validate the decomposition and
+        // throw instead; these checks never reject a valid stream.
+        //
+        // The overflow test itself must stay defined for sub-32-bit latents (`U8`/`U16`/`I8`/`I16`,
+        // whose `L` is `uint8_t`/`uint16_t`): plain `pl[i] * base` would be evaluated in signed `int`
+        // by integer promotion and can overflow it (e.g. `pl[i] = base = 65535`), so the product is
+        // formed in an explicitly unsigned accumulator at least 32 bits wide and the latent-width
+        // overflow is detected with the checked-arithmetic builtins.
         using Acc = std::conditional_t<(sizeof(L) < sizeof(uint32_t)), uint32_t, L>;
+        if (base == 0)
+            throw PcodecError("pcodec: IntMult base is zero in a malformed stream");
+        const Acc max_latent = static_cast<Acc>(std::numeric_limits<L>::max());
+        auto reconstruct = [&](L p, L sec) -> L
+        {
+            Acc prod;
+            Acc full;
+            if (sec >= base
+                || __builtin_mul_overflow(static_cast<Acc>(p), static_cast<Acc>(base), &prod)
+                || __builtin_add_overflow(prod, static_cast<Acc>(sec), &full)
+                || full > max_latent)
+                throw PcodecError("pcodec: IntMult decomposition out of range in a malformed stream");
+            return static_cast<L>(full);
+        };
         run_batches(primary, sec_decode, [&](size_t off, size_t bn)
         {
             if (sec_const)
                 for (size_t i = 0; i < bn; ++i)
-                    out[off + i] = NumberTraits<T>::fromLatentOrdered(
-                        static_cast<L>(static_cast<Acc>(pl[i]) * static_cast<Acc>(base) + static_cast<Acc>(sec_c)));
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(reconstruct(pl[i], sec_c));
             else
                 for (size_t i = 0; i < bn; ++i)
-                    out[off + i] = NumberTraits<T>::fromLatentOrdered(
-                        static_cast<L>(static_cast<Acc>(pl[i]) * static_cast<Acc>(base) + static_cast<Acc>(sl[i])));
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(reconstruct(pl[i], sl[i]));
         });
     }
     else // floating point
@@ -246,6 +268,17 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
                 {
                     L y = pl[i];
                     L m = sec_const ? sec_c : sl[i];
+                    // A valid `FloatQuant` stream splits each latent `u` as `primary = u >> k` and a
+                    // remainder `m` in `[0, (1 << k) - 1]` (see the encoder in `Modes.h::splitForMode`),
+                    // so `primary` occupies at most `latentBits - k` bits. A malformed stream can lie:
+                    // an oversized `primary` makes `y << k` drop its high bits, and an `m` above the
+                    // `k`-bit range underflows the `lowest_k_bits_max - m` branch — either fabricates a
+                    // float instead of failing closed (a checksummed `0x9d` frame reaches this decoder
+                    // through the shared `CompressedReadBuffer`). Reject both; these checks never reject
+                    // a valid stream. `(y << k) >> k == y` stays defined because `k <= PRECISION_BITS`
+                    // is strictly less than the latent width.
+                    if (m > lowest_k_bits_max || static_cast<L>(static_cast<L>(y << k) >> k) != y)
+                        throw PcodecError("pcodec: FloatQuant decomposition out of range in a malformed stream");
                     L low = (y >= sign_cutoff) ? m : static_cast<L>(lowest_k_bits_max - m);
                     out[off + i] = NumberTraits<T>::fromLatentOrdered(static_cast<L>((y << k) + low));
                 }
