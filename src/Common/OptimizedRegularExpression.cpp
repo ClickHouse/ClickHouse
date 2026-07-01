@@ -266,10 +266,6 @@ const char * analyzeImpl(
     {
         switch (*pos)
         {
-            case '\0':
-                pos = end;
-                break;
-
             case '\\':
             {
                 ++pos;
@@ -448,6 +444,8 @@ const char * analyzeImpl(
             ordinary:   /// Normal, not escaped symbol.
             [[fallthrough]];
             default:
+                /// A NUL byte (`\0`) lands here too: the pattern is length-based (RE2 matches `\0`
+                /// literally), so it must be treated as an ordinary literal, not as end-of-pattern.
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
                     /// record the first position of last string.
