@@ -13,6 +13,9 @@ REGISTER_FUNCTION(ToYear)
 {
     FunctionDocumentation::Description description = R"(
 Returns the year component (AD) of a `Date` or `DateTime` value.
+
+The alias `year` can also be called without arguments as `year()`, which returns the
+current year. It is equivalent to `toYear(today())`.
     )";
     FunctionDocumentation::Syntax syntax = "toYear(datetime)";
     FunctionDocumentation::Arguments arguments =
@@ -30,6 +33,17 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
 │                                     2023  │
 └───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Current year",
+        R"(
+SELECT year()
+        )",
+        R"(
+┌─toYear(today())─┐
+│            2023 │
+└─────────────────┘
         )"
     }
     };

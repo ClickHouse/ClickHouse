@@ -1,0 +1,17 @@
+-- year() equals toYear(today()), toYear(now()) and year(today())
+1	1	1
+-- result type is UInt16
+UInt16
+-- current year is a sane value
+1
+-- case-insensitive
+1	1	1
+-- year() is non-deterministic (evaluated once at analysis, like today())
+1
+-- year(<date>) still works as the deterministic alias of toYear
+2023	1900	2077	2149
+-- two-argument toYear(datetime, timezone) is unaffected
+2023
+-- the rewrite is visible in EXPLAIN SYNTAX
+SELECT toYear(today())
+FROM system.one
