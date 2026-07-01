@@ -28,6 +28,10 @@ ORDER BY a;
 
 INSERT INTO t_alias_ref VALUES (1, 'x') (2, 'y');
 
+-- The bug and its fix live in the analyzer shard-collapse path. StorageDistributed::read
+-- has a separate old-analyzer branch, so without pinning enable_analyzer the test can run
+-- through the legacy planner and never exercise the guarded alias-collapse path.
+SET enable_analyzer = 1;
 SET asterisk_include_alias_columns = 1;
 SET prefer_localhost_replica = 0;
 
