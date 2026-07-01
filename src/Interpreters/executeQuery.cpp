@@ -120,6 +120,7 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2111,6 +2112,19 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
+        /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
+        /// `executeQuery` immediately while `BackupsWorker` keeps the query context alive and its
+        /// background workers read it via `Context::createCopy` under the shared `Context::mutex`.
+        /// The per-iteration cleanup below would then mutate that escaped context without holding
+        /// the mutex, reintroducing the very `merge_tree_transaction` data race this code avoids.
+        /// Checked first (before the depth/format/length guards below), and counted, so the skip
+        /// is attributable to the query type alone regardless of those other early-continue paths.
+        if (fuzzed_ast->as<ASTBackupQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedBackupRestore);
+            continue;
+        }
+
         /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
         try
         {
@@ -2120,14 +2134,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             continue;
         }
-
-        /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
-        /// `executeQuery` immediately while `BackupsWorker` keeps the query context alive and its
-        /// background workers read it via `Context::createCopy` under the shared `Context::mutex`.
-        /// The per-iteration cleanup below would then mutate that escaped context without holding
-        /// the mutex, reintroducing the very `merge_tree_transaction` data race this code avoids.
-        if (fuzzed_ast->as<ASTBackupQuery>())
-            continue;
 
         /// Drop any SETTINGS that would override the fuzz-context resource caps below; otherwise a
         /// seed/fuzzed `SETTINGS max_rows_to_read = 0` (etc.) lets the heavy query run unbounded.
