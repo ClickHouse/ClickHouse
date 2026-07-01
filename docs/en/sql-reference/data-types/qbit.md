@@ -126,7 +126,7 @@ These are the distance functions for vector similarity search that use `QBit` da
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
 * [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)
 
-For a strided `QBit`, these functions accept an optional fourth argument `dims` — the number of leading dimensions to read — which only reads the stride groups covering those dimensions:
+For a strided `QBit`, these functions accept an optional fourth argument `used_dims` — the number of leading dimensions to read — which only reads the stride groups covering those dimensions:
 
 ```sql
 -- read 8 bit planes over the first 2048 of 4096 dimensions

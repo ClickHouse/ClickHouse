@@ -251,7 +251,7 @@ These are the distance functions for vector similarity search that use `QBit` da
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
 * [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)
 
-For a strided `QBit`, these functions accept an optional fourth argument `dims` — the number of leading dimensions to read — which reads only the stride groups covering those dimensions. The reference vector must have exactly `dims` elements, and `dims` must be a multiple of `stride`.
+For a strided `QBit`, these functions accept an optional fourth argument `used_dims` — the number of leading dimensions to read — which reads only the stride groups covering those dimensions. The reference vector must have exactly `used_dims` elements, and `used_dims` must be a multiple of `stride`.
 )DOCS_MD",
             .syntax = "QBit(T, dim[, stride])",
             .examples = {},

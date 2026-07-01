@@ -64,11 +64,11 @@ public:
             return;
 
         /// Optional fourth argument: the number of dimensions to read (Matryoshka-style partial-dimension search).
-        const ConstantNode * dims_node = nullptr;
+        const ConstantNode * used_dims_node = nullptr;
         if (function_arguments_nodes.size() == 4)
         {
-            dims_node = function_arguments_nodes[3]->as<ConstantNode>();
-            if (!dims_node || dims_node->getValue().getType() != Field::Types::UInt64)
+            used_dims_node = function_arguments_nodes[3]->as<ConstantNode>();
+            if (!used_dims_node || used_dims_node->getValue().getType() != Field::Types::UInt64)
                 return;
         }
 
@@ -112,11 +112,11 @@ public:
         const bool is_strided = qbit->getNumStrides() > 1;
 
         /// Number of dimensions to read. Defaults to the full dimension when the optional 4th argument is absent.
-        UInt64 dims = dimension;
-        if (dims_node)
+        UInt64 used_dims = dimension;
+        if (used_dims_node)
         {
-            dims = dims_node->getValue().safeGet<UInt64>();
-            if (dims == 0 || dims > dimension || dims % stride != 0)
+            used_dims = used_dims_node->getValue().safeGet<UInt64>();
+            if (used_dims == 0 || used_dims > dimension || used_dims % stride != 0)
                 return;
         }
 
@@ -131,7 +131,7 @@ public:
 
         if (is_strided)
         {
-            const size_t num_groups = dims / stride;
+            const size_t num_groups = used_dims / stride;
             /// Group-major order: for each stride group, its first `precision` bit planes (tuple index = group * element_size + bit).
             for (size_t group = 0; group < num_groups; ++group)
                 for (size_t bit = 0; bit < precision; ++bit)
@@ -144,12 +144,12 @@ public:
         }
 
         /// Add the trailing constant(s) describing the layout, then the reference vector as the last argument.
-        /// Non-strided: a single `dimension` constant. Strided: `stride` followed by `dims`.
+        /// Non-strided: a single `dimension` constant. Strided: `stride` followed by `used_dims`.
         ConstantNodePtr last_size_constant;
         if (is_strided)
         {
             new_args.push_back(std::make_shared<ConstantNode>(stride));
-            last_size_constant = std::make_shared<ConstantNode>(dims);
+            last_size_constant = std::make_shared<ConstantNode>(used_dims);
             new_args.push_back(last_size_constant);
         }
         else
@@ -159,8 +159,8 @@ public:
         }
 
         /// The transposed distance functions propagate nullability from any argument, so the original (user-facing) call may be
-        /// Nullable because of the precision, dims, or reference-vector arguments. The rewritten internal form drops the precision and
-        /// dims arguments and casts the reference vector, any of which can otherwise lose the nullability, so force the nullability onto
+        /// Nullable because of the precision, used_dims, or reference-vector arguments. The rewritten internal form drops the precision and
+        /// used_dims arguments and casts the reference vector, any of which can otherwise lose the nullability, so force the nullability onto
         /// the trailing size constant whenever the original result was Nullable to keep the rewritten result type identical.
         auto original_result_type = function_node->getResultType();
         if (original_result_type->isNullable() || original_result_type->isLowCardinalityNullable())
