@@ -4,6 +4,8 @@ set(EXAMPLES_SOURCES
 
 list(APPEND EXAMPLES_SOURCES ../AggregateFunctions/examples/quantile-t-digest.cpp)
 list(APPEND EXAMPLES_SOURCES ../AggregateFunctions/examples/group_array_sorted.cpp)
+list(APPEND EXAMPLES_SOURCES ../AggregateFunctions/examples/timeseries_to_grid_two_stack_vs_recompute.cpp)
+list(APPEND EXAMPLES_SOURCES ../AggregateFunctions/examples/timeseries_to_grid_range_scan_vs_std_sort.cpp)
 list(APPEND EXAMPLES_SOURCES ../Client/examples/test_connect.cpp)
 list(APPEND EXAMPLES_SOURCES ../Common/ZooKeeper/examples/zkutil_test_commands.cpp)
 list(APPEND EXAMPLES_SOURCES ../Common/ZooKeeper/examples/zkutil_test_commands_new_lib.cpp)

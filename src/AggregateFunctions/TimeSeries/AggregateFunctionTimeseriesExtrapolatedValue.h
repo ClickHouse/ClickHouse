@@ -8,20 +8,19 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 
-#include <absl/container/flat_hash_map.h>
+#include <optional>
 
 namespace DB
 {
 
-template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
 struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 {
-    static constexpr bool array_arguments = array_arguments_;
     static constexpr bool is_rate = is_rate_;
 
     using TimestampType = TimestampType_;
@@ -33,259 +32,231 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         return is_rate ? "timeSeriesRateToGrid" : "timeSeriesDeltaToGrid";
     }
 
-    struct Bucket
-    {
-        absl::flat_hash_map<TimestampType, ValueType> samples;
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-        void add(TimestampType timestamp, ValueType value)
+    /// Per-bucket summary for rate/delta and, once combined over a window, the window summary too: the first and
+    /// last sample, the sample count, and the reset adjustment (the sum of pre-decrease values, `rate` only - a
+    /// decrease between consecutive samples is a reset; `delta`, a gauge, does not count them). `merge` adds a
+    /// summary at the back of the window and `unmerge` drops one from the front, each accounting for the reset
+    /// across the boundary between adjacent buckets, so a window's summary is maintained incrementally in O(1).
+    struct Summary
+    {
+        TimestampType first_timestamp = 0;
+        ValueType first_value = 0;
+        TimestampType last_timestamp = 0;
+        ValueType last_value = 0;
+        UInt64 count = 0;
+        Float64 resets = 0;
+
+        void merge(const Summary & added)
         {
-            auto it = samples.find(timestamp);
-            if (it != samples.end())
-                it->second = std::max(it->second, value);
-            else
-                samples[timestamp] = value;
+            if (added.count == 0)
+                return;
+            if (count == 0)
+            {
+                *this = added;
+                return;
+            }
+            if constexpr (is_rate)
+            {
+                if (last_value > added.first_value)
+                    resets += static_cast<Float64>(last_value);     /// reset across the bucket boundary
+            }
+            resets += added.resets;
+            last_timestamp = added.last_timestamp;
+            last_value = added.last_value;
+            count += added.count;
         }
 
-        void merge(const Bucket & other)
+        void unmerge(const Summary & leaving, const Summary * new_first)
         {
-            samples.reserve(other.samples.size());
-
-            for (const auto & [timestamp, value] : other.samples)
-                add(timestamp, value);
+            resets -= leaving.resets;
+            count -= leaving.count;
+            if (new_first)
+            {
+                if constexpr (is_rate)
+                {
+                    if (leaving.last_value > new_first->first_value)
+                        resets -= static_cast<Float64>(leaving.last_value);     /// drop the cross-boundary reset
+                }
+                first_timestamp = new_first->first_timestamp;
+                first_value = new_first->first_value;
+            }
         }
     };
+
+    /// Sliding aggregator for rate/delta: preaggregates each bucket into a `Summary` and keeps the window's
+    /// summary in a `SlidingSum`. `Summary` is invertible, so the window is maintained with a single running
+    /// sum in O(1) per bucket; `getResult` reads its first/last sample, count and resets.
+    struct Aggregator
+    {
+        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
+
+        /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
+        /// not the two-stacks path which combines values out of time order.
+        static_assert(decltype(sliding_sum)::is_invertible);
+
+        IntervalType window;
+        TimestampType timestamp_scale_multiplier;
+
+        Aggregator(IntervalType window_, TimestampType timestamp_scale_multiplier_)
+            : window(window_), timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        {
+        }
+
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        {
+            /// Preaggregate the bucket's samples (visited in ascending order) into a per-bucket summary; the bucket's
+            /// latest timestamp is the summary's `last_timestamp`.
+            Summary summary;
+            samples.forEachSampleSorted([&summary](TimestampType timestamp, ValueType value)
+            {
+                if (summary.count == 0)
+                {
+                    summary.first_timestamp = timestamp;
+                    summary.first_value = value;
+                }
+                else if constexpr (is_rate)
+                {
+                    if (summary.last_value > value)
+                        summary.resets += static_cast<Float64>(summary.last_value);
+                }
+                summary.last_timestamp = timestamp;
+                summary.last_value = value;
+                ++summary.count;
+            }, temp_buffer);
+            add(std::move(summary), bucket_end_timestamp);
+        }
+
+        void add(Summary summary, TimestampType bucket_end_timestamp)
+        {
+            if (summary.count == 0)
+                return;
+            sliding_sum.add(std::move(summary), bucket_end_timestamp);
+        }
+
+        void removeBefore(TimestampType cut_off)
+        {
+            sliding_sum.removeBefore(cut_off);
+        }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
+        {
+            const Summary combined = sliding_sum.getCurrentSum();
+
+            /// Need at least two samples to calculate the rate or delta.
+            if (combined.count < 2)
+                return std::nullopt;
+
+            const TimestampType first_timestamp = combined.first_timestamp;
+            const ValueType first_value = combined.first_value;
+            const TimestampType last_timestamp = combined.last_timestamp;
+            const ValueType last_value = combined.last_value;
+            const UInt64 total_count = combined.count;
+            const Float64 total_resets = combined.resets;
+
+            /// The extrapolation logic is copied from Prometheus' rate calculation
+            /// (https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127),
+            /// licensed under the Apache License 2.0.
+            const TimestampType time_difference = last_timestamp - first_timestamp;
+            if (time_difference == 0)
+                return std::nullopt;
+
+            Float64 value_difference = last_value - first_value + total_resets;
+
+            // Duration between first/last samples and boundary of range. Subtract in `Int128` first to avoid
+            // both signed overflow on `grid_timestamp - window` and `Float64` precision loss when timestamps
+            // are large (e.g. `DateTime64(9)` near present-day epoch ~1.7e18).
+            Float64 duration_to_start = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(first_timestamp))
+                - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                + static_cast<Int128>(static_cast<Int64>(window)));
+            Float64 duration_to_end = static_cast<Float64>(
+                static_cast<Int128>(static_cast<Int64>(grid_timestamp))
+                - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
+
+            const auto sampled_interval = time_difference;
+            const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
+
+            // If samples are close enough to the (lower or upper) boundary of the range, we extrapolate the
+            // rate all the way to the boundary in question. "Close enough" is up to 10% more than the average
+            // duration between samples within the range; otherwise we extrapolate by only half of the average
+            // duration between samples (our guess for where the series actually starts or ends).
+            const auto extrapolation_threshold = average_duration_between_samples * 1.1;
+            Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
+
+            if (duration_to_start >= extrapolation_threshold)
+                duration_to_start = average_duration_between_samples / 2;
+
+            if (is_rate && value_difference > 0 && first_value >= 0)
+            {
+                // Counters cannot be negative. If we have any slope at all we can extrapolate the zero point
+                // of the counter; if that is closer than duration_to_start, take it as the start, avoiding
+                // extrapolation to negative counter values.
+                Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
+                duration_to_start = std::min(duration_to_zero, duration_to_start);
+            }
+
+            extrapolate_to_interval += duration_to_start;
+
+            if (duration_to_end >= extrapolation_threshold)
+                duration_to_end = average_duration_between_samples / 2;
+            extrapolate_to_interval += duration_to_end;
+
+            Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
+
+            if constexpr (is_rate)
+                factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+
+            value_difference *= factor;
+
+            return static_cast<ValueType>(value_difference);
+        }
+#pragma clang diagnostic pop
+    };
+
+    /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
+    using Bucket = Samples;
 };
 
+
 /// Aggregate function to calculate extrapolated values (rate and delta) of timeseries on the specified grid
-template <typename Traits>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
 class AggregateFunctionTimeseriesExtrapolatedValue final :
-    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue<Traits>, Traits>
+    public AggregateFunctionTimeseriesBase<
+        AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, IntervalType_, ValueType_, is_rate_>,
+        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
+    using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>;
 
     static constexpr bool is_rate = Traits::is_rate;
 
     using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
+    using Aggregator = typename Traits::Aggregator;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue<Traits>, Traits>;
-
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
     using Base::Base;
 
-    using Bucket = typename Base::Bucket;
-
-    static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
+    Aggregator createAggregator(size_t /* num_populated_buckets */) const
     {
-        writeBinaryLittleEndian(bucket.samples.size(), buf);
-        for (const auto & sample : bucket.samples)
-        {
-            writeBinaryLittleEndian(sample.first, buf);
-            writeBinaryLittleEndian(sample.second, buf);
-        }
+        return Aggregator{Base::window, Base::timestamp_scale_multiplier};
     }
 
-    void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
-    {
-        size_t sample_count = 0;
-        readBinaryLittleEndian(sample_count,buf);
-        bucket.samples.reserve(sample_count);
-
-        for (size_t s = 0; s < sample_count; ++s)
-        {
-            TimestampType timestamp;
-            readBinaryLittleEndian(timestamp, buf);
-            Base::checkTimestampInRange(timestamp, bucket_index);
-
-            ValueType value;
-            readBinaryLittleEndian(value, buf);
-
-            bucket.add(timestamp, value);
-        }
-    }
-
-private:
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-    void fillResultValue(const TimestampType current_timestamp,
-        const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
-        Float64 accumulated_resets_in_window,
-        ValueType & result, UInt8 & null) const
-    {
-        /// Need at least two samples to calculate the rate or delta
-        if (samples_in_window.size() < 2)
-        {
-            result = 0;
-            null = 1;
-            return;
-        }
-
-        const TimestampType first_timestamp = samples_in_window.front().first;
-        const TimestampType last_timestamp = samples_in_window.back().first;
-
-        const TimestampType time_difference = last_timestamp - first_timestamp;
-        if (time_difference == 0)
-        {
-            result = 0;
-            null = 1;
-            return;
-        }
-
-        const ValueType first_value = samples_in_window.front().second;
-        const ValueType last_value = samples_in_window.back().second;
-
-        Float64 value_difference = last_value - first_value + accumulated_resets_in_window;
-
-        /// The following logic is copied from Prometheus' rate calculation
-        /// https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127
-        /// which is licensed under the Apache License 2.0
-        // Duration between first/last samples and boundary of range. Subtract in `Int128` first to avoid
-        // both signed overflow on `current_timestamp - Base::window` and `Float64` precision loss when
-        // timestamps are large (e.g. `DateTime64(9)` near present-day epoch ~1.7e18).
-        Float64 duration_to_start = static_cast<Float64>(
-            static_cast<Int128>(static_cast<Int64>(first_timestamp))
-            - static_cast<Int128>(static_cast<Int64>(current_timestamp))
-            + static_cast<Int128>(static_cast<Int64>(Base::window)));
-        Float64 duration_to_end = static_cast<Float64>(
-            static_cast<Int128>(static_cast<Int64>(current_timestamp))
-            - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
-
-        const auto sampled_interval = time_difference;
-        const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(samples_in_window.size() - 1);
-
-        // If samples are close enough to the (lower or upper) boundary of the
-        // range, we extrapolate the rate all the way to the boundary in
-        // question. "Close enough" is defined as "up to 10% more than the
-        // average duration between samples within the range", see
-        // extrapolationThreshold below. Essentially, we are assuming a more or
-        // less regular spacing between samples, and if we don't see a sample
-        // where we would expect one, we assume the series does not cover the
-        // whole range, but starts and/or ends within the range. We still
-        // extrapolate the rate in this case, but not all the way to the
-        // boundary, but only by half of the average duration between samples
-        // (which is our guess for where the series actually starts or ends).
-
-        const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-        Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
-
-        if (duration_to_start >= extrapolation_threshold)
-            duration_to_start = average_duration_between_samples / 2;
-
-        if (is_rate && value_difference > 0 && first_value >= 0)
-        {
-            // Counters cannot be negative. If we have any slope at all
-            // (i.e. resultFloat went up), we can extrapolate the zero point
-            // of the counter. If the duration to the zero point is shorter
-            // than the durationToStart, we take the zero point as the start
-            // of the series, thereby avoiding extrapolation to negative
-            // counter values.
-            Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
-            duration_to_start = std::min(duration_to_zero, duration_to_start);
-        }
-
-        extrapolate_to_interval += duration_to_start;
-
-        if (duration_to_end >= extrapolation_threshold)
-            duration_to_end = average_duration_between_samples / 2;
-        extrapolate_to_interval += duration_to_end;
-
-        Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
-
-        if constexpr (is_rate)
-            factor = factor * static_cast<Float64>(Base::timestamp_scale_multiplier) / static_cast<Float64>(Base::window);
-
-        value_difference *= factor;
-
-        result = static_cast<ValueType>(value_difference);
-        null = 0;
-    }
-#pragma clang diagnostic pop
-
-public:
-    /// Insert the result into the column
-    void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
-    {
-        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        offsets_to.push_back(offsets_to.back() + Base::bucket_count);
-
-        if (!Base::bucket_count)
-            return;
-
-        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
-        auto & data_to = typeid_cast<typename Base::ColVecResultType &>(result_to.getNestedColumn()).getData();
-        auto & nulls_to = result_to.getNullMapData();
-
-        const size_t old_size = data_to.size();
-        chassert(old_size == nulls_to.size(), "Sizes of nested column and null map of Nullable column are not equal");
-
-        data_to.resize(old_size + Base::bucket_count);
-        nulls_to.resize(old_size + Base::bucket_count);
-
-        ValueType * values = data_to.data() + old_size;
-        UInt8 * nulls = nulls_to.data() + old_size;
-
-        const auto & buckets = Base::data(place)->buckets;
-
-        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
-        Float64 accumulated_resets_in_window = 0;
-
-        /// Resets must be take into account for `rate` function because it expects counter timeseries that only increase.
-        /// But `delta` function expects gauge timeseries that can decrease and it is not considered to be a reset.
-        constexpr bool adjust_to_resets = is_rate;
-
-        /// Fill the data for missing buckets
-        for (UInt32 i = 0; i < Base::bucket_count; ++i)
-        {
-            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
-            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
-            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
-            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
-            auto bucket_it = buckets.find(i);
-            if (bucket_it != buckets.end())
-            {
-                timestamps_buffer.clear();
-                /// Sort samples from the current bucket
-                for (const auto & [timestamp, value] : bucket_it->second.samples)
-                    timestamps_buffer.emplace_back(timestamp, value);
-                std::sort(timestamps_buffer.begin(), timestamps_buffer.end());
-
-                /// Add samples from the current bucket
-                for (const auto & [timestamp, value] : timestamps_buffer)
-                {
-                    /// Check for resets in the timeseries
-                    if (adjust_to_resets && !samples_in_window.empty() && samples_in_window.back().second > value)
-                        accumulated_resets_in_window += static_cast<Float64>(samples_in_window.back().second);
-                    samples_in_window.push_back({timestamp, value});
-                }
-            }
-
-            /// Remove samples that are out of the window
-            while (!samples_in_window.empty()
-                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
-            {
-                Float64 removed_value = static_cast<Float64>(samples_in_window.front().second);
-                samples_in_window.pop_front();
-                /// Subtract resets that are out of the window
-                if (adjust_to_resets && !samples_in_window.empty() && static_cast<Float64>(samples_in_window.front().second) < removed_value)
-                    accumulated_resets_in_window -= removed_value;
-            }
-
-            fillResultValue(
-                current_timestamp,
-                samples_in_window,
-                accumulated_resets_in_window,
-                values[i],
-                nulls[i]);
-        }
-    }
-
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 3;
+    static constexpr bool DateTime64Supported = true;
 };
+
+/// Each SQL function as a 3-argument template with its is_rate variant baked in, so registration names the
+/// function directly.
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesRateToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, true>;
+
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesDeltaToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, false>;
 
 }

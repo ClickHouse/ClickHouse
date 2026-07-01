@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstring>
+#include <optional>
+#include <type_traits>
 
 
 #include <DataTypes/DataTypesDecimal.h>
@@ -16,15 +18,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
-template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
 struct AggregateFunctionTimeseriesInstantValueTraits
 {
-    static constexpr bool array_arguments = array_arguments_;
     static constexpr bool is_rate = is_rate_;
 
     using TimestampType = TimestampType_;
@@ -36,142 +32,100 @@ struct AggregateFunctionTimeseriesInstantValueTraits
         return is_rate_ ? "timeSeriesInstantRateToGrid" : "timeSeriesInstantDeltaToGrid";
     }
 
-    using Bucket = typename AggregateFunctionLast2Samples<TimestampType, ValueType>::Data;
+    using Summary = typename AggregateFunctionLast2Samples<TimestampType, ValueType>::Data;
+
+    /// Sliding aggregator: `irate`/`idelta` use only the two most recent samples in the window, which is exactly
+    /// what `Last2Samples::Data` keeps. Buckets are added in time order, so merging each new bucket keeps the
+    /// window's newest two samples; a single `Data` is enough. `removeBefore` drops samples that fell out of the
+    /// window (once the newest is out, the whole window is empty).
+    struct Aggregator
+    {
+        Summary latest;
+        TimestampType timestamp_scale_multiplier;
+
+        explicit Aggregator(TimestampType timestamp_scale_multiplier_)
+            : timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        {
+        }
+
+        void add(const Summary & summary, TimestampType /*bucket_end_timestamp*/)
+        {
+            latest.merge(summary);
+        }
+
+        void removeBefore(TimestampType cut_off)
+        {
+            /// `timestamps[0]` is the newest sample, `timestamps[1]` the previous one.
+            if (latest.filled >= 1 && latest.timestamps[0] <= cut_off)
+                latest.filled = 0;
+            else if (latest.filled == 2 && latest.timestamps[1] <= cut_off)
+                latest.filled = 1;
+        }
+
+        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        {
+            if (latest.filled < 2)
+                return std::nullopt;
+
+            const TimestampType timestamp = latest.timestamps[0];
+            const ValueType value = latest.values[0];
+            const TimestampType previous_timestamp = latest.timestamps[1];
+            const ValueType previous_value = latest.values[1];
+
+            const ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
+            if (time_difference == 0)
+                return std::nullopt;
+
+            /// Resets are taken into account for `irate` (counter) but not for `idelta` (gauge).
+            ValueType value_difference = (is_rate && value < previous_value) ? value : (value - previous_value);
+            ValueType result = value_difference;
+            if constexpr (is_rate)
+            {
+                using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
+                result = result * static_cast<TimestampScaleMultiplierType>(timestamp_scale_multiplier) / time_difference;
+            }
+            return result;
+        }
+    };
+
+    /// InstantValue keeps no preaggregated summary - the bucket (its two newest samples) is fed to the aggregator as-is.
+    using Bucket = Summary;
 };
 
 
 /// Aggregate function to calculate instant values (irate and idelta) of timeseries on the specified grid
-template <typename Traits>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_>
 class AggregateFunctionTimeseriesInstantValue final :
-    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesInstantValue<Traits>, Traits>
+    public AggregateFunctionTimeseriesBase<
+        AggregateFunctionTimeseriesInstantValue<TimestampType_, IntervalType_, ValueType_, is_rate_>,
+        AggregateFunctionTimeseriesInstantValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>>
 {
 public:
-    static constexpr bool DateTime64Supported = true;
+    using Traits = AggregateFunctionTimeseriesInstantValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_>;
 
     static constexpr bool is_rate = Traits::is_rate;
 
     using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesInstantValue<Traits>, Traits>;
-
-    using Bucket = typename Base::Bucket;
-
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesInstantValue, Traits>;
     using Base::Base;
 
-    static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
+    typename Traits::Aggregator createAggregator(size_t /* num_populated_buckets */) const
     {
-        writeBinaryLittleEndian(bucket.filled, buf);
-        for (size_t i = 0; i < bucket.filled; ++i)
-        {
-            writeBinaryLittleEndian(bucket.timestamps[i], buf);
-        }
-        for (size_t i = 0; i < bucket.filled; ++i)
-        {
-            writeBinaryLittleEndian(bucket.values[i], buf);
-        }
+        return typename Traits::Aggregator{Base::timestamp_scale_multiplier};
     }
 
-    void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
-    {
-        readBinaryLittleEndian(bucket.filled,buf);
-
-        if (bucket.filled > 2)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with more than 2 samples in a bucket");
-
-        for (size_t j = 0; j < bucket.filled; ++j)
-        {
-            TimestampType timestamp;
-            readBinaryLittleEndian(timestamp, buf);
-            Base::checkTimestampInRange(timestamp, bucket_index);
-            bucket.timestamps[j] = timestamp;
-        }
-        for (size_t j = 0; j < bucket.filled; ++j)
-        {
-            readBinaryLittleEndian(bucket.values[j], buf);
-        }
-    }
-
-    void fillResultValue(TimestampType timestamp, ValueType value, TimestampType previous_timestamp, ValueType previous_value, ValueType & result, UInt8 & null) const
-    {
-        ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
-        if (time_difference == 0)
-        {
-            result = 0;
-            null = 1;
-            return;
-        }
-
-        /// Resets must be take into account for `irate` function because it expects counter timeseries that only increase.
-        /// But `idelta` function expects gauge timeseries that can decrease and it is not considered to be a reset.
-        constexpr bool adjust_to_resets = is_rate;
-
-        ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
-        result = value_difference;
-        if constexpr (is_rate)
-        {
-            using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
-            result = result * static_cast<TimestampScaleMultiplierType>(Base::timestamp_scale_multiplier) / time_difference;
-        }
-        null = 0;
-    }
-
-    /// Insert the result into the column
-    /// timestamps buffer is reused between calls to avoid unnecessary allocations/deallocations
-    void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
-    {
-        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
-
-        offsets_to.push_back(offsets_to.back() + Base::bucket_count);
-
-        if (!Base::bucket_count)
-            return;
-
-        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
-        auto & data_to = typeid_cast<typename Base::ColVecResultType &>(result_to.getNestedColumn()).getData();
-        auto & nulls_to = result_to.getNullMapData();
-
-        const size_t old_size = data_to.size();
-        chassert(old_size == nulls_to.size(), "Sizes of nested column and null map of Nullable column are not equal");
-
-        data_to.resize(old_size + Base::bucket_count);
-        nulls_to.resize(old_size + Base::bucket_count);
-
-        ValueType * values = data_to.data() + old_size;
-        UInt8 * nulls = nulls_to.data() + old_size;
-
-        const auto & buckets = Base::data(place)->buckets;
-
-        /// Fill the data for missing buckets
-        Bucket last_2_samples; /// Sliding window with last 2 samples
-        for (size_t i = 0; i < Base::bucket_count; ++i)
-        {
-            /// Use `Base::timestampAtIndex` instead of a loop-carried `current_timestamp += Base::step`
-            /// accumulator. The accumulator form performs one final, unused `+=` on the last
-            /// iteration which signed-overflows `TimestampType` on adversarial extremes
-            /// (`start_timestamp` near `INT64_MIN`, `step` near `INT64_MAX`) and trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
-            values[i] = ValueType{};
-            nulls[i] = 1;
-
-            auto bucket_it = buckets.find(i);
-            if (bucket_it != buckets.end())
-                last_2_samples.merge(bucket_it->second);
-
-            /// If the oldest of last 2 samples is within the window, we can calculate the rate or delta
-            if (last_2_samples.filled == 2 && !Base::isSampleOutOfWindow(last_2_samples.timestamps[1], current_timestamp))
-            {
-                fillResultValue(last_2_samples.timestamps[0], last_2_samples.values[0],
-                    last_2_samples.timestamps[1], last_2_samples.values[1],
-                    values[i], nulls[i]);
-            }
-        }
-    }
-
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 3;
+    static constexpr bool DateTime64Supported = true;
 };
+
+/// Each SQL function as a 3-argument template with its is_rate variant baked in, so registration names the
+/// function directly.
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesInstantRateToGrid = AggregateFunctionTimeseriesInstantValue<TimestampType, IntervalType, ValueType, true>;
+
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesInstantDeltaToGrid = AggregateFunctionTimeseriesInstantValue<TimestampType, IntervalType, ValueType, false>;
 
 }
