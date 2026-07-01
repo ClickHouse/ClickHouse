@@ -373,11 +373,23 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     /// cache lock -- eviction, `LockedKey::sync`, or metadata reload -- removes it; external truncation is
     /// rare, so the small accounting drift until then is acceptable.
     ///
-    /// A short on-disk file means truncation only where `downloaded_size` is final: for a `DOWNLOADED`
-    /// segment (a concurrent download that is still growing the file would give a benign momentary mismatch,
-    /// so `DOWNLOADING` is excluded) or a `DETACHED` one (`downloaded_size` is not reset on detach).
+    /// The recovery is gated on `hasSizeInFileName`: it applies only to a segment whose size was trusted
+    /// from the file name without a `stat`. Such a segment is renamed to `<offset>_<size>` only once it is
+    /// fully downloaded, after which the file is immutable at `downloaded_size` bytes -- so a shorter
+    /// on-disk file can only mean an external truncation. A segment *without* the size suffix can legitimately
+    /// be shorter than `downloaded_size` under normal operation and must not trip this recovery: a legacy
+    /// `<offset>` file had its size `stat`-ed at load (so a mismatch is not the trusted-size case), and an
+    /// in-progress download is renamed only on completion, so while `DOWNLOADING` its file is momentarily
+    /// shorter than the already-advanced `downloaded_size`. Without this gate the check fires spuriously on
+    /// such segments during ordinary reads (observed as `... is shorter than its recorded size ... truncated
+    /// outside ClickHouse` warnings on plain `<offset>` cache files). `hasSizeInFileName` is a lock-free
+    /// atomic read and stays valid after a detach.
+    ///
+    /// Among size-in-filename segments, `downloaded_size` is final for a `DOWNLOADED` one and for a
+    /// `DETACHED` one (`downloaded_size` is not reset on detach).
     const auto download_state = file_segment.state();
-    if (cache_file_size < file_segment.getDownloadedSize()
+    if (file_segment.hasSizeInFileName()
+        && cache_file_size < file_segment.getDownloadedSize()
         && (download_state == FileSegment::State::DOWNLOADED
             || download_state == FileSegment::State::DETACHED))
     {
