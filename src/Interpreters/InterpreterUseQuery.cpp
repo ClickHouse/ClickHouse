@@ -1,6 +1,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Access/Common/AccessFlags.h>
@@ -26,7 +28,10 @@ BlockIO InterpreterUseQuery::execute()
         if (dot_pos != String::npos)
         {
             const String possible_db_part = new_database.substr(0, dot_pos);
-            if (catalog.isDatabaseExist(possible_db_part) && catalog.isDatalakeCatalog(possible_db_part))
+            /// Keep this datalake-specific: `isDatalakeCatalog` was broadened to `isRemoteDatabase`
+            /// (which also covers MySQL/PostgreSQL), so check the engine name instead.
+            auto possible_db = catalog.tryGetDatabase(possible_db_part);
+            if (possible_db && possible_db->getEngineName() == DataLake::DATABASE_ENGINE_NAME)
             {
                 db_part = possible_db_part;
                 prefix_part = new_database.substr(dot_pos + 1);

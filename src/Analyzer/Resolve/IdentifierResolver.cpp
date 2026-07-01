@@ -12,6 +12,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableNameHints.h>
@@ -303,7 +304,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     auto current_db_info = context->getCurrentDatabase();
     const String & current_database = current_db_info.database;
-    bool is_current_db_datalake = DatabaseCatalog::instance().isDatalakeCatalog(current_database);
+    /// `DatabaseCatalog::isDatalakeCatalog` was renamed/broadened to `isRemoteDatabase` (which also
+    /// covers MySQL/PostgreSQL), so check the engine name to keep this datalake-specific.
+    auto current_db_ptr = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    bool is_current_db_datalake = current_db_ptr && current_db_ptr->getEngineName() == DataLake::DATABASE_ENGINE_NAME;
 
     StoragePtr storage;
     TableLockHolder storage_lock;
