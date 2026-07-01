@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int UNEXPECTED_AST_STRUCTURE;
@@ -61,7 +62,7 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
     /// the dimension, so this only constrains the strided case.
     if (getNumStrides() > MAX_STRIDE_GROUPS)
         throw Exception(
-            ErrorCodes::UNEXPECTED_AST_STRUCTURE,
+            ErrorCodes::BAD_ARGUMENTS,
             "QBit has too many stride groups: {} (dimension {} / stride {}). The maximum is {}.",
             getNumStrides(),
             dimension,
@@ -77,7 +78,9 @@ DataTypeQBit::DataTypeQBit(const DataTypePtr & element_type_, const size_t dimen
 
 void DataTypeQBit::updateHashImpl(SipHash & hash) const
 {
-    getNestedType()->updateHashImpl(hash);
+    /// Hash the defining parameters directly. This is cheaper than materializing the nested tuple and, unlike hashing the
+    /// derived tuple structure, it captures the element type identity precisely (the tuple only encodes the element size).
+    element_type->updateHashImpl(hash);
     hash.update(dimension);
     hash.update(stride);
 }
