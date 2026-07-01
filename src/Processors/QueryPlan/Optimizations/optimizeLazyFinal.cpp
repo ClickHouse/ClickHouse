@@ -493,17 +493,30 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             add_columns(row_filter->actions, /*storage_columns_only=*/ false);
     }
 
-    /// The WHERE `filter_step` (kept above the reading step by `optimize_move_to_prewhere_if_final`)
-    /// may consume columns PRODUCED by the reading step's prewhere/row-level-filter rather than
-    /// read from storage (e.g. the computed `greaterOrEquals(42, id)` predicate). Those inputs
-    /// were excluded from `set_columns` above (they are not storage columns), so the set-building
-    /// read must instead expose them from its cloned prewhere/row-level-filter, otherwise the
-    /// copied WHERE filter below cannot find its inputs. Collect those derived names here.
+    /// Inspect the inputs of the WHERE `filter_step` we copy above the set-building read below.
+    ///
+    /// `filter_derived_inputs`: inputs PRODUCED by the reading step's prewhere/row-level-filter
+    /// rather than read from storage (e.g. the computed `greaterOrEquals(42, id)` predicate). They
+    /// were excluded from `set_columns` above (not storage columns), so the set-building read must
+    /// expose them from its cloned prewhere/row-level-filter, else the copied WHERE cannot find them.
+    ///
+    /// `filter_all_inputs`: EVERY input the copied WHERE consumes (storage and derived). Used to
+    /// decide whether the prewhere/row-level-filter column must be kept in the output: if the WHERE
+    /// still consumes it we must not remove it. This is exactly the case `splitAndFillPrewhereInfo`
+    /// handles by flipping `remove_prewhere_column` to false, and it includes the case where the
+    /// pushed predicate is a plain storage column (e.g. `WHERE flag AND value != 7`), which is NOT
+    /// in `filter_derived_inputs`.
     NameSet filter_derived_inputs;
+    NameSet filter_all_inputs;
     if (filter_step)
+    {
         for (const auto * input : filter_step->getExpression().getInputs())
+        {
+            filter_all_inputs.insert(input->result_name);
             if (!is_storage_column(input->result_name))
                 filter_derived_inputs.insert(input->result_name);
+        }
+    }
 
     QueryPlan set_plan;
 
@@ -526,9 +539,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             /// Keep the prewhere predicate column in the output when the copied WHERE filter still
             /// consumes it. `splitAndFillPrewhereInfo` flips `remove_prewhere_column` to false in the
             /// single-conjunct case where the residual WHERE references the pushed predicate; forcing
-            /// removal here would erase that column and the WHERE could not resolve its input.
+            /// removal here would erase that column and the WHERE could not resolve its input. Check
+            /// ALL of the WHERE's inputs, not only derived ones: the pushed predicate can be a plain
+            /// storage column (e.g. `WHERE flag AND value != 7`), which is not in `filter_derived_inputs`.
             set_query_info.prewhere_info->remove_prewhere_column
-                = !filter_derived_inputs.contains(set_query_info.prewhere_info->prewhere_column_name);
+                = !filter_all_inputs.contains(set_query_info.prewhere_info->prewhere_column_name);
         }
         if (set_query_info.row_level_filter)
         {
@@ -536,7 +551,9 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             fixed->actions = cloneFilterSubDAG(set_query_info.row_level_filter->actions, set_query_info.row_level_filter->column_name);
             exposeNodesAsDAGOutputs(fixed->actions, filter_derived_inputs);
             fixed->column_name = set_query_info.row_level_filter->column_name;
-            fixed->do_remove_column = !filter_derived_inputs.contains(fixed->column_name);
+            /// Same reasoning as `remove_prewhere_column` above: keep the row-level-filter column
+            /// when the copied WHERE still consumes it, checking all of the WHERE's inputs.
+            fixed->do_remove_column = !filter_all_inputs.contains(fixed->column_name);
             set_query_info.row_level_filter = std::move(fixed);
         }
 

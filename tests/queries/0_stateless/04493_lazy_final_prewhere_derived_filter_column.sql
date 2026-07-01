@@ -56,3 +56,36 @@ WHERE (42 >= id) AND (value != 7)
 SETTINGS move_all_conditions_to_prewhere = 0, query_plan_optimize_lazy_final = 0;
 
 DROP TABLE t_04493;
+
+-- Plain-storage-column single-conjunct case: the pushed PREWHERE predicate is a plain
+-- storage column (flag), not a derived/computed predicate. With move_all_conditions_to_prewhere = 0
+-- only `flag` is pushed and the residual WHERE (value != 7 AND flag) still consumes it, so
+-- splitAndFillPrewhereInfo sets remove_prewhere_column = false. The set build must keep that
+-- column: recomputing removal from derived-only inputs erased flag and threw NOT_FOUND_COLUMN_IN_BLOCK.
+DROP TABLE IF EXISTS t_04493_plain;
+
+CREATE TABLE t_04493_plain
+(
+    id UInt64,
+    update_ts DateTime,
+    flag UInt8,
+    value UInt32
+)
+ENGINE = ReplacingMergeTree(update_ts)
+PARTITION BY 0 * id
+ORDER BY (flag, id);
+
+INSERT INTO t_04493_plain SELECT number, toDateTime('2020-01-01 00:00:00'), 1, 1 FROM numbers(100);
+INSERT INTO t_04493_plain SELECT number, toDateTime('2020-01-02 00:00:00'), 1, 2 FROM numbers(100);
+
+SELECT count()
+FROM t_04493_plain FINAL
+WHERE flag AND (value != 7)
+SETTINGS move_all_conditions_to_prewhere = 0;
+
+SELECT count()
+FROM t_04493_plain FINAL
+WHERE flag AND (value != 7)
+SETTINGS move_all_conditions_to_prewhere = 0, query_plan_optimize_lazy_final = 0;
+
+DROP TABLE t_04493_plain;
