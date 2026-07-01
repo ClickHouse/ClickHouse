@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-object-storage-with-slow-build
 # - no-parallel: the test toggles the server-global failpoint `merge_task_projection_stage_pause`,
 #   which would pause projection merges of other tests running at the same time.
 # - no-fasttest: relies on failpoints, which are not available in the fast test build.
+# - no-object-storage-with-slow-build: the table has one part per partition per INSERT across many
+#   partitions, each part carrying a projection. On object storage with a sanitizer build, writing
+#   all of those parts is slow enough to push the test past the per-test time limit (it takes ~100s
+#   even when it passes). The property under test - that OPTIMIZE FINAL bounds the number of
+#   concurrent partition merges by the worker budget - does not depend on the storage backend, so
+#   skipping this slow combination loses no coverage.
 
 # OPTIMIZE TABLE ... FINAL on a non-replicated MergeTree table assigns and runs the merges of all
 # partitions in parallel (issue #46770). The foreground parallelism must stay within the operator's
