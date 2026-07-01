@@ -2198,7 +2198,10 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
         case TypeIndex::QBit: {
             static const DataTypePtr qbit_element_types[]
-                = {std::make_shared<DataTypeBFloat16>(), std::make_shared<DataTypeFloat32>(), std::make_shared<DataTypeFloat64>()};
+                = {std::make_shared<DataTypeInt8>(),
+                   std::make_shared<DataTypeBFloat16>(),
+                   std::make_shared<DataTypeFloat32>(),
+                   std::make_shared<DataTypeFloat64>()};
             const size_t dimension = fuzz_rand() % 128 + 1;
             return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
         }
@@ -3729,7 +3732,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Tuple element-wise arithmetic (Tuple, Tuple → Tuple)
         {"tupleDivide", "tupleIntDiv", "tupleIntDivOrZero", "tupleMinus", "tupleModulo", "tupleMultiply", "tuplePlus"},
         /// Snowflake ID ↔ DateTime conversions
-        {"dateTimeToSnowflake", "dateTimeToSnowflakeID", "snowflakeIDToDateTime", "snowflakeToDateTime"},
+        {"dateTimeToSnowflakeID", "snowflakeIDToDateTime"},
         /// IP CIDR range functions (IP, UInt8 → Tuple)
         {"IPv4CIDRToRange", "IPv6CIDRToRange"},
         /// IP string predicates (String → UInt8)
@@ -4717,6 +4720,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
+            case ASTAlterCommand::MODIFY_CONSTRAINT:
             case ASTAlterCommand::COMMENT_COLUMN:
             case ASTAlterCommand::RENAME_COLUMN:
             case ASTAlterCommand::MATERIALIZE_COLUMN:
