@@ -4425,15 +4425,25 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
 }
 
 /// Refresh the current browser-history entry in place from the given tab's captured editor
-/// state, but only when that entry already belongs to this tab (otherwise there is nothing
-/// to refresh and we must not push a spurious entry). Called when leaving a tab so a later
-/// Back/Forward to its entry restores the latest edit instead of the last run/URL snapshot.
-/// Without this, an edit made after the last run lives only in memory, and the next
-/// `popstate` would restore the stale entry (still holding the old query) and overwrite it.
+/// state. Called when leaving a tab, and on every trusted editor edit, so a later Back/Forward
+/// to its entry (or a reload) restores the latest edit instead of the last run/URL snapshot.
+/// Without this, an edit made after the last run lives only in memory, and the next `popstate`
+/// would restore the stale entry (still holding the old query) and overwrite it.
+///
+/// When an entry already exists it must belong to this tab — refreshing another tab's entry
+/// would clobber it, so bail in that case. When there is NO state yet we still seed one: a
+/// fresh load leaves `history.state` null until the first `syncHistory`/`postAll`, and the very
+/// first trusted edit can land before `reconcileStartup` runs any of those (the no-saved-tabs
+/// bare-URL path and the dirty-startup merge never call them). That initial entry is the page's
+/// own and conceptually belongs to the active tab, so replace it in place (`writeHistoryEntry`
+/// uses `replaceState` when there is no state, never pushing a spurious entry). Seeding records
+/// the edit in `history.state`, the URL hash and `lastSavedQuery`; otherwise the stale URL hash
+/// stays authoritative and the next reload either reopens a stale tab (bare URL) or overwrites
+/// the persisted live tab (dirty-startup merge) with the pre-edit query.
 function refreshCurrentHistoryEntry(tab) {
     if (!tab) return;
     const cur = history.state;
-    if (!cur || cur.tabId !== tab.id) return;
+    if (cur && cur.tabId !== tab.id) return;
     writeHistoryEntry(tab, undefined, /*forceReplace=*/ true);
 }
 
@@ -6190,9 +6200,11 @@ query_area.addEventListener('input', (e) =>
         /// would be restored from in sync with the latest keystroke. Only genuine keystrokes do it:
         /// the synthetic 'input' events `restoreFromHistory`/bootstrap dispatch merely replay
         /// already-recorded state (`isTrusted === false`, as `markBootstrapDirty` relies on) and
-        /// must not rewrite the entry. `refreshCurrentHistoryEntry` no-ops unless the current entry
-        /// already belongs to this tab, so it never spams new entries, and it omits `run=1` (an
-        /// unrun edit must never become auto-runnable on reload).
+        /// must not rewrite the entry. `refreshCurrentHistoryEntry` only touches the current entry
+        /// when it belongs to this tab (or seeds the page's initial entry when a fresh load has not
+        /// written one yet — this first trusted edit), always via replaceState, so it never spams
+        /// new entries, and it omits `run=1` (an unrun edit must never become auto-runnable on
+        /// reload).
         if (e.isTrusted) refreshCurrentHistoryEntry(tab);
         scheduleSave();
     }
