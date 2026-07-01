@@ -640,34 +640,76 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
+        # Reasons recorded by the setup closure that must reach the persisted
+        # Result.info (CIDB test_context_raw) even when setup ultimately
+        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # otherwise be invisible in CIDB (only visible as a report-page warning).
+        setup_notes = []
+
         def start():
-            res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            res = res and CH.start()
-            res = res and CH.wait_ready()
-            if res:
-                if not CH.start_kafka():
-                    info.add_workflow_warning("Failed to start Kafka")
-                    print("Failed to start Kafka")
-                    # Fail fast on infra setup errors so we don't burn time
-                    # triaging Kafka/Avro test failures caused by a broken setup.
-                    return False
+            # `from_commands_run` captures this closure's stdout into the step
+            # Result.info (hence CIDB test_context_raw) only when it returns a
+            # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
+            # at each failure point so the opaque "Start ClickHouse Server"
+            # umbrella can be split into measurable sub-causes (minio /
+            # wait_ready / kafka / stateful) instead of one bucket.
+            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: minio/azurite did not start")
+                return False
+            if not CH.start():
+                print("SETUP FAILURE: clickhouse-server process did not start")
+                return False
+            if not CH.wait_ready():
+                # wait_ready() already tails the server err log to stdout on
+                # timeout; the marker just names the sub-step for triage.
+                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+                return False
 
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_warning("Failed to start log export")
-                        print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_warning("Failed to create minio log tables")
-                    print("Failed to create minio log tables")
+            if not CH.start_kafka():
+                info.add_workflow_warning("Failed to start Kafka")
+                print("SETUP FAILURE: kafka did not start")
+                # Fail fast on infra setup errors so we don't burn time
+                # triaging Kafka/Avro test failures caused by a broken setup.
+                return False
 
-                if has_stateful_tests:
-                    res = (
-                        CH.prepare_stateful_data(
-                            with_s3_storage=is_s3_storage,
-                            is_db_replicated=is_database_replicated,
+            if not Info().is_local_run:
+                if not CH.start_log_exports(stop_watch.start_time):
+                    info.add_workflow_warning("Failed to start log export")
+                    print("Failed to start log export")
+            # MinIO log tables are non-fatal (tests still run without the
+            # webhook log tables), so keep going - but record the concrete
+            # failure reason (the real clickminio restart status, carried out of
+            # create_minio_log_tables via CH.minio_setup_error) so broken minio
+            # restarts are visible in test_context_raw rather than silently
+            # collapsing into the umbrella.
+            if not CH.create_minio_log_tables():
+                info.add_workflow_warning("Failed to create minio log tables")
+                note = "SETUP WARNING: " + (
+                    CH.minio_setup_error or "failed to create minio log tables"
+                )
+                print(note)
+                # Keep it for the persisted Result too: on the success path
+                # from_commands_run does not capture this closure's stdout, so
+                # without this the minio failure would not reach CIDB.
+                setup_notes.append(note)
+
+            res = True
+            if has_stateful_tests:
+                if not CH.prepare_stateful_data(
+                    with_s3_storage=is_s3_storage,
+                    is_db_replicated=is_database_replicated,
+                ):
+                    print(
+                        "SETUP FAILURE: "
+                        + (
+                            CH.stateful_setup_error
+                            or "prepare_stateful_data failed"
                         )
-                        and CH.insert_system_zookeeper_config()
                     )
+                    res = False
+                elif not CH.insert_system_zookeeper_config():
+                    print("SETUP FAILURE: insert_system_zookeeper_config failed")
+                    res = False
             if res:
                 print("stateful data prepared")
             return res
@@ -678,6 +720,10 @@ def main():
                 command=start,
             )
         )
+        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # so they are queryable in CIDB test_context_raw even on the success path.
+        for note in setup_notes:
+            results[-1].set_info(note)
         res = results[-1].is_ok()
 
     test_result = None
@@ -846,20 +892,39 @@ def main():
                     # inverter reports that false failure as a successful bug
                     # reproduction.
                     reprepared = CH.create_minio_log_tables()
+                    reprepare_error = CH.minio_setup_error
                     if reprepared and has_stateful_tests:
-                        reprepared = (
-                            CH.prepare_stateful_data(
-                                with_s3_storage=is_s3_storage,
-                                is_db_replicated=is_database_replicated,
+                        # Split the two sub-steps like the START stage does so the
+                        # persisted Environment setup row names the operation that
+                        # actually failed instead of collapsing both into the
+                        # generic "failed to re-prepare stateful data" bucket.
+                        if not CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        ):
+                            # Prefer the concrete sub-command + ClickHouse error
+                            # captured by prepare_stateful_data() over the generic
+                            # message, so the (intermittent, msan) re-prepare
+                            # failure is diagnosable in CIDB test_context_raw.
+                            reprepared = False
+                            reprepare_error = (
+                                CH.stateful_setup_error
+                                or "failed to re-prepare stateful data"
                             )
-                            and CH.insert_system_zookeeper_config()
-                        )
+                        elif not CH.insert_system_zookeeper_config():
+                            reprepared = False
+                            reprepare_error = "insert_system_zookeeper_config failed"
                     if not reprepared:
+                        info_text = (
+                            "Failed to re-prepare the test environment "
+                            f"after switching to the {bugfix_bt} binary"
+                        )
+                        if reprepare_error:
+                            info_text += f" ({reprepare_error})"
                         setup_error = Result(
                             name=f"Environment setup ({bugfix_bt})",
                             status=Result.Status.ERROR,
-                            info="Failed to re-prepare the test environment "
-                            f"after switching to the {bugfix_bt} binary",
+                            info=info_text,
                         )
                         setup_error.set_label(bugfix_bt)
                         test_result.results.append(setup_error)
