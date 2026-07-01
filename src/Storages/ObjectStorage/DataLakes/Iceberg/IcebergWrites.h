@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -44,6 +45,25 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
+/// Serializes a Poco JSON value to text, undoing the `\/` escaping that Poco unconditionally applies
+/// to forward slashes (see `removeEscapedSlashes`). Use this instead of hand-rolling the
+/// Poco stringification + `removeEscapedSlashes` sequence.
+String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
+
+/// Compiles an Avro schema from its JSON text. Thin wrapper over the Avro library API,
+/// kept here so the call lives in a single place.
+avro::ValidSchema compileAvroSchema(const String & schema_json);
+
+/// Re-emits a manifest-list entry read from a (possibly externally-written) manifest list into a fresh
+/// datum of `schema`, copying field by field so a compatible-but-different source Avro schema (e.g.
+/// `added_snapshot_id` as `["null","long"]` vs `long`) is normalized. `manifest_list_path` is used only
+/// for error messages.
+avro::GenericDatum copyManifestListEntry(
+    const avro::GenericRecord & old_entry,
+    const avro::ValidSchema & schema,
+    Int32 version,
+    const String & manifest_list_path);
+
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
@@ -73,6 +93,22 @@ void generateManifestList(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
+
+/// Writes a manifest file whose entries are pre-existing data files carried over
+/// from a previous snapshot with status=EXISTING. Used by DROP PARTITION when a
+/// matched manifest contains both files that should be dropped and files that
+/// should survive: the dropped files are simply omitted from the new manifest,
+/// and the survivors are re-emitted here so the new manifest list replaces the
+/// old one. Per Iceberg v2 spec, surviving entries preserve their original
+/// snapshot_id and sequence_number rather than inheriting the new snapshot's.
+void generateExistingManifestFile(
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr partition_spec,
+    Int64 partition_spec_id,
+    const std::vector<String> & partition_columns,
+    const DataTypes & partition_types,
+    const std::vector<Iceberg::ProcessedManifestFileEntryPtr> & entries,
+    WriteBuffer & buf);
 
 class IcebergStorageSink final : public SinkToStorage
 {

@@ -452,7 +452,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
-        parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
+        parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id, resolved_snapshot_id);
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;

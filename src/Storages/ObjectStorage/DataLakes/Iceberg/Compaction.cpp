@@ -183,6 +183,14 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
+                /// A manifest is referenced by the manifest list of every snapshot from the one that
+                /// created it onwards, so we encounter its data files once per such snapshot. Capture
+                /// them only for the snapshot that introduced the manifest; otherwise a carried-forward
+                /// file is attributed to several rebuilt snapshots and its rows are counted multiple
+                /// times in the summary totals (`total-records`), inflating a trivial `SELECT count()`.
+                if (plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] != snapshot.snapshot_id)
+                    continue;
+
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
@@ -346,8 +354,10 @@ namespace
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
             const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            /// current compaction (OPTIMIZE TABLE my_iceberg) supports only overwrites which add delete files and no data files.
+            /// `added_delete_files` is a file count and `added_position_deletes` a row count, so they must not be compared to
+            /// each other: a single position-delete file with several rows is a valid, supported position-delete overwrite.
+            if (update.added_files == 0 && update.added_delete_files != 0)
                 return std::nullopt;
             [[fallthrough]];
         }
@@ -367,6 +377,28 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
         if (append && append->added_files == 0)
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
+    }
+}
+
+/// A `DELETE` snapshot that removed data files (produced by `ALTER TABLE ... DROP PARTITION`) is skipped
+/// when compaction rebuilds the metadata from history, which would resurrect the dropped data. This only
+/// matters when compaction actually rebuilds (`plan.need_optimize`); a no-op OPTIMIZE leaves the snapshot
+/// in place and is safe. Reject the rebuild until applying such snapshots is implemented.
+void checkNoDataDeletingDelete(const IcebergHistory & history)
+{
+    for (const auto & history_record : history)
+    {
+        if (history_record.snapshot_summary
+            && history_record.snapshot_summary->getOperation() == SnapshotSummaryOperation::DELETE)
+        {
+            const auto & del = history_record.snapshot_summary->getUpdate<Iceberg::SnapshotSummaryUpdateDelete>();
+            if (del.deleted_data_files != 0 || del.removed_records != 0)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "OPTIMIZE is not supported on Iceberg tables whose history contains a data-deleting DELETE "
+                    "snapshot (e.g. after DROP PARTITION), snapshot={}",
+                    history_record.snapshot_id);
+        }
     }
 }
 
@@ -399,6 +431,13 @@ static void writeMetadataFiles(
 
     std::unordered_map<Int64, UInt64> snapshot_id_to_records_count;
 
+    /// The rebuilt history keeps only APPEND snapshots, so an append's original parent (a skipped
+    /// DELETE/OVERWRITE) is not present in the metadata we are assembling. Link each retained
+    /// snapshot to the previously generated one instead; 0 is the "no parent" sentinel for the
+    /// first one. This keeps the parent chain self-consistent for the fail-close check in
+    /// `generateNextMetadata`.
+    Int64 last_generated_snapshot_id = 0;
+
     for (const auto & history_record : plan.history)
     {
         auto append = tryGetAppendUpdate(history_record);
@@ -408,23 +447,24 @@ static void writeMetadataFiles(
             continue;
         }
 
-        Int32 total_records_count = 0;
+        UInt64 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
 
         auto new_snapshot = metadata_generator.generateNextMetadata(
             plan.generator,
             generated_metadata_info.path,
-            history_record.parent_id,
-            append->added_files,
-            total_records_count,
-            append->added_files_size,
-            append->num_partitions,
-            0,
-            0,
+            last_generated_snapshot_id,
+            Iceberg::SnapshotSummaryUpdateAppend{
+                .added_files = append->added_files,
+                .added_records = total_records_count,
+                .added_files_size = append->added_files_size,
+                .num_partitions = append->num_partitions,
+            },
             history_record.snapshot_id,
             history_record.made_current_at.value);
 
+        last_generated_snapshot_id = history_record.snapshot_id;
         new_snapshots.push_back(new_snapshot);
         snapshot_id_to_snapshot[history_record.snapshot_id] = new_snapshot.snapshot;
     }
@@ -585,9 +625,7 @@ static void writeMetadataFiles(
     }
 
     {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
+        std::string json_representation = stringifyJSON(metadata_object, 4);
 
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(path_resolver.resolve(generated_metadata_info.path)),
@@ -642,6 +680,8 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        checkNoDataDeletingDelete(plan.history);
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,

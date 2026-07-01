@@ -137,6 +137,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     }
 
     std::optional<Int64> sequence_number;
+    std::optional<Int64> file_sequence_number;
 
     if (format_version > 1)
     {
@@ -154,6 +155,13 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         else
         {
             sequence_number = sequence_number_value.safeGet<Int64>();
+        }
+
+        if (hasPath(f_file_sequence_number))
+        {
+            const auto file_sequence_number_value = getValueFromRowByName(row_index, f_file_sequence_number);
+            if (!file_sequence_number_value.isNull())
+                file_sequence_number = file_sequence_number_value.safeGet<Int64>();
         }
     }
 
@@ -181,7 +189,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     std::unordered_map<Int32, ColumnInfo> columns_infos;
 
-    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts})
+    for (const auto & path : {c_data_file_value_counts, c_data_file_column_sizes, c_data_file_null_value_counts, c_data_file_nan_value_counts})
     {
         if (hasPath(path))
         {
@@ -195,8 +203,10 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     columns_infos[number].rows_count = count;
                 else if (path == c_data_file_column_sizes)
                     columns_infos[number].bytes_size = count;
-                else
+                else if (path == c_data_file_null_value_counts)
                     columns_infos[number].nulls_count = count;
+                else
+                    columns_infos[number].nans_count = count;
             }
         }
     }
@@ -239,6 +249,28 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             sort_order_id = sort_order_id_value.safeGet<Int32>();
     }
 
+    /// Optional data_file fields carried over verbatim by a partial DROP PARTITION rewrite.
+    std::optional<std::vector<Int64>> split_offsets;
+    if (hasPath(c_data_file_split_offsets))
+    {
+        Field split_offsets_value = getValueFromRowByName(row_index, c_data_file_split_offsets);
+        if (!split_offsets_value.isNull())
+        {
+            std::vector<Int64> offsets;
+            for (const Field & offset : split_offsets_value.safeGet<Array>())
+                offsets.push_back(offset.safeGet<Int64>());
+            split_offsets = std::move(offsets);
+        }
+    }
+
+    std::optional<String> key_metadata;
+    if (hasPath(c_data_file_key_metadata))
+    {
+        Field key_metadata_value = getValueFromRowByName(row_index, c_data_file_key_metadata);
+        if (!key_metadata_value.isNull())
+            key_metadata = key_metadata_value.safeGet<String>();
+    }
+
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
@@ -251,6 +283,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -260,6 +293,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
                 sort_order_id,
+                split_offsets,
+                key_metadata,
                 record_count,
                 file_size_in_bytes);
         }
@@ -298,6 +333,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -307,6 +343,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 upper_reference_data_file_path,
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
+                split_offsets,
+                key_metadata,
                 record_count,
                 file_size_in_bytes);
         }
@@ -329,6 +367,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -338,6 +377,8 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 equality_ids,
                 /*sort_order_id = */ std::nullopt,
+                split_offsets,
+                key_metadata,
                 record_count,
                 file_size_in_bytes);
         }

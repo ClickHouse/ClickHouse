@@ -1,0 +1,8 @@
+--- survivors (expect 1 x / 3 z) ---
+1	x
+3	z
+--- count (expect 2) ---
+2
+--- history operation counts (history must be readable) ---
+APPEND	1
+DELETE	1

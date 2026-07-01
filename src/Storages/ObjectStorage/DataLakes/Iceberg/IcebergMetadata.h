@@ -109,7 +109,17 @@ public:
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
+    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false, bool ignore_explicit_metadata_file_path = false) const;
+
+    /// Same as above, but resolves the metadata file using `settings` instead of the table's own
+    /// `data_lake_settings`. Used to plan a write from the metadata location a catalog points at:
+    /// the caller injects that location as `iceberg_metadata_file_path` and clears
+    /// `ignore_explicit_metadata_file_path` so the catalog commit authority is honoured.
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(
+        const ContextPtr & context,
+        const DataLakeStorageSettings & settings,
+        bool force_fetch_latest_metadata,
+        bool ignore_explicit_metadata_file_path) const;
 
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
@@ -156,11 +166,17 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
+    void checkAlterPartitionIsPossible(const PartitionCommands & commands) const override;
     void alter(
         const AlterCommands & params,
         ContextPtr context,
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override;
+    Pipe alterPartition(
+        const PartitionCommands & commands,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -206,7 +222,7 @@ private:
     std::pair<Iceberg::IcebergDataSnapshotPtr, Int32>
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
+    getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version, CompressionMethod compression_method) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 
@@ -221,6 +237,12 @@ private:
     KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
+
+    void alterPartitionDropImpl(
+        const PartitionCommand & command,
+        ContextPtr context,
+        std::shared_ptr<DataLake::ICatalog> catalog,
+        StorageID storage_id);
 };
 }
 

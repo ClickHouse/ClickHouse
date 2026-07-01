@@ -468,4 +468,100 @@ TEST(IcebergSnapshotSummary, AppendPreservesInheritedEqualityDeletes)
     EXPECT_EQ(append.getTotals().records, 55);
 }
 
+TEST(IcebergSnapshotSummary, FromJSONNegativeCounterReturnsErrorNotThrows)
+{
+    /// Regression: an underflowed total is serialized as a negative number
+    /// (e.g. `total-files-size = -924`). `fromJSON` must report it as an error
+    /// instead of throwing `CANNOT_PARSE_NUMBER`, otherwise the exception escapes
+    /// `IcebergMetadata::getHistory` and `system.iceberg_history` reports the
+    /// whole table as broken instead of one snapshot with an UNKNOWN summary.
+    Poco::JSON::Object obj;
+    obj.set(DB::Iceberg::f_operation, std::string(DB::Iceberg::f_append));
+    obj.set(DB::Iceberg::f_total_files_size, std::string("-924"));
+
+    bool has_value = true;
+    EXPECT_NO_THROW({ has_value = SnapshotSummary::fromJSON(obj).has_value(); });
+    EXPECT_FALSE(has_value);
+
+    /// Sanity: the same summary with a valid value parses successfully.
+    obj.set(DB::Iceberg::f_total_files_size, std::string("924"));
+    auto ok = SnapshotSummary::fromJSON(obj);
+    EXPECT_TRUE(ok.has_value());
+    EXPECT_EQ(ok->getTotals().files_size, 924);
+}
+
+TEST(IcebergSnapshotSummary, DeletePropagatesUnknownParentTotal)
+{
+    /// A parent snapshot written without `total-records` (legal per spec, e.g. v1-origin data)
+    /// must not be treated as 0: the next DELETE leaves `total-records` unknown instead of
+    /// underflowing, while a sibling total that *is* known still updates.
+    DB::Iceberg::SnapshotSummaryTotals parent_totals;
+    parent_totals.data_files = 2; // known; records / files_size / ... stay std::nullopt (unknown)
+
+    SnapshotSummary del(
+        DB::Iceberg::SnapshotSummaryUpdateDelete{
+            .deleted_data_files = 1,
+            .removed_records = 2,
+            .removed_files_size = 100,
+            .num_partitions = 1},
+        parent_totals);
+
+    EXPECT_FALSE(del.getTotals().records.has_value());
+    EXPECT_EQ(del.getTotals().data_files, 1); // 2 - 1, known total still updates
+
+    auto obj = del.toJSON();
+    EXPECT_FALSE(obj->has(DB::Iceberg::f_total_records));
+    EXPECT_TRUE(obj->has(DB::Iceberg::f_total_data_files));
+    EXPECT_EQ(obj->getValue<std::string>(DB::Iceberg::f_total_data_files), "1");
+}
+
+TEST(IcebergSnapshotSummary, DeleteUnderflowOmitsTotal)
+{
+    /// Removing more than the parent total would underflow the unsigned total; like Iceberg, the
+    /// total is dropped (omitted) rather than written as a wrapped value.
+    SnapshotSummary parent(DB::Iceberg::SnapshotSummaryUpdateAppend{
+        .added_files = 1, .added_records = 2, .added_files_size = 100, .num_partitions = 1});
+
+    SnapshotSummary del(
+        DB::Iceberg::SnapshotSummaryUpdateDelete{
+            .deleted_data_files = 1,
+            .removed_records = 5, // exceeds parent total-records (2)
+            .removed_files_size = 50,
+            .num_partitions = 1},
+        parent.getTotals());
+
+    EXPECT_FALSE(del.getTotals().records.has_value());
+    EXPECT_FALSE(del.toJSON()->has(DB::Iceberg::f_total_records));
+}
+
+TEST(IcebergSnapshotSummary, MissingTotalsRoundTrip)
+{
+    /// A summary that omits `total-*` parses with those totals unknown, and re-serializing keeps
+    /// them absent (never materializes a 0). A present total survives the round-trip.
+    Poco::JSON::Object obj;
+    obj.set(DB::Iceberg::f_operation, std::string(DB::Iceberg::f_append));
+    obj.set(DB::Iceberg::f_added_data_files, std::string("2"));
+    obj.set(DB::Iceberg::f_added_records, std::string("3"));
+
+    auto parsed = SnapshotSummary::fromJSON(obj);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(parsed->getTotals().records.has_value());
+    EXPECT_FALSE(parsed->getTotals().data_files.has_value());
+
+    auto roundtrip = parsed->toJSON();
+    EXPECT_FALSE(roundtrip->has(DB::Iceberg::f_total_records));
+    EXPECT_FALSE(roundtrip->has(DB::Iceberg::f_total_data_files));
+
+    /// A present total is preserved while the others remain absent.
+    obj.set(DB::Iceberg::f_total_data_files, std::string("7"));
+    auto parsed_partial = SnapshotSummary::fromJSON(obj);
+    ASSERT_TRUE(parsed_partial.has_value());
+    EXPECT_EQ(parsed_partial->getTotals().data_files, 7);
+    EXPECT_FALSE(parsed_partial->getTotals().records.has_value());
+
+    auto roundtrip_partial = parsed_partial->toJSON();
+    EXPECT_TRUE(roundtrip_partial->has(DB::Iceberg::f_total_data_files));
+    EXPECT_FALSE(roundtrip_partial->has(DB::Iceberg::f_total_records));
+}
+
 #endif

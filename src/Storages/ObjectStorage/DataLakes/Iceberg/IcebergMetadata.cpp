@@ -1,4 +1,3 @@
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
 #include <base/sleep.h>
@@ -10,7 +9,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -33,6 +31,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Storages/PartitionCommands.h>
 
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -79,6 +78,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
@@ -148,9 +148,7 @@ namespace
 {
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss);
-    return removeEscapedSlashes(oss.str());
+    return stringifyJSON(metadata_object);
 }
 }
 
@@ -211,19 +209,29 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     };
 }
 
-std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata, bool ignore_explicit_metadata_file_path) const
+{
+    return getRelevantState(context, data_lake_settings, force_fetch_latest_metadata, ignore_explicit_metadata_file_path);
+}
+
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
+    const ContextPtr & context,
+    const DataLakeStorageSettings & settings,
+    bool force_fetch_latest_metadata,
+    bool ignore_explicit_metadata_file_path) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
-        data_lake_settings,
+        settings,
         persistent_components.metadata_cache,
         context,
         log.get(),
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
-        force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+        force_fetch_latest_metadata,
+        ignore_explicit_metadata_file_path);
+    return getState(context, metadata_file_path, metadata_version, compression_method);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -537,12 +545,12 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version, CompressionMethod compression_method) const
 {
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
 
     insertRowToLogTable(
         local_context,
@@ -640,6 +648,16 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
                 "Modifying column '{}' without changing its type is not supported by Iceberg storage", command.column_name);
     }
 }
+
+void IcebergMetadata::checkAlterPartitionIsPossible(const PartitionCommands & commands) const
+{
+    for (const auto & command : commands)
+    {
+        if (command.type != PartitionCommand::Type::DROP_PARTITION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition of type '{}' is not supported by Iceberg storage", command.type);
+    }
+}
+
 
 void IcebergMetadata::alter(
     const AlterCommands & params,
@@ -885,7 +903,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         history_record.snapshot_id = snapshot->getValue<Int64>(f_metadata_snapshot_id);
         history_record.manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(f_manifest_list));
-
         if (const auto summary = snapshot->getObject(f_summary))
         {
             auto snapshot_summary = SnapshotSummary::fromJSON(*summary, /*with_extra_fields=*/true);
