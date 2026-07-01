@@ -151,10 +151,6 @@ workflow = Workflow.Config(
         JobConfigs.sqllogic_test_master_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
-        *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
-            for job in JobConfigs.sqlancer_pp_jobs
-        ],
         JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),

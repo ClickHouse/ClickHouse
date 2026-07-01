@@ -1438,9 +1438,9 @@ class JobConfigs:
         timeout=3600,
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_debug",
-            runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.CH_AMD_DEBUG],
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
     sqltest_master_job = Job.Config(
