@@ -3,11 +3,10 @@
 #include <base/strong_typedef.h>
 
 #include <atomic>
-#include <condition_variable>
 #include <memory>
 
-#include <Common/DequeWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
+#include <Common/NonblockingBoundedQueue.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <boost/noncopyable.hpp>
@@ -100,48 +99,7 @@ struct OwnRunnableForTextLog;
 class AsyncLogMessage;
 using AsyncLogMessagePtr = std::shared_ptr<AsyncLogMessage>;
 
-class AsyncLogMessageQueue
-{
-public:
-    explicit AsyncLogMessageQueue(
-        size_t max_size_, const ProfileEvents::Event & event_on_passed_message_, const ProfileEvents::Event & event_on_drop_message_);
-
-    using Queue = DequeWithMemoryTracking<AsyncLogMessagePtr>;
-
-    /// Enqueues a single message notification
-    void enqueueMessage(AsyncLogMessagePtr message);
-
-    /// Waits for a message notification to be dequeued and returns it. It might return an empty notification if wakeUp() was called
-    /// or a spurious wakeup occurs
-    AsyncLogMessagePtr waitDequeueMessage();
-
-    /// Gets the full queue including all pending notifications and clears it. It might return an empty queue if no messages were available
-    Queue getCurrentQueueAndClear();
-
-    /// Wakes up any threads waiting for a message notification.
-    void wakeUp();
-
-    /// Gets the current size of the queue.
-    size_t getCurrentMessageSize();
-
-    std::atomic<bool> request_flush = false;
-
-private:
-    Queue message_queue;
-    std::condition_variable condition;
-    const ProfileEvents::Event & event_on_passed_message;
-    const ProfileEvents::Event & event_on_drop_message;
-    /// Default queue limit, to prevent memory overflow
-    const size_t max_size = 10000;
-    size_t dropped_messages = 0;
-    std::mutex mutex;
-};
-
-
-/// Same as OwnSplitChannel but it uses separate threads for logging.
-/// Note that it uses a separate thread per each different channel (including one for text_log) instead of using a common thread pool
-/// to ensure the order is kept
-/// Currently logging to the internalTextLogsQueue (TCP queue for --send-logs-level) is done synchronously when log is called
+/// Like OwnSplitChannel but logs on background threads — one per channel (plus text_log), to preserve order; internalTextLogsQueue (--send-logs-level) is still written synchronously.
 class OwnAsyncSplitChannel final : public OwnSplitChannelBase, public boost::noncopyable
 {
 public:
@@ -172,18 +130,44 @@ public:
     AsyncLogQueueSizes getAsynchronousMetrics();
 
 private:
+    /// One channel's queue: lock-free bounded MPSC with drop-on-overflow accounting; producers are `log` callers, the single consumer is the background thread feeding the channel (or text_log).
+    struct LogQueue : boost::noncopyable
+    {
+        LogQueue(
+            size_t max_size,
+            const ProfileEvents::Event & event_on_passed_message_,
+            const ProfileEvents::Event & event_on_dropped_message_)
+            : messages(max_size)
+            , event_on_passed_message(event_on_passed_message_)
+            , event_on_dropped_message(event_on_dropped_message_)
+        {
+        }
+
+        /// Fixed power-of-two capacity, slots preallocated; new messages are dropped on overflow.
+        NonblockingBoundedQueue<AsyncLogMessagePtr> messages;
+        const ProfileEvents::Event & event_on_passed_message;
+        const ProfileEvents::Event & event_on_dropped_message;
+        /// Overflow drops so far: incremented by producers, reported and reset by the consumer.
+        std::atomic<size_t> dropped_messages = 0;
+    };
+
+    /// Pushes the message into the queue. If the queue is full, drops the message and counts the drop.
+    static void enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message);
+
     std::atomic<bool> is_open = false;
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
     MapWithMemoryTracking<std::string, ChannelPtr> name_to_channels;
     VectorWithMemoryTracking<OwnFormattingChannel *> channels;
-    VectorWithMemoryTracking<std::unique_ptr<AsyncLogMessageQueue>> queues;
+    VectorWithMemoryTracking<std::unique_ptr<LogQueue>> queues;
     VectorWithMemoryTracking<std::unique_ptr<Poco::Thread>> threads;
     VectorWithMemoryTracking<std::unique_ptr<OwnRunnableForChannel>> runnables;
 
     /// system.text_log does not have a channel, but it's also async
-    AsyncLogMessageQueue text_log_queue;
+    LogQueue text_log_queue;
+    /// Set by flushTextLogs to request a full flush; the text log thread resets it and notifies waiters when done.
+    std::atomic<bool> text_log_flush_requested = false;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
