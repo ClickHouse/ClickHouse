@@ -86,4 +86,9 @@ void FillingStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(FillingTransform::transformHeader(*input_headers.front(), sort_description));
 }
+
+QueryPlanStepPtr FillingStep::clone() const
+{
+    return std::make_unique<FillingStep>(*this);
+}
 }

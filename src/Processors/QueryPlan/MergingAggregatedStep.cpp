@@ -334,6 +334,11 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     return merging_aggregated_step;
 }
 
+QueryPlanStepPtr MergingAggregatedStep::clone() const
+{
+    return std::make_unique<MergingAggregatedStep>(*this);
+}
+
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
