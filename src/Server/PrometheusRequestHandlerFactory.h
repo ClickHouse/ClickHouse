@@ -82,6 +82,10 @@ HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactory(
 ///         </handler>
 ///     </my_rule2>
 /// </http_handlers>
+///
+/// The table element is optional for the write/read/query/api_v1 protocols. When it is omitted, the target
+/// TimeSeries table is resolved per request from the 'database'/'table' URL query parameters or, failing that,
+/// the table from the 'X-ClickHouse-Table' HTTP header (a table pinned in the config can't be overridden).
 HTTPRequestHandlerFactoryPtr createPrometheusHandlerFactoryForHTTPRule(
     IServer & server,
     const Poco::Util::AbstractConfiguration & config,

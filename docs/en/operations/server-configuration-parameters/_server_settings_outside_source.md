@@ -537,6 +537,32 @@ Example:
 </http_handlers>
 ```
 
+### Prometheus protocol handlers {#http_handlers-prometheus}
+
+An `http_handlers` rule can serve the Prometheus HTTP API v1 over a [TimeSeries](/engines/table-engines/special/time_series) table by setting the handler `type` to `prometheus_api_v1`.
+
+The target `TimeSeries` table can be pinned in the handler with a `<table>` element (a qualified `database.table` is accepted):
+
+```xml
+<http_handlers>
+    <my_rule>
+        <url_prefix>/prometheus/api/v1</url_prefix>
+        <handler>
+            <type>prometheus_api_v1</type>
+            <table>my_db.my_time_series</table>
+        </handler>
+    </my_rule>
+</http_handlers>
+```
+
+When `<table>` is omitted, the target table is resolved per request. The table name is taken, in order of priority, from:
+
+1. the handler configuration (`<table>`);
+2. the `table` URL query parameter;
+3. the `X-ClickHouse-Table` HTTP header.
+
+The database is taken from the handler configuration (`<database>`) or the `database` URL query parameter. A name pinned in the configuration cannot be overridden by a query parameter (a conflicting parameter is an error). The `X-ClickHouse-Table` header has the lowest priority and is consulted only for a table still unset by both the configuration and the query parameter; it never errors on a conflict. The table name may be a qualified `database.table` (from any source): if the database is not otherwise set it is taken from the qualified name, falling back to `default`. If no table is resolved the request fails.
+
 ## http_server_default_response {#http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.

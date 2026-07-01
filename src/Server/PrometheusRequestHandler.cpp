@@ -229,12 +229,23 @@ protected:
         context->setCurrentQueryId(query_id);
     }
 
-    /// Resolves the time series table for the current request. Each of the database and table names comes
-    /// either from the configuration or from the URL query parameter 'database' and 'table'.
-    /// A query parameter can't override a value set in the configuration.
-    /// If the database isn't set, the table name is treated as a possibly-qualified  `database.table` name,
-    /// and if the table name is not a qualified name then the database name falls back to "default".
-    StorageID getTimeSeriesTableID()
+    /// Reads an HTTP header value and removes ASCII control characters (defense against CRLF injection),
+    /// returning an empty string when the header is absent.
+    static String getSanitizedHeaderValue(const HTTPServerRequest & request, const String & header_name)
+    {
+        String value = request.get(header_name, "");
+        std::erase_if(value, [](unsigned char c) { return isControlASCII(c) || c == 0x7F; });
+        return value;
+    }
+
+    /// Resolves the time series table for the current request. The table name comes from the configuration,
+    /// the URL query parameter 'table', or the 'X-ClickHouse-Table' HTTP header, in that order of priority;
+    /// the database from the configuration or the 'database' query parameter. A query parameter can't
+    /// override a value set in the configuration; the header is consulted only for a table still unset by
+    /// both the configuration and the query parameter, and never errors. The table name may be a
+    /// possibly-qualified `database.table` (from any source): if the database is still unset the table name
+    /// is parsed for one, and if it is not qualified the database falls back to "default".
+    StorageID getTimeSeriesTableID(const HTTPServerRequest & request)
     {
         QualifiedTableName full_name;
         full_name.database = config().time_series_table_name.database;
@@ -257,9 +268,14 @@ protected:
         }
 
         if (full_name.table.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The time series table name is not set; specify it in the configuration or in the 'table' query parameter");
+            full_name.table = getSanitizedHeaderValue(request, "X-ClickHouse-Table");
 
+        if (full_name.table.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The time series table name is not set; specify it in the configuration, the 'table' query parameter, "
+                "or the 'X-ClickHouse-Table' header");
+
+        /// The table from any source may be a qualified `database.table`.
         if (full_name.database.empty())
         {
             full_name = QualifiedTableName::parseFromString(full_name.table);
@@ -303,7 +319,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(request), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
 
         prometheus::WriteRequest write_request;
@@ -350,7 +366,7 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+        auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(request), context);
         PrometheusRemoteReadProtocol protocol{table, context};
 
         prometheus::ReadRequest read_request;
@@ -434,7 +450,7 @@ public:
 
         try
         {
-            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
+            auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(request), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
 
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same

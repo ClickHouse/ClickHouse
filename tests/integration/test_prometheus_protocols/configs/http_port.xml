@@ -21,6 +21,29 @@
                 <table>default.prometheus_http</table>
             </handler>
         </rule>
+        <!-- Deferred-table handlers: no <table> element, so the target TimeSeries table is taken
+             from the X-ClickHouse-Table header (or ?database=&table=). -->
+        <rule>
+            <url>/prometheus_deferred/api/v1/write</url>
+            <handler>
+                <type>prometheus_write</type>
+            </handler>
+        </rule>
+        <rule>
+            <url>/prometheus_deferred/api/v1/read</url>
+            <handler>
+                <type>prometheus_read</type>
+            </handler>
+        </rule>
+        <!-- Deferred query/API handler: no <table> element either, so the query path resolves
+             its target table per request from the same headers (or ?database=&table=). Placed
+             after the exact write/read rules above so those still win for /write and /read. -->
+        <rule>
+            <url_prefix>/prometheus_deferred/api/v1</url_prefix>
+            <handler>
+                <type>prometheus_api_v1</type>
+            </handler>
+        </rule>
         <defaults/>
     </http_handlers>
 </clickhouse>
