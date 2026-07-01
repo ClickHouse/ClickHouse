@@ -100,13 +100,38 @@ ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
     return normalized_ast;
 }
 
-IASTHash getRowPolicyHash(const ContextPtr & context, const String & database, const String & table)
+/// True if the AST tree contains a subquery (a scalar `(SELECT ...)`, an `IN (SELECT ...)`, or a
+/// bare select node). Used to reject row-policy filters that read other tables: those reads are
+/// invisible as plan leaves and are not part of the AST closure walked by
+/// `ASTDependencyCollector`, so the cache cannot track or revalidate them (see `getRowPolicyInfo`).
+bool astContainsSubquery(const IAST & ast)
 {
-    IASTHash row_policy_hash{};
+    if (ast.as<ASTSubquery>() || ast.as<ASTSelectQuery>() || ast.as<ASTSelectWithUnionQuery>())
+        return true;
+    for (const auto & child : ast.children)
+        if (astContainsSubquery(*child))
+            return true;
+    return false;
+}
+
+struct RowPolicyInfo
+{
+    /// Hash of the effective SELECT row-policy filter (empty when there is no restrictive policy).
+    IASTHash hash{};
+    /// True when that filter contains a subquery, which makes the plan uncacheable.
+    bool has_subquery = false;
+};
+
+RowPolicyInfo getRowPolicyInfo(const ContextPtr & context, const String & database, const String & table)
+{
+    RowPolicyInfo info;
     auto row_policy = context->getRowPolicyFilter(database, table, RowPolicyFilterType::SELECT_FILTER);
     if (row_policy && !row_policy->isAlwaysTrue() && row_policy->expression)
-        row_policy_hash = row_policy->expression->getTreeHash(/*ignore_aliases=*/false);
-    return row_policy_hash;
+    {
+        info.hash = row_policy->expression->getTreeHash(/*ignore_aliases=*/false);
+        info.has_subquery = astContainsSubquery(*row_policy->expression);
+    }
+    return info;
 }
 
 Int64 getMetadataVersionOrSchemaHash(const StorageMetadataPtr & metadata)
@@ -174,7 +199,21 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
         return false;
 
     dep.metadata_version = getMetadataVersionOrSchemaHash(metadata);
-    dep.row_policy_hash = getRowPolicyHash(context, dep.database, dep.table);
+
+    /// A row-policy filter that contains a subquery reads other tables and bakes their results (a
+    /// scalar boundary, or an `IN` set) into the plan as constants, without those tables ever
+    /// becoming plan leaves or entries of the AST closure walked by `ASTDependencyCollector`. The
+    /// dependency fingerprint would then stay unchanged when such a table changes, so a hit could
+    /// keep enforcing a stale row boundary and expose or deny rows incorrectly; the filter also
+    /// escapes `query_plan_cache_allow_scalar_subqueries`, which is applied only to the user query
+    /// AST. Refuse to cache these plans.
+    const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
+    if (row_policy_info.has_subquery)
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"), "Not caching plan: row policy on {}.{} contains a subquery", dep.database, dep.table);
+        return false;
+    }
+    dep.row_policy_hash = row_policy_info.hash;
     dep.is_view = storage->isView();
     return true;
 }
@@ -612,7 +651,11 @@ bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const Contex
         if (getMetadataVersionOrSchemaHash(metadata) != dep.metadata_version)
             return false;
 
-        if (getRowPolicyHash(context, dep.database, dep.table) != dep.row_policy_hash)
+        /// A policy that changed to contain a subquery (or any other change) alters the hash and is
+        /// rejected here; the explicit `has_subquery` guard is defense in depth, mirroring the store
+        /// path in `fillDependency`.
+        const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
+        if (row_policy_info.has_subquery || row_policy_info.hash != dep.row_policy_hash)
             return false;
     }
 
