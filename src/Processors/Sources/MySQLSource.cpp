@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
     extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_wkb_geometry_elements;
 }
 
 namespace ErrorCodes
@@ -49,6 +50,8 @@ StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool
     : max_read_mysql_row_nums(
           (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
     , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
+    , max_wkb_geometry_elements(
+          static_cast<UInt32>(std::min<UInt64>(settings[Setting::max_wkb_geometry_elements], MAX_WKB_GEOMETRY_ELEMENTS_HARD_LIMIT)))
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -224,11 +227,11 @@ namespace
     /// Parse it and insert into the target column, which is either a concrete geometric type
     /// (`LineString`, `Polygon`, `MultiLineString`, `MultiPolygon`) or the umbrella `Geometry`
     /// type (a `Variant` over all of them). `Point` is read by the dedicated `vtPoint` path.
-    void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value)
+    void insertGeometryValue(const IDataType & data_type, IColumn & column, const mysqlxx::Value & value, UInt32 max_wkb_geometry_elements)
     {
         ReadBufferFromMemory payload(value.data(), value.size());
         payload.ignore(4); /// Skip the SRID.
-        GeometricObject object = parseWKBFormat(payload);
+        GeometricObject object = parseWKBFormat(payload, max_wkb_geometry_elements);
 
         /// Serialize the single parsed object into a one-row column of its concrete geometric type.
         ColumnPtr concrete;
@@ -294,7 +297,7 @@ namespace
         }
     }
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type, UInt32 max_wkb_geometry_elements)
     {
         switch (type)
         {
@@ -469,7 +472,7 @@ namespace
             }
             case ValueType::vtGeometry:
             {
-                insertGeometryValue(data_type, column, value);
+                insertGeometryValue(data_type, column, value, max_wkb_geometry_elements);
                 read_bytes_size += value.size();
                 break;
             }
@@ -516,12 +519,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
                 }
             }
             else

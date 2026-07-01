@@ -1050,6 +1050,22 @@ def test_mysql_geometry(started_cluster):
         == "1\t1"
     )
 
+    # Regression test: the WKB parsing of spatial values read from MySQL honors the
+    # `max_wkb_geometry_elements` setting (which bounds point/ring/polygon counts before the parser
+    # reserves memory). `ls` is a LINESTRING of 3 points, so reading it with the limit set to 1 must
+    # be rejected instead of parsing an oversized element count. Before the fix the MySQL read path
+    # called `parseWKBFormat` with the default `0`, so only the hard-coded 100M cap applied.
+    assert "TOO_LARGE_ARRAY_SIZE" in node1.query_and_get_error(
+        f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1"
+    )
+    # A limit large enough for this value reads it back normally.
+    assert (
+        node1.query(
+            f"SELECT ls FROM {table_function} SETTINGS max_wkb_geometry_elements = 1000000"
+        ).strip()
+        == "[(0,0),(1,1),(2,2)]"
+    )
+
     # When the `geometry` mapping is disabled, the concrete spatial types (except `Point`) also fall
     # back to String.
     assert (
