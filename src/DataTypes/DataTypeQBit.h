@@ -16,9 +16,10 @@ private:
     const DataTypePtr element_type;
     /* Number of elements in the vector */
     const size_t dimension;
-    /* Number of dimensions stored together in one group of streams. When equal to `dimension` (the default), QBit is not strided
-     * and behaves exactly as before. Otherwise the `dimension` dimensions are split into `dimension / stride` contiguous groups,
-     * each group's bit planes stored in separate streams, allowing to read fewer dimensions (e.g. for Matryoshka embeddings). */
+    /* Number of dimensions stored together in one group of streams. When equal to `dimension` (the default), QBit is not strided:
+     * every bit plane spans all dimensions in a single stream. Otherwise the `dimension` dimensions are split into
+     * `dimension / stride` contiguous groups, each group's bit planes stored in separate streams, allowing to read fewer
+     * dimensions (e.g. for Matryoshka embeddings). */
     const size_t stride;
 
 public:
