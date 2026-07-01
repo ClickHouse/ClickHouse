@@ -19,6 +19,10 @@ if (ENABLE_LLVM_LIBC_MATH)
     link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
     target_link_libraries(global-libs INTERFACE libllvmlibc)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+
+    if (NOT SANITIZE)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
+    endif()
 endif()
 
 if (OS_ANDROID)
