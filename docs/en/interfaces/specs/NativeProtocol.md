@@ -458,7 +458,11 @@ Steps 1–5 are identical to the plain INSERT phase. After the end-of-input term
 
 Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
 
+The same query-global settings class is also rejected in source-side `SETTINGS` of `INSERT ... SELECT ... RETURNING ... SETTINGS ...`, because those values are bound at query registration and cannot be scoped to source phase only.
+
 Output format settings (e.g. `output_format_json_quote_64bit_integers`) supplied in the `RETURNING` subquery `SETTINGS` are accepted but silently ignored — the result is serialized using the output format established by the outer query context and the client transport.
+
+`input()` is not supported in the `RETURNING` subquery and is rejected with `NOT_IMPLEMENTED`.
 
 ## Message reference {#message-reference}
 

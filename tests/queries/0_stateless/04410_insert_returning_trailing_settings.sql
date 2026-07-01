@@ -84,8 +84,7 @@ SELECT 'source query global settings are rejected';
 TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings SELECT 1
 RETURNING (SELECT count() FROM t_ret_settings)
-SETTINGS max_execution_time = 1;
--- { serverError NOT_IMPLEMENTED }
+SETTINGS max_execution_time = 1; -- { serverError NOT_IMPLEMENTED }
 
 SELECT count() FROM t_ret_settings;
 
