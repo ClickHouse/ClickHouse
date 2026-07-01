@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, long
 # Tag no-fasttest: Iceberg pulls in extra dependencies.
 # Tag no-parallel: deliberately runs concurrent clients to provoke a TOCTOU race.
+# Tag long: the concurrent read/write loop can run past the 180s flaky-check cap under msan;
+# shrinking it would weaken the concurrency that provokes the race, so exempt it instead.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
