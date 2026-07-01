@@ -9,6 +9,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <algorithm>
 
@@ -99,6 +100,7 @@ size_t IAST::size() const
 
 size_t IAST::checkSize(size_t max_size) const
 {
+    checkStackSize();
     size_t res = 1;
     for (const auto & child : children)
         res += child->checkSize(max_size);
@@ -120,6 +122,7 @@ IASTHash IAST::getTreeHash(bool ignore_aliases) const
 
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
+    checkStackSize();
     updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(children.size());
     for (const auto & child : children)
@@ -225,6 +228,8 @@ String IAST::formatWithSecretsMultiLine() const
 
 bool IAST::childrenHaveSecretParts() const
 {
+    checkStackSize();
+
     for (const auto & child : children)
     {
         if (child->hasSecretParts())
@@ -235,6 +240,7 @@ bool IAST::childrenHaveSecretParts() const
 
 void IAST::cloneChildren()
 {
+    checkStackSize();
     for (auto & child : children)
         child = child->clone();
 }
@@ -316,6 +322,7 @@ void IAST::FormatSettings::checkIdentifier(const String & name) const
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
+    checkStackSize();
     String indent_str(indent, '-');
     ostr << indent_str << getID() << ", ";
     writePointerHex(this, ostr);
