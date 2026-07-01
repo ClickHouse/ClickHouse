@@ -408,6 +408,8 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

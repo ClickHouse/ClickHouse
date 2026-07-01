@@ -1,10 +1,14 @@
 #include <Coordination/KeeperCommon.h>
 
+#include <limits>
 #include <string>
 #include <filesystem>
 #include <thread>
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IDisk.h>
 #include <Coordination/KeeperContext.h>
@@ -122,4 +126,119 @@ void moveFileBetweenDisks(
     if (!run_with_retries([&] { disk_from->removeFileIfExists(path_from); }, "removing file from source disk"))
         return;
 }
+
+/// When this function is updated, update KEEPER_CURRENT_DIGEST_VERSION!!
+uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_view data) const
+{
+    /// Must match calculateDigest in KeeperStorage.cpp (KEEPER_CURRENT_DIGEST_VERSION).
+    SipHash hash;
+
+    hash.update(path);
+    if (!data.empty())
+        hash.update(data);
+
+    hash.update(czxid);
+    hash.update(mzxid);
+    hash.update(ctime);
+    hash.update(mtime);
+    hash.update(version);
+    hash.update(cversion);
+    hash.update(aversion);
+    hash.update(getEphemeralOwner());
+    hash.update(getNumChildren());
+    hash.update(pzxid);
+
+    hash.update(isTTL());
+    if (isTTL())
+        hash.update(getTTL());
+
+    uint64_t digest = hash.get64();
+
+    /// 0 means no calculated digest, it's not a valid digest value.
+    if (digest == 0)
+        digest = 1;
+
+    return digest;
+}
+
+void KeeperNodeStats::copyStats(const Coordination::Stat & stat)
+{
+    czxid = stat.czxid;
+    mzxid = stat.mzxid;
+    pzxid = stat.pzxid;
+
+    mtime = stat.mtime;
+    ctime = stat.ctime;
+
+    version = stat.version;
+    cversion = stat.cversion;
+    aversion = stat.aversion;
+
+    data_size = stat.dataLength;
+
+    num_children_or_special = 0;
+    ephemeral_or_seq_num_or_ttl = 0;
+    if (stat.ephemeralOwner == 0)
+        setNumChildren(stat.numChildren);
+    else
+        makeEphemeral(stat.ephemeralOwner);
+}
+
+void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
+{
+    response_stat.czxid = czxid;
+    response_stat.mzxid = mzxid;
+    response_stat.ctime = ctime;
+    response_stat.mtime = mtime;
+    response_stat.version = version;
+    response_stat.cversion = cversion;
+    response_stat.aversion = aversion;
+    response_stat.ephemeralOwner = getEphemeralOwner();
+    response_stat.dataLength = static_cast<int32_t>(data_size);
+    response_stat.numChildren = getNumChildren();
+    response_stat.pzxid = pzxid;
+}
+
+void KeeperNodeStats::makeEphemeral(int64_t ephemeral_owner)
+{
+    chassert(ephemeral_owner != 0);
+    num_children_or_special = SPECIAL_EPHEMERAL;
+    ephemeral_or_seq_num_or_ttl = ephemeral_owner;
+}
+
+void KeeperNodeStats::makeTTL(int64_t ttl)
+{
+    num_children_or_special = SPECIAL_TTL;
+    ephemeral_or_seq_num_or_ttl = ttl;
+}
+
+void KeeperNodeStats::setNumChildren(uint32_t num_children)
+{
+    num_children_or_special = num_children;
+}
+
+void KeeperNodeStats::increaseNumChildren()
+{
+    chassert(num_children_or_special < SPECIAL_MIN - 1);
+    ++num_children_or_special;
+}
+
+void KeeperNodeStats::decreaseNumChildren()
+{
+    chassert(num_children_or_special > 0);
+    --num_children_or_special;
+}
+
+void KeeperNodeStats::setSeqNum(int64_t seq_num)
+{
+    chassert(num_children_or_special < SPECIAL_MIN);
+    ephemeral_or_seq_num_or_ttl = seq_num;
+}
+
+void KeeperNodeStats::increaseSeqNum()
+{
+    chassert(num_children_or_special < SPECIAL_MIN);
+    ++ephemeral_or_seq_num_or_ttl;
+}
+
 }
