@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- A column with a non-type DDL DEFAULT and a column TTL, read through a projection, must return
 -- the DDL default (not the column type's default) once the TTL has expired. Regression test for the
 -- wide-part fully-expired fast path in TTLColumnAlgorithm, which reset the column to the type default
