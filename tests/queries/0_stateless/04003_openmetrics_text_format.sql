@@ -3,6 +3,10 @@
 -- output. One row is one series; its samples live in the `time_series` array of (timestamp, value)
 -- points. Timestamps are DateTime64(3): the writer emits epoch seconds, the reader converts back.
 
+-- The reader's DateTime64(3) carries no timezone, so its textual rendering follows the session
+-- timezone; pin it to UTC so the timestamp columns display deterministically regardless of server TZ.
+SET session_timezone = 'UTC';
+
 -- ===== Output =====
 
 -- Minimal series: only metric_name + time_series are required; no metadata, single point at epoch.
