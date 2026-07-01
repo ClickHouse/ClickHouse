@@ -152,28 +152,31 @@ within the last ~8 hours**. A failure matches a catalog issue when:
 A matched failure is flagged with an `issue` label in the CI report — visible in the
 `fetch_ci_report.js` output — which is the fastest "already tracked" signal.
 
-**First, decide whether the per-test issue search even applies.** Some failures are not a single
-test with one cause but a **generic, harness-level failure bucket** that aggregates many unrelated
-causes: check-level verdicts like `Server died`, `Hung check failed, possible deadlock found`, or
-the upgrade `Error message in clickhouse-server.log` check, and anonymized error *classes* like
-`Logical error: Bad cast from type A to B` (the harness replaces concrete types with `A`/`B` and
-groups by stack hash `STID`). Filing a per-failure tracking issue for these makes no sense — they
-recur fleet-wide for shifting reasons. For such a bucket, **skip the issue search**: do not assert
-`tracked`/`needs issue`, and record the Issue value as **`generic failure / untracked`**. Step 3's
-master/cross-PR frequency is what establishes these are pre-existing and not caused by the PR; that
-is the relevant signal, not a tracking issue. Run the per-test search below only for failures that
-name a **specific** test (a `NNNNN_*`/`test_*` case) or a **specific, identifiable** crash/race
-(e.g. a data race with a stable `STID` that maps to one code site).
+**Always run the issue search for every failed name** — it is one cheap `gh issue list` and is the
+only way to mirror CI's attribution. Generic, harness-level names get tracked too: `Server died`,
+`Hung check failed, possible deadlock found`, and the upgrade `Error message in
+clickhouse-server.log` check frequently *do* have a `testing` issue (e.g. `Server died` →
+[#107487](https://github.com/ClickHouse/ClickHouse/issues/107487), `Test name: Server died`), and
+`Issue._check_flaky_test_match` will mark such a result with the `issue` label. So do **not** skip
+the search for them. The `generic failure / untracked` value is **only** for a generic bucket or
+anonymized error *class* (e.g. `Logical error: Bad cast from type A to B`, where the harness
+replaces concrete types with `A`/`B` and groups by stack hash `STID`) **after** the search finds no
+matching `testing` issue — because filing a *new* per-failure issue for such a shifting bucket
+makes no sense. It is a "searched, nothing matched, and not worth filing" verdict, never a
+"didn't look" one.
 
-Then determine, per test:
+Determine, per test:
 
-- **Generic failure / untracked** — a harness-level bucket or anonymized error class as above. No
-  issue search run, no issue to file; rely on the step-3 frequency for the verdict.
 - **Tracked** — an open (or just-closed) `testing` issue matches by the rule above (or the report
-  already carries the `issue` label). No new issue needed; CI will keep auto-matching it.
+  already carries the `issue` label). No new issue needed; CI will keep auto-matching it. This
+  applies to generic-bucket names too when a `testing` issue exists (e.g. `Server died` → #107487).
 - **Needs an issue** — the failure is a pre-existing **FLAKY** or **INFRA/BUILD** problem (per
-  step 3), names a specific test/crash, and has **no** matching `testing` issue. Flag it as "issue
-  needed" in the report.
+  step 3), names a **specific** test/crash (a `NNNNN_*`/`test_*` case, or an identifiable crash/race
+  with a stable `STID` mapping to one code site), and has **no** matching `testing` issue. Flag it
+  as "issue needed" in the report.
+- **Generic failure / untracked** — a generic harness bucket or anonymized error class for which
+  the search found **no** matching `testing` issue, and filing a new per-failure issue makes no
+  sense. Rely on the step-3 frequency for the verdict.
 - **No issue (fix instead)** — a **REAL** regression introduced by this PR. Do **not** flag it for
   a tracking issue: a `testing` issue would mask a real bug. The recommendation is to fix the code.
 - **Stale/closed match** — only a closed issue matches, and it was closed more than ~8 h ago. CI
@@ -181,8 +184,8 @@ Then determine, per test:
   note the old issue number.
 
 Never label a cell with an asserted fact you did not verify (e.g. "(known)" implying a tracking
-issue exists when you ran no search). If you did not search, the value is `generic failure /
-untracked`, not a tracking claim.
+issue exists). `generic failure / untracked` requires that you actually ran the search and it
+returned no match — it is not a substitute for searching.
 
 Record the matching issue number, its state (open vs closed/`completed`), labels, and any root
 cause or fix PR mentioned. A closed `completed` issue whose fix post-dates the failing run points
@@ -194,11 +197,19 @@ but still scan for duplicate or related issues and read its comments.
 Independently of whether an issue exists, search for a **fix** — a PR that addresses this failure.
 Three complementary sources, cheapest first:
 
-- **From the tracking issue:** a fix PR is usually linked from the issue. Read its timeline for
-  cross-referencing PRs (a `Closes #<issue>` in a PR shows up here):
+- **From the tracking issue:** a fix PR is usually linked from the issue. `closedByPullRequestsReferences`
+  names the PR(s) that closed it, and `comments` often mention the fix (`gh issue view --json` does
+  **not** support a `timelineItems` field — it errors `Unknown JSON field`):
 
   ```bash
-  gh issue view <issue-number> --repo ClickHouse/ClickHouse --json number,state,stateReason,closedByPullRequestsReferences,timelineItems
+  gh issue view <issue-number> --repo ClickHouse/ClickHouse --json number,state,stateReason,closedByPullRequestsReferences,comments
+  ```
+
+  For cross-referencing PRs that mention the issue but did not close it (a `Related #<issue>`), use
+  the timeline via `gh api`:
+
+  ```bash
+  gh api repos/ClickHouse/ClickHouse/issues/<issue-number>/timeline --jq '.[] | select(.event=="cross-referenced") | .source.issue.html_url'
   ```
 
 - **By test name:** search PRs (open **and** merged) whose title/body names the test or its
@@ -461,10 +472,11 @@ Print one verdict table, then a short narrative per real/uncertain failure:
 |------|---------|---------------------------|------------------|-------|-----|-----------------------|---------|------|
 
 - **Verdict** ∈ {`FLAKY`, `REAL`, `UNCERTAIN`, `NEW-TEST`, `INFRA/BUILD`}.
-- **Issue** (from step 2a) ∈ {`generic failure / untracked` (harness-level bucket or anonymized
-  error class — no issue search run, none to file), `tracked #N`, `needs issue`, `fix instead`
-  (REAL — don't mask), `stale #N` (closed >~8 h ago)}. Never write a tracking claim like "(known)"
-  for a failure you did not search.
+- **Issue** (from step 2a) ∈ {`tracked #N`, `needs issue`, `generic failure / untracked` (generic
+  bucket or anonymized error class — searched, no `testing` issue matched, and not worth filing),
+  `fix instead` (REAL — don't mask), `stale #N` (closed >~8 h ago)}. The search runs for every
+  failure (generic buckets included — e.g. `Server died` is often `tracked`); never write a
+  tracking claim like "(known)", and never use `untracked` as a stand-in for not searching.
 - **Fix** (from step 2b) ∈ {`none`, `WIP #N` (open; note draft), `merged #N — in branch` (fix was
   present yet test still failed → keep digging), `merged #N — rebase/retry` (landed after the run)}.
 - For `REAL`/`UNCERTAIN`, give the `file:line` evidence and the suspect PR change.
