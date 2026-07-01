@@ -1052,12 +1052,21 @@ class TeePopen:
         print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
 
-        if self.timeout_shell_cleanup:
-            Shell.check(self.timeout_shell_cleanup, verbose=True)
-            return
-
+        # Terminate the launched process group first: timeout enforcement must
+        # never depend on the external cleanup returning. Best-effort teardown
+        # (e.g. `docker rm -f <container>`) then runs in a bounded daemon thread,
+        # so a cleanup that wedges on a hung daemon cannot re-introduce the hang.
         self.send_signal(signal.SIGTERM)
         print(f"Send SIGTERM to [{self.process.pid}]")
+
+        if self.timeout_shell_cleanup:
+            Thread(
+                target=Shell.check,
+                args=(self.timeout_shell_cleanup,),
+                kwargs={"verbose": True, "timeout": 120},
+                daemon=True,
+            ).start()
+
         time_wait = 0
 
         while self.process.poll() is None and time_wait < 100:
