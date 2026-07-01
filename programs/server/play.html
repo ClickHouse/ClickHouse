@@ -536,6 +536,15 @@
             transition: opacity 0s 0.1s;
         }
 
+        /* Show the balloon when the row (or one of its links) is focused via
+           keyboard navigation, mirroring the hover behaviour above. */
+        .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
+        }
+
         /* While suppress-balloons is set on the body (set on scroll, cleared on the
            next mousemove), no balloon may appear from a :hover state. This prevents
            a different table button from scrolling under a stationary cursor and
@@ -547,12 +556,27 @@
             pointer-events: none;
         }
 
+        /* The keyboard-focused row's balloon is repositioned explicitly on scroll,
+           so it must stay visible even while `suppress-balloons` hides hover-opened
+           balloons (e.g. when the stationary cursor also happens to be over the
+           focused row). Placed after the suppress rule so it wins the specificity
+           tie. */
+        body.suppress-balloons .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .table-addendum-elem
         {
             display: block;
             cursor: pointer;
             &:hover {
                 text-decoration: 1px underline dotted var(--element-background-color);
+            }
+            &:focus {
+                outline: none;
+                text-decoration: 1px underline solid var(--element-background-color);
             }
         }
 
@@ -569,6 +593,17 @@
             outline: none;
             border: none;
             color: var(--text-color);
+        }
+
+        /* The rule above removes the default outline; re-add a clear one for
+           keyboard focus only (Tab), so the controls show where focus is while a
+           mouse click does not draw a ring. Covers the real <button>s (Run, Run
+           all, Download) and the icon "buttons" (copy, download, theme switcher). */
+        button:focus-visible,
+        [role="button"]:focus-visible
+        {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
         }
 
         .monospace
@@ -1327,6 +1362,15 @@ class QueryResultElement extends HTMLElement
                 :host
                 {
                     display: block;
+                    outline: none;
+                }
+
+                /* Show a focus ring only for keyboard focus (Tab), not when a cell
+                   click programmatically focuses the table. */
+                :host(:focus-visible)
+                {
+                    outline: 2px solid var(--link-color);
+                    outline-offset: -2px;
                 }
 
                 .monospace
@@ -1706,8 +1750,10 @@ class QueryResultElement extends HTMLElement
 
     connectedCallback()
     {
+        /// Make the result table part of the Tab navigation sequence: the user can
+        /// Tab to it, navigate cells with the arrow keys, then Tab on to the next
+        /// element. The focus ring is handled via `:host(:focus-visible)` in the CSS.
         if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
-        this.style.outline = 'none';
     }
 
     disconnectedCallback()
@@ -2275,8 +2321,26 @@ class QueryResultElement extends HTMLElement
 
     _handleKeyDown(e)
     {
+        const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
         let cell = this._current_selected_cell;
-        if (!cell) { return; }
+
+        if (!cell)
+        {
+            /// The table is focused (e.g. via Tab) but nothing is selected yet:
+            /// the first arrow key selects the first data cell so keyboard
+            /// navigation can begin. Other keys (including Tab) are left alone so
+            /// focus can move on to the next element.
+            if (arrows.includes(e.key))
+            {
+                const first_cell = this._dataTable.querySelector('td:not(.row-number)');
+                if (first_cell)
+                {
+                    e.preventDefault();
+                    this._selectCell(first_cell);
+                }
+            }
+            return;
+        }
 
         if (e.key === 'Escape')
         {
@@ -2288,7 +2352,10 @@ class QueryResultElement extends HTMLElement
         const row = cell.parentElement;
         const table = row.parentElement;
         let cell_index = cell.cellIndex;
-        let row_index = row.rowIndex;
+        /// `table` is the `<tbody>`, so `table.rows` is indexed within the section;
+        /// use `sectionRowIndex` (not table-wide `rowIndex`, which counts the header)
+        /// so both sides share the same coordinate system.
+        let row_index = row.sectionRowIndex;
 
         switch(e.key)
         {
@@ -2979,16 +3046,12 @@ async function loadTables(server_address, user, password, database, container, i
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
-        table_name.addEventListener('mouseenter', function() {
-            /// Anchor the balloon to the end of the name (clamped to the button when the name
-            /// is truncated), so it stays next to the text rather than the far-right edge.
-            const rect = this.getBoundingClientRect();
-            const btn = table_link.getBoundingClientRect();
-            table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
-            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
-            table_addendum.style.visibility = '';
-            visible_balloon = table_addendum;
-        });
+        /// Make the balloon links reachable from the keyboard (Right arrow from the row).
+        for (const link of table_addendum.querySelectorAll('.table-addendum-elem')) link.tabIndex = -1;
+
+        table_name.addEventListener('mouseenter', () => positionTableBalloon(table));
+        /// Show the balloon when the row is focused via keyboard navigation, too.
+        table_link.addEventListener('focus', () => positionTableBalloon(table));
 
         /// Keep the addendum inside the button so the `.table-name ~ .table-addendum` hover
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
@@ -3028,7 +3091,39 @@ function hideTableBalloons() {
     }
     document.body.classList.add('suppress-balloons');
 }
-document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+
+/// Anchor a table's balloon to the end of its name (clamped to the button when the
+/// name is truncated), so it sits next to the text rather than the far-right edge.
+/// Used on hover, on keyboard focus, and to keep it glued to the row across scrolls.
+function positionTableBalloon(table) {
+    const table_name = table.querySelector('.table-name');
+    const table_link = table.querySelector('button');
+    const table_addendum = table.querySelector('.table-addendum');
+    if (!table_name || !table_addendum) return;
+    const rect = table_name.getBoundingClientRect();
+    const btn = table_link.getBoundingClientRect();
+    table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
+    table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+    table_addendum.style.visibility = '';
+    visible_balloon = table_addendum;
+}
+
+document.addEventListener('scroll', () => {
+    /// When a table row (or one of its balloon links) is focused via the keyboard,
+    /// keep its balloon glued to the row across the scroll instead of hiding it.
+    const focused_table = document.activeElement?.closest?.('.table');
+    if (focused_table && document.getElementById('databases').contains(focused_table)) {
+        /// Still suppress hover-opened balloons on *other* rows: a different table
+        /// button scrolled under a stationary cursor would otherwise reveal its
+        /// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+        /// not fire without mouse movement). The focused row's balloon is exempted
+        /// from `suppress-balloons` in CSS, so it stays glued to the row.
+        document.body.classList.add('suppress-balloons');
+        positionTableBalloon(focused_table);
+    } else {
+        hideTableBalloons();
+    }
+}, { capture: true, passive: true });
 document.addEventListener('mousemove', () => {
     /// Guard so the no-op case does not touch classList on every mouse pixel.
     if (document.body.classList.contains('suppress-balloons')) {
@@ -3070,10 +3165,62 @@ databases_toggle.addEventListener('click', e => {
     toggleDatabases();
 });
 
+/// The icon is an <a>, which the browser activates with Enter (following the
+/// link) but not with Space. Handle both keys here so it can be toggled from the
+/// keyboard once focused via Tab, instead of navigating away.
+document.getElementById('databases-icon').addEventListener('keydown', e => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    toggleDatabases();
+});
+
 /// The "hide panel" button is only visible while the panel is open, so it always closes it.
 document.getElementById('databases-hide').addEventListener('click', e => {
     e.stopPropagation();
     toggleDatabases();
+});
+
+/// Keyboard navigation inside the database panel. The event bubbles here from the
+/// focused element.
+///   - Up/Down move focus between the rows (databases and expanded tables),
+///     mirroring Tab/Shift+Tab but staying within the panel.
+///   - Right enters the focused table's balloon (its size/rows/engine links);
+///     inside the balloon Up/Down move between links, Left returns to the row,
+///     and Enter/Space activate the focused link.
+document.getElementById('databases').addEventListener('keydown', e => {
+    const active = document.activeElement;
+
+    /// Within a table's balloon.
+    if (active.classList && active.classList.contains('table-addendum-elem')) {
+        const links = [...active.parentElement.querySelectorAll('.table-addendum-elem')];
+        const i = links.indexOf(active);
+        if (e.key === 'ArrowDown') { e.preventDefault(); links[Math.min(i + 1, links.length - 1)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); links[Math.max(i - 1, 0)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); active.closest('.table').querySelector('button').focus(); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); active.click(); }
+        return;
+    }
+
+    /// Right arrow on a table row jumps into its balloon links.
+    if (e.key === 'ArrowRight') {
+        const link = active.querySelector && active.querySelector('.table-addendum-elem');
+        if (link) { e.preventDefault(); link.focus({ preventScroll: true }); }
+        return;
+    }
+
+    /// Up/Down move focus between the rows.
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const buttons = [...document.getElementById('databases').querySelectorAll('button')];
+    if (buttons.length === 0) return;
+    e.preventDefault();
+    let index = buttons.indexOf(active);
+    if (e.key === 'ArrowDown') {
+        index = index < 0 ? 0 : Math.min(index + 1, buttons.length - 1);
+    } else {
+        index = index < 0 ? buttons.length - 1 : Math.max(index - 1, 0);
+    }
+    buttons[index].focus();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
@@ -5321,6 +5468,25 @@ document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
 
+/// Make the icon "buttons" (copy, download) and the theme switcher reachable and
+/// operable from the keyboard: Tab focuses them, Enter/Space activates them.
+/// (Real <button> elements like Run already get this for free.)
+function makeButtonLike(elem, action)
+{
+    elem.setAttribute('tabindex', '0');
+    elem.setAttribute('role', 'button');
+    elem.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            action();
+        }
+    });
+}
+
+makeButtonLike(document.getElementById('copy-div'), () => document.getElementById('copy-div').click());
+makeButtonLike(document.getElementById('download-div'), () => document.getElementById('download-div').click());
+makeButtonLike(document.getElementById('theme'), () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
+
 // Copy raw result to clipboard
 document.getElementById('copy-div').addEventListener('click', function() {
     let text = resultEl.rawText;
@@ -5366,6 +5532,9 @@ document.getElementById('download-div').addEventListener('click', function(e) {
 
         dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
         dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+
+        // Move focus into the menu so keyboard users land on the format selection.
+        document.getElementById('download-format').focus();
     }
 });
 
@@ -5378,6 +5547,58 @@ document.getElementById('download-dropdown').addEventListener('click', function(
 document.addEventListener('click', function() {
     const dropdown = document.getElementById('download-dropdown');
     dropdown.classList.remove('show');
+});
+
+/// Keep the open download menu contiguous with the download button in the tab
+/// order. The dropdown lives at the end of the DOM (so it is positioned without
+/// being clipped), so without this its controls would otherwise land at the very
+/// end of the tab sequence. Tab/Shift+Tab flow:
+///   download button -> format select -> [other format] -> Download button
+/// and leaving either end closes the menu. Escape also closes it.
+function downloadTabSequence() {
+    const seq = [document.getElementById('download-div'), document.getElementById('download-format')];
+    const other = document.getElementById('download-format-other');
+    if (other.classList.contains('show')) seq.push(other);
+    seq.push(document.getElementById('download-button'));
+    return seq;
+}
+
+document.getElementById('main').addEventListener('keydown', e => {
+    const dropdown = document.getElementById('download-dropdown');
+    if (!dropdown.classList.contains('show')) return;
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        dropdown.classList.remove('show');
+        document.getElementById('download-div').focus();
+        return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const seq = downloadTabSequence();
+    const idx = seq.indexOf(document.activeElement);
+    if (idx < 0) return;
+
+    if (!e.shiftKey) {
+        if (idx < seq.length - 1) {
+            e.preventDefault();
+            seq[idx + 1].focus();
+        } else {
+            /// Past the last item: close the menu and continue to the next toolbar control.
+            dropdown.classList.remove('show');
+            e.preventDefault();
+            document.getElementById('theme').focus();
+        }
+    } else {
+        if (idx > 0) {
+            e.preventDefault();
+            seq[idx - 1].focus();
+        } else {
+            /// Before the download button: close the menu and let focus move naturally.
+            dropdown.classList.remove('show');
+        }
+    }
 });
 
 // Handle "Other" format selection
