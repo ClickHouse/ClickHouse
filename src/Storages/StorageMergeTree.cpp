@@ -2082,15 +2082,21 @@ bool StorageMergeTree::optimize(
         /// pool is already busy with background merges.
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
-        SCOPE_EXIT({
-            if (reserved_merge_slots)
-                merge_mutate_executor->releaseTaskSlots(reserved_merge_slots);
-        });
-
         if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
             reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(partition_ids.size());
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
+
+        /// Reserved slots are released as partitions finish (see the per-task release below) rather
+        /// than held for the whole query: slots reserved for partitions that turn out to have nothing
+        /// to merge (e.g. already merged, or optimize_skip_merged_partitions) must not stay charged in
+        /// the task metric while a few long merges run. `held_merge_slots` is the count still charged;
+        /// SCOPE_EXIT releases whatever remains (e.g. on the sequential path or an early return).
+        auto held_merge_slots = std::make_shared<std::atomic<size_t>>(reserved_merge_slots);
+        SCOPE_EXIT({
+            if (const size_t rest = held_merge_slots->exchange(0))
+                merge_mutate_executor->releaseTaskSlots(rest);
+        });
 
         std::optional<PreformattedMessage> failure_reason;
 
@@ -2099,6 +2105,9 @@ bool StorageMergeTree::optimize(
             /// Each task writes only its own slot, so no synchronization is needed for the results.
             /// A default-constructed std::expected holds a value (i.e. "assigned successfully").
             auto results = std::make_shared<std::vector<std::expected<void, PreformattedMessage>>>(partition_ids.size());
+
+            /// Partitions not yet finished; used to release reserved slots as the work drains.
+            auto remaining_partitions = std::make_shared<std::atomic<size_t>>(partition_ids.size());
 
             ThreadPool pool(
                 CurrentMetrics::OptimizeFinalThreads,
@@ -2115,11 +2124,22 @@ bool StorageMergeTree::optimize(
                 /// requires callbacks not to reference stack locals). `this` (the storage) and the
                 /// merge inputs outlive any such task.
                 runner.enqueueAndKeepTrack(
-                    [this, i, results, partition_id = partition_ids[i], deduplicate, deduplicate_by_columns, cleanup, txn, optimize_skip_merged_partitions]
+                    [this, i, results, partition_id = partition_ids[i], deduplicate, deduplicate_by_columns, cleanup, txn,
+                     optimize_skip_merged_partitions, merge_mutate_executor, held_merge_slots, remaining_partitions]
                     {
                         PreformattedMessage partition_reason;
                         if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions))
                             (*results)[i] = std::unexpected(std::move(partition_reason));
+
+                        /// Once fewer partitions remain than the slots we still hold, release the excess,
+                        /// so finished partitions (including no-op ones) stop occupying merge capacity.
+                        const size_t left = remaining_partitions->fetch_sub(1, std::memory_order_relaxed) - 1;
+                        size_t held = held_merge_slots->load(std::memory_order_relaxed);
+                        while (held > left && !held_merge_slots->compare_exchange_weak(held, left, std::memory_order_relaxed))
+                        {
+                        }
+                        if (held > left)
+                            merge_mutate_executor->releaseTaskSlots(held - left);
                     });
             }
             runner.waitForAllToFinishAndRethrowFirstError();
