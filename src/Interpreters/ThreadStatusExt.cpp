@@ -1,8 +1,6 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <chrono>
-#include <thread>
 #include <cstdlib>
 #include <Common/OSThreadNiceValue.h>
 #include <Common/StackTrace.h>
@@ -110,10 +108,9 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
 namespace
 {
-/// Borrowed-ThreadGroup lifetime checker (debug/sanitizer only; deterministic, no race needed).
+/// Borrowed-ThreadGroup lifetime checker (deterministic, no race needed).
 ///
 /// A borrowed child group (`createForMaterializedView` / `createForFlushAsyncInsertQueue`) holds RAW
 /// pointers into its PARENT group's `memory_tracker` and `performance_counters`. The invariant is that
@@ -166,44 +163,17 @@ void checkAndUnregisterOnDestroy(const ThreadGroup * group)
             static_cast<const void *>(child),
             it != r.child_create_stack.end() ? it->second.toString() : String("<no stack captured>"));
     }
-    /// Fail loudly instead of only logging, so CI catches the violation deterministically — even in a
-    /// debug build, or an ASan run where the racy use-after-free read happens not to land.
+    /// Fail loudly instead of only logging, so CI catches the violation deterministically, including when
+    /// the racy use-after-free read happens not to land.
     if (violated)
         abort();
 }
 
-/// Borrowed-ThreadGroup traverse-sleep amplifier (debug/sanitizer only; ON by default). When a thread is
-/// about to attach a BORROWED child and walk its raw parent chain in setParent, sleep first — widening the
-/// read-vs-free window so that a concurrent free of the parent (dedup-writer rotate/shutdown) lands inside
-/// it and the subsequent walk reliably reads freed memory -> ASan catches the actual UAF. Only amplifies an
-/// orphaning that is already happening; does not create it. Override the delay with
-/// CH_BORROWED_THREADGROUP_TRAVERSE_SLEEP_MS (set to 0 to disable).
-void maybeBorrowedGroupAttachSleep(const ThreadGroup * group)
-{
-    static const UInt64 sleep_ms = []() -> UInt64
-    {
-        const char * v = std::getenv("CH_BORROWED_THREADGROUP_TRAVERSE_SLEEP_MS"); // NOLINT(concurrency-mt-unsafe)
-        return v ? static_cast<UInt64>(std::strtoull(v, nullptr, 10)) : 50;
-    }();
-    if (!sleep_ms)
-        return;
-    bool is_borrowed = false;
-    {
-        auto & r = borrowedGroupRegistry();
-        std::lock_guard lock(r.mutex);
-        is_borrowed = r.child_to_parent.contains(group);
-    }
-    if (is_borrowed)
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
 }
-}
-#endif
 
 ThreadGroup::~ThreadGroup()
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
     checkAndUnregisterOnDestroy(this);
-#endif
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
@@ -243,9 +213,7 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , kind(ThreadGroupKind::Borrowed)
     , shared_data(parent->getSharedData())
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
     registerBorrowedGroup(this, parent.get());
-#endif
 }
 
 // Constructor for `createForFlushAsyncInsertQueue`
@@ -260,9 +228,7 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , kind(ThreadGroupKind::Borrowed)
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
     registerBorrowedGroup(this, parent.get());
-#endif
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -476,12 +442,6 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Borrowed-ThreadGroup amplifier (ON by default): widen the window before walking a borrowed child's
-    /// raw parent chain below, so a concurrent free of the parent lands inside it.
-    maybeBorrowedGroupAttachSleep(thread_group.get());
-#endif
 
     try
     {
