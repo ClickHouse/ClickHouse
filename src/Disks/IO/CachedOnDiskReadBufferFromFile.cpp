@@ -347,8 +347,6 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
         info.cache_file_reader = open_cache_file(path);
     }
 
-    const size_t cache_file_size = getFileSizeFromReadBuffer(*info.cache_file_reader);
-
     /// A fully downloaded regular segment encodes its size in the file name (`<offset>_<size>`), and
     /// startup metadata loading trusts that size without a `stat` (see `FileCache::loadMetadataForKey`).
     /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
@@ -387,11 +385,29 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ///
     /// Among size-in-filename segments, `downloaded_size` is final for a `DOWNLOADED` one and for a
     /// `DETACHED` one (`downloaded_size` is not reset on detach).
+    ///
+    /// The on-disk size is measured *after* observing this final state, not before. A reader can reach
+    /// here for a segment that is still `DOWNLOADING`, reading its already-written prefix (see
+    /// `createReadFromFileSegmentState`: a `DOWNLOADING` segment routes to `ReadType::CACHED` when the
+    /// requested offset is within the downloaded prefix). If the size were sampled first and the state
+    /// observed afterwards, a concurrent download completing in between -- `setDownloadedUnlocked` writes
+    /// the final bytes, renames to `<offset>_<size>`, then publishes `DOWNLOADED` -- would leave us
+    /// comparing a stale, partial length against the now-final `downloaded_size` and reporting a spurious
+    /// truncation (observed as `... is shorter than its recorded size ...` warnings during ordinary reads
+    /// that repopulate the cache). Because we observe the final state first, and a size-in-filename
+    /// `DOWNLOADED`/`DETACHED` segment's file is immutable at `downloaded_size` bytes, the size read next
+    /// is the final one -- a shorter value can then only mean an external truncation. (The open descriptor
+    /// survives the rename, so re-reading its size sees the completed file.)
     const auto download_state = file_segment.state();
-    if (file_segment.hasSizeInFileName()
-        && cache_file_size < file_segment.getDownloadedSize()
+    const bool trust_size_from_filename
+        = file_segment.hasSizeInFileName()
         && (download_state == FileSegment::State::DOWNLOADED
-            || download_state == FileSegment::State::DETACHED))
+            || download_state == FileSegment::State::DETACHED);
+
+    const size_t cache_file_size = getFileSizeFromReadBuffer(*info.cache_file_reader);
+
+    if (trust_size_from_filename
+        && cache_file_size < file_segment.getDownloadedSize())
     {
         LOG_WARNING(
             getLogger("CachedOnDiskReadBufferFromFile"),
