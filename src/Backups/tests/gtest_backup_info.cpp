@@ -298,6 +298,18 @@ TEST(BackupInfo, NormalizedStringPreservesS3VersionIdOnly)
     EXPECT_EQ(second.toNormalizedString().find("part=2"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringIgnoresS3UrlQueryExceptVersionId)
+{
+    auto first = BackupInfo::fromString("S3('s3://bucket/backup?secret=one&versionId=v1')");
+    auto second = BackupInfo::fromString("S3('s3://bucket/backup?secret=two&versionId=v1')");
+    auto third = BackupInfo::fromString("S3('s3://bucket/backup?secret=one&versionId=v2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString(), third.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("secret"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("two"), String::npos);
+}
+
 TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
 {
     auto s3 = BackupInfo::fromString("S3('s3://bucket/backup')");

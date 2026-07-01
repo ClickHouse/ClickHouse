@@ -210,14 +210,6 @@ namespace
         return s;
     }
 
-    String stripURLFragment(String s)
-    {
-        size_t fragment_pos = s.find('#');
-        if (fragment_pos != String::npos)
-            s.resize(fragment_pos);
-        return s;
-    }
-
     String stripURLUserInfo(String s)
     {
         size_t scheme_pos = s.find("://");
@@ -234,6 +226,40 @@ namespace
             s.erase(authority_start, userinfo_end - authority_start + 1);
         return s;
     }
+
+#if USE_AWS_S3
+    String stripS3QueryExceptVersionId(String s)
+    {
+        size_t fragment_pos = s.find('#');
+        if (fragment_pos != String::npos)
+            s.resize(fragment_pos);
+
+        size_t query_pos = s.find('?');
+        if (query_pos == String::npos)
+            return s;
+
+        String base = s.substr(0, query_pos);
+        String version_id;
+        size_t start = query_pos + 1;
+        while (start <= s.size())
+        {
+            size_t end = s.find('&', start);
+            String param = s.substr(start, end == String::npos ? String::npos : end - start);
+            size_t separator = param.find('=');
+            String key = separator == String::npos ? param : param.substr(0, separator);
+            if (key == "versionId")
+                version_id = separator == String::npos ? String{} : param.substr(separator + 1);
+
+            if (end == String::npos)
+                break;
+            start = end + 1;
+        }
+
+        if (!version_id.empty())
+            return base + "?versionId=" + version_id;
+        return base;
+    }
+#endif
 
     String getStringArgForNormalizedIdentity(const Field & arg, const String & backup_engine_name, size_t index)
     {
@@ -332,7 +358,7 @@ namespace
     String normalizeS3URL(String s)
     {
 #if USE_AWS_S3
-        S3::URI uri(stripURLUserInfo(stripURLFragment(s)), /* allow_archive_path_syntax = */ false);
+        S3::URI uri(stripS3QueryExceptVersionId(stripURLUserInfo(s)), /* allow_archive_path_syntax = */ false);
         return "endpoint=" + uri.endpoint
             + ";bucket=" + uri.bucket
             + ";key=" + stripTrailingSlashes(uri.key)
