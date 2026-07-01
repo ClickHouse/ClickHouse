@@ -1266,7 +1266,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-            {"optimize_row_order_if_no_order_by", false, true, "Enable row order optimization automatically for tables without an explicit ORDER BY"},
+            {"optimize_row_order_if_no_order_by", false, true, "Enable row order optimization automatically for tables with an empty sorting key (e.g. ORDER BY () / ORDER BY tuple())"},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 
