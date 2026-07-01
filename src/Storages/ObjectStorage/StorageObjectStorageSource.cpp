@@ -875,35 +875,52 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     }
                 }
             }
-            for (const auto & column : requested_columns_list)
+            if (!file_meta_data.value()->columns_info.empty())
             {
-                const auto & column_name = column.first;
+                for (const auto & column : requested_columns_list)
+                {
+                    const auto & column_name = column.first;
 
-                if (file_meta_data.value()->columns_info.contains(column_name))
-                    continue;
+                    if (file_meta_data.value()->columns_info.contains(column_name))
+                        continue;
 
-                if (!column.second.second.type->isNullable())
-                    continue;
+                    if (!column.second.second.type->isNullable())
+                        continue;
 
+<<<<<<< HEAD
                 /// Skip columns produced by prewhere or row-level filter expressions —
                 /// they are computed at read time, not stored in the file.
                 if (format_filter_info
                     && ((format_filter_info->prewhere_info && column_name == format_filter_info->prewhere_info->prewhere_column_name)
                         || (format_filter_info->row_level_filter && column_name == format_filter_info->row_level_filter->column_name)))
                     continue;
+=======
+                    /// With View over Iceberg table we have someting like 'materialize(time)' as column_name
+                    /// Simple cheap check
+                    if (column_name.starts_with("materialize(") && column_name.ends_with(")"))
+                        continue;
 
-                /// Column is nullable and absent in file
-                constant_columns_with_values[column.second.first] =
-                    ConstColumnWithValue{
-                        column.second.second,
-                        Field()
-                    };
-                constant_columns.insert(column_name);
+                    /// Skip columns produced by prewhere or row-level filter expressions —
+                    /// they are computed at read time, not stored in the file.
+                    if (format_filter_info
+                        && ((format_filter_info->prewhere_info && column_name == format_filter_info->prewhere_info->prewhere_column_name)
+                            || (format_filter_info->row_level_filter && column_name == format_filter_info->row_level_filter->column_name)))
+                        continue;
+>>>>>>> 2d33dd670ac (Merge pull request #1991 from Altinity/fix/antalya-26.3/stateless-manifests)
 
-                LOG_DEBUG(log, "In file {} constant column '{}' type '{}' with value 'NULL'",
-                    object_info->getPath(),
-                    column_name,
-                    column.second.second.type);
+                    /// Column is nullable and absent in file
+                    constant_columns_with_values[column.second.first] =
+                        ConstColumnWithValue{
+                            column.second.second,
+                            Field()
+                        };
+                    constant_columns.insert(column_name);
+
+                    LOG_DEBUG(log, "In file {} constant column '{}' type '{}' with value 'NULL'",
+                        object_info->getPath(),
+                        column_name,
+                        column.second.second.type);
+                }
             }
         }
 
