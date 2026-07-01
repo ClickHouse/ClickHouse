@@ -59,6 +59,7 @@
       "Bash(git diff:*)",
       "Bash(git rev-parse:*)",
       "Bash(git cat-file:*)",
+      "Bash(git merge-base:*)",
       "WebFetch(domain:play.clickhouse.com)",
       "WebFetch(domain:s3.amazonaws.com)",
       "WebFetch(domain:github.com)"
