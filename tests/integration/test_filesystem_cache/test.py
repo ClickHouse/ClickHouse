@@ -1,6 +1,8 @@
+import concurrent.futures
 import logging
 import os
 import random
+import threading
 import time
 import uuid
 
@@ -393,6 +395,125 @@ def test_cache_file_truncated_size_in_name(cluster, node_name):
         == expected_sum
     )
     node.query("DROP TABLE test_truncated_size_in_name SYNC")
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_cache_file_truncated_size_in_name_concurrent_readers(cluster, node_name):
+    """
+    Concurrent-reader variant of `test_cache_file_truncated_size_in_name`.
+
+    When several readers race on the same externally truncated `<offset>_<size>` cache file, one reader
+    can discard/detach the segment between another reader opening the short file and re-checking its
+    state. The losing reader must still bypass the cache and re-fetch from the source rather than keep its
+    truncated descriptor and surface a `LOGICAL_ERROR`. Fire many parallel scans of the truncated data so
+    that at least some of them read the corrupted segment simultaneously, and assert none of them raises a
+    `LOGICAL_ERROR` and the data stays intact.
+    """
+    node = cluster.instances[node_name]
+    node.query(
+        """
+        DROP TABLE IF EXISTS test_truncated_size_concurrent SYNC;
+
+        CREATE TABLE test_truncated_size_concurrent (key UInt32, value String)
+        Engine=MergeTree()
+        ORDER BY value
+        SETTINGS disk = disk(
+            type = cache,
+            name = 'truncated_size_concurrent_test',
+            path = 'truncated_size_concurrent_test',
+            disk = 'hdd_blob',
+            max_file_segment_size = '1Ki',
+            boundary_alignment = '1Ki',
+            max_size = '1Gi',
+            max_elements = 10000000);
+        """
+    )
+
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    node.query(
+        """
+        SYSTEM CLEAR FILESYSTEM CACHE;
+        INSERT INTO test_truncated_size_concurrent SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000;
+        SELECT * FROM test_truncated_size_concurrent FORMAT Null;
+        """
+    )
+    assert int(node.query("SELECT count() FROM system.filesystem_cache")) > 0
+
+    expected_count = int(node.query("SELECT count() FROM test_truncated_size_concurrent"))
+    expected_sum = node.query(
+        "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+    ).strip()
+
+    cache_path = node.query(
+        "SELECT cache_path FROM system.disks WHERE name = 'truncated_size_concurrent_test'"
+    ).strip()
+
+    def list_suffixed_segment_files():
+        out = node.exec_in_container(
+            ["bash", "-c", f"find {cache_path} -type f -printf '%p %f %s\\n'"]
+        )
+        files = []
+        for line in out.splitlines():
+            full_path, name, size = line.rsplit(" ", 2)
+            if name == "status" or name.endswith("_temporary") or "_" not in name:
+                continue
+            files.append((full_path, int(size)))
+        return files
+
+    files = list_suffixed_segment_files()
+    assert len(files) >= 1, files
+
+    # The server must be stopped while we corrupt the file: a running server holds the segment open.
+    node.stop_clickhouse()
+
+    # Truncate every suffixed file to half its size. Their names still encode the full `<size>`, so
+    # startup trusts the larger size and every scan that reads them must self-heal.
+    for short_path, short_size in files:
+        node.exec_in_container(
+            ["bash", "-c", f"truncate -s {max(short_size // 2, 1)} '{short_path}'"]
+        )
+
+    node.start_clickhouse()
+    wait_for_cache_initialized(node, "truncated_size_concurrent_test")
+
+    # Launch the scans as simultaneously as possible (a barrier releases them together) so several
+    # readers touch the same truncated segments before the first discard removes them.
+    num_readers = 16
+    barrier = threading.Barrier(num_readers)
+
+    def scan():
+        barrier.wait()
+        # A truncated segment is discarded and the read re-routed to the source. Retry defensively in
+        # case a concurrent state transition surfaces a retryable error first; a `LOGICAL_ERROR` must
+        # never appear.
+        last_error = None
+        for _ in range(20):
+            try:
+                node.query("SELECT * FROM test_truncated_size_concurrent FORMAT Null")
+                return None
+            except Exception as e:
+                last_error = str(e)
+                assert "LOGICAL_ERROR" not in last_error, last_error
+                assert "Logical error" not in last_error, last_error
+        return last_error
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_readers) as executor:
+        errors = [f.result() for f in [executor.submit(scan) for _ in range(num_readers)]]
+
+    assert all(e is None for e in errors), errors
+
+    # The data is intact after re-fetching the discarded segments from the source.
+    assert (
+        int(node.query("SELECT count() FROM test_truncated_size_concurrent")) == expected_count
+    )
+    assert (
+        node.query(
+            "SELECT sum(cityHash64(key, value)) FROM test_truncated_size_concurrent"
+        ).strip()
+        == expected_sum
+    )
+    node.query("DROP TABLE test_truncated_size_concurrent SYNC")
 
 
 @pytest.mark.parametrize("node_name", ["node"])

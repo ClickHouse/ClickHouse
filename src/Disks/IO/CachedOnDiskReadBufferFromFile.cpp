@@ -357,14 +357,31 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Discard the
     /// broken segment with the same primitive `LockedKey::sync` uses for size mismatches; existing readers
     /// keep their open descriptor, and the holder's destructor skips the now-`DETACHED` segment. On retry
-    /// the segment is gone, so it is re-fetched from the source. We restrict this to `DOWNLOADED` segments,
-    /// where `downloaded_size` is final, to avoid racing with a concurrent download that is still growing
-    /// the file. This covers the empty-file case (`cache_file_size == 0 < downloaded_size`) as well.
+    /// the segment is gone, so it is re-fetched from the source. This covers the empty-file case
+    /// (`cache_file_size == 0 < downloaded_size`) as well.
+    ///
+    /// A short on-disk file means truncation only where `downloaded_size` is final. It is final for a
+    /// `DOWNLOADED` segment (a concurrent download that is still growing the file would give a benign
+    /// momentary mismatch, so those are excluded). It is *also* final if a concurrent reader already
+    /// discarded this very segment: `createReadFromFileSegmentState` only routes non-`DETACHED` states to
+    /// the cached read, so a `DETACHED` state observed here can only mean two readers opened the same
+    /// truncated file and the other detached it between our open and this check. `downloaded_size` is not
+    /// reset on detach, so it still reflects the recorded size. We must handle `DETACHED` too -- otherwise
+    /// the losing reader keeps its truncated descriptor and later reaches the `Having zero bytes...`
+    /// `LOGICAL_ERROR` instead of bypassing to the source.
+    const auto download_state = file_segment.state();
     if (cache_file_size < file_segment.getDownloadedSize()
-        && file_segment.state() == FileSegment::State::DOWNLOADED)
+        && (download_state == FileSegment::State::DOWNLOADED
+            || download_state == FileSegment::State::DETACHED))
     {
-        if (auto locked_key = file_segment.getKeyMetadata()->tryLock())
-            locked_key->removeFileSegmentIfExists(file_segment.offset(), /* can_be_broken */true);
+        /// Best-effort removal: if a concurrent reader already detached this segment, `key_metadata` is
+        /// reset (`tryGetKeyMetadata` returns null) and there is nothing left to remove -- bypassing the
+        /// cache is still the correct outcome. Using `tryGetKeyMetadata` (not `getKeyMetadata`, which
+        /// throws a `LOGICAL_ERROR` on a detached segment) keeps this race from surfacing as a
+        /// server-bug-class exception. `removeFileSegmentIfExists` is itself idempotent.
+        if (auto key_metadata = file_segment.tryGetKeyMetadata())
+            if (auto locked_key = key_metadata->tryLock())
+                locked_key->removeFileSegmentIfExists(file_segment.offset(), /* can_be_broken */true);
 
         LOG_WARNING(
             getLogger("CachedOnDiskReadBufferFromFile"),
@@ -372,11 +389,12 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
             "ClickHouse. Discarded the cache entry; the data will be re-fetched from the source",
             path, cache_file_size, file_segment.getDownloadedSize());
 
-        /// The broken segment is now `DETACHED`. Returning `nullptr` tells the caller to bypass the cache
-        /// and read from the source -- the same outcome as the `DETACHED` state -- rather than failing the
-        /// read. Throwing `CANNOT_READ_ALL_DATA` here would be misinterpreted as a broken part during
-        /// `MergeTree` part loading (when the truncated file happens to back a mark/metadata file), and the
-        /// part would be wrongly detached instead of self-healing.
+        /// The broken segment is now `DETACHED` (discarded here or by a concurrent reader). Returning
+        /// `nullptr` tells the caller to bypass the cache and read from the source -- the same outcome as
+        /// the `DETACHED` state -- rather than failing the read. Throwing `CANNOT_READ_ALL_DATA` here would
+        /// be misinterpreted as a broken part during `MergeTree` part loading (when the truncated file
+        /// happens to back a mark/metadata file), and the part would be wrongly detached instead of
+        /// self-healing.
         info.cache_file_reader.reset();
         return nullptr;
     }
