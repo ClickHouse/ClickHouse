@@ -201,7 +201,7 @@ private:
 public:
     static constexpr auto name = is_utf8 ? "sparseGramsUTF8" : "sparseGrams";
     static constexpr auto signature
-        = "(String, [NativeInteger], [NativeInteger], [NativeInteger]) -> Array(String)";
+        = "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(String)";
     static constexpr auto strings_argument_position = 0uz;
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }

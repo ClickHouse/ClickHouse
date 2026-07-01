@@ -1,0 +1,21 @@
+(Any, const UInt8) -> DateTime64 OR (Any, const UInt8, const String) -> DateTime64
+(Any, const UInt8) -> Time64
+(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64
+(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> Nullable(DateTime64)
+(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> Nullable(DateTime64)
+(Decimal, [const UInt8]) -> UInt8
+(Array(T), [const Integer]) -> Array(T)
+(Array(T), [const Integer], [const Integer]) -> Array(T)
+(String, [const UInt]) -> UInt64
+(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)
+(const String, String, [const NativeInteger]) -> Array(String)
+(const String, String, [const NativeInteger]) -> Array(String)
+(const String, String, [const NativeInteger]) -> Array(String)
+(String, [const NativeInteger]) -> Array(String)
+(String, [const NativeInteger]) -> Array(String)
+(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(String)
+DateTime64(3, \'UTC\')
+Time64(3)
+0
+3
+['a','b','c']

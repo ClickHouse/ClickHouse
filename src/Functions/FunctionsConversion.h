@@ -2904,7 +2904,7 @@ struct NameToTime
 struct NameToTime64
 {
     static constexpr auto name = "toTime64";
-    static constexpr auto signature = "(Any, [const UInt8], [const String]) -> Time64";
+    static constexpr auto signature = "(Any, const UInt8) -> Time64";
 };
 struct NameToDateTime32
 {
@@ -2914,7 +2914,7 @@ struct NameToDateTime32
 struct NameToDateTime64
 {
     static constexpr auto name = "toDateTime64";
-    static constexpr auto signature = "(Any, [const UInt8], [const String]) -> DateTime64";
+    static constexpr auto signature = "(Any, const UInt8) -> DateTime64 OR (Any, const UInt8, const String) -> DateTime64";
 };
 struct NameToString
 {
@@ -4397,7 +4397,7 @@ struct NameToDate32OrZero { static constexpr auto name = "toDate32OrZero"; stati
 struct NameToTimeOrZero { static constexpr auto name = "toTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Time"; };
 struct NameToTime64OrZero { static constexpr auto name = "toTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8]) -> Time64"; };
 struct NameToDateTimeOrZero { static constexpr auto name = "toDateTimeOrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> DateTime"; };
-struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64"; };
+struct NameToDateTime64OrZero { static constexpr auto name = "toDateTime64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64"; };
 struct NameToDecimal32OrZero { static constexpr auto name = "toDecimal32OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal32"; };
 struct NameToDecimal64OrZero { static constexpr auto name = "toDecimal64OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal64"; };
 struct NameToDecimal128OrZero { static constexpr auto name = "toDecimal128OrZero"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Decimal128"; };
@@ -4484,7 +4484,7 @@ struct NameToDate32OrNull { static constexpr auto name = "toDate32OrNull"; stati
 struct NameToTimeOrNull { static constexpr auto name = "toTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(Time)"; };
 struct NameToTime64OrNull { static constexpr auto name = "toTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8]) -> Nullable(Time64)"; };
 struct NameToDateTimeOrNull { static constexpr auto name = "toDateTimeOrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const String]) -> Nullable(DateTime)"; };
-struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)"; };
+struct NameToDateTime64OrNull { static constexpr auto name = "toDateTime64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> Nullable(DateTime64)"; };
 struct NameToDecimal32OrNull { static constexpr auto name = "toDecimal32OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal32)"; };
 struct NameToDecimal64OrNull { static constexpr auto name = "toDecimal64OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal64)"; };
 struct NameToDecimal128OrNull { static constexpr auto name = "toDecimal128OrNull"; static constexpr auto signature = "(MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(Decimal128)"; };
@@ -4599,32 +4599,32 @@ struct NameParseDateTime32BestEffortOrNull
 struct NameParseDateTime64BestEffort
 {
     static constexpr auto name = "parseDateTime64BestEffort";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64";
 };
 struct NameParseDateTime64BestEffortOrZero
 {
     static constexpr auto name = "parseDateTime64BestEffortOrZero";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64";
 };
 struct NameParseDateTime64BestEffortOrNull
 {
     static constexpr auto name = "parseDateTime64BestEffortOrNull";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> Nullable(DateTime64)";
 };
 struct NameParseDateTime64BestEffortUS
 {
     static constexpr auto name = "parseDateTime64BestEffortUS";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64";
 };
 struct NameParseDateTime64BestEffortUSOrZero
 {
     static constexpr auto name = "parseDateTime64BestEffortUSOrZero";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> DateTime64";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64 OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64";
 };
 struct NameParseDateTime64BestEffortUSOrNull
 {
     static constexpr auto name = "parseDateTime64BestEffortUSOrNull";
-    static constexpr auto signature = "(MaybeNullable(StringOrFixedString), [const UInt8], [const String]) -> Nullable(DateTime64)";
+    static constexpr auto signature = "(MaybeNullable(StringOrFixedString)) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8) -> Nullable(DateTime64) OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> Nullable(DateTime64)";
 };
 
 extern template class FunctionConvertFromString<

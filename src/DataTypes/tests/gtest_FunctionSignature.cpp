@@ -521,3 +521,110 @@ GTEST_TEST(FunctionSignature, BareParametricReturnReportsCleanlyOnTypesOnly)
         }
     }
 }
+
+GTEST_TEST(FunctionSignature, ConversionScaleAndTimezoneArgumentShapes)
+{
+    /// `toDateTime64` / `toTime64` require a constant scale (the `FunctionConvert` validator adds it
+    /// to the mandatory arguments); `toDateTime64` also accepts an optional trailing timezone that
+    /// requires the scale first, while `toTime64` has no timezone. The `FunctionConvert*` overloads
+    /// compute the concrete result type via the legacy `getReturnTypeImpl`, so the signatures are
+    /// documentation-only and their bare-parametric returns are not resolved here; we assert the
+    /// argument-count contract that the explicit prefixes encode instead of two independent optional
+    /// groups (which would have advertised `toDateTime64(x)` and `toDateTime64(x, 'UTC')`).
+    {
+        FunctionSignature checker("(Any, const UInt8) -> DateTime64 OR (Any, const UInt8, const String) -> DateTime64");
+        EXPECT_EQ(checker.minArguments(), 2u);
+        EXPECT_EQ(checker.maxArguments(), 3u);
+        EXPECT_FALSE(checker.isArgumentCountInRange(1));
+        EXPECT_TRUE(checker.isArgumentCountInRange(2));
+        EXPECT_TRUE(checker.isArgumentCountInRange(3));
+        EXPECT_FALSE(checker.isArgumentCountInRange(4));
+    }
+    {
+        FunctionSignature checker("(Any, const UInt8) -> Time64");
+        EXPECT_EQ(checker.minArguments(), 2u);
+        EXPECT_EQ(checker.maxArguments(), 2u);
+        EXPECT_FALSE(checker.isArgumentCountInRange(1));
+        EXPECT_TRUE(checker.isArgumentCountInRange(2));
+        EXPECT_FALSE(checker.isArgumentCountInRange(3));
+    }
+    {
+        /// The 'OrZero' / 'OrNull' / 'parse*BestEffort' string converters take an optional scale and
+        /// (for DateTime64) an optional timezone that requires the scale first, so the scale is part
+        /// of the optional prefix rather than mandatory.
+        FunctionSignature checker(
+            "(MaybeNullable(StringOrFixedString)) -> DateTime64"
+            " OR (MaybeNullable(StringOrFixedString), const UInt8) -> DateTime64"
+            " OR (MaybeNullable(StringOrFixedString), const UInt8, const String) -> DateTime64");
+        EXPECT_EQ(checker.minArguments(), 1u);
+        EXPECT_EQ(checker.maxArguments(), 3u);
+        EXPECT_TRUE(checker.isArgumentCountInRange(1));
+        EXPECT_TRUE(checker.isArgumentCountInRange(3));
+        EXPECT_FALSE(checker.isArgumentCountInRange(4));
+    }
+}
+
+GTEST_TEST(FunctionSignature, ConstantOnlyOptionPositions)
+{
+    /// `isDecimalOverflow` reads its optional `precision` once via a `ColumnConst<ColumnUInt8>`, so the
+    /// signature marks it `const`; a row-varying precision is rejected during analysis.
+    {
+        const String sig = "(Decimal, [const UInt8]) -> UInt8";
+        EXPECT_EQ(checkSignature(sig, {makeColumn("Decimal(10, 2)")}), "UInt8");
+        EXPECT_EQ(checkSignature(sig, {makeColumn("Decimal(10, 2)"), makeConstColumn("UInt8", Field(UInt64(9)))}), "UInt8");
+        EXPECT_THAT(checkSignature(sig, {makeColumn("Decimal(10, 2)"), makeColumn("UInt8")}), ::testing::StartsWith("FAIL:"));
+        EXPECT_THAT(checkSignature(sig, {makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+    }
+
+    /// `arrayShuffle` / `arrayPartialShuffle` read the seed / limit once with `getUInt(0)` and mark
+    /// them always-constant, so the optional positions are `const`.
+    {
+        const String shuffle = "(Array(T), [const Integer]) -> Array(T)";
+        EXPECT_EQ(checkSignature(shuffle, {makeColumn("Array(UInt32)")}), "Array(UInt32)");
+        EXPECT_EQ(checkSignature(shuffle, {makeColumn("Array(String)"), makeConstColumn("UInt64", Field(UInt64(1)))}), "Array(String)");
+        EXPECT_THAT(checkSignature(shuffle, {makeColumn("Array(UInt32)"), makeColumn("UInt64")}), ::testing::StartsWith("FAIL:"));
+
+        const String partial = "(Array(T), [const Integer], [const Integer]) -> Array(T)";
+        EXPECT_EQ(
+            checkSignature(partial, {makeColumn("Array(UInt32)"), makeConstColumn("UInt64", Field(UInt64(1))), makeConstColumn("UInt64", Field(UInt64(2)))}),
+            "Array(UInt32)");
+        EXPECT_THAT(
+            checkSignature(partial, {makeColumn("Array(UInt32)"), makeColumn("UInt64")}),
+            ::testing::StartsWith("FAIL:"));
+    }
+
+    /// Token generators mark the separator (`splitByChar` / `splitByString` / `splitByRegexp`) and the
+    /// `max_substrings` option constant.
+    {
+        const String sig = "(const String, String, [const NativeInteger]) -> Array(String)";
+        EXPECT_EQ(checkSignature(sig, {makeConstColumn("String", Field(String(","))), makeColumn("String")}), "Array(String)");
+        EXPECT_EQ(
+            checkSignature(sig, {makeConstColumn("String", Field(String(","))), makeColumn("String"), makeConstColumn("UInt64", Field(UInt64(2)))}),
+            "Array(String)");
+        /// A non-constant separator is rejected.
+        EXPECT_THAT(checkSignature(sig, {makeColumn("String"), makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+        /// A non-constant `max_substrings` is rejected.
+        EXPECT_THAT(
+            checkSignature(sig, {makeConstColumn("String", Field(String(","))), makeColumn("String"), makeColumn("UInt64")}),
+            ::testing::StartsWith("FAIL:"));
+
+        const String sparse = "(String, [const NativeInteger], [const NativeInteger], [const NativeInteger]) -> Array(String)";
+        EXPECT_EQ(checkSignature(sparse, {makeColumn("String")}), "Array(String)");
+        EXPECT_THAT(checkSignature(sparse, {makeColumn("String"), makeColumn("UInt8")}), ::testing::StartsWith("FAIL:"));
+    }
+
+    /// `ngramSimHash` / `ngramMinHash` read the optional shingle-size / hash-count once, so they are
+    /// marked `const` in the (documentation-only) signature that mirrors the executor's contract.
+    {
+        EXPECT_EQ(checkSignature("(String, [const UInt]) -> UInt64", {makeColumn("String")}), "UInt64");
+        EXPECT_EQ(
+            checkSignature("(String, [const UInt]) -> UInt64", {makeColumn("String"), makeConstColumn("UInt8", Field(UInt64(4)))}),
+            "UInt64");
+        EXPECT_THAT(
+            checkSignature("(String, [const UInt]) -> UInt64", {makeColumn("String"), makeColumn("UInt8")}),
+            ::testing::StartsWith("FAIL:"));
+        EXPECT_EQ(
+            checkSignature("(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)", {makeColumn("String")}),
+            "Tuple(UInt64, UInt64)");
+    }
+}

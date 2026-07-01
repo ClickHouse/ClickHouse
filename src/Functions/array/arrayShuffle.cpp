@@ -71,8 +71,8 @@ public:
     String getSignatureString() const override
     {
         if constexpr (Traits::has_limit)
-            return "(Array(T), [Integer], [Integer]) -> Array(T)";
-        return "(Array(T), [Integer]) -> Array(T)";
+            return "(Array(T), [const Integer], [const Integer]) -> Array(T)";
+        return "(Array(T), [const Integer]) -> Array(T)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

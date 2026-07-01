@@ -73,9 +73,9 @@ public:
         if constexpr (is_arg)
             return "";
         else if constexpr (is_simhash)
-            return "(String, [UInt]) -> UInt64";
+            return "(String, [const UInt]) -> UInt64";
         else
-            return "(String, [UInt], [UInt]) -> Tuple(UInt64, UInt64)";
+            return "(String, [const UInt], [const UInt]) -> Tuple(UInt64, UInt64)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
