@@ -85,7 +85,7 @@ REGISTER_FUNCTION(ExternalDictionaries)
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}}
+            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}}
         };
         FunctionDocumentation::ReturnedValue returned_value =
 {R"(
@@ -135,7 +135,7 @@ R"(
         FunctionDocumentation::Arguments arguments = {
             {"dict_name", "Name of the dictionary.", {"String"}},
             {"attr_names", "Name of the column of the dictionary, or tuple of column names.", {"String", "Tuple(String)"}},
-            {"id_expr", "Key value. An expression returning UInt64/Tuple(T).", {"UInt64", "Tuple(T)"}},
+            {"id_expr", "Key value. For a dictionary with a simple key, an expression returning a `UInt64` value. For a dictionary with a composite (complex) key, an expression returning a tuple of the key values. If the composite key consists of a single attribute, its value may be passed directly, without wrapping it in `tuple`.", {"UInt64", "Tuple(T)"}},
             {"default_value", "Default value to return if the key is not found. Type must match the attribute's data type.", {}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {R"(
