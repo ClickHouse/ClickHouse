@@ -423,6 +423,26 @@
             pointer-events: none;
         }
 
+        /* `.database button.database-refresh` (not just `.database-refresh`) so it
+           outranks the `.database button` rule that forces `display: block; width: 100%`,
+           which would otherwise stretch the button full width and push the icon to the left. */
+        .database button.database-refresh
+        {
+            /* Pinned to the top-right of the database row, in the same spot as the
+               loading hourglass (only one of them is shown at a time). */
+            position: absolute;
+            top: 0;
+            right: 0.25rem;
+            display: inline-block;
+            width: auto;
+            color: var(--misc-text-color);
+            line-height: 1;
+            &:hover {
+                text-decoration: none;
+                color: var(--text-color);
+            }
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -2684,26 +2704,76 @@ async function loadDatabases(server_address, user, password) {
         database.appendChild(tables);
         databases_elem.appendChild(database);
 
-        function openDatabase(set_current = true) {
+        /// Refresh button shown to the right of the database name while it is open.
+        /// Clicking it reloads the list of tables without collapsing the database.
+        let refresh_button = document.createElement('button');
+        refresh_button.className = 'database-refresh';
+        refresh_button.type = 'button';
+        refresh_button.title = 'Refresh the list of tables';
+        refresh_button.textContent = '\u21BB';
+
+        /// A per-row generation counter, bumped on every (re)load and on collapse. An in-flight
+        /// load captures the current value and, once its query returns, checks whether the row's
+        /// state changed in the meantime (it was collapsed, a newer load superseded it, or the
+        /// whole panel was closed) so it can bail out before mutating the DOM. This invariant is
+        /// local to one database row, complementing the per-container token in `loadTables`.
+        let row_load_generation = 0;
+
+        /// Reload the tables of this database, showing the hourglass (and hiding the refresh
+        /// button) while loading. `set_current` moves the current-database highlight to this row
+        /// (a manual open or refresh); restoring the previously expanded state passes false so
+        /// the highlight stays on the actual current database.
+        const refreshTables = (set_current = true) => {
+            const generation = ++row_load_generation;
+            /// A load stays relevant only while its generation is still the latest for this row
+            /// and the row is still attached to the document. Closing the whole database panel
+            /// (or reloading the database list) detaches the row without bumping the generation,
+            /// so the `isConnected` check is what makes such a stale load drop quietly instead of
+            /// dereferencing a now-detached parent when its query returns.
+            const is_current = () => generation == row_load_generation && database.isConnected;
+            refresh_button.style.visibility = 'hidden';
             let hourglass = document.createElement('span');
             hourglass.className = 'loading-hourglass';
             hourglass.textContent = '\u29D7';
             database_link.after(hourglass);
-            loadTables(server_address, user, password, elem.database, database, set_current).then(ok => {
+            return loadTables(server_address, user, password, elem.database, database, set_current, is_current).then(ok => {
                 hourglass.remove();
+                /// Only restore the button while this load is still the current one for the row;
+                /// otherwise the row was collapsed (the button is detached) or a newer refresh owns it.
+                if (is_current()) refresh_button.style.visibility = '';
+                return ok;
+            });
+        };
+
+        refresh_button.addEventListener('click', e => {
+            e.stopPropagation();
+            if (database.dataset['opened']) refreshTables();
+        });
+
+        /// Open a collapsed database, or restore a previously expanded one on panel reopen.
+        /// On success the row is marked open, remembered for the next restore, and the refresh
+        /// button is attached. Restoring passes set_current = false so the highlight is left alone.
+        const openDatabase = (set_current = true) => {
+            return refreshTables(set_current).then(ok => {
                 if (ok !== false) {
                     database.dataset['opened'] = 1;
                     opened_databases.add(elem.database);
+                    database_link.after(refresh_button);
                 }
+                return ok;
             });
-        }
+        };
 
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
                 openDatabase();
             } else {
+                /// Collapse: invalidate any in-flight refresh so its late result cannot
+                /// repopulate the table list of this now-closed row.
+                ++row_load_generation;
                 delete database.dataset['opened'];
                 opened_databases.delete(elem.database);
+                refresh_button.remove();
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
                 let count_elem = database_link.querySelector('.database-table-count');
                 if (count_elem) count_elem.remove();
@@ -2846,7 +2916,7 @@ let load_tables_request_nums = new WeakMap();
 /// `a` and then `b` before `a` finishes loading, the highlight must end up on `b` regardless
 /// of which load's query returns first - otherwise a slower earlier open would steal it back.
 let current_selection_num = 0;
-async function loadTables(server_address, user, password, database, container, set_current = true) {
+async function loadTables(server_address, user, password, database, container, set_current = true, is_current = null) {
     const request_num = (load_tables_request_nums.get(container) || 0) + 1;
     load_tables_request_nums.set(container, request_num);
 
@@ -2862,6 +2932,10 @@ async function loadTables(server_address, user, password, database, container, s
     if (!json) return false;
 
     if (request_num != load_tables_request_nums.get(container)) return false;
+    /// The row this load targets may have been collapsed or superseded by a newer refresh while
+    /// the query was in flight; if so, bail out before touching the DOM so we never repopulate
+    /// the table list of a row that is no longer open.
+    if (is_current && !is_current()) return false;
 
     /// A user click marks the database as current; only move the highlight if this is still
     /// the user's latest selection, and never move it away from currentDatabase() on restore.
