@@ -2730,6 +2730,13 @@ customElements.define('query-result', QueryResultElement);
 /// This is to avoid race conditions.
 let request_num = 0;
 
+/// While a tab activation is rebuilding the active tab's parameter inputs, this holds the
+/// activation's request token. `restoreFromHistory` sets it right before the `updateQueryParams`
+/// await (the `param_*` DOM inputs still hold the PREVIOUS tab's values during that await) and
+/// clears it once the restored parameters are committed. `captureActiveTab` uses it to avoid
+/// snapshotting the stale inputs into the newly-active tab while the restore is in flight.
+let params_restore_pending_token = null;
+
 /// Tabs let the user keep several independent queries side by side. Each tab owns its
 /// query text, title, query parameters and the last result snapshot. The connection
 /// settings (url/user/password) are global and shared across all tabs.
@@ -3869,6 +3876,11 @@ async function restoreFromHistory(state, token) {
     /// value from the previous tab would leak into a param the restored tab leaves unset. Reset
     /// every detected param explicitly (absent -> ''), then capture the snapshot into the active
     /// tab so its stored params match what is shown and will run.
+    /// `updateQueryParams` awaits tokenization, and `activateTab` has already made this tab active,
+    /// but the `param_*` inputs still hold the previous tab's values until `setParamValues` below.
+    /// Mark the restore as in flight so a `captureActiveTab` running during the await (the debounced
+    /// `persist`, or a quick second navigation) does not snapshot those stale inputs into this tab.
+    params_restore_pending_token = token;
     await updateQueryParams();
     if (token !== request_num) return;
     const restored_params = {};
@@ -3879,6 +3891,8 @@ async function restoreFromHistory(state, token) {
     setParamValues(restored_params);
     const active_tab_for_params = getActiveTab();
     if (active_tab_for_params) active_tab_for_params.params = restored_params;
+    /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
+    params_restore_pending_token = null;
 
     /// A snapshotted multi-query ("Run all") result is restored into the multi-query
     /// container, rebuilding one result element per statement, rather than into `resultEl`.
@@ -4042,7 +4056,14 @@ function captureActiveTab() {
     const tab = getActiveTab();
     if (!tab) return;
     tab.query = query_area.value;
-    tab.params = getParamValues();
+    /// While an activation is restoring this tab's parameter inputs (after the `updateQueryParams`
+    /// await in `restoreFromHistory`, before `setParamValues`), the `param_*` DOM inputs still hold
+    /// the previously active tab's values. Snapshotting them now would overwrite this tab's own
+    /// parameters with the previous tab's and later reload/run with the wrong values. Skip the
+    /// parameter capture until the restore commits. `tab.query` is safe: `restoreFromHistory` sets
+    /// the editor to this tab's query before the await. The guard lifts automatically once a run or
+    /// a newer activation advances `request_num`, so it can never suppress capture indefinitely.
+    if (params_restore_pending_token !== request_num) tab.params = getParamValues();
 }
 
 /// Invalidate any in-flight query and abort its HTTP requests, so a late response cannot
