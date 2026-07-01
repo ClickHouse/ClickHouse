@@ -160,44 +160,71 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     entry.cache_key = key;
     const size_t entry_weight = QueryPlanCacheEntryWeight{}(entry);
 
-    /// Skip entries that cannot fit globally: `Base::set` would admit them and
-    /// `removeOverflow` would evict them synchronously. The eviction callback
-    /// runs before we add the new weight to `per_user_bytes`, so a ghost charge
-    /// would be left behind that future inserts could not amortize.
+    /// An entry larger than the whole cache can never stay resident: `Base::set` would admit it
+    /// and evict it again inside the same call. Skip the pointless insert/evict churn.
     if (entry_weight > maxSizeInBytes())
         return;
 
-    /// Same-key replacement is silent in `LRU/SLRUCachePolicy::set`: it overwrites
-    /// the existing cell without invoking `onEntryRemoval`. Account the prior
-    /// entry's weight ourselves so `per_user_bytes` and `entry_weights` stay in sync.
+    /// Build the mapped value before charging, so a failed allocation here leaves no accounting behind.
+    auto entry_ptr = std::make_shared<QueryPlanCacheEntry>(std::move(entry));
+
     {
         std::lock_guard lock(per_user_mutex);
+
+        /// Same-key replacement is silent in `LRU/SLRUCachePolicy::set`: it overwrites
+        /// the existing cell without invoking `onEntryRemoval`. Account the prior
+        /// entry's weight ourselves so `per_user_bytes` and `entry_weights` stay in sync.
         if (auto it = entry_weights.find(key); it != entry_weights.end())
         {
-            const auto & [old_user, old_weight] = it->second;
-            if (old_user.has_value())
-            {
-                auto user_it = per_user_bytes.find(*old_user);
-                if (user_it != per_user_bytes.end())
-                {
-                    if (user_it->second <= old_weight)
-                        per_user_bytes.erase(user_it);
-                    else
-                        user_it->second -= old_weight;
-                }
-            }
+            decrementUserBytes(it->second.first, it->second.second);
             entry_weights.erase(it);
         }
-    }
 
-    Base::set(key, std::make_shared<QueryPlanCacheEntry>(std::move(entry)));
-
-    {
-        std::lock_guard lock(per_user_mutex);
+        /// Charge the new entry BEFORE `Base::set`. A newly inserted entry lands in the SLRU
+        /// probationary queue and can be evicted synchronously inside `Base::set` (through
+        /// `removeOverflow`) when the cache is full of protected entries. That eviction runs
+        /// `onEntryRemoval`, which subtracts the charge and erases the `entry_weights` record - so
+        /// the charge must already be present. Charging only after `Base::set` would let an entry
+        /// evicted during insertion leave a ghost charge for a non-resident key, permanently
+        /// shrinking the user's `query_plan_cache_size_in_bytes_quota` until the key is re-inserted
+        /// or the cache is cleared.
         if (key.user_id.has_value())
             per_user_bytes[*key.user_id] += entry_weight;
         entry_weights[key] = {key.user_id, entry_weight};
     }
+
+    try
+    {
+        Base::set(key, entry_ptr);
+    }
+    catch (...)
+    {
+        /// `Base::set` threw without leaving the entry resident. If the entry was evicted
+        /// synchronously before the throw, `onEntryRemoval` already cleared its record, so roll back
+        /// only what is still charged.
+        std::lock_guard lock(per_user_mutex);
+        if (auto it = entry_weights.find(key); it != entry_weights.end())
+        {
+            decrementUserBytes(it->second.first, it->second.second);
+            entry_weights.erase(it);
+        }
+        throw;
+    }
+}
+
+void QueryPlanCache::decrementUserBytes(const std::optional<UUID> & user_id, size_t weight) TSA_REQUIRES(per_user_mutex)
+{
+    if (!user_id.has_value())
+        return;
+
+    auto it = per_user_bytes.find(*user_id);
+    if (it == per_user_bytes.end())
+        return;
+
+    if (it->second <= weight)
+        per_user_bytes.erase(it);
+    else
+        it->second -= weight;
 }
 
 void QueryPlanCache::clear()
@@ -250,17 +277,7 @@ void QueryPlanCache::onEntryRemoval(size_t weight_loss, const MappedPtr & mapped
 
     std::lock_guard lock(per_user_mutex);
 
-    if (mapped_ptr->inserter_user_id.has_value())
-    {
-        auto it = per_user_bytes.find(*mapped_ptr->inserter_user_id);
-        if (it != per_user_bytes.end())
-        {
-            if (it->second <= weight_loss)
-                per_user_bytes.erase(it);
-            else
-                it->second -= weight_loss;
-        }
-    }
+    decrementUserBytes(mapped_ptr->inserter_user_id, weight_loss);
 
     /// LRU/SLRU eviction is the only path that reaches `onEntryRemoval`: same-key
     /// replacement bypasses it (handled in `set` directly). Erase the tracking

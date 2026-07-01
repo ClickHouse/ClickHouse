@@ -177,6 +177,10 @@ private:
     /// O(1): reads the cached per-user byte count rather than scanning the cache.
     bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const;
 
+    /// Subtracts `weight` from a user's tracked bytes, erasing the record when it reaches zero.
+    /// The caller must hold `per_user_mutex`.
+    void decrementUserBytes(const std::optional<UUID> & user_id, size_t weight) TSA_REQUIRES(per_user_mutex);
+
     mutable std::mutex per_user_mutex;
     std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);
 
