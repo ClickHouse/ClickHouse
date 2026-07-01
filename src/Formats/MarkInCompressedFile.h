@@ -113,16 +113,16 @@ public:
         /// in MARKS_PER_BLOCK-sized blocks.
         void addMarks(const MarkInCompressedFile * marks, size_t count);
 
-        /// Add all marks at once. Processes full blocks directly without
-        /// copying into the internal buffer. Must only be called once on
-        /// an empty builder (no prior addMarks calls).
-        void addAllMarks(const MarkInCompressedFile * marks, size_t count);
-
         /// Finalize and return the compressed marks object.
         /// Flushes any remaining buffered marks.
         std::shared_ptr<MarksInCompressedFile> finish();
 
     private:
+        /// Add all marks at once. Processes full blocks directly without
+        /// copying into the internal buffer. Must only be called once on
+        /// an empty builder (no prior addMarks calls). Used by create.
+        void addAllMarks(const MarkInCompressedFile * marks, size_t count);
+
         /// Compress up to MARKS_PER_BLOCK marks into one internal block.
         void flushBlock(const MarkInCompressedFile * data, size_t count);
 

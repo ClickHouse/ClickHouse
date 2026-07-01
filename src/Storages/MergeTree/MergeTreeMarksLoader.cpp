@@ -196,7 +196,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     else
         plain_marks.resize(total_marks);
 
-    auto byteSwapMarks = [](MarkInCompressedFile * marks_data, size_t count)
+    auto byteSwapMarksIfNeeded = [](MarkInCompressedFile * marks_data, size_t count)
     {
         if constexpr (std::endian::native == std::endian::big)
         {
@@ -220,7 +220,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             {
                 size_t count = std::min(MarksInCompressedFile::MARKS_PER_BLOCK, total_marks - marks_read);
                 reader->readStrict(reinterpret_cast<char *>(read_buf.data()), count * sizeof(MarkInCompressedFile));
-                byteSwapMarks(read_buf.data(), count);
+                byteSwapMarksIfNeeded(read_buf.data(), count);
                 builder->addMarks(read_buf.data(), count);
                 marks_read += count;
             }
@@ -228,7 +228,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         else
         {
             reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
-            byteSwapMarks(plain_marks.data(), total_marks);
+            byteSwapMarksIfNeeded(plain_marks.data(), total_marks);
         }
 
         if (!reader->eof())
@@ -266,13 +266,13 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
             if (use_streaming_compression)
             {
-                byteSwapMarks(granule_buf.data(), num_columns_in_mark);
+                byteSwapMarksIfNeeded(granule_buf.data(), num_columns_in_mark);
                 builder->addMarks(granule_buf.data(), num_columns_in_mark);
             }
         }
 
         if (!use_streaming_compression)
-            byteSwapMarks(plain_marks.data(), total_marks);
+            byteSwapMarksIfNeeded(plain_marks.data(), total_marks);
 
         if (!reader->eof())
             throw Exception(
