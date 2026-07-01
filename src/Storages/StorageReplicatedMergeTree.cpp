@@ -263,6 +263,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char rmt_fetch_part_pause_before_part_log[];
+    extern const char rmt_fetch_detached_part_pause[];
     extern const char rmt_fetch_throw_after_commit_before_part_log[];
 }
 
@@ -5484,12 +5485,18 @@ bool StorageReplicatedMergeTree::fetchPart(
             LOG_DEBUG(log, "Part {} is already fetching right now", part_name);
             return false;
         }
+        /// Only a merge-satisfying fetch owes a DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES
+        /// must wait for. A detached fetch (SYSTEM FETCH PART/PARTITION) writes no success row.
+        if (!to_detached)
+            currently_fetching_merged_parts.insert(part_name);
     }
 
     SCOPE_EXIT_MEMORY
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
+        if (!to_detached)
+            currently_fetching_merged_parts.erase(part_name);
     });
 
     LOG_DEBUG(log, "Fetching part {} from {}:{}", part_name, source_zookeeper_name, source_replica_path);
@@ -5723,6 +5730,11 @@ bool StorageReplicatedMergeTree::fetchPart(
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
             part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
+
+            /// A detached fetch keeps the part in currently_fetching_parts but owes no DOWNLOAD_PART
+            /// row. A test pauses here to hold that state open and confirm SYSTEM SYNC MERGES does
+            /// not wait on a detached fetch that covers a scheduled source part.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_fetch_detached_part_pause);
         }
     }
     catch (const Exception & e)
@@ -5770,7 +5782,10 @@ bool StorageReplicatedMergeTree::hasInFlightFetchCoveringParts(const NameSet & s
         return false;
 
     std::lock_guard lock(currently_fetching_parts_mutex);
-    for (const auto & fetching_part_name : currently_fetching_parts)
+    /// Only merge-satisfying fetches (to_detached = false) owe a DOWNLOAD_PART part_log row, so we
+    /// wait on that subset. An unrelated SYSTEM FETCH PART/PARTITION (detached) or shared-storage
+    /// move of a covering part queues no success row and must not make SYNC MERGES wait or time out.
+    for (const auto & fetching_part_name : currently_fetching_merged_parts)
     {
         const auto fetching_part_info = MergeTreePartInfo::fromPartName(fetching_part_name, format_version);
         for (const auto & source_part_name : source_part_names)

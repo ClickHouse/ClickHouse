@@ -820,6 +820,12 @@ private:
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
+    /// Subset of currently_fetching_parts: only the fetches that satisfy a scheduled merge and
+    /// therefore owe a DOWNLOAD_PART part_log row (fetchPart with to_detached = false). Detached
+    /// fetches (SYSTEM FETCH PART/PARTITION) and fetchExistsPart (shared-storage move) queue no
+    /// success part_log row, so they must not make SYSTEM SYNC MERGES wait. Guarded by the same
+    /// currently_fetching_parts_mutex.
+    std::unordered_set<String> currently_fetching_merged_parts;
     mutable std::mutex currently_fetching_parts_mutex;
 
     /// With the quorum being tracked, add a replica to the quorum for the part.
