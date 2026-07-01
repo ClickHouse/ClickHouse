@@ -1174,6 +1174,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
                "allow_floating_point_partition_key",
+               "allow_minmax_index_for_json",
                "allow_nullable_key",
                "allow_summing_columns_in_partition_or_order_key",
                "allow_suspicious_indices",
