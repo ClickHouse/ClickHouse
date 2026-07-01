@@ -174,9 +174,11 @@ const char * toString(ExceptColumnTransformerType type);
 class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
-    /// Initialize except column transformer with column names
+    /// Initialize except column transformer with structured target identifiers. Each target keeps
+    /// its parsed parts (a single part may itself contain dots, e.g. `` `a.b` ``) plus a parallel
+    /// per-part double-quote flag — the flattened full name is derived, never re-split.
     explicit ExceptColumnTransformerNode(
-        Names except_column_names_,
+        std::vector<std::vector<String>> target_parts_,
         bool is_strict_,
         std::vector<std::vector<bool>> target_parts_double_quoted_ = {});
 
@@ -232,12 +234,17 @@ protected:
 
 private:
     ExceptColumnTransformerType except_transformer_type;
+    /// Structured target identifiers, one inner vector of parsed parts per target. A single part
+    /// may contain dots (`` EXCEPT (`a.b`) `` is one part "a.b"), so the flattened
+    /// `except_column_names` below is derived from these parts and must never be re-split.
+    std::vector<std::vector<String>> target_parts;
+    /// Flattened full names derived from `target_parts` (parts joined with '.'). Kept for the
+    /// public `getExceptColumnNames` API, exact-match passes, and error messages.
     Names except_column_names;
-    /// Parallel to `except_column_names`. Each inner vector is per-part for that target — element
-    /// `j` is true when part `j` of the identifier was written `"Name"` rather than `Name` /
-    /// `` `Name` ``. A compound target like `data."Name"` carries `{false, true}` so the `data`
-    /// part folds case-insensitively in `standard` mode while the `Name` suffix stays exact.
-    /// Empty when the transformer was built without quote tracking.
+    /// Parallel to `target_parts`. Inner element `j` is true when part `j` of that target was
+    /// written `"Name"` rather than `Name` / `` `Name` ``. A compound target like `data."Name"`
+    /// carries `{false, true}` so the `data` part folds case-insensitively in `standard` mode
+    /// while the `Name` suffix stays exact. Empty when built without quote tracking.
     std::vector<std::vector<bool>> target_parts_double_quoted;
     std::shared_ptr<re2::RE2> column_matcher;
     bool is_strict = false;
@@ -257,14 +264,14 @@ private:
 class ReplaceColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
-    /// Replacement is column name and replace expression
+    /// Replacement is a structured target identifier and replace expression. `parts` holds the
+    /// parsed identifier parts (today the parser only produces a single part, which may itself
+    /// contain dots, e.g. `` REPLACE (x AS `a.b`) ``); `parts_double_quoted` is parallel to it.
+    /// Quoted parts stay case-sensitive in `standard` mode while unquoted parts fold.
     struct Replacement
     {
-        std::string column_name;
+        std::vector<String> parts;
         QueryTreeNodePtr expression_node;
-        /// Per-part double-quote flag for the target identifier. `REPLACE (... AS "Col")` becomes
-        /// `{true}`; `REPLACE (... AS data."Name")` becomes `{false, true}`. Quoted parts stay
-        /// case-sensitive in `standard` mode while unquoted parts fold case-insensitively.
         std::vector<bool> parts_double_quoted;
     };
 
@@ -326,10 +333,15 @@ private:
         return children[replacements_child_index]->as<ListNode &>();
     }
 
+    /// Structured target identifiers (parsed parts, never re-split from the flattened name; a
+    /// single part may contain dots).
+    std::vector<std::vector<String>> target_parts;
+    /// Flattened full names derived from `target_parts`. Kept for the `getReplacementsNames` API,
+    /// exact-match passes, and error messages.
     Names replacements_names;
-    /// Parallel to `replacements_names`. Inner vector element `j` is true when target part `j` of
-    /// that identifier was double-quoted, so `data."Name"` carries `{false, true}` and the `data`
-    /// part folds while `Name` stays exact. Empty when the transformer was built without quote tracking.
+    /// Parallel to `target_parts`. Inner element `j` is true when target part `j` was
+    /// double-quoted; quoted parts stay exact in `standard` mode while unquoted parts fold.
+    /// Empty when the transformer was built without quote tracking.
     std::vector<std::vector<bool>> target_parts_double_quoted;
     bool is_strict = false;
 

@@ -29,6 +29,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+
+#include <algorithm>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -565,16 +567,24 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
+        /// Keep `quote_styles` only when some part is actually quoted — the canonical form for
+        /// all-unquoted identifiers is an empty vector (avoids a heap allocation per identifier).
+        const bool any_part_quoted = std::any_of(
+            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
-        node->as<ASTTableIdentifier>()->setQuoteStyles(std::move(quote_styles));
+        if (any_part_quoted)
+            node->as<ASTTableIdentifier>()->setQuoteStyles(std::move(quote_styles));
     }
     else
     {
+        const bool any_part_quoted = std::any_of(
+            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
         auto identifier = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
-        identifier->setQuoteStyles(std::move(quote_styles));
+        if (any_part_quoted)
+            identifier->setQuoteStyles(std::move(quote_styles));
         node = std::move(identifier);
     }
 

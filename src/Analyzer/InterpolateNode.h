@@ -52,6 +52,11 @@ public:
 
     const std::string & getExpressionName() const { return expression_name; }
 
+    /// Canonicalize the stored target spelling after resolution, so projection-based pruning
+    /// (`QueryNode::removeUnusedProjectionColumns`) matches by canonical name even when a folded
+    /// `standard`-mode lookup resolved a differently-cased target.
+    void setExpressionName(std::string name) { expression_name = std::move(name); }
+
     /// True iff the original `INTERPOLATE ("Col" AS ...)` target was double-quoted. Captured at
     /// construction; the resolved child is no longer an `IdentifierNode`, so we cannot recover
     /// this from the child during round-trip.

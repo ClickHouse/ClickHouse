@@ -1,24 +1,24 @@
---- JOIN USING with quoted key (Blocker #6) ---
+--- JOIN USING with quoted key ---
 2
 2
---- ARRAY JOIN quoted alias (Blocker #7) ---
+--- ARRAY JOIN quoted alias ---
 1
 2
 3
 10
 20
---- Quoted lambda argument (Blocker #5) ---
+--- Quoted lambda argument ---
 [2,3,4]
 [2,3,4]
---- Recursive CTE with quoted name (Blocker #5) ---
+--- Recursive CTE with quoted name ---
 3
 3
---- Alias self-reference case awareness (Blocker #4) ---
+--- Alias self-reference case awareness ---
 0	0
 1	1
---- Quoted alias distinct from unquoted (Blocker #1 hash/cache) ---
+--- Quoted alias distinct from unquoted (hash/cache) ---
 1	2
---- information_schema alias is not ambiguous (Blocker #9) ---
+--- information_schema alias is not ambiguous ---
 1
 1
 --- Tuple subcolumn case-insensitive fold ---
@@ -58,3 +58,22 @@ hello
 --- REPLACE folded target rewrites WHERE/HAVING ---
 0
 0
+--- EXCEPT/REPLACE: backtick-quoted target containing dots is one part ---
+2
+1
+1	0
+--- JOIN USING: distinct case-sibling column keeps its own type ---
+String
+--- Quoted subquery projection alias stays exact ---
+1
+--- INTERPOLATE folded target survives projection pruning ---
+1
+11
+--- RENAME DATABASE updates the folded lookup index ---
+7
+--- Quoted table alias survives join-tree resolution ---
+1
+1
+--- INTERPOLATE folded target over projection alias ---
+1	2
+2	7

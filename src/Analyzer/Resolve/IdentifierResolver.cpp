@@ -706,7 +706,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     if (full_name_case_insensitive)
     {
         auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(
-            identifier_full_name, scope.scope_node->formatASTForErrorMessage());
+            identifier_full_name, [&] { return scope.scope_node->formatASTForErrorMessage(); });
         if (it != node_map.end())
             return it->second;
     }
@@ -720,7 +720,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
             identifier_full_name, subcolumn_base_case_insensitive,
-            scope.scope_node->formatASTForErrorMessage(), subcolumn_suffix_case_insensitive))
+            [&] { return scope.scope_node->formatASTForErrorMessage(); }, subcolumn_suffix_case_insensitive))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
@@ -783,6 +783,11 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return a == b;
     };
 
+    /// A double-quoted CTE definition (`WITH "MyCte" AS ...`) pins the table-expression name to
+    /// its canonical case; an unquoted reference must not fold onto it. Mirrors the resolve side.
+    const bool table_name_case_insensitive_0 = part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted;
+    const bool table_name_case_insensitive_1 = part_case_insensitive(1) && !table_expression_data.table_name_is_double_quoted;
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -792,11 +797,11 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && strings_equal(path_start, table_name, part_case_insensitive(0)))
+        if (parts_size == 1 && strings_equal(path_start, table_name, table_name_case_insensitive_0))
             return true;
         if (parts_size == 2
             && strings_equal(path_start, database_name, part_case_insensitive(0))
-            && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
+            && strings_equal(identifier[1], table_name, table_name_case_insensitive_1))
             return true;
         return false;
     }
@@ -812,7 +817,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
     const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name, part_case_insensitive(0)))
+    if ((!table_name.empty() && strings_equal(path_start, table_name, table_name_case_insensitive_0))
         || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias(), alias_case_insensitive)))
         return true;
 
@@ -936,8 +941,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & node_map = table_expression_data.getColumnNodeMap();
     if (use_case_insensitive)
     {
-        String scope_description = scope.scope_node ? scope.scope_node->formatASTForErrorMessage() : "";
-        auto it = table_expression_data.findColumnCaseInsensitive(identifier_full_name, scope_description);
+        auto it = table_expression_data.findColumnCaseInsensitive(
+            identifier_full_name,
+            [&] { return scope.scope_node ? scope.scope_node->formatASTForErrorMessage() : String{}; });
         if (it != node_map.end())
             result_expression = it->second;
     }
@@ -951,7 +957,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
                 identifier_full_name, subcolumn_base_case_insensitive,
-                scope.scope_node->formatASTForErrorMessage(), subcolumn_suffix_case_insensitive))
+                [&] { return scope.scope_node->formatASTForErrorMessage(); }, subcolumn_suffix_case_insensitive))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted

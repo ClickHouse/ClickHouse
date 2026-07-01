@@ -139,17 +139,20 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         /// Hoist the optional out of the `if` condition: `to_write` borrows from
         /// `special_delimiter_and_identifier->second`, so the optional must outlive its use.
         auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name);
-        std::string_view to_write = elem_name;
         if (special_delimiter_and_identifier)
         {
             ostr << special_delimiter_and_identifier->first;
-            to_write = special_delimiter_and_identifier->second;
+            if (quote == IdentifierQuoteStyle::DoubleQuote)
+                writeDoubleQuotedString(special_delimiter_and_identifier->second, ostr);
+            else
+                settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+            return;
         }
 
         if (quote == IdentifierQuoteStyle::DoubleQuote)
-            writeDoubleQuotedString(to_write, ostr);
+            writeDoubleQuotedString(elem_name, ostr);
         else
-            settings.writeIdentifier(ostr, String(to_write), /*ambiguous=*/false);
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);  /// no copy on the common path
     };
 
     if (compound())

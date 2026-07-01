@@ -126,9 +126,12 @@ struct AnalysisTableExpressionData
 
     /// Case-insensitive lookup of a column. Returns end() of the on-demand map when not found.
     /// Throws AMBIGUOUS_IDENTIFIER when multiple columns differ only by case.
+    /// `get_scope_description` is only invoked on the ambiguity throw — formatting the scope AST
+    /// eagerly at every lookup is far too expensive for a non-error path.
+    template <typename ScopeDescriptionProvider>
     ColumnNameToColumnNodeMap::const_iterator findColumnCaseInsensitive(
         std::string_view identifier_name,
-        const String & scope_description) const
+        ScopeDescriptionProvider && get_scope_description) const
     {
         const auto & node_map = getColumnNodeMap();
         /// Prefer an exact-case match — e.g. `information_schema.tables` exposes both `table_schema`
@@ -144,7 +147,7 @@ struct AnalysisTableExpressionData
         if (it->second.size() > 1)
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "Identifier '{}' is ambiguous: matches multiple columns with different cases: {}. In scope {}",
-                identifier_name, fmt::join(it->second, ", "), scope_description);
+                identifier_name, fmt::join(it->second, ", "), get_scope_description());
         return node_map.find(it->second.front());
     }
 
@@ -201,10 +204,11 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
+    template <typename ScopeDescriptionProvider>
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
         std::string_view full_identifier_name,
         bool use_case_insensitive,
-        const String & scope_description,
+        ScopeDescriptionProvider && get_scope_description,
         bool suffix_case_insensitive) const
     {
         ensureColumnMembershipSetsArePopulated();
@@ -225,7 +229,7 @@ struct AnalysisTableExpressionData
                 if (lower_it->second.size() > 1)
                     throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                         "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
-                        full_identifier_name, column_name, fmt::join(lower_it->second, ", "), scope_description);
+                        full_identifier_name, column_name, fmt::join(lower_it->second, ", "), get_scope_description());
                 resolved_column_name = lower_it->second.front();
             }
             else
@@ -261,7 +265,7 @@ struct AnalysisTableExpressionData
                     if (!matched_subcolumn.empty() && matched_subcolumn != candidate)
                         throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                             "Identifier '{}' is ambiguous: subcolumn '{}' matches multiple subcolumns with different cases: '{}', '{}'. In scope {}",
-                            full_identifier_name, subcolumn_name, matched_subcolumn, candidate, scope_description);
+                            full_identifier_name, subcolumn_name, matched_subcolumn, candidate, get_scope_description());
                     matched_subcolumn = candidate;
                 }
                 if (!matched_subcolumn.empty())
@@ -280,15 +284,7 @@ struct AnalysisTableExpressionData
         /// Convenience overload: callers that don't know the per-part quoting fold the suffix
         /// case-insensitively iff the base did. Callers that need separate base/suffix flags
         /// (e.g. for `data."name"`) must use the four-argument form.
-        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, "", use_case_insensitive);
-    }
-
-    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
-        std::string_view full_identifier_name,
-        bool use_case_insensitive,
-        const String & scope_description) const
-    {
-        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, scope_description, use_case_insensitive);
+        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, [] { return String{}; }, use_case_insensitive);
     }
 
     /// Build lowercase-to-original mappings for case-insensitive identifier resolution from the

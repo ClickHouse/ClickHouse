@@ -705,6 +705,20 @@ public:
         return projection_aliases_to_override_is_double_quoted;
     }
 
+    /// Parallel to the resolved projection columns: true when the column's name came from a
+    /// double-quoted alias (`SELECT 1 AS "MyAlias"`). Captured before `resolveQuery` strips
+    /// aliases from projection nodes; consumed by `initializeTableExpressionData` so quoted
+    /// aliases stay case-sensitive when the subquery is used as a table expression.
+    void setProjectionColumnsDoubleQuoted(std::vector<bool> flags)
+    {
+        projection_columns_double_quoted = std::move(flags);
+    }
+
+    const std::vector<bool> & getProjectionColumnsDoubleQuoted() const
+    {
+        return projection_columns_double_quoted;
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -734,6 +748,7 @@ private:
     NamesAndTypes projection_columns;
     Names projection_aliases_to_override;
     std::vector<bool> projection_aliases_to_override_is_double_quoted;
+    std::vector<bool> projection_columns_double_quoted;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 

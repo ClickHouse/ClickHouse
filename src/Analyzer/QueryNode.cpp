@@ -85,6 +85,7 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     /// `toAST` emits the wrong alias spelling for `FROM (...) AS t(A, "B")`-style overrides.
     const bool has_override_aliases = !projection_aliases_to_override.empty();
     const bool has_override_quote_flags = !projection_aliases_to_override_is_double_quoted.empty();
+    const bool has_projection_quote_flags = !projection_columns_double_quoted.empty();
     size_t write_index = 0;
 
     for (size_t i = 0; i < projection_columns_size; ++i)
@@ -98,6 +99,8 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             projection_aliases_to_override[write_index] = std::move(projection_aliases_to_override[i]);
         if (has_override_quote_flags && i < projection_aliases_to_override_is_double_quoted.size())
             projection_aliases_to_override_is_double_quoted[write_index] = projection_aliases_to_override_is_double_quoted[i];
+        if (has_projection_quote_flags && i < projection_columns_double_quoted.size())
+            projection_columns_double_quoted[write_index] = projection_columns_double_quoted[i];
         ++write_index;
     }
 
@@ -111,6 +114,10 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
         projection_aliases_to_override_is_double_quoted.erase(
             projection_aliases_to_override_is_double_quoted.begin() + std::min(write_index, projection_aliases_to_override_is_double_quoted.size()),
             projection_aliases_to_override_is_double_quoted.end());
+    if (has_projection_quote_flags)
+        projection_columns_double_quoted.erase(
+            projection_columns_double_quoted.begin() + std::min(write_index, projection_columns_double_quoted.size()),
+            projection_columns_double_quoted.end());
 
     if (hasInterpolate())
     {
@@ -485,6 +492,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
     result_query_node->projection_aliases_to_override_is_double_quoted = projection_aliases_to_override_is_double_quoted;
+    result_query_node->projection_columns_double_quoted = projection_columns_double_quoted;
 
     return result_query_node;
 }

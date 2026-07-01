@@ -625,11 +625,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
-        /// Preserve `INTERPOLATE ("Col" AS ...)` case-sensitivity: rebuild the identifier with the
-        /// double-quote flag so the analyzer can apply standard-mode rules to the target.
+        /// Preserve `INTERPOLATE ("Col" AS ...)` case-sensitivity: the double-quoted target is one
+        /// parsed part (its text may contain dots, e.g. `"a.b"`), so it must NOT go through the
+        /// full-name Identifier constructor, which would re-split it on dots and misalign the
+        /// single-element quote vector. Unquoted targets keep the historical splitting behavior.
+        std::shared_ptr<IdentifierNode> expression_to_interpolate;
         if (interpolate_element.column_is_double_quoted)
+        {
+            expression_to_interpolate = std::make_shared<IdentifierNode>(
+                Identifier(std::vector<std::string>{interpolate_element.column}));
             expression_to_interpolate->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
+        }
+        else
+        {
+            expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        }
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
@@ -1315,26 +1325,26 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             }
             else
             {
-                Names except_column_names;
+                std::vector<std::vector<String>> target_parts;
                 std::vector<std::vector<bool>> target_parts_double_quoted;
-                except_column_names.reserve(except_transformer->children.size());
+                target_parts.reserve(except_transformer->children.size());
                 target_parts_double_quoted.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
                 {
                     auto & ident = except_transformer_child->as<ASTIdentifier &>();
-                    except_column_names.push_back(ident.full_name);
-                    /// Per-part quote tracking lets compound targets like `data."Name"` fold the
-                    /// `data` segment case-insensitively while keeping `Name` exact in `standard` mode.
+                    /// Pass the PARSED parts (a single part may itself contain dots, e.g. `` `a.b` ``)
+                    /// with a parallel per-part quote vector — the node never re-splits flattened names.
                     std::vector<bool> per_part;
                     per_part.reserve(ident.name_parts.size());
                     for (size_t p = 0; p < ident.name_parts.size(); ++p)
                         per_part.push_back(ident.getQuoteStyleAt(p) == IdentifierQuoteStyle::DoubleQuote);
+                    target_parts.push_back(ident.name_parts);
                     target_parts_double_quoted.push_back(std::move(per_part));
                 }
 
                 column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(
-                    std::move(except_column_names), except_transformer->is_strict, std::move(target_parts_double_quoted)));
+                    std::move(target_parts), except_transformer->is_strict, std::move(target_parts_double_quoted)));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())
@@ -1345,12 +1355,12 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name` string
-                /// with a single `name_is_double_quoted` flag, because the parser only accepts a
-                /// single-part identifier. Lift that flag into a per-part vector so the analyzer's
-                /// matching is shaped the same as EXCEPT (per-part case-sensitivity for compound names).
+                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name`
+                /// string with a single `name_is_double_quoted` flag, because the parser only
+                /// accepts a single-part identifier. That name becomes ONE structured part —
+                /// never split on dots, which may legitimately occur inside a backtick-quoted name.
                 replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{
-                    replacement.name,
+                    {replacement.name},
                     buildExpression(replacement.children[0], context),
                     std::vector<bool>{replacement.name_is_double_quoted}});
             }

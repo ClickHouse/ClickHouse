@@ -73,7 +73,7 @@ struct ScopeAliases
         UNREACHABLE();
     }
 
-    QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)
+    QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option)
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
         const std::string * key = &getKey(lookup.identifier, find_option);
@@ -86,18 +86,18 @@ struct ScopeAliases
         return &it->second;
     }
 
-    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
+    const QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option) const
     {
         return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
     }
 
-    const QueryTreeNodePtr * findCaseInsensitive(IdentifierLookup lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr) const
+    const QueryTreeNodePtr * findCaseInsensitive(const IdentifierLookup & lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr) const
     {
         return const_cast<ScopeAliases *>(this)->findCaseInsensitive(lookup, find_option, ambiguous_aliases);
     }
 
     /// case-insensitive find, does the same as find but sets ambiguous_aliases if multiple matches exist
-    QueryTreeNodePtr * findCaseInsensitive(IdentifierLookup lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr)
+    QueryTreeNodePtr * findCaseInsensitive(const IdentifierLookup & lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr)
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
         auto & lowercase_map = getLowercaseAliasMap(lookup.lookup_context);

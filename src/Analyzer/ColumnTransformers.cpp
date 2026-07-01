@@ -15,6 +15,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
+#include <Analyzer/Identifier.h>
+
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/LambdaNode.h>
 
@@ -122,43 +124,29 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
 
 /// ExceptColumnTransformerNode implementation
 
-ExceptColumnTransformerNode::ExceptColumnTransformerNode(
-    Names except_column_names_,
-    bool is_strict_,
-    std::vector<std::vector<bool>> target_parts_double_quoted_)
-    : IColumnTransformerNode(children_size)
-    , except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
-    , except_column_names(std::move(except_column_names_))
-    , target_parts_double_quoted(std::move(target_parts_double_quoted_))
-    , is_strict(is_strict_)
-{
-}
-
-ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_)
-    : IColumnTransformerNode(children_size)
-    , except_transformer_type(ExceptColumnTransformerType::REGEXP)
-    , column_matcher(std::move(column_matcher_))
-{
-}
-
 namespace
 {
 
-/// Split a (possibly compound) name on `.` into views over the original string.
-std::vector<std::string_view> splitOnDot(const std::string & name)
+/// Flatten parsed identifier parts into the dot-joined full name.
+String joinParts(const std::vector<String> & parts)
 {
-    std::vector<std::string_view> parts;
-    size_t start = 0;
-    for (size_t i = 0; i < name.size(); ++i)
+    String result;
+    for (const auto & part : parts)
     {
-        if (name[i] == '.')
-        {
-            parts.emplace_back(name.data() + start, i - start);
-            start = i + 1;
-        }
+        if (!result.empty())
+            result += '.';
+        result += part;
     }
-    parts.emplace_back(name.data() + start, name.size() - start);
-    return parts;
+    return result;
+}
+
+Names joinAllParts(const std::vector<std::vector<String>> & targets)
+{
+    Names result;
+    result.reserve(targets.size());
+    for (const auto & parts : targets)
+        result.push_back(joinParts(parts));
+    return result;
 }
 
 /// Compare two name parts, folding case unless the target part was double-quoted.
@@ -169,6 +157,52 @@ bool partsEqualWithQuote(std::string_view target_part, std::string_view column_p
     return Poco::icompare(std::string(target_part), std::string(column_part)) == 0;
 }
 
+/// Quote-aware, per-part comparison of a structured transformer target against a column name.
+/// The target side uses its PARSED parts (a single part may contain dots, so the flattened name
+/// is never re-split). A single-part target compares against the whole column name; a multi-part
+/// target splits the column name on '.' (legitimate on the column side, where dots separate
+/// nested/subcolumn components).
+bool targetMatchesColumnName(
+    const std::vector<String> & target_parts,
+    const std::vector<bool> & target_parts_double_quoted,
+    const std::string & column_name)
+{
+    auto part_quoted = [&](size_t p) { return p < target_parts_double_quoted.size() && target_parts_double_quoted[p]; };
+
+    if (target_parts.size() == 1)
+        return partsEqualWithQuote(target_parts[0], column_name, part_quoted(0));
+
+    Identifier column_identifier(column_name);
+    const auto & column_parts = column_identifier.getParts();
+    if (target_parts.size() != column_parts.size())
+        return false;
+
+    for (size_t p = 0; p < target_parts.size(); ++p)
+        if (!partsEqualWithQuote(target_parts[p], column_parts[p], part_quoted(p)))
+            return false;
+    return true;
+}
+
+}
+
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(
+    std::vector<std::vector<String>> target_parts_,
+    bool is_strict_,
+    std::vector<std::vector<bool>> target_parts_double_quoted_)
+    : IColumnTransformerNode(children_size)
+    , except_transformer_type(ExceptColumnTransformerType::COLUMN_LIST)
+    , target_parts(std::move(target_parts_))
+    , except_column_names(joinAllParts(target_parts))
+    , target_parts_double_quoted(std::move(target_parts_double_quoted_))
+    , is_strict(is_strict_)
+{
+}
+
+ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_)
+    : IColumnTransformerNode(children_size)
+    , except_transformer_type(ExceptColumnTransformerType::REGEXP)
+    , column_matcher(std::move(column_matcher_))
+{
 }
 
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name, bool standard_mode, std::string * matched_target) const
@@ -191,31 +225,14 @@ bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_na
         return false;
 
     /// `standard` mode: unquoted target parts fold case-insensitively; double-quoted parts stay
-    /// exact. Splitting both sides on `.` lets `EXCEPT (data."Name")` match `data.Name` while
-    /// excluding `Data.name`. Multiple distinct unquoted targets that fold to the same column are
-    /// ambiguous — mirror the column/alias/REPLACE rule rather than silently picking the first.
-    auto column_parts = splitOnDot(column_name);
+    /// exact. Multiple distinct targets that fold to the same column are ambiguous — mirror the
+    /// column/alias/REPLACE rule rather than silently picking the first.
     size_t matched_index = std::numeric_limits<size_t>::max();
-    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    for (size_t i = 0, n = target_parts.size(); i < n; ++i)
     {
-        auto target_parts = splitOnDot(except_column_names[i]);
-        if (target_parts.size() != column_parts.size())
-            continue;
-
         const auto & per_part_quote
             = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
-
-        bool all_parts_match = true;
-        for (size_t p = 0; p < target_parts.size(); ++p)
-        {
-            const bool part_quoted = p < per_part_quote.size() && per_part_quote[p];
-            if (!partsEqualWithQuote(target_parts[p], column_parts[p], part_quoted))
-            {
-                all_parts_match = false;
-                break;
-            }
-        }
-        if (!all_parts_match)
+        if (!targetMatchesColumnName(target_parts[i], per_part_quote, column_name))
             continue;
 
         if (matched_index != std::numeric_limits<size_t>::max()
@@ -271,9 +288,11 @@ void ExceptColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState
 bool ExceptColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ExceptColumnTransformerNode &>(rhs);
+    /// Compare structured parts, not flattened names: single-part `` `a.b` `` and compound `a.b`
+    /// flatten identically but match differently.
     if (except_transformer_type != rhs_typed.except_transformer_type ||
         is_strict != rhs_typed.is_strict ||
-        except_column_names != rhs_typed.except_column_names ||
+        target_parts != rhs_typed.target_parts ||
         target_parts_double_quoted != rhs_typed.target_parts_double_quoted)
         return false;
 
@@ -319,6 +338,17 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
         }
     }
 
+    /// Mix in the part structure only when some target is compound, so the common single-part
+    /// case keeps the flattened-name hash (compound `a.b` and single-part `` `a.b` `` flatten
+    /// identically but must not share a hash).
+    const bool any_compound = std::any_of(
+        target_parts.begin(), target_parts.end(), [](const auto & parts) { return parts.size() > 1; });
+    if (any_compound)
+    {
+        for (const auto & parts : target_parts)
+            hash_state.update(parts.size());
+    }
+
     if (column_matcher)
     {
         const auto & pattern = column_matcher->pattern();
@@ -332,7 +362,7 @@ QueryTreeNodePtr ExceptColumnTransformerNode::cloneImpl() const
     if (except_transformer_type == ExceptColumnTransformerType::REGEXP)
         return std::make_shared<ExceptColumnTransformerNode>(column_matcher);
 
-    return std::make_shared<ExceptColumnTransformerNode>(except_column_names, is_strict, target_parts_double_quoted);
+    return std::make_shared<ExceptColumnTransformerNode>(target_parts, is_strict, target_parts_double_quoted);
 }
 
 ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* options */) const
@@ -345,18 +375,12 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
         return ast_except_transformer;
     }
 
-    ast_except_transformer->children.reserve(except_column_names.size());
-    for (size_t i = 0, n = except_column_names.size(); i < n; ++i)
+    ast_except_transformer->children.reserve(target_parts.size());
+    for (size_t i = 0, n = target_parts.size(); i < n; ++i)
     {
-        /// Rebuild from split parts so a compound target like `data."Name"` round-trips with the
-        /// quoted suffix preserved. The single-String `ASTIdentifier` ctor would treat the joined
-        /// `data.Name` as one part and lose the per-part quote alignment.
-        auto target_parts_views = splitOnDot(except_column_names[i]);
-        std::vector<String> name_parts;
-        name_parts.reserve(target_parts_views.size());
-        for (auto part : target_parts_views)
-            name_parts.emplace_back(part);
-
+        /// Rebuild from the stored parsed parts — never by re-splitting the flattened name, which
+        /// would corrupt a single part containing dots (e.g. `` `a.b` `` or a trailing-dot name).
+        auto name_parts = target_parts[i];
         auto identifier = make_intrusive<ASTIdentifier>(std::move(name_parts));
         if (i < target_parts_double_quoted.size())
         {
@@ -387,14 +411,16 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
 
     for (const auto & replacement : replacements_)
     {
-        auto [_, inserted] = replacement_names_set.emplace(replacement.column_name);
+        String full_name = joinParts(replacement.parts);
+        auto [_, inserted] = replacement_names_set.emplace(full_name);
 
         if (!inserted)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Expressions in column transformer replace should not contain same replacement {} more than once",
-                replacement.column_name);
+                full_name);
 
-        replacements_names.push_back(replacement.column_name);
+        target_parts.push_back(replacement.parts);
+        replacements_names.push_back(std::move(full_name));
         target_parts_double_quoted.push_back(replacement.parts_double_quoted);
         replacement_expressions_nodes.push_back(replacement.expression_node);
     }
@@ -411,33 +437,17 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const s
         return getReplacements().getNodes()[replacement_index];
     }
 
-    /// `standard` mode: match per part — unquoted parts fold, double-quoted parts stay exact.
-    /// So `REPLACE (... AS data."Name")` matches `data.Name` but not `Data.name`. Multiple
-    /// targets that fold to the same lookup are ambiguous — mirror the column/alias rule.
+    /// `standard` mode: match per parsed part — unquoted parts fold, double-quoted parts stay
+    /// exact. Multiple targets that fold to the same lookup are ambiguous — mirror the
+    /// column/alias rule.
     if (standard_mode)
     {
-        auto expression_parts = splitOnDot(expression_name);
         size_t matched_index = std::numeric_limits<size_t>::max();
-        for (size_t i = 0, n = replacements_names.size(); i < n; ++i)
+        for (size_t i = 0, n = target_parts.size(); i < n; ++i)
         {
-            auto target_parts = splitOnDot(replacements_names[i]);
-            if (target_parts.size() != expression_parts.size())
-                continue;
-
             const auto & per_part_quote
                 = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
-
-            bool all_parts_match = true;
-            for (size_t p = 0; p < target_parts.size(); ++p)
-            {
-                const bool part_quoted = p < per_part_quote.size() && per_part_quote[p];
-                if (!partsEqualWithQuote(target_parts[p], expression_parts[p], part_quoted))
-                {
-                    all_parts_match = false;
-                    break;
-                }
-            }
-            if (!all_parts_match)
+            if (!targetMatchesColumnName(target_parts[i], per_part_quote, expression_name))
                 continue;
 
             if (matched_index != std::numeric_limits<size_t>::max() && replacements_names[matched_index] != replacements_names[i])
@@ -481,8 +491,10 @@ void ReplaceColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatStat
 bool ReplaceColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ReplaceColumnTransformerNode &>(rhs);
+    /// Compare structured parts, not flattened names: single-part `` `a.b` `` and compound `a.b`
+    /// flatten identically but match differently.
     return is_strict == rhs_typed.is_strict
-        && replacements_names == rhs_typed.replacements_names
+        && target_parts == rhs_typed.target_parts
         && target_parts_double_quoted == rhs_typed.target_parts_double_quoted;
 }
 
@@ -515,6 +527,16 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
                 hash_state.update(static_cast<uint8_t>(b));
         }
     }
+
+    /// Mix in the part structure only when some target is compound, so the common single-part
+    /// case keeps the flattened-name hash.
+    const bool any_compound = std::any_of(
+        target_parts.begin(), target_parts.end(), [](const auto & parts) { return parts.size() > 1; });
+    if (any_compound)
+    {
+        for (const auto & parts : target_parts)
+            hash_state.update(parts.size());
+    }
 }
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
@@ -522,6 +544,7 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const
     auto result_replace_transformer = std::make_shared<ReplaceColumnTransformerNode>(std::vector<Replacement>{}, false);
 
     result_replace_transformer->is_strict = is_strict;
+    result_replace_transformer->target_parts = target_parts;
     result_replace_transformer->replacements_names = replacements_names;
     result_replace_transformer->target_parts_double_quoted = target_parts_double_quoted;
 

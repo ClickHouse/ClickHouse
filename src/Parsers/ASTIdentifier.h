@@ -50,6 +50,11 @@ public:
 
     void setQuoteStyle(IdentifierQuoteStyle style)
     {
+        /// Empty `quote_styles` canonically means "all parts unquoted" — do not materialize the
+        /// vector for the overwhelmingly common unquoted identifier (a heap allocation per parsed
+        /// identifier otherwise).
+        if (style == IdentifierQuoteStyle::None && quote_styles.empty())
+            return;
         if (quote_styles.empty())
             quote_styles.resize(name_parts.empty() ? 1 : name_parts.size(), IdentifierQuoteStyle::None);
         quote_styles[0] = style;

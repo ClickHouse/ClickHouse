@@ -64,6 +64,11 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         join_use_nulls = context->getSettingsRef()[Setting::join_use_nulls];
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
+
+    if (context)
+        standard_mode = context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    else if (parent_scope)
+        standard_mode = parent_scope->standard_mode;
 }
 
 [[maybe_unused]] const IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope() const
@@ -139,11 +144,6 @@ void IdentifierResolveScope::addExpressionArgument(const std::string & name, Que
     /// Keep them out of the lowercase index so an unquoted lookup cannot match them.
     if (!is_double_quoted)
         lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
-}
-
-bool IdentifierResolveScope::isStandardMode() const
-{
-    return context && context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
 }
 
 IdentifierResolveScope::CTERegisterResult

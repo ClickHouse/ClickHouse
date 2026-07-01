@@ -277,7 +277,7 @@ private:
 
     void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
-    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
+    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope, const NamesAndTypes & projection_columns);
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 

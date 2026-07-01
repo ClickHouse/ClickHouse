@@ -3,7 +3,7 @@
 SET allow_experimental_analyzer = 1;
 SET case_insensitive_names = 'standard';
 
-SELECT '--- JOIN USING with quoted key (Blocker #6) ---';
+SELECT '--- JOIN USING with quoted key ---';
 DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;
 CREATE TABLE t_using_l (Key Int32, Val Int32) ENGINE = Memory;
@@ -16,31 +16,31 @@ SELECT count() FROM t_using_l INNER JOIN t_using_r USING (key);
 SELECT count() FROM t_using_l INNER JOIN t_using_r USING ("Key");
 SELECT count() FROM t_using_l INNER JOIN t_using_r USING ("key"); -- { serverError UNKNOWN_IDENTIFIER }
 
-SELECT '--- ARRAY JOIN quoted alias (Blocker #7) ---';
+SELECT '--- ARRAY JOIN quoted alias ---';
 -- Quoted alias stays case-sensitive; unquoted lookup must not match it.
 SELECT "X" FROM (SELECT 1) ARRAY JOIN [1, 2, 3] AS "X" ORDER BY "X";
 SELECT x FROM (SELECT 1) ARRAY JOIN [1, 2, 3] AS "X"; -- { serverError UNKNOWN_IDENTIFIER }
 -- Unquoted alias stays case-insensitive.
 SELECT y FROM (SELECT 1) ARRAY JOIN [10, 20] AS Y ORDER BY 1;
 
-SELECT '--- Quoted lambda argument (Blocker #5) ---';
+SELECT '--- Quoted lambda argument ---';
 SELECT arrayMap(("X") -> "X" + 1, [1, 2, 3]);
 SELECT arrayMap(("X") -> x + 1, [1, 2, 3]); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT arrayMap((Y) -> y + 1, [1, 2, 3]);
 
-SELECT '--- Recursive CTE with quoted name (Blocker #5) ---';
+SELECT '--- Recursive CTE with quoted name ---';
 WITH RECURSIVE "R" AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM "R" WHERE n < 3) SELECT count() FROM "R";
 WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) SELECT count() FROM r;
 
-SELECT '--- Alias self-reference case awareness (Blocker #4) ---';
+SELECT '--- Alias self-reference case awareness ---';
 -- Case-only-different aliases must coexist (built-in `information_schema` views rely on this).
 -- Each alias keeps its own case-sensitive identity, so the projection produces both columns.
 SELECT number AS num, num * 1 AS NUM FROM numbers(2) ORDER BY num;
 
-SELECT '--- Quoted alias distinct from unquoted (Blocker #1 hash/cache) ---';
+SELECT '--- Quoted alias distinct from unquoted (hash/cache) ---';
 SELECT 1 AS "X", 2 AS x;
 
-SELECT '--- information_schema alias is not ambiguous (Blocker #9) ---';
+SELECT '--- information_schema alias is not ambiguous ---';
 SELECT count() > 0 FROM information_schema.tables WHERE table_schema = 'system';
 SELECT count() > 0 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'system';
 
@@ -109,12 +109,12 @@ DROP TABLE IF EXISTS t_using_l;
 DROP TABLE IF EXISTS t_using_r;
 
 SELECT '--- Lambda arguments: exact case wins over case-insensitive bucket ---';
--- Bot review #1: `arrayMap((x, X) -> x + X, [1], [2])` must NOT throw AMBIGUOUS_IDENTIFIER even when
+-- Exact-case lambda arguments win over the folded bucket: `arrayMap((x, X) -> x + X, [1], [2])` must NOT throw AMBIGUOUS_IDENTIFIER even when
 -- standard mode folds case for lookups — exact-case matches win against the lowercase bucket.
 SELECT arrayMap((x, X) -> x + X, [1, 2], [10, 20]);
 
 SELECT '--- ARRAY JOIN: double-quoted alias does not bind to unquoted lookup ---';
--- Bot review #2: `ARRAY JOIN [1] AS "X"` pins the alias to its canonical case; unquoted `x` must
+-- A double-quoted ARRAY JOIN alias is pinned: `ARRAY JOIN [1] AS "X"` pins the alias to its canonical case; unquoted `x` must
 -- not bind to it. With the bind helper now respecting the alias quote bit, the unqualified column
 -- `x` resolves to the table column and the row prints `1 1`.
 CREATE TABLE t_array_join_quoted (x Int32) ENGINE = Memory;
@@ -123,7 +123,7 @@ SELECT x, "X" FROM t_array_join_quoted ARRAY JOIN [1] AS "X";
 DROP TABLE t_array_join_quoted;
 
 SELECT '--- Folded subcolumn lookup returns canonical column name ---';
--- Bot review: a folded lookup `data.name` against physical column `Data.Name` must read the
+-- A folded lookup `data.name` against physical column `Data.Name` must read the
 -- canonical column from storage, not the user's folded spelling.
 CREATE TABLE t_subcol_canonical (Data Tuple(Name String)) ENGINE = Memory;
 INSERT INTO t_subcol_canonical VALUES (('hello'));
@@ -131,7 +131,7 @@ SELECT data.name FROM t_subcol_canonical;
 DROP TABLE t_subcol_canonical;
 
 SELECT '--- JOIN USING (Key, key) with distinct exact columns is valid ---';
--- Bot review: pre-resolution lowercase dedup falsely rejected the case where both sides expose
+-- Pre-resolution lowercase dedup falsely rejected the case where both sides expose
 -- distinct `Key` and `key` columns. Post-resolution identity dedup permits it.
 CREATE TABLE t_using_distinct_l (Key Int32, key String) ENGINE = Memory;
 CREATE TABLE t_using_distinct_r (Key Int32, key String) ENGINE = Memory;
@@ -142,13 +142,13 @@ DROP TABLE t_using_distinct_l;
 DROP TABLE t_using_distinct_r;
 
 SELECT '--- Materialized CTE double-quoted name stays case-sensitive in qualifier ---';
--- Bot review: WITH "MyCte" AS MATERIALIZED (...) ... FROM "MyCte" — unquoted `mycte.x` must
+-- WITH "MyCte" AS MATERIALIZED (...) ... FROM "MyCte" — unquoted `mycte.x` must
 -- not bind to the double-quoted CTE name.
 SET enable_materialized_cte = 1;
 WITH "MyCte" AS MATERIALIZED (SELECT 1 AS x) SELECT mycte.x FROM "MyCte"; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT '--- INTERPOLATE quoted target survives format/reparse ---';
--- Bot review: after analysis the target child is a ColumnNode, not an IdentifierNode. The quote
+-- After analysis the target child is a ColumnNode, not an IdentifierNode. The quote
 -- bit must come from the InterpolateNode itself so the round-trip keeps `"x"` quoted.
 SELECT formatQuery($$ SELECT x FROM (SELECT 1 AS x) ORDER BY x WITH FILL FROM 1 TO 3 INTERPOLATE ("x" AS x + 1) $$) LIKE '%INTERPOLATE ("x"%';
 
@@ -175,3 +175,57 @@ CREATE TABLE t_replace_filter (Age Int32) ENGINE = Memory;
 INSERT INTO t_replace_filter VALUES (5), (10);
 SELECT * REPLACE (0 AS age) FROM t_replace_filter WHERE age = 0;
 DROP TABLE t_replace_filter;
+
+SELECT '--- EXCEPT/REPLACE: backtick-quoted target containing dots is one part ---';
+-- A single-part target whose text contains dots must round-trip and match as one name,
+-- never be re-split on dots (used to hit `!part.empty()` on `EXPLAIN QUERY TREE`).
+CREATE TABLE t_dotted (`10000000000.` Int32, `a.b` Int32) ENGINE = Memory;
+INSERT INTO t_dotted VALUES (1, 2);
+SELECT * EXCEPT (`10000000000.`) FROM t_dotted;
+SELECT formatQuery($$ SELECT * EXCEPT (`10000000000.`, `a.b`) FROM t_dotted $$) LIKE '%EXCEPT%';
+SELECT * REPLACE (0 AS `a.b`) FROM t_dotted;
+DROP TABLE t_dotted;
+
+SELECT '--- JOIN USING: distinct case-sibling column keeps its own type ---';
+-- The USING supertype must apply only to the key's resolved participants; a sibling column
+-- that merely case-folds to the key name keeps its own type.
+CREATE TABLE t_sib_l (`key` Int32, `Key` String) ENGINE = Memory;
+CREATE TABLE t_sib_r (`key` Int32) ENGINE = Memory;
+INSERT INTO t_sib_l VALUES (1, 'x');
+INSERT INTO t_sib_r VALUES (1);
+SELECT toTypeName(Key) FROM t_sib_l JOIN t_sib_r USING (key);
+DROP TABLE t_sib_l;
+DROP TABLE t_sib_r;
+
+SELECT '--- Quoted subquery projection alias stays exact ---';
+-- An unquoted outer reference must not fold onto a double-quoted projection alias.
+SELECT myalias FROM (SELECT 1 AS "MyAlias"); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT "MyAlias" FROM (SELECT 1 AS "MyAlias");
+
+SELECT '--- INTERPOLATE folded target survives projection pruning ---';
+-- Projection `Val` with `INTERPOLATE (val AS ...)`: the folded target must canonicalize so
+-- pruning does not erase the interpolate expression.
+SELECT Val FROM (SELECT 1 AS x, 1 AS Val) ORDER BY x ASC WITH FILL FROM 1 TO 3 INTERPOLATE (val AS Val + 10);
+
+SELECT '--- RENAME DATABASE updates the folded lookup index ---';
+DROP DATABASE IF EXISTS RenCaseFoo;
+DROP DATABASE IF EXISTS RenCaseBar;
+CREATE DATABASE RenCaseFoo;
+CREATE TABLE RenCaseFoo.t (x Int32) ENGINE = Memory;
+INSERT INTO RenCaseFoo.t VALUES (7);
+RENAME DATABASE RenCaseFoo TO RenCaseBar;
+SELECT x FROM rencasebar.t;
+SELECT x FROM rencasefoo.t; -- { serverError UNKNOWN_DATABASE }
+DROP DATABASE RenCaseBar;
+
+SELECT '--- Quoted table alias survives join-tree resolution ---';
+-- The resolved TableNode inherits the alias quote pin; unquoted `v.c` must not fold onto `"V"`.
+CREATE TABLE t_alias_pin (c Int32) ENGINE = Memory;
+INSERT INTO t_alias_pin VALUES (1);
+SELECT v.c FROM t_alias_pin AS "V"; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT "V".c FROM t_alias_pin AS "V";
+SELECT v.c FROM t_alias_pin AS V;
+DROP TABLE t_alias_pin;
+
+SELECT '--- INTERPOLATE folded target over projection alias ---';
+SELECT 1 AS x, 2 AS s FROM system.one ORDER BY x ASC WITH FILL FROM 1 TO 3 INTERPOLATE (S AS s + 5);

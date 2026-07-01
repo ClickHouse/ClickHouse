@@ -206,6 +206,9 @@ struct IdentifierResolveScope
     bool group_by_use_nulls = false;
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
+
+    /// Cache of `context->getSettingsRef()[case_insensitive_names] == standard`; see isStandardMode.
+    bool standard_mode = false;
     bool allow_resolve_from_using = true;
 
     /// JOINs count
@@ -245,8 +248,10 @@ struct IdentifierResolveScope
     std::unordered_map<std::string, QueryTreeNodePtr>::iterator
     findExpressionArgument(const std::string & name, bool case_insensitive);
 
-    /// True iff the `case_insensitive_names` setting is `standard` for this scope's context
-    bool isStandardMode() const;
+    /// True iff the `case_insensitive_names` setting is `standard` for this scope's context.
+    /// Cached at construction: the setting cannot change for the lifetime of a scope, and this
+    /// predicate sits on per-identifier hot paths.
+    bool isStandardMode() const { return standard_mode; }
 
     /// Register a CTE in this scope. Updates `cte_name_to_query_node` and, when the CTE is unquoted
     /// in standard mode, also updates `lowercase_cte_to_original_names`. Returns OK if registered;

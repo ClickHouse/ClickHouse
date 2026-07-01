@@ -1,6 +1,7 @@
 #include <Analyzer/InterpolateNode.h>
 
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -38,15 +39,23 @@ void InterpolateNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_st
     getInterpolateExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 }
 
-bool InterpolateNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
+bool InterpolateNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
-    /// No state in interpolate node
-    return true;
+    /// `expression_name` and its quote flag are semantic state: after analysis the expression
+    /// child no longer carries the original target spelling, so two INTERPOLATE nodes that
+    /// differ only in `"x"` vs `x` (case-sensitivity in `standard` mode) must not compare equal.
+    const auto & rhs_typed = assert_cast<const InterpolateNode &>(rhs);
+    return expression_name == rhs_typed.expression_name
+        && expression_is_double_quoted == rhs_typed.expression_is_double_quoted;
 }
 
-void InterpolateNode::updateTreeHashImpl(HashState &, CompareOptions) const
+void InterpolateNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
-    /// No state in interpolate node
+    hash_state.update(expression_name.size());
+    hash_state.update(expression_name);
+    /// Mix in the quote flag only when set so unquoted targets keep their previous hash.
+    if (expression_is_double_quoted)
+        hash_state.update(true);
 }
 
 QueryTreeNodePtr InterpolateNode::cloneImpl() const
