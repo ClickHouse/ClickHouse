@@ -2,7 +2,6 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -16,6 +15,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -28,6 +29,11 @@ struct ConnectionTimeouts;
 class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
+
+bool urlPathHasListableGlobs(std::string_view uri);
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 /**
  * This class represents table engine for external urls.
@@ -158,7 +164,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource final : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -205,7 +211,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -260,7 +266,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink : public SinkToStorage
+class StorageURLSink final : public SinkToStorage
 {
 public:
     StorageURLSink(
@@ -364,6 +370,12 @@ public:
     /// - `#frag` → replaces base fragment, preserves base path and query
     /// The resolution is done by string manipulation to allow malformed URLs.
     static String resolveURLBase(const String & url, const String & base);
+
+    /// Rewrite engine args so that the URL literal (positional) or `url='...'`
+    /// override (named-collection) matches the URL resolved via `url_base`.
+    /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
+    /// to avoid leaking them through the persisted CREATE TABLE AST.
+    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
 };
 
 

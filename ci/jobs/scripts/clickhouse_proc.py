@@ -1,6 +1,7 @@
 import glob
 import json as json_module
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -74,9 +75,9 @@ class ClickHouseProc:
         self.user_files_path = f"{self.run_path0}/user_files"
         self.test_output_file = f"{temp_dir}/test_result.txt"
         self.command = f"clickhouse-server --config-file {self.config_file} --pid-file {self.pid_file} -- --path {self.run_path0} --user_files_path {self.user_files_path} --top_level_domains_path {self.ch_config_dir}/top_level_domains --logger.stderr {self.log_dir}/stderr.log"
-        self.ch_config_dir_replica_1 = f"/etc/clickhouse-server1"
+        self.ch_config_dir_replica_1 = "/etc/clickhouse-server1"
         self.config_file_replica_1 = f"{self.ch_config_dir_replica_1}/config.xml"
-        self.ch_config_dir_replica_2 = f"/etc/clickhouse-server2"
+        self.ch_config_dir_replica_2 = "/etc/clickhouse-server2"
         self.config_file_replica_2 = f"{self.ch_config_dir_replica_2}/config.xml"
         self.pid_file = f"{self.ch_config_dir}/clickhouse-server.pid"
         self.pid_file_replica_1 = (
@@ -97,7 +98,7 @@ class ClickHouseProc:
         self.proc_1 = None
         self.proc_2 = None
         self.pid = 0
-        nproc = int(Utils.cpu_count() / 2)
+        int(Utils.cpu_count() / 2)
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
@@ -153,14 +154,26 @@ class ClickHouseProc:
             )
         print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
 
-        if Shell.check(
-            "/mc ls clickminio/test | grep -q .",
-            verbose=False,
-            retries=6,
-        ):
-            return True
-        print("Failed to start minio")
-        return False
+        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
+        # listable: the server's S3 disks authenticate at startup and need the
+        # whole user/policy/ACL setup in place. The minio server is nohup'd and
+        # outlives the script, so waiting on the script is safe. Its internal
+        # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
+        try:
+            returncode = self.minio_proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            print("Failed to start minio: setup_minio.sh did not finish in time")
+            self.minio_proc.kill()
+            return False
+        if returncode != 0:
+            print(f"setup_minio.sh exited with code {returncode}")
+            return False
+
+        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
+        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
+            print("Failed to start minio: bucket clickminio/test not reachable")
+            return False
+        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -198,21 +211,22 @@ class ClickHouseProc:
             )
         print(f"Started setup_kafka.sh asynchronously with PID {self.kafka_proc.pid}")
 
-        for _ in range(60):
-            res = Shell.check(
-                "rpk topic list --brokers 127.0.0.1:9092",
-                verbose=True,
-            )
-            if res:
-                return True
-            time.sleep(1)
-        print("Failed to start Kafka")
-        return False
+        # setup_kafka.sh exits 0 only after broker AND schema registry are ready,
+        # so wait on the script itself. Its own timeout is 60s; pad here.
+        try:
+            returncode = self.kafka_proc.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            print("Failed to start Kafka: setup_kafka.sh did not finish in time")
+            return False
+        if returncode != 0:
+            print(f"setup_kafka.sh exited with code {returncode}")
+            return False
+        return True
 
     @staticmethod
     def log_cluster_config():
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster ./tmp_ci/etc/clickhouse-server/config.d/system_logs_export.yaml",
             verbose=True,
         )
 
@@ -280,7 +294,7 @@ class ClickHouseProc:
         """
         Start ClickHouse server with config installed with _install_config()
         """
-        print(f"Starting ClickHouse server")
+        print("Starting ClickHouse server")
         # check binary available and do decompression in the meantime
         assert Shell.check("clickhouse --version", verbose=True)
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
@@ -297,12 +311,12 @@ class ClickHouseProc:
             stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
             Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
             return False
-        print(f"ClickHouse server process started -> wait ready")
+        print("ClickHouse server process started -> wait ready")
         res = self.wait_ready()
         if res:
-            print(f"ClickHouse server ready")
+            print("ClickHouse server ready")
         else:
-            print(f"ClickHouse server NOT ready")
+            print("ClickHouse server NOT ready")
 
         self._flush_system_logs()
         self.save_system_metadata_files_from_remote_database_disk()
@@ -417,7 +431,7 @@ profiles:
     @staticmethod
     def stop_log_exports():
         return Shell.check(
-            f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
+            "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
         )
 
@@ -455,7 +469,7 @@ profiles:
         # set profile file for the server (not needed for per-test coverage,
         # which uses system.coverage_log instead of .profraw files)
         if not self.is_per_test_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-server-%m.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
 
         env = os.environ.copy()
         env["TSAN_OPTIONS"] = " ".join(
@@ -549,11 +563,92 @@ profiles:
         if not res:
             return False
 
-        # Restart minio with a timeout to avoid hanging forever (see #97647).
-        # If the restart hangs, kill minio and start it again.
-        # We use Popen with start_new_session=True so that on timeout we can
-        # kill the entire process group, avoiding orphaned child processes
-        # that would block communicate() indefinitely (see #98466).
+        return self._restart_minio_to_apply_config()
+
+    def _wait_minio_ready(self, timeout_s):
+        """Poll until the `test` bucket is listable, or `timeout_s` elapses.
+
+        `mc ls` against a down MinIO fails fast (connection refused), so this
+        polls at roughly one-second intervals.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if Shell.check("/mc ls clickminio/test", verbose=False):
+                return True
+            time.sleep(1)
+        return False
+
+    @staticmethod
+    def _minio_binary():
+        """Locate the `minio` binary the same way `setup_minio.sh` does.
+
+        The stateless-test docker image ships it at `/minio`, and a local
+        download (`download_minio`) writes it to `$TEMP_DIR` (== `temp_dir`).
+        `setup_minio.sh` finds it via `PATH="/:.:$PATH"` after `cd "$TEMP_DIR"`,
+        which prefers `/minio`; mirror that precedence here. The Python harness
+        only adds `temp_dir` to `PATH`, not `/`, so a bare `minio` would not
+        resolve to the docker binary - use an explicit path instead.
+        """
+        for path in ("/minio", f"{temp_dir}/minio"):
+            if os.path.exists(path):
+                return path
+        return ""
+
+    def _force_restart_minio(self, attempts=3, ready_timeout_s=60):
+        """Kill any running MinIO and start a fresh instance from the same data
+        directory, so it re-reads the webhook config written by `mc admin config
+        set`.
+
+        Retried because (a) a just-killed MinIO can still hold port 11111 for a
+        moment, making the next `minio server` exit immediately, and (b) MinIO
+        startup can take a while on a loaded sanitizer host. Each attempt kills,
+        restarts, and waits for readiness; a dead or too-slow instance is simply
+        killed and started again on the next iteration.
+        """
+        minio_bin = self._minio_binary()
+        if not minio_bin:
+            print(
+                "ERROR: cannot find the minio binary (looked for /minio and "
+                f"{temp_dir}/minio); cannot restart MinIO"
+            )
+            return False
+        # Start MinIO with the same root credentials `setup_minio.sh` used.
+        # Otherwise it comes up with different root credentials and the
+        # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
+        # so every readiness check below would fail for all retry attempts.
+        # `setup_minio.sh` resolves these as `${MINIO_ROOT_USER:-clickhouse}`;
+        # do the same so a custom value in the environment is honored too.
+        minio_root_user = os.environ.get("MINIO_ROOT_USER", "clickhouse")
+        minio_root_password = os.environ.get("MINIO_ROOT_PASSWORD", "clickhouse")
+        for attempt in range(1, attempts + 1):
+            Shell.check("pkill -9 -f 'minio server'", verbose=True)
+            # Give the OS time to release port 11111 before rebinding.
+            time.sleep(3)
+            Shell.check(
+                f"MINIO_ROOT_USER={minio_root_user} "
+                f"MINIO_ROOT_PASSWORD={minio_root_password} "
+                f"nohup {minio_bin} server --address :11111 {temp_dir}/minio_data "
+                f">> {self.MINIO_LOG} 2>&1 &",
+                verbose=True,
+            )
+            if self._wait_minio_ready(ready_timeout_s):
+                return True
+            print(
+                f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
+                f"(attempt {attempt}/{attempts})"
+            )
+        print("ERROR: Failed to restart MinIO after multiple attempts")
+        return False
+
+    def _restart_minio_to_apply_config(self):
+        # Restart minio so it picks up the webhook config set above. The clean
+        # `mc admin service restart --wait` can hang forever (see #97647), so it
+        # runs under a timeout and, on timeout, is killed by process group to
+        # avoid orphans blocking communicate() (see #98466). Whenever the clean
+        # restart does not cleanly report success with a servable bucket, fall
+        # back to a manual, retried restart, which is the reliable path on
+        # loaded CI hosts (the clean restart routinely exceeds the timeout there;
+        # see the bugfix-validation env-setup flake in PR #108821).
         restart_timeout = 60
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
@@ -582,29 +677,18 @@ profiles:
                 status = json_module.loads(stdout).get("status", "")
             except (json_module.JSONDecodeError, AttributeError):
                 status = stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
+            # `--wait` only guarantees the admin API is back, not that the
+            # bucket is servable yet, so confirm readiness before trusting it.
+            if "success" in status and self._wait_minio_ready(30):
+                return True
             print(
-                f"WARNING: minio restart timed out after {restart_timeout}s, killing and restarting"
+                f"WARNING: clickminio restart did not report a ready service, status: [{status}]"
             )
-            Shell.check("pkill -9 -f 'minio server'", verbose=True)
-            time.sleep(2)
-            Shell.check(
-                f"nohup minio server --address :11111 {temp_dir}/minio_data &",
-                verbose=True,
-            )
-            # Wait for minio to be ready
-            for _ in range(30):
-                if Shell.check("/mc ls clickminio/test", verbose=False):
-                    status = "success"
-                    break
-                time.sleep(1)
-            else:
-                status = "failed"
+        except (subprocess.TimeoutExpired, OSError):
+            print(f"WARNING: minio restart timed out after {restart_timeout}s")
 
-        res = "success" in status
-        if not res:
-            print(f"ERROR: Failed to restart clickminio, status: {status}")
-        return res
+        print("Falling back to a manual MinIO restart")
+        return self._force_restart_minio()
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
@@ -634,7 +718,7 @@ profiles:
             try:
                 self.pid = int(Shell.get_output(f"cat {pid_file}").strip())
                 break
-            except Exception as e:
+            except Exception:
                 Utils.sleep(1)
             i += 1
         if self.pid is None:
@@ -642,7 +726,7 @@ profiles:
             return False
         for attempt in range(attempts):
             res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print(f"Server replica {replica_num} ready")
@@ -748,6 +832,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             return False
 
     def run_test(self, cmd, timeout=7200):
+        """Run a `clickhouse-test` command and return its integer exit code.
+
+        Returns 0 on success, non-zero on failure. In particular, exit code
+        `STOP_TESTING_EXIT_CODE` (2) signals that `clickhouse-test` aborted
+        the run via `StopTesting` (server died, hung check failed, etc.) and
+        is forwarded to `FTResultsProcessor.run` as `runner_exit_code` so it
+        can populate the synthetic "Server died" leaf.
+        """
         print(f"Run test: [{cmd}]")
         with open(self.test_output_file, "w") as f:
             process = subprocess.Popen(
@@ -772,7 +864,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             try:
                 process.wait(timeout=timeout)
                 reader_thread.join()
-                return process.returncode == 0
+                return process.returncode
             except subprocess.TimeoutExpired:
                 print(
                     f"ERROR: fast test timed out after {timeout}s, killing process group"
@@ -780,7 +872,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.wait()
                 reader_thread.join()
-                return False
+                return process.returncode
             finally:
                 # Kill any test processes that survived clickhouse-test's own cleanup
                 # (e.g. if it was killed with SIGKILL before its signal handlers ran).
@@ -813,9 +905,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         self.save_system_metadata_files_from_remote_database_disk()
 
-        print("Terminate ClickHouse processes")
+        self.stop_server(force=force)
 
-        Shell.check(f"ps -ef | grep  clickhouse")
+        return self
+
+    def stop_server(self, force=False):
+        """Gracefully stop only the ClickHouse server processes.
+
+        Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
+        MinIO and its webhooks) running. It is used between bugfix-validation
+        iterations so the server binary can be swapped and restarted without
+        tearing down the rest of the test environment: otherwise a changed test
+        relying on Kafka or MinIO webhooks would pass under the first build type
+        and spuriously "reproduce" a bug under the next one.
+        """
+        print("Stop ClickHouse processes")
+
+        Shell.check("ps -ef | grep  clickhouse")
         for proc, pid_file, pid, run_path in (
             (self.proc, self.pid_file, self.pid_0, self.run_path0),
             (self.proc_1, self.pid_file_replica_1, self.pid_1, self.run_path1),
@@ -847,6 +953,16 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    def clean_logs(self):
+        """
+        Remove server logs from `log_dir`.
+
+        Used between bugfix validation iterations to keep logs from different
+        build types from being mixed together.
+        """
+        Utils.clean_dir(Path(self.log_dir))
+        return self
+
     @staticmethod
     def _chmod(files):
         for file in files:
@@ -864,6 +980,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
                 res += self._collect_core_dumps()
+                res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
                 if Path(self.MINIO_LOG).exists():
                     res.append(self.MINIO_LOG)
@@ -892,6 +1009,22 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for run_dir in sorted(p_temp_dir.glob("run_r*")):
             result.extend(ClickHouseService.collect_cores(run_dir))
         return result
+
+    @staticmethod
+    def _collect_diagnostic_reports() -> List[str]:
+        # macOS writes .ips crash reports to /Library/Logs/DiagnosticReports as
+        # root. Grant read access so the runner can list and read the files
+        # in place; the darwin fast-test pre-hook wipes the directory under
+        # sudo before the run, so anything we see here belongs to the current
+        # run even if the previous runner was terminated unexpectedly.
+        if platform.system() != "Darwin":
+            return []
+        reports_dir = Path("/Library/Logs/DiagnosticReports")
+        Shell.check(
+            f"sudo chmod -R a+rX {reports_dir}",
+            verbose=True,
+        )
+        return [str(p) for p in reports_dir.glob("*.ips")]
 
     @classmethod
     def _get_logs_archive_coordination(cls):
@@ -1081,6 +1214,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 result.set_status(Result.Status.OK)
             else:
                 result.set_status(Result.Status.FAIL)
+            # These are server-log / runner health checks, not test cases.
+            # The bugfix-validation inverter uses this label so a clean check
+            # (OK) is left as-is instead of being flipped into a spurious
+            # failure. A failing check still flips like a test (a fatal on the
+            # validated binary is the bug reproducing).
+            result.set_label(Result.Label.LOG_CHECK)
         return results
 
     def dump_system_tables(self):
@@ -1107,7 +1246,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "minio_audit_logs",
             "minio_server_logs",
         ]
-        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 10_000_000
+        ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
         command_args = self.LOGS_SAVER_CLIENT_OPTIONS
         # command_args += f" --config-file={self.ch_config_dir}/config.xml"
@@ -1130,7 +1269,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        command_args_post = f"-- --zookeeper.implementation=testkeeper"
+        command_args_post = "-- --zookeeper.implementation=testkeeper"
 
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
@@ -1147,7 +1286,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scraping_system_table = Result(name=f"Scraping system tables", status=Result.Status.OK)
+        scraping_system_table = Result(name="Scraping system tables", status=Result.Status.OK)
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1309,7 +1448,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
     @staticmethod
     def set_random_timezone():
         tz = Shell.get_output(
-            f"rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{{print $3}}' | shuf | head -n1"
+            "rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1"
         )
         print(f"Chosen random timezone: {tz}")
         assert tz, "Failed to get random TZ"
@@ -1357,7 +1496,7 @@ if __name__ == "__main__":
             res = ch.start_azurite()
         else:
             raise ValueError(f"Unknown command: {command}")
-    except Exception as e:
+    except Exception:
         print(f"ERROR: Failed to do [{command}]")
         traceback.print_exc()
 

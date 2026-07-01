@@ -66,6 +66,20 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
+    /// INTERSECT/EXCEPT children always return their full header (they ignore
+    /// required_result_column_names), so the whole UNION must keep the full header too.
+    if (!require_full_header)
+    {
+        for (const auto & select : ast->list_of_selects->children)
+        {
+            if (select->as<ASTSelectIntersectExceptQuery>())
+            {
+                require_full_header = true;
+                break;
+            }
+        }
+    }
+
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
         settings_limit_offset_needed = true;
@@ -347,7 +361,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
 
         auto max_threads = getMaxThreadsForAvailableMemory(
             settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* is_sql_union = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(headers), max_threads, /* allow_narrowing = */ true);
 
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
@@ -409,6 +423,7 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
+void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
