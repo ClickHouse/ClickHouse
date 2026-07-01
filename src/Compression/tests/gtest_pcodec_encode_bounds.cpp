@@ -82,6 +82,104 @@ std::vector<T> makeModeBait(size_t n, uint64_t base, size_t prefix_per_chunk)
     return values;
 }
 
+/// Builds a deliberately MALFORMED single-value standalone `.pco` stream whose `IntMult` chunk
+/// reconstructs `value = primary * base + secondary` with `primary` and `base` both set to
+/// `latent_value`. A well-formed `IntMult` stream always satisfies `primary * base + secondary`
+/// equal to the (in-range) value, so `primary * base` never exceeds the latent width; only a
+/// malformed stream (whose metadata lies) can make both factors large at once. For a sub-32-bit
+/// latent (`U16`/`I16`) that product would otherwise be evaluated in signed `int` by integer
+/// promotion and overflow it — undefined behavior a sanitizer build traps on. The byte layout
+/// mirrors the real encoder's output for a one-value chunk with a single-bin primary (a full-width
+/// offset, `lower = 0`) and a constant-zero secondary latent variable.
+template <typename T>
+std::vector<uint8_t> buildMalformedIntMultStream(uint64_t base_latent, uint64_t latent_value)
+{
+    using L = typename NumberTraits<T>::Latent;
+    constexpr Bitlen l_bits = latentBits<L>;
+    const auto type_byte = static_cast<uint8_t>(NumberTraits<T>::type_byte);
+
+    /// Over-sized so the BitWriter's up-to-16-byte write-past-the-end slack stays in bounds.
+    std::vector<uint8_t> buf(256, 0);
+    BitWriter writer(buf.data(), buf.size());
+
+    /// --- standalone header ---
+    writer.writeAlignedBytes(MAGIC_HEADER.data(), MAGIC_HEADER.size());
+    writer.writeU64(CURRENT_STANDALONE_VERSION, BITS_TO_ENCODE_STANDALONE_VERSION);
+    writer.writeAlignedBytes(&type_byte, 1); // uniform type
+    writeVarint(writer, 1); // n hint
+    writer.finishByte();
+
+    /// --- wrapped header (format 4.1) ---
+    const uint8_t version_bytes[2] = {4, 1};
+    writer.writeAlignedBytes(version_bytes, 2);
+
+    /// --- chunk preamble ---
+    writer.writeAlignedBytes(&type_byte, 1);
+    writer.writeU64(0, BITS_TO_ENCODE_N_ENTRIES); // n - 1 == 0 (one value)
+
+    /// --- chunk metadata: IntMult mode, no delta, primary + secondary latent-var metas ---
+    writer.writeU64(1, BITS_TO_ENCODE_MODE_VARIANT); // 1 == IntMult
+    writer.writeU64(base_latent, l_bits);
+    writer.writeU64(0, BITS_TO_ENCODE_DELTA_ENCODING_VARIANT); // 0 == None
+    PcoArray<Bin> primary_bins(1);
+    primary_bins[0] = Bin{/*weight=*/1, /*lower=*/0, /*offset_bits=*/l_bits};
+    writeChunkLatentVarMeta(writer, /*ans_size_log=*/0, primary_bins, l_bits);
+    PcoArray<Bin> secondary_bins(1);
+    secondary_bins[0] = Bin{/*weight=*/1, /*lower=*/0, /*offset_bits=*/0};
+    writeChunkLatentVarMeta(writer, /*ans_size_log=*/0, secondary_bins, l_bits);
+    writer.finishByte();
+
+    /// --- page metadata: no delta moments, and the 4 ANS final states are 0 bits each (ans_size_log == 0) ---
+    writer.finishByte();
+
+    /// --- page body: the single primary offset (full latent width); the secondary is constant zero ---
+    writer.writeU64(latent_value, l_bits);
+    writer.finishByte();
+
+    /// --- footer terminator ---
+    const uint8_t term = MAGIC_TERMINATION_BYTE;
+    writer.writeAlignedBytes(&term, 1);
+
+    buf.resize(writer.byteSize());
+    return buf;
+}
+
+/// Decodes one hand-built standalone stream into a single value of type T.
+template <typename T>
+T decodeSingle(const std::vector<uint8_t> & stream)
+{
+    std::vector<uint8_t> padded(stream.size() + DECODE_BATCH_OVERSHOOT, 0);
+    std::memcpy(padded.data(), stream.data(), stream.size());
+    T out{};
+    size_t written = decodeStandalone(padded.data(), stream.size(), reinterpret_cast<uint8_t *>(&out), sizeof(T), sizeof(T));
+    EXPECT_EQ(written, sizeof(T));
+    return out;
+}
+
+}
+
+/// A malformed `IntMult` stream must reconstruct sub-word latents without signed-overflow UB. With a
+/// 16-bit latent, `primary * base` for `primary = base = 65535` is `0xFFFE0001`, which overflows a
+/// signed `int` (the type both `uint16_t` operands promote to) — a sanitizer build traps on it unless
+/// the join is done in a wider unsigned accumulator. The reconstruction must instead wrap modularly,
+/// matching the reference `wrapping_mul`: `(65535 * 65535) mod 2^16 == 1`.
+TEST(CodecPcoEncodeBounds, IntMultSubWordReconstructionNoOverflow)
+{
+    for (uint64_t v : {uint64_t{65535}, uint64_t{65534}, uint64_t{50000}, uint64_t{40000}})
+    {
+        /// `U16`: `fromLatentOrdered` is the identity, so the decoded value is the defined wrap.
+        uint16_t out_u16 = 0;
+        ASSERT_NO_THROW(out_u16 = decodeSingle<uint16_t>(buildMalformedIntMultStream<uint16_t>(v, v)));
+        EXPECT_EQ(out_u16, static_cast<uint16_t>(v * v)) << "base = primary = " << v;
+
+        /// `I16`: same 16-bit latent join; only assert it decodes without UB (the value is re-centered).
+        ASSERT_NO_THROW(decodeSingle<int16_t>(buildMalformedIntMultStream<int16_t>(v, v)));
+
+        /// `U8`/`I8` promote to `int` too, but `255 * 255` cannot overflow it; exercise them anyway.
+        const uint64_t v8 = v & 0xFF;
+        ASSERT_NO_THROW(decodeSingle<uint8_t>(buildMalformedIntMultStream<uint8_t>(v8, v8)));
+        ASSERT_NO_THROW(decodeSingle<int8_t>(buildMalformedIntMultStream<int8_t>(v8, v8)));
+    }
 }
 
 /// Incompressible data spanning several `ENCODE_CHUNK_N` chunks: every chunk is at the no-expansion

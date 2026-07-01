@@ -12,6 +12,7 @@
 #include <array>
 #include <cstring>
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 /** Top-level decoder for the standalone `.pco` container, ported from
@@ -193,14 +194,23 @@ void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t *
         if (meta.mode.variant != ModeVariant::IntMult)
             throw PcodecError("pcodec: unexpected mode for integer type");
         L base = static_cast<L>(meta.mode.base_latent);
+        // Reconstruct in an explicitly unsigned accumulator at least 32 bits wide. For sub-32-bit
+        // latents (`U8`/`U16`/`I8`/`I16`, whose `L` is `uint8_t`/`uint16_t`) integer promotion would
+        // otherwise evaluate `pl[i] * base` in signed `int`, and a malformed stream (e.g. with
+        // `pl[i] = base = 65535`) overflows it — undefined behavior rather than the defined modular
+        // reconstruction the format specifies. Valid streams satisfy `pl[i] * base + sec <= max(L)`,
+        // so the wider accumulator produces identical results for them; only malformed input differs.
+        using Acc = std::conditional_t<(sizeof(L) < sizeof(uint32_t)), uint32_t, L>;
         run_batches(primary, sec_decode, [&](size_t off, size_t bn)
         {
             if (sec_const)
                 for (size_t i = 0; i < bn; ++i)
-                    out[off + i] = NumberTraits<T>::fromLatentOrdered(static_cast<L>(pl[i] * base + sec_c));
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(
+                        static_cast<L>(static_cast<Acc>(pl[i]) * static_cast<Acc>(base) + static_cast<Acc>(sec_c)));
             else
                 for (size_t i = 0; i < bn; ++i)
-                    out[off + i] = NumberTraits<T>::fromLatentOrdered(static_cast<L>(pl[i] * base + sl[i]));
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(
+                        static_cast<L>(static_cast<Acc>(pl[i]) * static_cast<Acc>(base) + static_cast<Acc>(sl[i])));
         });
     }
     else // floating point
