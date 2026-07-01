@@ -105,6 +105,9 @@ public:
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
+    bool supportsTruncate() const override { return true; }
+
+    void truncate(ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & storage_id) override;
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
