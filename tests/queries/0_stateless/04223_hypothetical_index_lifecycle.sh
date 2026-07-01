@@ -106,7 +106,11 @@ $CLICKHOUSE_CLIENT -n -q "
     SETTINGS index_granularity = 100;
     INSERT INTO t_hypo_final SELECT number, number FROM numbers(100);
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_final (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42;
+    -- Pin the non-lazy FINAL plan: with query_plan_optimize_lazy_final the FINAL is
+    -- rewritten into a LazyReadReplacingFinalStep, so the read step no longer reports
+    -- isQueryWithFinal() and WHATIF reports 'applicable' instead of the not_applicable
+    -- guard this case is meant to exercise. Randomization sets it on, so force it off.
+    EXPLAIN WHATIF SELECT * FROM t_hypo_final FINAL WHERE b = 42 SETTINGS query_plan_optimize_lazy_final = 0;
 " | grep -E '^With |^\s+status:|^\s+reason:'
 
 echo "--- CREATE rejects text index (explicit unsupported-type path) ---"
