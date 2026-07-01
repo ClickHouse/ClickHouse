@@ -1771,12 +1771,11 @@ ReturnType readDateTimeTextFallback(
 
         if (too_short && negative_multiplier != -1)
         {
-            /// In dt64_mode, only a bare four-digit positive value is ambiguous with a year.
-            /// One-to-three digit values are unambiguous: accept them so that inputs like
-            /// "0,true,..." and "100,true,..." behave the same in both the optimistic path
-            /// (which reads via readIntTextImpl) and the fallback path (which uses this branch).
-            const bool is_ambiguous_year = !dt64_mode || (s_pos - s == 4);
-            if (is_ambiguous_year)
+            /// peek_suggests_decimal means dt64_mode is true, the next char is '.',
+            /// and fewer than 6 bytes remain in the current chunk. The DateTime64 wrapper
+            /// will handle the '.' (reading a decimal fraction or detecting a dotted date).
+            /// In that case we return the integer part without throwing.
+            if (!peek_suggests_decimal)
             {
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
