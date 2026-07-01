@@ -172,7 +172,7 @@ REGISTER_FUNCTION(NaiveBayesNgrams)
                        "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) layout): "
                        "`byte`, `codepoint`, or `token` mode, with optional boundary padding. Use it to build the "
                        "pre-aggregated `(ngram, class_id, count)` training data such a dictionary consumes, so the training "
-                       "n-grams match exactly what naiveBayesClassifier produces at query time.",
+                       "n-grams match exactly what [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naivebayesclassifier) produces at query time.",
         .syntax = "naiveBayesNgrams(text, n, mode[, start_token, end_token])",
         .arguments
         = {{"text", "Text to split into n-grams.", {"String"}},

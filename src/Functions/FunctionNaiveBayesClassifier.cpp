@@ -324,7 +324,8 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         .description = "Classifies input text using a "
                        "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
                        "Equivalent to dictGet(dictionary_name, class_attribute, input_text), where class_attribute is the "
-                       "name of the class label attribute configured in the dictionary's layout.",
+                       "name of the class label attribute configured in the dictionary's "
+                       "[layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters).",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
