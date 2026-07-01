@@ -500,15 +500,31 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
             const auto & join = join_step->getJoin();
             const auto & table_join = join->getTableJoin();
 
+            /// `FullSortingMergeJoin` also serves `ASOF` joins, but they cannot be sharded by the hash of
+            /// the whole key list: the trailing key is the inequality (`ASOF`) key, so rows with the same
+            /// equality keys but different `ASOF` values would hash into different shards and the per-shard
+            /// merge join could miss the closest match. The primary-key-range sharding path
+            /// (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
             if (typeid_cast<const FullSortingMergeJoin *>(join.get())
                 && table_join.isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+                && table_join.strictness() != JoinStrictness::Asof
                 && table_join.getClauses().size() == 1)
             {
                 auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
                 auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
 
+                /// Only rewrite plain full sorts. `applyOrder` (read-in-order), which runs before this pass,
+                /// can turn a merge-join `SortingStep` into `FinishSorting` fed by an already in-order read
+                /// (with `read_in_order_use_virtual_row = 1` the read even emits virtual-row chunks). The
+                /// scatter path here is designed for a full sort of unsorted input, so re-routing such a
+                /// read through `ScatterByPartitionTransform` throws away the pre-sortedness and mixes in
+                /// virtual-row handling it does not expect. Sharding of in-order MergeTree reads is already
+                /// handled by the primary-key-range path (`optimizeJoinByShards`), so leave these steps
+                /// alone and let the join run as a single merge join.
                 if (left_sort && right_sort
-                    && left_sort->isSortingForMergeJoin() && right_sort->isSortingForMergeJoin())
+                    && left_sort->isSortingForMergeJoin() && right_sort->isSortingForMergeJoin()
+                    && left_sort->getType() == SortingStep::Type::Full
+                    && right_sort->getType() == SortingStep::Type::Full)
                 {
                     left_sort->convertToScatteredFullSort(num_shards);
                     right_sort->convertToScatteredFullSort(num_shards);
