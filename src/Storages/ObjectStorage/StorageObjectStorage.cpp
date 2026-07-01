@@ -484,8 +484,8 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
 {
     /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
     /// a same-named table whose object `ETag`s repeat under a DROP + CREATE with a different read-affecting
-    /// configuration, because the value is derived from the object content, not from a per-incarnation
-    /// identity. Fail closed, matching `MergeTree`/`Memory`/`Log` and `URL`.
+    /// configuration. The UUID (folded into the hash below) is the per-incarnation identity that tells them
+    /// apart, so without one there is nothing to fold - fail closed, matching `MergeTree`/`Memory`/`Log` and `URL`.
     if (!getStorageID().hasUUID())
         return {};
 
@@ -520,6 +520,15 @@ std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSn
         file_iterator->setEmitProfileEvents(false);
 
         SipHash hash;
+        /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an
+        /// `Atomic` database gets a fresh UUID) that would otherwise share the same object `ETag`s and columns
+        /// under a different read-affecting configuration.
+        hash.update(getStorageID().uuid);
+        /// Loop-free metadata version: the column string below folds by value, so a metadata-only `ALTER` that
+        /// is reverted (e.g. an alias/default expression `A -> B -> A`) does not move it and the object `ETag`s
+        /// stay the same, yet the middle state B was query-visible. Folding the per-lifetime metadata version
+        /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
 
         while (auto object_info = file_iterator->next(0))

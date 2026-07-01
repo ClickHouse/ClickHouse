@@ -1558,9 +1558,9 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
 {
     /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
     /// a same-named table: a DROP + CREATE can point at the same URL with the same strong `ETag` but a
-    /// different read-affecting configuration (format, format settings) and produce the same hash, because
-    /// the value is derived from the resource content, not from a per-incarnation identity. Fail closed,
-    /// matching `MergeTree`/`Memory`/`Log`.
+    /// different read-affecting configuration (format, format settings) and produce the same hash. The UUID
+    /// (folded into the hash below) is the per-incarnation identity that tells them apart, so without one
+    /// there is nothing to fold - fail closed, matching `MergeTree`/`Memory`/`Log`.
     if (!getStorageID().hasUUID())
         return {};
 
@@ -1613,6 +1613,15 @@ std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapsho
         return {};
 
     SipHash hash;
+    /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an
+    /// `Atomic` database gets a fresh UUID) that would otherwise share the same resource `ETag` and columns
+    /// under a different read-affecting configuration.
+    hash.update(getStorageID().uuid);
+    /// Loop-free metadata version: the column string below folds by value, so a metadata-only `ALTER` that
+    /// is reverted (e.g. an alias/default expression `A -> B -> A`) does not move it and the strong `ETag`
+    /// stays the same, yet the middle state B was query-visible. Folding the per-lifetime metadata version
+    /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
     hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
     hash.update(uri);
     hash.update(file_info.etag);
