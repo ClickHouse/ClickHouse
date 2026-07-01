@@ -1022,6 +1022,20 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
+    @staticmethod
+    def get_pr_url_by_branch(branch, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
+        url = Shell.get_output(get_url_cmd)
+        if not url:
+            print(f"WARNING: No open PR found for branch [{branch}] - searching merged")
+            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
+            url = Shell.get_output(get_url_cmd)
+        if not url:
+            print(f"ERROR: PR not found for branch [{branch}]")
+        return url
+
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,
         Result.Status.FAIL: Result.GHStatus.FAILURE,

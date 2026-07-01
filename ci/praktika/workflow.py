@@ -62,6 +62,15 @@ class Workflow:
         # prefixed with this string, except "self-hosted". The intent is to route the
         # workflow to an isolated fleet of runners that carry the prefixed labels.
         runs_on_label_prefix: str = ""
+        # Emit a top-level `concurrency:` group (dispatch workflows only). Two runs
+        # sharing the same group never execute concurrently — used by the release
+        # workflow to prevent overlapping releases racing on tags/packages/images.
+        concurrency_group: str = ""
+        # Also emit a `workflow_call:` trigger (dispatch workflows only) so the
+        # workflow can be reused via `uses:` from another workflow. The same inputs
+        # are exposed (choice inputs degrade to `string`, which is all
+        # `workflow_call` supports) and GH secrets are declared as required.
+        enable_workflow_call: bool = False
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -142,3 +151,4 @@ class Workflow:
             is_required: bool
             default_value: str
             options: Optional[List] = None
+            is_boolean: bool = False
