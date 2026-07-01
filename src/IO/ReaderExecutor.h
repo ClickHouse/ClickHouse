@@ -104,7 +104,7 @@ public:
         /// Route the synchronous foreground serve through the same FetchMachine flow as the
         /// prefetch (run inline by a `LocalFetchMachineRunner`). When false, the legacy
         /// synchronous read-and-assemble path serves the foreground.
-        bool unified_foreground = false;
+        bool unified_foreground = true;
         /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
         size_t long_connection_open_range = DEFAULT_LONG_CONNECTION_OPEN_RANGE;

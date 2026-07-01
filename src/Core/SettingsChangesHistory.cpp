@@ -51,7 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
-            {"reader_executor_unified_foreground", false, false, "New experimental setting: route the ReaderExecutor's synchronous foreground serve through the same FetchMachine flow as the prefetch (run inline), instead of the bespoke synchronous path."},
+            {"reader_executor_unified_foreground", false, true, "Route the ReaderExecutor's synchronous foreground serve through the same FetchMachine flow as the prefetch (run inline) by default, instead of the bespoke synchronous path."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
