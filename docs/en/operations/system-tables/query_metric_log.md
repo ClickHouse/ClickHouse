@@ -533,8 +533,6 @@ by default). The data is also collected when the query finishes if the query tak
   9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas.
   The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 - `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
-- `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/sql-reference/data-types/int-uint)) — Number of Naive Bayes Classifier models loaded.
-- `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes allocated for Naive Bayes Classifier models.
 - `ProfileEvent_USearchAddCount` ([UInt64](/sql-reference/data-types/int-uint)) — Number of vectors added to usearch indexes.
 - `ProfileEvent_USearchAddVisitedMembers` ([UInt64](/sql-reference/data-types/int-uint)) — Number of nodes visited when adding vectors to usearch indexes.
 - `ProfileEvent_USearchAddComputedDistances` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times distance was computed when adding vectors to usearch indexes.
