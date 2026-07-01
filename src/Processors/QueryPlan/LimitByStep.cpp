@@ -40,7 +40,7 @@ LimitByStep::LimitByStep(
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// Here's what each variable means:
-    /// `input_sorted_by_keys`: every stream is sorted by the LIMIT BY keys. This can happen for two reasons
+    /// `sorted_columns_descr` (non-empty): every stream is sorted by the LIMIT BY keys, in that key order. This can happen for two reasons
     ///                         1. Upstream ORDER BY compatible with LIMIT BY keys
     ///                         2. Reading from MergeTree InOrder if LIMIT BY keys are compatible with primary key
     /// `skip_stream_merging`: every stream has disjoint keys. This means that if a key appears in one stream, it doesn't appear in any other. Currently, this happens if the
@@ -53,7 +53,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     /// run the optimized `LimitBySortedStreamTransform` per stream. Again, in this case, it does not matter if `pipeline.getNumStreams()` is 1 or more.
     /// If it's 1, then we have one single global order in the output. If it's more than 1, that means there is no upstream ORDER BY and as a result, we can
     /// output results in any order. The result is correct (but orderless) because data is disjoint across streams.
-    if (input_sorted_by_keys && skip_stream_merging)
+    if (!sorted_columns_descr.empty() && skip_stream_merging)
     {
         pipeline.addSimpleTransform(
             [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -61,13 +61,13 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, columns);
+                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
             });
         return;
     }
 
     /// Per stream sorted.
-    if (input_sorted_by_keys && pipeline.getNumStreams() > 1)
+    if (!sorted_columns_descr.empty() && pipeline.getNumStreams() > 1)
     {
         chassert(!skip_stream_merging);
 
@@ -82,7 +82,7 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
                 if (stream_type != QueryPipelineBuilder::StreamType::Main)
                     return nullptr;
 
-                return std::make_shared<LimitBySortedStreamTransform>(header, prefilter_length, 0, columns);
+                return std::make_shared<LimitBySortedStreamTransform>(header, prefilter_length, 0, sorted_columns_descr);
             });
 
         /// Now we need to dedup. If LIMIT 1 BY ..., that means the same key can exist in multiple streams but in the final output that key can only appear once.
@@ -103,9 +103,9 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     }
 
     /// Now three remaining cases can happen:
-    ///     1) input_sorted_by_keys and pipeline.getNumStreams() == 1
+    ///     1) input sorted by keys and pipeline.getNumStreams() == 1
     ///     2) skip_stream_merging with any pipeline.getNumStreams()
-    ///     3) !skip_stream_merging and !input_sorted_by_keys
+    ///     3) !skip_stream_merging and input not sorted by keys
     /// In all of these, no key is ever split across the streams we run LIMIT BY on, so running it on each stream
     /// independently is correct (cases 1 and 2 already satisfy this; case 3 only after the `resize(1)` below).
     /// In case 1 we already have one sorted stream, so the `resize(1)` below does nothing and we run the optimized
@@ -124,8 +124,8 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
 
-            if (input_sorted_by_keys)
-                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, columns);
+            if (!sorted_columns_descr.empty())
+                return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
 
             return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
         });
@@ -200,9 +200,9 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void LimitByStep::applyOrder()
+void LimitByStep::applyOrder(const SortDescription & sort_description)
 {
-    input_sorted_by_keys = true;
+    sorted_columns_descr = sort_description;
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry);

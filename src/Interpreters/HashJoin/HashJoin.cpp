@@ -61,9 +61,9 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 
 size_t getMinBytesForPrefetchInJoin()
 {
-    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * L2 cache size (`getL2CacheSize` defaults to 256 KiB). Cached after first call.
-    static const size_t result = 4 * getL2CacheSize();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead. Cached after first call.
+    static const size_t result = getL2CacheSize();
     return result;
 }
 
@@ -187,7 +187,8 @@ HashJoin::HashJoin(
     bool any_take_last_row_,
     size_t reserve_num_,
     const String & instance_id_,
-    bool use_two_level_maps)
+    bool use_two_level_maps,
+    const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -203,6 +204,7 @@ HashJoin::HashJoin(
     , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
     , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
     , enable_prefetch(table_join->enableSoftwarePrefetchInJoin())
+    , stats_collecting_params(stats_collecting_params_)
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
@@ -1436,6 +1438,21 @@ HashJoin::~HashJoin()
         LOG_TEST(log, "{}Join data has been already released", instance_log_id);
         return;
     }
+
+    try
+    {
+        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        {
+            if (const auto ht_size = getTotalRowCount())
+                getHashTablesStatistics<HashJoinEntry>().update(
+                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
     LOG_TEST(
         log,
         "{}Join data is being destroyed, {} bytes and {} rows in hash table",
@@ -2671,6 +2688,8 @@ void HashJoin::onBuildPhaseFinish()
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
     updateNonJoinedRowsStatus();
+
+    build_phase_finished = true;
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }

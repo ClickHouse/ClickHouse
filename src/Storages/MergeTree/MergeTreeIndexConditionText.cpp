@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
@@ -1062,19 +1063,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        /// NOTE: positional phrase search is incompatible with a token-rewriting postprocessor
-        /// (it may drop/reorder tokens); the two are not expected to be configured together.
         if (has_positions)
         {
-            /// For phrase queries, we need tokens in their original order with duplicates preserved.
+            /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
+            /// sorted distinct set used for granule-level filtering (all tokens must exist).
             VectorWithMemoryTracking<String> phrase_tokens;
             tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
-            if (phrase_tokens.empty())
-                return false;
 
-            /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
-            auto unique_tokens = tokenizer->compactTokens(phrase_tokens);
-            std::sort(unique_tokens.begin(), unique_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens;
+            if (has_postprocessor)
+            {
+                /// Dense positions: a token the postprocessor drops leaves no gap, so 'see cat' matches 'see the cat'.
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+                std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+                unique_tokens = VectorWithMemoryTracking<String>(dedup.begin(), dedup.end());
+            }
+            else
+            {
+                unique_tokens = tokenizer->compactTokens(phrase_tokens);
+                std::sort(unique_tokens.begin(), unique_tokens.end());
+            }
 
             auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
             query->phrase_tokens = std::move(phrase_tokens);
@@ -1086,14 +1094,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Without positions, fall back to "all tokens must exist". stringToTokens applies both the
         /// preprocessor and the postprocessor so the lookup tokens match what was stored in the index;
         /// in Hint mode any false positives are resolved by the row-level filter.
+        /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
         auto tokens = stringToTokens(value_field);
-
-        /// If a pre/postprocessor maps the whole phrase to no tokens, an empty FUNCTION_HAS_ALL_TOKENS
-        /// would prune every granule (hasAllQueryTokens returns false for empty tokens). hasPhrase is
-        /// hint-only and is not postprocessed at row level, so it can still match. Bail out of index use
-        /// instead of producing an unsatisfiable hint, letting the row-level filter decide.
-        if (tokens.empty())
-            return false;
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));

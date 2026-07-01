@@ -83,6 +83,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .condition = index.condition.get(),
         .part = *data_part,
         .index = *index.index,
+        .readable_ranges = nullptr,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -285,11 +286,12 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
 
         if (search_query->tokens.empty() && search_query->patterns.empty())
         {
-            /// hasAnyTokens / hasAllTokens with no search tokens never match (row-level returns 0,
-            /// e.g. when a postprocessor maps every needle token to empty). Encode this as an explicit
-            /// no-match so direct read agrees with the row-scan path; otherwise an always-true virtual
-            /// column would wrongly keep all rows once granule pruning cannot mask it (e.g. under OR).
-            if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens")
+            /// Token and phrase searches with no search tokens never match (row-level returns 0, e.g. when a
+            /// postprocessor maps every needle token to empty). Encode this as an explicit no-match so direct
+            /// read agrees with the row-scan path; otherwise an always-true virtual column would wrongly keep
+            /// all rows once granule pruning cannot mask it (e.g. under OR).
+            if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens"
+                || search_query->search_mode == TextSearchMode::Phrase)
                 continue;
 
             /// Always return true for empty needles.
