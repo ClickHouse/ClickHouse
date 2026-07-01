@@ -4481,6 +4481,35 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    /// The `Quantize(...)` codec cannot be added to, removed from, or changed on a column via ALTER. Codec changes are
+    /// metadata-only (existing parts are not rewritten), so an in-place ALTER would leave the table inconsistent:
+    /// existing parts keep the plain serialization (no companion codes stream, and `pq` parts stay compact) while new
+    /// parts carry the codec. Set the codec at CREATE TABLE; to adopt it on existing data, create a new table with the
+    /// codec and `INSERT ... SELECT` into it (a full, consistent rewrite), then swap.
+    {
+        auto quantize_signature = [](const ASTPtr & codec) -> String
+        {
+            const auto params = tryExtractQuantizeCodecParams(codec);
+            if (!params)
+                return {};
+            return fmt::format("{}:{}:{}:{}", params->method, params->dimensions, params->bits, params->m);
+        };
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::ADD_COLUMN && command.type != AlterCommand::MODIFY_COLUMN)
+                continue;
+            const String old_sig = old_metadata.getColumns().has(command.column_name)
+                ? quantize_signature(old_metadata.getColumns().get(command.column_name).codec) : String{};
+            const String new_sig = new_metadata.getColumns().has(command.column_name)
+                ? quantize_signature(new_metadata.getColumns().get(command.column_name).codec) : String{};
+            if (old_sig != new_sig)
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The Quantize(...) codec cannot be added, removed or changed on column {} via ALTER (it is a "
+                    "metadata-only change that would leave existing parts inconsistent with new ones). Set the codec at "
+                    "CREATE TABLE; to adopt it on existing data, create a new table with the codec and INSERT ... SELECT "
+                    "into it.", backQuoteIfNeed(command.column_name));
+        }
+    }
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
