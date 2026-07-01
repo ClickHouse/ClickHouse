@@ -201,6 +201,9 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
             auth_method = HashiCorpVaultAuthMethod::Token;
         }
 
+        if (auth_method == HashiCorpVaultAuthMethod::Cert && scheme != "https")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "certificate authentication requires HTTPS for vault.");
+
         secret_path = config.getString(prefix + ".secret_path", "secret");
         kv_api_version = config.getUInt(prefix + ".kv_api_version", 2);
         if (kv_api_version != 1 && kv_api_version != 2)

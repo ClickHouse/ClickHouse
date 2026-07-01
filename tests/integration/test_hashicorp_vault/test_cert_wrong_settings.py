@@ -60,3 +60,11 @@ def test_empty_certificate():
         "configs/users.xml",
         "DB::Exception: certificateFile is not specified for vault",
     )
+
+
+def test_cert_over_http():
+    start_clickhouse(
+        "configs/config_cert_http.xml",
+        "configs/users.xml",
+        "certificate authentication requires HTTPS",
+    )
