@@ -226,3 +226,26 @@ TEST(LZ4DecompressBranchless, ForcedMethod1RejectsOutOfRangeOffset)
         static_cast<int>(dest_size));
     ASSERT_LT(ref_size, 0);
 }
+
+/// A zero match offset is invalid in LZ4 (minimum match distance is 1). With `offset == 0` the
+/// match pointer equals `op`, which slips past the `match < output_begin` guard, so the decoder
+/// must reject it explicitly rather than synthesize output from the destination and report success.
+///
+/// Note the reference `LZ4_decompress_safe` is lenient here: it does not reject `offset == 0`, it
+/// copies `op` onto itself and reports success with garbage output. Our decoder is deliberately
+/// stricter (fail-closed) — the contract this test pins down is that it never claims success.
+TEST(LZ4DecompressBranchless, ForcedMethod1RejectsZeroOffset)
+{
+    std::vector<UInt8> trailing(18, 0x77);
+    std::vector<UInt8> seed = {0x10, 0x11, 0x12};
+
+    const UInt16 zero_offset = 0;
+    const size_t match_length = 16;
+    const std::vector<UInt8> block = encodeBlock(seed, zero_offset, match_length, trailing);
+
+    /// dest_size as if the (invalid) match had been decoded.
+    const size_t dest_size = seed.size() + match_length + trailing.size();
+
+    std::vector<UInt8> got;
+    ASSERT_FALSE(decodeWithForcedVariant(block, dest_size, got));
+}

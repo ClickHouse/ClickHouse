@@ -549,7 +549,13 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         ip += 2;
         UInt8 * match = op - offset;
 
-        if (unlikely(match < output_begin))
+        /// Reject a zero offset (invalid in LZ4 — the minimum match distance is 1) together with an
+        /// offset that reaches before the start of the output, in a single unsigned comparison that
+        /// adds no branch to the hot loop. For any `offset >= 1` this is exactly `match < output_begin`
+        /// (`match = op - offset`); for `offset == 0`, `offset - 1` wraps to `SIZE_MAX` and also fails,
+        /// so the overlap copy can no longer synthesize output from the destination and wrongly report
+        /// success. We fail closed here (the reference decoder is more lenient and returns garbage).
+        if (unlikely(offset - 1 >= static_cast<size_t>(op - output_begin)))
             return false;
 
         /// Get match length.
