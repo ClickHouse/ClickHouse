@@ -73,7 +73,7 @@ The transport is determined solely by the scheme of the `endpoint` URL. There is
 - `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
 - `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
 
-AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. To guarantee encrypted transport, restrict endpoints to HTTPS hosts via [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) and only configure named collections with `https://` endpoints.
+AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
 
 Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
