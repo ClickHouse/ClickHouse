@@ -7,6 +7,8 @@ SET materialize_statistics_on_insert = 0;
 
 DROP TABLE IF EXISTS tab;
 
+SET explain_query_plan_default = 'legacy';
+
 CREATE TABLE tab
 (
     id UInt32,

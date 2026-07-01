@@ -1,4 +1,5 @@
 -- Test for apply_row_policy_after_final setting with ReplacingMergeTree, https://github.com/ClickHouse/ClickHouse/issues/90986
+SET explain_query_plan_default = 'legacy';
 
 SET query_plan_optimize_lazy_final = 0;
 

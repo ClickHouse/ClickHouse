@@ -4,6 +4,7 @@
 --   3. Non-SK row policy keeps PREWHERE deferred even when PREWHERE is
 --      itself SK-only — otherwise `throwIf` leak hidden rows
 
+SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 -- Lazy final restructures the plan so deferred filters become regular FilterSteps
 -- above LazyReadReplacingFinalStep — semantically correct but changes EXPLAIN output.
