@@ -536,13 +536,22 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
             const auto & join = join_step->getJoin();
             const auto & table_join = join->getTableJoin();
 
+            /// Only shard when `parallel_full_sorting_merge` was the algorithm actually selected. Because
+            /// both `full_sorting_merge` and `parallel_full_sorting_merge` build the same
+            /// `FullSortingMergeJoin`, `join_algorithm` membership is not enough: e.g. with
+            /// `full_sorting_merge,parallel_full_sorting_merge` the priority list selects plain
+            /// `full_sorting_merge` first and the parallel variant is only an unreached fallback, so the
+            /// sharded (unordered) rewrite must not fire. `FullSortingMergeJoin::isParallel` carries the
+            /// selected algorithm from `chooseJoinAlgorithm`.
+            ///
             /// `FullSortingMergeJoin` also serves `ASOF` joins, but they cannot be sharded by the hash of
             /// the whole key list: the trailing key is the inequality (`ASOF`) key, so rows with the same
             /// equality keys but different `ASOF` values would hash into different shards and the per-shard
             /// merge join could miss the closest match. The primary-key-range sharding path
             /// (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
-            if (typeid_cast<const FullSortingMergeJoin *>(join.get())
-                && table_join.isEnabledAlgorithm(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+            const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(join.get());
+            if (full_sorting_merge_join
+                && full_sorting_merge_join->isParallel()
                 && table_join.strictness() != JoinStrictness::Asof
                 && table_join.getClauses().size() == 1)
             {

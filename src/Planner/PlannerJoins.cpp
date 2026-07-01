@@ -1249,7 +1249,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+            return std::make_shared<FullSortingMergeJoin>(
+                table_join, right_table_expression_header, /*null_direction_=*/1,
+                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
