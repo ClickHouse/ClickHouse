@@ -21,6 +21,8 @@ MetadataStorageType metadataTypeFromString(const String & type)
         return MetadataStorageType::PlainRewritable;
     if (check_type == "web")
         return MetadataStorageType::StaticWeb;
+    if (check_type == "web_index")
+        return MetadataStorageType::WebIndex;
     if (check_type == "keeper")
         return MetadataStorageType::Keeper;
     if (check_type == "memory")
