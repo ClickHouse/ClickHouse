@@ -1,6 +1,6 @@
 #include <type_traits>
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <Functions/FunctionFactory.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -50,7 +50,10 @@ struct MultiplyImpl
 #endif
 };
 
-struct NameMultiply { static constexpr auto name = "multiply"; };
+struct NameMultiply
+{
+    static constexpr auto name = "multiply";
+};
 using FunctionMultiply = BinaryArithmeticOverloadResolver<MultiplyImpl, NameMultiply>;
 
 class FunctionSqr final : public IFunction
@@ -72,6 +75,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    bool isNameInsensitive() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         ColumnWithTypeAndName argument;
@@ -90,6 +95,28 @@ public:
         return buildMultiply(argument)->execute({argument, argument}, result_type, input_rows_count, /* dry_run = */ false);
     }
 
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        ColumnWithTypeAndName argument;
+        argument.type = arguments.front();
+        return buildMultiply(argument)->isCompilable();
+    }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        ColumnWithTypeAndName argument;
+        argument.type = arguments.front().type;
+        auto multiply_function = buildMultiply(argument);
+
+        ValuesWithType multiply_arguments;
+        multiply_arguments.push_back(arguments.front());
+        multiply_arguments.push_back(arguments.front());
+        return multiply_function->compile(builder, multiply_arguments);
+    }
+#endif
+
 private:
     FunctionBasePtr buildMultiply(const ColumnWithTypeAndName & argument) const { return multiply->build({argument, argument}); }
 
@@ -100,11 +127,8 @@ REGISTER_FUNCTION(Multiply)
 {
     FunctionDocumentation::Description description = "Calculates the product of two values `x` and `y`.";
     FunctionDocumentation::Syntax syntax = "multiply(x, y)";
-    FunctionDocumentation::Arguments arguments =
-    {
-        {"x", "factor.", {"(U)Int*", "Float*", "Decimal"}},
-        {"y", "factor.", {"(U)Int*", "Float*", "Decimal"}}
-    };
+    FunctionDocumentation::Arguments arguments
+        = {{"x", "factor.", {"(U)Int*", "Float*", "Decimal"}}, {"y", "factor.", {"(U)Int*", "Float*", "Decimal"}}};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the product of x and y"};
     FunctionDocumentation::Examples examples = {{"Multiplying two numbers", "SELECT multiply(5,5)", "25"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
