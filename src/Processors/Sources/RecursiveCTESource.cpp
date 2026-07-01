@@ -361,8 +361,8 @@ QueryTreeNodePtr buildInFilterNode(
 /// disabled.
 ///
 /// The injected predicate is only an optimization, so it must never change the
-/// observable behaviour of the recursive query. There are two ways it could,
-/// and both are guarded here by failing closed:
+/// observable behaviour of the recursive query. There are three ways it could,
+/// and all are guarded here by failing closed:
 ///
 ///  - Size limits. The planner lowers the injected `IN` through
 ///    `FutureSetFromTuple`, which enforces these limits via
@@ -381,6 +381,12 @@ QueryTreeNodePtr buildInFilterNode(
 ///    no-match. The conversion must therefore be attempted here unconditionally
 ///    (not only when size limits are set) and any exception from it treated as
 ///    "do not inject".
+///
+///  - Memory. Materializing the set can raise `MEMORY_LIMIT_EXCEEDED` under a
+///    tight `max_memory_usage` even when the row/byte set limits are unlimited
+///    (the default). The unoptimized scan never builds this set, so the probe is
+///    always built here (through the same memory tracker) and any such failure is
+///    treated as "do not inject" — see the guarded build below.
 ///
 /// The set is measured exactly the way the planner would build it: the same
 /// conversion of the same constant, then a `Set` built the way
@@ -417,11 +423,15 @@ bool generatedInSetIsSafeToInject(
         return false;
     }
 
-    /// `0` means unlimited for both — the conversion above already succeeded, so
-    /// there is nothing left to check.
-    if (max_rows == 0 && max_bytes == 0)
-        return true;
-
+    /// The probe set is built below even when both set-size limits are unlimited
+    /// (`0`, the default). Measuring it against the limits is then unnecessary,
+    /// but building it is still required to fail closed: the planner later
+    /// materializes the real `IN` set through `FutureSetFromTuple`, and that build
+    /// can raise `MEMORY_LIMIT_EXCEEDED` under a tight `max_memory_usage` even
+    /// with unlimited row/byte set limits. The probe below allocates through the
+    /// same memory tracker, so if the real set would not fit, the probe build hits
+    /// the limit here and we skip injection (plain scan) instead of turning a
+    /// query the unoptimized scan would have run into an exception.
     ColumnsWithTypeAndName header = set_columns;
     for (auto & elem : header)
         elem.column = elem.column->cloneEmpty();
@@ -691,8 +701,10 @@ private:
     /// nothing accumulates across steps.
     ///
     /// Returns true on success, false if for some key the join-key cardinality
-    /// exceeded the configured cap or the generated `IN` set would exceed the
-    /// user's `max_rows_in_set` / `max_bytes_in_set` limits — in that case the
+    /// exceeded the configured cap, the generated `IN` set would exceed the
+    /// user's `max_rows_in_set` / `max_bytes_in_set` limits (or fail to
+    /// materialize under `max_memory_usage`), or the generated `IN` predicate
+    /// could not be resolved for the join-key type — in any of those cases the
     /// recursive step runs without any CTE-derived filter (the caller restores
     /// original clauses).
     bool injectFiltersIntoRecursiveQuery()
@@ -769,8 +781,25 @@ private:
             if (!generatedInSetIsSafeToInject(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
                 return false;
 
-            predicates_by_query[key.containing_query_node]
-                .push_back(buildInFilterNode(*key.real_column_node, std::move(rhs_node), containing_query_context));
+            /// Building the predicate resolves the `in` function's return type,
+            /// which can itself throw for a join key whose type is valid for
+            /// `JOIN` but rejected by `IN` — e.g. a `Dynamic` key allowed by
+            /// `allow_dynamic_type_in_join_keys` that `FunctionIn::getReturnTypeImpl`
+            /// refuses. The unoptimized scan never builds this predicate, so a
+            /// resolution failure must skip injection and fall back to a plain
+            /// scan rather than fail the recursive query — exactly like the
+            /// conversion and set-build guards above.
+            QueryTreeNodePtr in_filter;
+            try
+            {
+                in_filter = buildInFilterNode(*key.real_column_node, std::move(rhs_node), containing_query_context);
+            }
+            catch (...) // Ok: resolving the generated IN predicate failed (e.g. a type illegal for IN); skip injection and fall back to a plain scan instead of failing the recursive query.
+            {
+                return false;
+            }
+
+            predicates_by_query[key.containing_query_node].push_back(std::move(in_filter));
         }
 
         bool injected_any = false;
