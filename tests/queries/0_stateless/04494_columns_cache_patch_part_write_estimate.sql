@@ -29,7 +29,11 @@ SYSTEM DROP COLUMNS CACHE;
 -- The estimate budget (2 MB) is above the base part's size but far below the
 -- patch part's `payload` size. Sizing the estimate against the patch part must
 -- exceed the budget, so cache writes are disabled and nothing is cached.
-SELECT sum(length(payload)) > 0 FROM t_cc_patch_estimate
+-- The query must read the whole `payload` data column from the patch part, so
+-- use `max(payload)` rather than `length(payload)`: `length` reads only the
+-- String's `.size` (offsets) subcolumn (a few hundred KB), which never exceeds
+-- the budget and would not exercise the estimate gate at all.
+SELECT max(payload) != '' FROM t_cc_patch_estimate
 SETTINGS use_columns_cache = 1,
     columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 2000000;
 
@@ -39,7 +43,7 @@ SELECT count() FROM system.columns_cache WHERE database = currentDatabase();
 -- so the empty cache above is the work of the estimate gate.
 SYSTEM DROP COLUMNS CACHE;
 
-SELECT sum(length(payload)) > 0 FROM t_cc_patch_estimate
+SELECT max(payload) != '' FROM t_cc_patch_estimate
 SETTINGS use_columns_cache = 1,
     columns_cache_max_estimated_compressed_bytes_to_write_to_cache = 1000000000;
 
