@@ -16,11 +16,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_optimize_concurrent SYNC"
 
 # A projection makes every merge go through the projection-merge stage, which is where the
-# failpoint pauses it.
+# failpoint pauses it. `max_bytes_to_merge_at_max_space_in_pool = 1` keeps ordinary *background*
+# merges from selecting these parts (they exceed 1 byte), while OPTIMIZE ... FINAL still merges every
+# part of a partition through the whole-partition path regardless of size. Otherwise a background
+# merge for a different partition of the same table could also be paused by the failpoint and be
+# counted below, letting the "more than one merge in flight" assertion pass even without OPTIMIZE
+# assigning merges for multiple partitions at once.
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE t_optimize_concurrent (p UInt8, k UInt64, v UInt64, PROJECTION agg (SELECT p, sum(v) GROUP BY p))
     ENGINE = MergeTree PARTITION BY p ORDER BY k
-    SETTINGS optimize_on_insert = 0"
+    SETTINGS optimize_on_insert = 0, max_bytes_to_merge_at_max_space_in_pool = 1, min_age_to_force_merge_seconds = 0"
 
 # 4 partitions, several parts each.
 for _ in 1 2 3; do
