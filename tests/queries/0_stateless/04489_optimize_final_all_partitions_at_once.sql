@@ -1,3 +1,12 @@
+-- Tags: no-object-storage
+-- - no-object-storage: the table has 16 partitions with several parts each (16 partitions x 3
+--   inserts), and OPTIMIZE FINAL then writes the merged result part of every partition. Writing all
+--   of those parts to object storage is slow, and combined with a sanitizer build and randomized
+--   settings it intermittently pushes the test past the per-test time limit under the flaky check
+--   (it took up to ~200s > 180s). The property under test - that OPTIMIZE FINAL merges every
+--   partition into a single part - does not depend on the storage backend, so skipping the
+--   object-storage runs loses no coverage.
+
 -- OPTIMIZE TABLE ... FINAL on a non-replicated table assigns and runs the merges of all
 -- partitions at once instead of one partition at a time (issue #46770). This test checks the
 -- correctness of the result: every partition must be merged into a single part.
