@@ -656,9 +656,13 @@ void ConfigProcessor::doIncludesRecursive(
             {
                 String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
 
-                vault_document = dom_parser.parseString("<from_hashicorp_vault>" + vault_val + "</from_hashicorp_vault>");
-
-                return getRootNode(vault_document.get());
+                vault_document = dom_parser.parseString("<from_hashicorp_vault/>");
+                Node * root = getRootNode(vault_document.get());
+                /// Create a text child node directly to avoid XML-escaping issues
+                /// when vault values contain special XML characters like & or <.
+                Node * text_node = vault_document->createTextNode(vault_val);
+                root->appendChild(text_node);
+                return root;
             };
 
             process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");

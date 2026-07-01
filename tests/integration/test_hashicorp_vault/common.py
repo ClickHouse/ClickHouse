@@ -47,6 +47,18 @@ def vault_startup_command_codecs(cluster):
     send_post_request(cluster, "secret/data/aes_256", payload)
 
 
+def vault_startup_command_xml_special(cluster):
+    vault_startup_command(cluster)
+
+    # write secret with XML special characters
+    payload = {
+        "data": {
+            "password": "pass&word>",
+        }
+    }
+    send_post_request(cluster, "secret/data/xml_special", payload)
+
+
 def update_default_policy(cluster):
     # update default policy to manage secrets
     payload = {"policy": 'path "*" {capabilities = ["create", "read"]}'}
