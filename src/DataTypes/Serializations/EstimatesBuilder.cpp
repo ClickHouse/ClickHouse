@@ -7,7 +7,6 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <Common/assert_cast.h>
@@ -59,7 +58,7 @@ void EstimatesBuilder::addNodes(const String & key, const DataTypePtr & type)
         const auto & elements = type_tuple->getElements();
         const auto & names = type_tuple->getElementNames();
         for (size_t i = 0; i < elements.size(); ++i)
-            addNodes(Nested::concatenateName(key, names[i]), elements[i]);
+            addNodes(subcolumnEstimateKey(key, names[i]), elements[i]);
     }
 }
 
@@ -82,7 +81,7 @@ void EstimatesBuilder::sampleColumn(const String & key, const IColumn & column)
         return;
 
     for (size_t i = 0; i < names.size(); ++i)
-        sampleColumn(Nested::concatenateName(key, names[i]), *elem_columns[i]);
+        sampleColumn(subcolumnEstimateKey(key, names[i]), *elem_columns[i]);
 }
 
 void EstimatesBuilder::addDefaultsToNode(const String & key, size_t length)
@@ -93,7 +92,7 @@ void EstimatesBuilder::addDefaultsToNode(const String & key, size_t length)
 
     if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(node.type.get()))
         for (const auto & name : type_tuple->getElementNames())
-            addDefaultsToNode(Nested::concatenateName(key, name), length);
+            addDefaultsToNode(subcolumnEstimateKey(key, name), length);
 }
 
 void EstimatesBuilder::addPartEstimate(const String & key, const Estimates & part_estimates)
@@ -109,7 +108,7 @@ void EstimatesBuilder::addPartEstimate(const String & key, const Estimates & par
 
     for (const auto & name : type_tuple->getElementNames())
     {
-        auto child_key = Nested::concatenateName(key, name);
+        auto child_key = subcolumnEstimateKey(key, name);
         /// Match elements by path; a tracked element missing from the source contributes all-default rows.
         if (part_estimates.contains(child_key))
             addPartEstimate(child_key, part_estimates);
@@ -141,13 +140,24 @@ void EstimatesBuilder::add(const Estimates & part_estimates)
 void EstimatesBuilder::mergeEstimates(const Estimates & external_estimates)
 {
     /// Explicit statistics exist only for top-level columns; override the sampled default count with the
-    /// exact one where it is available. The sampled row count is kept (it equals the exact one).
+    /// exact one from the statistics where it is available. The sampled row count is kept (it is exact).
     for (const auto & [name, external] : external_estimates)
     {
         if (!external.num_defaults.has_value())
             continue;
         if (auto it = nodes.find(name); it != nodes.end())
             it->second->estimate.num_defaults = external.num_defaults;
+    }
+}
+
+void EstimatesBuilder::mergeEstimates(Estimates & estimates, const Estimates & external_estimates)
+{
+    for (const auto & [name, external] : external_estimates)
+    {
+        if (!external.num_defaults.has_value())
+            continue;
+        if (auto it = estimates.find(name); it != estimates.end())
+            it->second.num_defaults = external.num_defaults;
     }
 }
 
@@ -177,11 +187,13 @@ void EstimatesBuilder::chooseKindsImpl(const String & key, SerializationInfo & i
         if (auto it = estimates.find(key); it != estimates.end())
             info.setKindStack(chooseKindStack(it->second, info.getSettings()));
 
+    /// A `Tuple` chooses the kind of each element independently of its own: recurse even when the
+    /// tuple itself had an estimate (on write paths it always does).
     if (auto * info_tuple = typeid_cast<SerializationInfoTuple *>(&info))
     {
         const auto & names = info_tuple->getElementNames();
         for (size_t i = 0; i < names.size(); ++i)
-            chooseKindsImpl(Nested::concatenateName(key, names[i]), *info_tuple->getElementInfo(i), estimates);
+            chooseKindsImpl(subcolumnEstimateKey(key, names[i]), *info_tuple->getElementInfo(i), estimates);
     }
 }
 
@@ -196,14 +208,50 @@ void EstimatesBuilder::chooseKinds(SerializationInfoByName & infos) const
     chooseKinds(infos, getEstimates());
 }
 
+void EstimatesBuilder::addCounts(Estimate & dst, const Estimate & src)
+{
+    dst.rows_count += src.rows_count;
+    addDefaultCount(dst, src.num_defaults.value_or(0));
+}
+
+void EstimatesBuilder::subtractCounts(Estimate & dst, const Estimate & src)
+{
+    /// Saturating: a contribution may be subtracted without having been added first, e.g. when the
+    /// per-table serialization hints were rebuilt from scratch between adding and removing a part.
+    dst.rows_count -= std::min(dst.rows_count, src.rows_count);
+    dst.num_defaults = dst.num_defaults.value_or(0) - std::min(dst.num_defaults.value_or(0), src.num_defaults.value_or(0));
+}
+
 void EstimatesBuilder::addEstimates(Estimates & dst, const Estimates & src)
 {
     for (const auto & [key, src_estimate] : src)
+        addCounts(dst[key], src_estimate);
+}
+
+namespace
+{
+
+void collectInfoKeys(const String & key, const SerializationInfo & info, NameSet & keys)
+{
+    keys.insert(key);
+
+    if (const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(&info))
     {
-        auto & dst_estimate = dst[key];
-        dst_estimate.rows_count += src_estimate.rows_count;
-        addDefaultCount(dst_estimate, src_estimate.num_defaults.value_or(0));
+        const auto & names = info_tuple->getElementNames();
+        for (size_t i = 0; i < names.size(); ++i)
+            collectInfoKeys(subcolumnEstimateKey(key, names[i]), *info_tuple->getElementInfo(i), keys);
     }
+}
+
+}
+
+void EstimatesBuilder::filterEstimates(Estimates & estimates, const SerializationInfoByName & infos)
+{
+    NameSet keys;
+    for (const auto & [name, info] : infos)
+        collectInfoKeys(name, *info, keys);
+
+    std::erase_if(estimates, [&](const auto & entry) { return !keys.contains(entry.first); });
 }
 
 }

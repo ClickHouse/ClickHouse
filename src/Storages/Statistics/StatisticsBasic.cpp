@@ -3,7 +3,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -147,10 +146,7 @@ void StatisticsBasic::build(const ColumnPtr & column)
         string_total_bytes += sumNonNullStringBytes(column);
 
     if (tracks_defaults)
-    {
-        double ratio = column->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-        num_defaults += static_cast<UInt64>(ratio * static_cast<double>(column_size));
-    }
+        num_defaults += column->getNumberOfDefaultRows();
 
     row_count += column_size;
 }
@@ -232,6 +228,13 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
     if (mask & BasicFeatureMask::DefaultsCount)
     {
         readIntBinary(num_defaults, buf);
+    }
+    else
+    {
+        /// A file written before default-count tracking existed carries no count; reset the flag set
+        /// by the constructor, otherwise `hasDefaultsCount` would report an authoritative (and wrong)
+        /// count of zero, overriding the counts sampled from the data.
+        tracks_defaults = false;
     }
 }
 

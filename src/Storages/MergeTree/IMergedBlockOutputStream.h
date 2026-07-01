@@ -6,9 +6,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <DataTypes/Serializations/EstimatesBuilder.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Common/Logger.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -34,18 +33,29 @@ public:
         MergeTreeData::DataPart::Checksums checksums;
         ColumnsSubstreams columns_substreams;
         ColumnsStatistics statistics;
-        /// The estimates (num_rows/num_defaults per column and subcolumn) to persist in
-        /// `serialization.json`, when the file is written outside the output stream (column-only
-        /// mutations). Populated via `getSerializationEstimates`.
+        /// The estimates (num_rows/num_defaults per column and subcolumn) of the columns whose data is
+        /// not written through the stream that persists `serialization.json`: the gathered columns of a
+        /// vertical merge (accumulated by `MergeTask`, consumed by `finalizePartOnDisk`) and the columns
+        /// of a column-only mutation (populated via `getSerializationEstimates` and the counts carried
+        /// over from the source part, consumed by `finalizeMutatedPart`).
         Estimates serialization_estimates;
     };
 
     virtual void write(const Block & block) = 0;
     virtual void cancel() noexcept = 0;
 
-    /// The estimates of the written data reconciled with the exact counts from the explicit statistics
-    /// (`external_estimates`), for persisting in `serialization.json`.
+    /// The estimates of the data written through this stream, reconciled with the counts from the
+    /// explicit statistics (`external_estimates`), for persisting in `serialization.json`.
     Estimates getSerializationEstimates(const Estimates & external_estimates);
+
+    /// Reuse `builder`'s already-sampled counts for `serialization.json` instead of sampling the written
+    /// blocks. Used by inserts, which sample the whole block upfront to choose the serialization kinds;
+    /// re-sampling the same rows here would only duplicate that work.
+    void setSerializationEstimatesBuilder(EstimatesBuilder builder)
+    {
+        estimates_builder = std::move(builder);
+        sample_written_blocks = false;
+    }
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
@@ -98,10 +108,13 @@ protected:
 
     bool reset_columns = false;
     SerializationInfo::Settings info_settings;
-    /// Samples the estimates (num_rows/num_defaults) of the columns being written, so the counts
-    /// persisted in `serialization.json` reflect the actually-written data. Always present; the kinds
-    /// themselves are chosen upstream (in `MergeTreeDataWriter` for inserts, in `MergeTask` for merges).
-    std::optional<EstimatesBuilder> estimates_builder;
+    /// Carries the estimates (num_rows/num_defaults) of the columns being written, so the counts
+    /// persisted in `serialization.json` reflect the actually-written data. The kinds themselves are
+    /// chosen upstream (in `MergeTreeDataWriter` for inserts, in `MergeTask` for merges).
+    EstimatesBuilder estimates_builder;
+    /// Whether the builder samples the written blocks itself; false when an upstream builder that has
+    /// already sampled the data was handed over via `setSerializationEstimatesBuilder`.
+    bool sample_written_blocks = true;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

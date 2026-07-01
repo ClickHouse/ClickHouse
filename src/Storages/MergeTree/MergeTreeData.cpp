@@ -10812,28 +10812,33 @@ ReservationPtr MergeTreeData::balancedReservation(
 
 /// Add the estimates of a column (and its subcolumns) from `src` into the per-table hint aggregate
 /// `dst`, walking the info tree to build the subcolumn paths.
-static void addColumnEstimateToHints(const String & key, const SerializationInfo & info, const Estimates & src, Estimates & dst)
+static void updateColumnEstimateInHints(const String & key, const SerializationInfo & info, const Estimates & src, Estimates & dst, bool remove)
 {
     if (auto it = src.find(key); it != src.end())
     {
         auto & dst_estimate = dst[key];
-        dst_estimate.rows_count += it->second.rows_count;
-        dst_estimate.num_defaults = dst_estimate.num_defaults.value_or(0) + it->second.num_defaults.value_or(0);
+        if (remove)
+            EstimatesBuilder::subtractCounts(dst_estimate, it->second);
+        else
+            EstimatesBuilder::addCounts(dst_estimate, it->second);
     }
 
     if (const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(&info))
     {
         const auto & names = info_tuple->getElementNames();
         for (size_t i = 0; i < names.size(); ++i)
-            addColumnEstimateToHints(Nested::concatenateName(key, names[i]), *info_tuple->getElementInfo(i), src, dst);
+            updateColumnEstimateInHints(subcolumnEstimateKey(key, names[i]), *info_tuple->getElementInfo(i), src, dst, remove);
     }
 }
 
 template <typename DataPartPtr>
-static void addPartToSerializationHints(
-    const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, Estimates & hint_estimates)
+static void updateSerializationHintsForPart(
+    const DataPartPtr & part, const ColumnsDescription & storage_columns, SerializationInfoByName & hints, Estimates & hint_estimates, bool remove)
 {
-    const auto part_estimates = part->getEstimates();
+    /// Use only the counts persisted in `serialization.json`: unlike `getEstimates`, they never touch
+    /// the disk (this runs under the data parts lock, inside the no-throw section of a part commit)
+    /// and stay constant for the lifetime of the part, which subtraction on removal relies upon.
+    const auto part_estimates = part->getSerializationEstimates();
     const auto & part_columns = part->getColumnsDescription();
     for (const auto & [name, info] : part->getSerializationInfos())
     {
@@ -10847,7 +10852,7 @@ static void addPartToSerializationHints(
             continue;
 
         chassert(new_hint->structureEquals(*info));
-        addColumnEstimateToHints(name, *info, part_estimates, hint_estimates);
+        updateColumnEstimateInHints(name, *info, part_estimates, hint_estimates, remove);
     }
 }
 
@@ -10876,24 +10881,14 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     auto range = getDataPartsStateRange(DataPartState::Active);
 
     for (const auto & part : range)
-        addPartToSerializationHints(part, storage_columns, serialization_hints, serialization_hint_estimates);
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, serialization_hint_estimates, /*remove=*/ false);
 
     EstimatesBuilder::chooseKinds(serialization_hints, serialization_hint_estimates);
 }
 
 template <typename AddedParts, typename RemovedParts>
-void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock)
+void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & /*lock*/)
 {
-    /// The hints are an additive aggregate of the active parts' serialization statistics. Removing a
-    /// part's contribution would require subtracting its (sampled) counts; instead, recompute the
-    /// hints from the current active parts whenever parts are removed (merges, mutations). Pure
-    /// insertions add no removed parts, so they stay incremental (the common, hot path).
-    if (!removed_parts.empty())
-    {
-        resetSerializationHints(lock);
-        return;
-    }
-
     /// Same rationale as `resetSerializationHints`: incremental updates to the per-table hints
     /// belong in the parts arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -10902,7 +10897,10 @@ void MergeTreeData::updateSerializationHints(const AddedParts & added_parts, con
     const auto & storage_columns = metadata_snapshot->getColumns();
 
     for (const auto & part : added_parts)
-        addPartToSerializationHints(part, storage_columns, serialization_hints, serialization_hint_estimates);
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, serialization_hint_estimates, /*remove=*/ false);
+
+    for (const auto & part : removed_parts)
+        updateSerializationHintsForPart(part, storage_columns, serialization_hints, serialization_hint_estimates, /*remove=*/ true);
 
     EstimatesBuilder::chooseKinds(serialization_hints, serialization_hint_estimates);
 }

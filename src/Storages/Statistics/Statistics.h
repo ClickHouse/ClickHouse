@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/Statistics/Estimate.h>
 
 #include <boost/core/noncopyable.hpp>
 
@@ -89,22 +90,6 @@ protected:
 
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-
-struct Estimate
-{
-    std::set<StatisticsType> types;
-    UInt64 rows_count = 0;
-    std::optional<UInt64> estimated_cardinality;
-    std::optional<Field> estimated_min;
-    std::optional<Field> estimated_max;
-    std::optional<UInt64> estimated_null_count;
-    /// Number of default values in the column. Set when it can be estimated: exactly from `Basic`
-    /// external statistics on a sparse-capable column, or sampled by `EstimatesBuilder` from the data.
-    /// Together with `rows_count` it drives the choice of sparse serialization.
-    std::optional<UInt64> num_defaults;
-};
-
-using Estimates = std::unordered_map<String, Estimate>;
 
 /// All statistics objects for a column in a part
 class ColumnStatistics

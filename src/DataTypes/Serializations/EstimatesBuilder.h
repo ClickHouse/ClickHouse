@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
-#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/Estimate.h>
 
 #include <map>
 #include <memory>
@@ -52,6 +52,9 @@ public:
     /// are available (`Estimate::num_defaults`). Only top-level columns have explicit statistics.
     void mergeEstimates(const Estimates & external_estimates);
 
+    /// The same override applied to an arbitrary set of estimates instead of the builder's own.
+    static void mergeEstimates(Estimates & estimates, const Estimates & external_estimates);
+
     /// The accumulated estimates for every tracked column and subcolumn, keyed by subcolumn path.
     Estimates getEstimates() const;
 
@@ -66,9 +69,19 @@ public:
 
     static ISerialization::KindStack chooseKindStack(const Estimate & estimate, const SerializationInfoSettings & settings);
 
-    /// Add `src`'s counts into `dst` (per subcolumn path, additive). Used to maintain the per-table
-    /// serialization-hint aggregate from the active parts' estimates.
+    /// Add / subtract the counts of `src` into/from `dst`, treating an absent default count as 0.
+    /// Subtraction saturates at 0 instead of wrapping (see the per-table serialization hints).
+    static void addCounts(Estimate & dst, const Estimate & src);
+    static void subtractCounts(Estimate & dst, const Estimate & src);
+
+    /// Add `src`'s counts into `dst` (per subcolumn path, additive). Used to combine the counts of the
+    /// streams of a vertical merge and to maintain the per-table serialization-hint aggregate.
     static void addEstimates(Estimates & dst, const Estimates & src);
+
+    /// Remove the estimates of the columns (and subcolumns) that are not present in `infos`, e.g. of
+    /// columns fully expired by a TTL and removed from the part after being written: the persisted file,
+    /// the in-memory part and the infos must agree on the set of columns.
+    static void filterEstimates(Estimates & estimates, const SerializationInfoByName & infos);
 
 private:
     /// The accumulated estimate of a single column or subcolumn, together with its type. A `Tuple` node has

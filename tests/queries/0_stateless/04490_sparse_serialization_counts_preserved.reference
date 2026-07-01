@@ -1,0 +1,7 @@
+merge_algorithm	Vertical
+after_vertical_merge	Sparse
+after_second_merge	Sparse
+after_update_and_merge	Sparse
+after_drop_column_and_merge	Sparse
+count	100000
+nonempty	1000

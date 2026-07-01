@@ -366,9 +366,20 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const auto & serialization_infos = new_part->getSerializationInfos();
     if (serialization_infos.needsPersistence())
     {
-        /// Reconcile the sampled estimates of the written data with the exact counts from the explicit
-        /// statistics, and persist them inline (num_rows/num_defaults per column and subcolumn).
-        auto estimates = getSerializationEstimates(gathered_data.statistics.getEstimates());
+        /// This stream's builder samples only the columns written through it. A vertical merge writes
+        /// the gathered (non-merging) columns through separate column-only streams, whose counts
+        /// `MergeTask` accumulates into `gathered_data.serialization_estimates`. Combine both and
+        /// reconcile with the counts from the explicit statistics; persist the result inline
+        /// (num_rows/num_defaults per column and subcolumn).
+        auto estimates = getSerializationEstimates({});
+        EstimatesBuilder::addEstimates(estimates, gathered_data.serialization_estimates);
+        EstimatesBuilder::mergeEstimates(estimates, gathered_data.statistics.getEstimates());
+
+        /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
+        /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
+        /// again as all-default for the missing column, and the in-memory part would diverge from a
+        /// reloaded one.
+        EstimatesBuilder::filterEstimates(estimates, serialization_infos);
 
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
@@ -460,10 +471,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation, permuted_columns_cache);
-    /// Sample the estimates of the written data (all part kinds, inserts included) so the counts
-    /// persisted in `serialization.json` reflect what was actually written.
-    if (estimates_builder)
-        estimates_builder->add(block);
+    /// Sample the estimates of the written data so the counts persisted in `serialization.json`
+    /// reflect what was actually written — unless an upstream builder already sampled it (inserts).
+    if (sample_written_blocks)
+        estimates_builder.add(block);
 
     rows_count += rows;
 }

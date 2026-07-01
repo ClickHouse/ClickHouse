@@ -22,8 +22,8 @@ namespace DB
 /// both numeric min/max and null count). For sub-statistics not applicable to the column type the
 /// corresponding fields stay at their default sentinel values and are not serialized.
 ///
-/// For column types that support sparse serialization, `basic` statistics also estimate the number
-/// of default values (`num_defaults`, sampled via `getRatioOfDefaultRows`). When such an external
+/// For column types that support sparse serialization, `basic` statistics also count the number of
+/// default values (`num_defaults`, exact, via `getNumberOfDefaultRows`). When such an external
 /// statistic exists for a column it serves as the authoritative source of the default count for
 /// choosing the serialization kind, taking precedence over the counts sampled by `EstimatesBuilder`.
 class StatisticsBasic : public IStatistics
@@ -54,7 +54,7 @@ public:
     /// `getStringTotalBytes()` to distinguish "no data" from "all empty strings".
     Int64 getStringLengthAvg() const;
     UInt64 getNullCount() const { return null_count; }
-    /// Estimated number of default values seen by `build` (only tracked for sparse-supporting types).
+    /// Exact number of default values seen by `build` (only tracked for sparse-supporting types).
     UInt64 getNumDefaults() const { return num_defaults; }
     UInt64 getRowCount() const { return row_count; }
 

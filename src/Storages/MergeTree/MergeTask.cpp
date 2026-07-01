@@ -1914,6 +1914,11 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->new_data_part->checksums);
     global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
 
+    /// Accumulate the sampled counts of the gathered column: the final `serialization.json` is written
+    /// by the horizontal stream (`global_ctx->to`), whose own builder samples only the merging columns
+    /// (see `MergedBlockOutputStream::finalizePartOnDisk`).
+    EstimatesBuilder::addEstimates(global_ctx->gathered_data.serialization_estimates, ctx->column_to->getSerializationEstimates({}));
+
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
     global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
 

@@ -969,6 +969,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
+    /// The block was already sampled above (to choose the serialization kinds); reuse those counts
+    /// for `serialization.json` instead of sampling the same rows again in the output stream.
+    out->setSerializationEstimatesBuilder(std::move(estimates_builder));
+
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
@@ -1168,6 +1172,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
+
+    /// The block was already sampled above (to choose the serialization kinds); reuse those counts
+    /// for `serialization.json` instead of sampling the same rows again in the output stream.
+    out->setSerializationEstimatesBuilder(std::move(estimates_builder));
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);

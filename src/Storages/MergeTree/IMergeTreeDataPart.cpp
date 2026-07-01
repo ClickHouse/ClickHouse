@@ -1285,6 +1285,12 @@ void IMergeTreeDataPart::setSerializationEstimates(const Estimates & new_estimat
     estimates.reset();
 }
 
+Estimates IMergeTreeDataPart::getSerializationEstimates() const
+{
+    std::lock_guard lock(estimates_mutex);
+    return serialization_estimates;
+}
+
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
 {
     /// Memory should not be limited during ATTACH TABLE query.

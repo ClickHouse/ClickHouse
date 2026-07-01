@@ -23,8 +23,9 @@ class NamesAndTypesList;
 class Block;
 
 /// Per-column estimates (row and default counts, and richer statistics) keyed by column/subcolumn path.
-/// Defined in `Storages/Statistics/Statistics.h`; only referenced here by const reference, so a forward
-/// declaration keeps this lower-level header independent of the statistics subsystem.
+/// Defined in `Storages/Statistics/Estimate.h`; only referenced here by const reference, so a forward
+/// declaration (the alias must match the one there; the compiler rejects a divergence) keeps this
+/// lower-level header independent of the statistics subsystem.
 struct Estimate;
 using Estimates = std::unordered_map<String, Estimate>;
 

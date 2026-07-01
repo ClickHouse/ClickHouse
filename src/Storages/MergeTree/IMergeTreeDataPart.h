@@ -183,11 +183,15 @@ public:
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
-    /// Set the estimates from the explicit column statistics (min/max/cardinality and exact counts).
+    /// Set the estimates from the explicit column statistics (min/max/cardinality and counts).
     void setEstimates(const Estimates & new_estimates);
     /// Set the counts read from / written to `serialization.json` (per column and subcolumn). Set at
     /// write time so an in-memory part (never `loadColumns`-ed) still exposes them via `getEstimates`.
     void setSerializationEstimates(const Estimates & new_estimates);
+    /// The counts from `serialization.json` alone, without the explicit statistics merged in. Unlike
+    /// `getEstimates`, never reads anything from disk, so it is safe for callers holding locks (e.g.
+    /// the per-table serialization hints, updated under the data parts lock on every part commit).
+    Estimates getSerializationEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.

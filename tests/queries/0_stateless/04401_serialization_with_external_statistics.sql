@@ -1,10 +1,11 @@
--- Tests for serialization_info_version = 'with_external_statistics'.
+-- Tests for choosing sparse serialization from estimates.
 --
--- (1) The serialization kind (sparse) is chosen from the always-on lightweight statistics, even when
---     the statistics framework is disabled (materialize_statistics_on_insert = 0).
--- (2) A column with an explicit `basic` statistic omits its per-column counts from serialization.json
---     (has_internal_statistics = false); the counts are recovered from the external statistics on read,
---     so the column still serializes sparse and merges re-decide the kind correctly.
+-- (1) The serialization kind (sparse) is chosen from the always-on lightweight estimates sampled from
+--     the written data, even when the statistics framework is disabled
+--     (materialize_statistics_on_insert = 0).
+-- (2) A column with an explicit `basic` statistic gets its default count from the statistic: it
+--     overrides the sampled count when `serialization.json` is written, and merges re-decide the kind
+--     from the per-part counts.
 
 SET optimize_trivial_insert_select = 1;
 SET allow_experimental_statistics = 1;
@@ -14,7 +15,7 @@ DROP TABLE IF EXISTS t_ser_ext_stats;
 -- (1) Always-on lightweight path: no external statistics, statistics framework disabled.
 CREATE TABLE t_ser_ext_stats (id UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, serialization_info_version = 'with_external_statistics';
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 
 SYSTEM STOP MERGES t_ser_ext_stats;
 
@@ -28,12 +29,13 @@ ORDER BY name;
 
 DROP TABLE t_ser_ext_stats;
 
--- (2) External `basic` statistic: counts omitted from serialization.json, recovered on read; merge re-decides.
+-- (2) External `basic` statistic: its default count overrides the sampled one; merges re-decide the
+--     kind from the per-part counts.
 DROP TABLE IF EXISTS t_ser_ext_stats2;
 
 CREATE TABLE t_ser_ext_stats2 (id UInt64, s String STATISTICS(basic))
 ENGINE = MergeTree ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, serialization_info_version = 'with_external_statistics';
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
 
 SYSTEM STOP MERGES t_ser_ext_stats2;
 SET materialize_statistics_on_insert = 1;

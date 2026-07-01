@@ -293,8 +293,8 @@ TEST(SerializationInfoByNameJSON, WriteJSONCarriesEstimatesForColumnsAndSubcolum
     Estimates estimates;
     estimates.emplace("scalar", makeEstimate(1000, 100));
     estimates.emplace("tuple", makeEstimate(1000, 0));
-    estimates.emplace("tuple.a", makeEstimate(1000, 900));
-    estimates.emplace("tuple.b", makeEstimate(1000, 5));
+    estimates.emplace(subcolumnEstimateKey("tuple", "a"), makeEstimate(1000, 900));
+    estimates.emplace(subcolumnEstimateKey("tuple", "b"), makeEstimate(1000, 5));
 
     WriteBufferFromOwnString out;
     infos.writeJSON(out, estimates);
@@ -303,9 +303,9 @@ TEST(SerializationInfoByNameJSON, WriteJSONCarriesEstimatesForColumnsAndSubcolum
     SerializationInfoByName::readJSONFromString(columns, out.str(), restored);
 
     EXPECT_EQ(restored.at("scalar").num_defaults.value_or(0), 100u);
-    EXPECT_EQ(restored.at("tuple.a").num_defaults.value_or(0), 900u);
-    EXPECT_EQ(restored.at("tuple.b").num_defaults.value_or(0), 5u);
-    EXPECT_EQ(restored.at("tuple.a").rows_count, 1000u);
+    EXPECT_EQ(restored.at(subcolumnEstimateKey("tuple", "a")).num_defaults.value_or(0), 900u);
+    EXPECT_EQ(restored.at(subcolumnEstimateKey("tuple", "b")).num_defaults.value_or(0), 5u);
+    EXPECT_EQ(restored.at(subcolumnEstimateKey("tuple", "a")).rows_count, 1000u);
 }
 
 /// Malformed kind tests.

@@ -1,6 +1,6 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/NestedUtils.h>
+#include <Storages/Statistics/Estimate.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
@@ -103,7 +103,7 @@ void SerializationInfoTuple::writeJSONFields(WriteBuffer & out, const String * n
             writeChar(',', out);
         first = false;
 
-        elems[i]->writeJSON(out, nullptr, Nested::concatenateName(key, names[i]), estimates);
+        elems[i]->writeJSON(out, nullptr, subcolumnEstimateKey(key, names[i]), estimates);
     }
 
     writeChar(']', out);
@@ -124,7 +124,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object, const S
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)
-        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)), Nested::concatenateName(key, names[i]), estimates);
+        elems[i]->fromJSON(*subcolumns->getObject(static_cast<unsigned>(i)), subcolumnEstimateKey(key, names[i]), estimates);
 }
 
 }

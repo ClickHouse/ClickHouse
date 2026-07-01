@@ -68,7 +68,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr, nullptr);
-    estimates_builder->add(block);
+    estimates_builder.add(block);
 }
 
 void MergedColumnOnlyOutputStream::finalizeIndexGranularity()
