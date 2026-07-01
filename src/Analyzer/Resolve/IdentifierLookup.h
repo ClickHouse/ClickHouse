@@ -187,6 +187,12 @@ private:
 struct IdentifierResolveState
 {
     size_t count = 1;
+
+    /// Value of IdentifierResolveScope::alias_cycle_events captured when this lookup started.
+    /// If the scope counter has advanced by the time the lookup finishes, an alias cycle was
+    /// detected somewhere inside this resolution, so its result is context dependent and must
+    /// not be cached (see IdentifierResolveScope::alias_cycle_events).
+    size_t alias_cycle_events_at_start = 0;
 };
 
 struct IdentifierResolveContext

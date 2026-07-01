@@ -133,6 +133,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
     extern const int SYNTAX_ERROR;
+    extern const int CYCLIC_ALIASES;
 }
 
 namespace
@@ -1223,6 +1224,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
          * Here, identifier `x` would be resolved one time as a projection column and one time during `path`
          * function lookup. The second lookup must fail here to break the alias cycle.
          */
+        /// This is an alias cycle event (an alias with this name is already on the resolve
+        /// stack). Record it so that no resolution whose subtree spans it gets cached; the
+        /// broken-cycle result is context dependent and must not be reused at other use sites.
+        ++scope.alias_cycle_events;
         return {};
     }
 
@@ -1508,6 +1513,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     {
         it->second.count++;
         already_in_resolve_process = true;
+        /// The identifier is looked up again while its own resolution is still in progress:
+        /// the identifier transitively refers back to its own name. This is an alias cycle
+        /// event; record it so that no resolution whose subtree spans it gets cached.
+        ++scope.alias_cycle_events;
     }
     else
     {
@@ -1520,6 +1529,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
         it = insert_it;
+        it->second.alias_cycle_events_at_start = scope.alias_cycle_events;
     }
 
     /// Resolve identifier from current scope
@@ -1630,8 +1640,14 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     it->second.count--;
     if (it->second.count == 0)
     {
+        /// A resolution whose subtree spanned an alias cycle event is context dependent: it
+        /// only terminated because some occurrence of an identifier was already on the resolve
+        /// stack and broke the cycle. Reusing it from the cache at a use site where that
+        /// occurrence is absent would bypass the cycle guard and produce a result that differs
+        /// from re-resolving with the cache disabled, so such a result must not be cached.
+        const bool spanned_alias_cycle = scope.alias_cycle_events != it->second.alias_cycle_events_at_start;
         scope.identifier_in_lookup_process.erase(it);
-        if (resolve_result.resolved_identifier)
+        if (resolve_result.resolved_identifier && !spanned_alias_cycle)
             scope.tryCacheIdentifier(identifier_lookup, resolve_result, identifier_resolve_context);
     }
 
@@ -3233,10 +3249,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             if (!resolved_identifier_node)
             {
                 /** If the identifier could not be resolved and there is an expression with the same alias
-                  * currently being resolved (cycle prevention returned {}), check if this alias is duplicated.
-                  * If so, report MULTIPLE_EXPRESSIONS_FOR_ALIAS instead of UNKNOWN_IDENTIFIER,
-                  * which is a much more helpful error message.
-                  * Example: SELECT number AS num, num * 1 AS num FROM numbers(10)
+                  * currently being resolved (cycle prevention returned {}), the identifier is part of an
+                  * alias cycle: an alias expression transitively refers back to its own name.
+                  * Example: SELECT val + 1 AS prev, val + prev AS val FROM (SELECT 1 AS val)
+                  *
+                  * If the alias is also duplicated, report MULTIPLE_EXPRESSIONS_FOR_ALIAS, which is a more
+                  * specific message. Example: SELECT number AS num, num * 1 AS num FROM numbers(10)
+                  * Otherwise report CYCLIC_ALIASES instead of the generic UNKNOWN_IDENTIFIER.
                   */
                 if (scope.expressions_in_resolve_process_stack.getExpressionWithAlias(unresolved_identifier.getFullName()) != nullptr)
                 {
@@ -3250,6 +3269,11 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 scope.scope_node->formatASTForErrorMessage());
                         }
                     }
+
+                    throw Exception(ErrorCodes::CYCLIC_ALIASES,
+                        "Cyclic aliases for identifier {}. In scope {}",
+                        backQuote(unresolved_identifier.getFullName()),
+                        scope.scope_node->formatASTForErrorMessage());
                 }
 
                 std::string message_clarification;

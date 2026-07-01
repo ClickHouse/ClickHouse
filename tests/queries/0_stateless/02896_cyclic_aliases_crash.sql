@@ -10,14 +10,23 @@ FROM ( SELECT 1 as val )
 SETTINGS enable_analyzer = 0
 ; -- { serverError CYCLIC_ALIASES, UNKNOWN_IDENTIFIER, TOO_DEEP_RECURSION }
 
--- Analyzer resolves this pattern without a cycle (aliases bind differently. val binds to the original column, not the alias)
+-- The analyzer rejects this cyclic pattern (alias val = val + prev, alias prev = val + 1).
+-- Result must not depend on enable_identifier_resolve_cache (see issue #109044).
 SELECT
     val,
     val + 1 as prev,
     val + prev as val
 FROM ( SELECT 1 as val )
-SETTINGS enable_analyzer = 1
-;
+SETTINGS enable_analyzer = 1, enable_identifier_resolve_cache = 0
+; -- { serverError CYCLIC_ALIASES }
+
+SELECT
+    val,
+    val + 1 as prev,
+    val + prev as val
+FROM ( SELECT 1 as val )
+SETTINGS enable_analyzer = 1, enable_identifier_resolve_cache = 1
+; -- { serverError CYCLIC_ALIASES }
 
 -- Analyzer detects forward alias references in cyclic patterns
 SELECT x + 1 AS y, y + 1 AS x

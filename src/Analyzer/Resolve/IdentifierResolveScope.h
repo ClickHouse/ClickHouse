@@ -163,6 +163,13 @@ struct IdentifierResolveScope
     /// Current scope expression in resolve process stack
     ExpressionsStack expressions_in_resolve_process_stack;
 
+    /// Monotonically increasing count of alias cycle events observed in this scope: each time
+    /// the alias resolver breaks a cycle (an alias transitively refers back to its own name)
+    /// this is incremented. A resolution whose subtree spans any such event depends on which
+    /// occurrence of the identifier was already on the resolve stack, so it is not context
+    /// independent and must not be cached (see IdentifierResolveState::alias_cycle_events_at_start).
+    size_t alias_cycle_events = 0;
+
     /// Table expressions in resolve process
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
