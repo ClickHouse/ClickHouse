@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnNullable.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
@@ -79,7 +78,7 @@ public:
             AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, {}, {}, properties), DataTypes{}, Array{});
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
@@ -251,8 +250,6 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
 }
 
 }
-
-void registerAggregateFunctionCount(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCount(AggregateFunctionFactory & factory)
 {

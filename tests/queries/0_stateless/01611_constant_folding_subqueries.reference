@@ -10,7 +10,7 @@ SELECT
         FROM system.numbers
         LIMIT 1, 1
     ) AS n,
-    toUInt64(divide(10, n))
+    toUInt64(10 / n)
 FROM system.one
 SELECT * FROM (WITH (SELECT * FROM system.numbers LIMIT 1 OFFSET 1) AS n, toUInt64(10 / n) as q SELECT * FROM system.one WHERE q > 0);
 0
@@ -23,5 +23,5 @@ SELECT
         FROM system.numbers
         LIMIT 1, 1
     ) AS n,
-    toUInt64(divide(10, n))
+    toUInt64(10 / n)
 FROM system.one
