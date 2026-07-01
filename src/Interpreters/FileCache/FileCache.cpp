@@ -2168,9 +2168,28 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         bool size_in_filename; /// whether the size was read from the file name (no `stat` needed)
     };
     std::vector<SegmentToLoad> segments;
+    /// Deduplicate by offset. Encoding the size in the name (`<offset>` -> `<offset>_<size>`, see
+    /// `renameToIncludeSizeInNameUnlocked`) is best-effort: if the target name is already occupied the
+    /// rename fails and the real segment stays under its legacy `<offset>` name next to a stale
+    /// `<offset>_<size>` artifact. Both parse to the same offset, so without deduplication we would
+    /// build two priority entries for one offset and later hit the duplicate-offset path in phase 3
+    /// (a `chassert(false)` in debug builds; a nondeterministic deletion of the real file in release).
+    std::unordered_map<UInt64, size_t> offset_to_index;
 
     for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
+        /// Only regular files hold cache segments. A rename target occupied by a non-regular entry
+        /// (e.g. a leftover directory, as exercised by `RenameToIncludeSizeInNameFailureKeepsSegmentConsistent`)
+        /// is exactly what makes the best-effort rename fail; skip it here so its name is never parsed
+        /// and trusted as a segment (the size of a `<offset>_<size>` entry is read from the name without
+        /// a `stat`). Uses the directory-entry type cached by `directory_iterator` (no extra syscall on
+        /// local filesystems, which always report the entry type).
+        if (!offset_it->is_regular_file())
+        {
+            LOG_WARNING(log, "Unexpected non-regular entry in cache directory: {}", offset_it->path().string());
+            continue;
+        }
+
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
         UInt64 offset = 0;
@@ -2219,6 +2238,26 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         if (!size)
         {
             fs::remove(offset_it->path());
+            continue;
+        }
+
+        /// If two names map to the same offset (a legacy `<offset>` next to a stale `<offset>_<size>`
+        /// left by a failed best-effort rename), keep the legacy file — its size comes from a real
+        /// `stat`, and it is the segment whose rename failed — and ignore the suffixed duplicate,
+        /// whose size is trusted from the name. Leaving the stale artifact on disk is deliberate:
+        /// removing it here would be a destructive action on this recovery path.
+        if (auto [it, is_new] = offset_to_index.try_emplace(offset, segments.size()); !is_new)
+        {
+            auto & existing = segments[it->second];
+            const bool replace_existing = !size_from_name.has_value() && existing.size_in_filename;
+            LOG_WARNING(
+                log,
+                "Duplicate cache files for offset {}: keeping '{}', ignoring '{}'",
+                offset,
+                replace_existing ? offset_it->path().string() : existing.path.string(),
+                replace_existing ? existing.path.string() : offset_it->path().string());
+            if (replace_existing)
+                existing = {offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, /* size_in_filename */false};
             continue;
         }
 

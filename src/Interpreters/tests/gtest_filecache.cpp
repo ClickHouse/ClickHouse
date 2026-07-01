@@ -2801,4 +2801,25 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
     ASSERT_EQ(seg->getPath(), legacy_path);
     ASSERT_TRUE(fs::is_regular_file(legacy_path));
     ASSERT_EQ(fs::file_size(legacy_path), 8u);
+
+    /// Reopen the cache from disk (a real restart). The persisted state is now the real segment under
+    /// its legacy `<offset>` name next to the stale `<offset>_<size>` directory. `loadMetadataForKey`
+    /// must restore the segment from the legacy file and must not treat the directory as a second
+    /// segment for the same offset — otherwise it hits the duplicate-offset `chassert(false)` in
+    /// debug/sanitizer builds or nondeterministically deletes the real file in release.
+    auto reloaded = std::make_shared<DB::FileCache>("rename_size_in_name_failure_reload", settings);
+    reloaded->initialize();
+
+    /// Exactly one segment is restored (from the legacy file); the directory artifact is ignored.
+    ASSERT_EQ(reloaded->getFileSegmentsNum(), 1u);
+    ASSERT_EQ(reloaded->getUsedCacheSize(), 8u);
+
+    /// Startup kept the legacy `<offset>` file intact.
+    ASSERT_TRUE(fs::is_regular_file(legacy_path));
+    ASSERT_EQ(fs::file_size(legacy_path), 8u);
+
+    /// The restored segment is fully downloaded and reusable.
+    auto reloaded_holder = reloaded->getOrSet(key, 0, 8, /*file_size=*/8, {}, 0, user);
+    ASSERT_EQ(reloaded_holder->size(), 1u);
+    ASSERT_EQ((*reloaded_holder->begin())->state(), State::DOWNLOADED);
 }
