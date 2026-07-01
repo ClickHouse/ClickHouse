@@ -5,6 +5,7 @@
 -- The codec is gated behind `allow_experimental_codecs`.
 
 SET allow_experimental_codecs = 1;
+SET vector_search_use_quantized_codes = 1;
 -- The shortlist size is k * vector_search_index_fetch_multiplier clamped to query_plan_max_limit_for_lazy_materialization;
 -- the test harness randomizes the latter, which would shrink the full-coverage shortlist and make the exact check flaky. Pin it.
 SET query_plan_max_limit_for_lazy_materialization = 1000000;

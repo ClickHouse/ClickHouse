@@ -7734,6 +7734,11 @@ If a vector search query has a WHERE clause, this setting determines if it is ev
     DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
 Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
 )", 0, vector_search_postfilter_multiplier) \
+    DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
+Enable the two-stage approximate vector-search optimization over a `Quantize(...)` column codec. When enabled, an `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` query on a column that has a `Quantize(...)` codec is rewritten to first rank a shortlist over the small quantized codes and then rescore that shortlist against the full-precision vectors (the shortlist size is `k * vector_search_index_fetch_multiplier`). This is an approximate search.
+
+Disabled by default: such queries run as an exact full-precision scan regardless of the codec, so the codec only adds a companion codes stream on disk and does not change query results. Enable this setting (per query or session) to opt into the faster approximate ranking.
+)", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \

@@ -8,6 +8,7 @@
 -- Syntax: `Quantize('pq', dimensions, nbits, m)`.
 
 SET allow_experimental_codecs = 1;
+SET vector_search_use_quantized_codes = 1;
 -- Lazy materialization (LazilyReadFromMergeTree) is an analyzer-only plan optimization, so the plan-shape assertion
 -- below needs the new analyzer (the old-analyzer CI config does not produce the lazy read).
 SET enable_analyzer = 1;

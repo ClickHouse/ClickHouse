@@ -30,6 +30,7 @@
 namespace DB::Setting
 {
     extern const SettingsFloat vector_search_index_fetch_multiplier;
+    extern const SettingsBool vector_search_use_quantized_codes;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -122,6 +123,12 @@ bool optimizeVectorSearchWithQuantizedCodes(
     if (read_step->getVectorSearchParameters().has_value())
         return false;
     if (read_step->isParallelReadingFromReplicas())
+        return false;
+
+    /// The two-stage rewrite (shortlist over quantized codes + exact rescore) is an approximate search, so it is opt-in:
+    /// by default an ORDER BY distance LIMIT on a Quantize-coded column runs as an exact full-precision scan. Only engage
+    /// when the user asks for it via `vector_search_use_quantized_codes`.
+    if (!read_step->getContext()->getSettingsRef()[Setting::vector_search_use_quantized_codes])
         return false;
 
     /// Number of rows the final top-k needs (includes any OFFSET).
