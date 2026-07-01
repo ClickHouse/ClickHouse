@@ -318,3 +318,72 @@ def test_value_aware_none_strips_regardless_of_value():
     )
     expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()"
     assert strip_setting_from_query(query, SETTING) == expected
+
+
+# Regression: a baseline-default value followed by a SQL comment must still be
+# recognized as a baseline default and stripped. The value scan breaks only at
+# the next top-level comma / trailing clause, so a comment between the value
+# and that boundary lands inside the extracted value text (`0 /* keep */`,
+# `false -- keep`). The value-aware guard must normalize comments out before
+# comparing against `allowed_values`; otherwise `perf.py` re-raises
+# `UNKNOWN_SETTING` on the baseline even though the fixture pinned the
+# baseline-default value.
+COMMENTED_VALUE_STRIP_CASES = [
+    # Only setting, trailing block comment: the comment goes with the clause.
+    (
+        "block_comment_after_zero_only_setting",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 /* keep */",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()",
+    ),
+    # Only setting, trailing `--` line comment.
+    (
+        "line_comment_after_false_only_setting",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = false -- keep\n",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple()",
+    ),
+    # First of two, block comment between the value and the separator comma.
+    (
+        "block_comment_after_zero_first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 /* keep */, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+    # First of two, `#` line comment between the value and the separator comma.
+    (
+        "hash_comment_after_zero_first_of_two",
+        f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0 # keep\n, index_granularity = 8192",
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "case",
+    COMMENTED_VALUE_STRIP_CASES,
+    ids=[c[0] for c in COMMENTED_VALUE_STRIP_CASES],
+)
+def test_value_aware_strips_commented_baseline_default(case):
+    _name, query, expected = case
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == expected
+
+
+def test_value_aware_commented_enabled_value_is_unchanged():
+    # A commented *enabled* value must still fail the guard: comments are
+    # normalized out, leaving `1`, which is not a baseline default, so the
+    # query is returned byte-for-byte and `perf.py` fails fast.
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} = 1 /* keep */"
+    )
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == query
+
+
+def test_value_aware_comment_markers_inside_string_value_are_kept():
+    # Comment markers inside a quoted value are part of the value, not real
+    # comments, so the normalizer must keep them: the value `'0 /* x */'` (a
+    # string) normalizes to `'0 /* x */'`, which is not a baseline default, so
+    # the query is returned unchanged rather than mis-stripped as a bare `0`.
+    query = (
+        "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        f"SETTINGS {SETTING} = '0 /* x */'"
+    )
+    assert strip_setting_from_query(query, SETTING, ALLOWED) == query

@@ -347,8 +347,58 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     # unchanged so `perf.py` re-raises `UNKNOWN_SETTING` and fails fast instead
     # of silently comparing an optimized PR table against an unoptimized
     # baseline one.
+    def value_without_comments(text):
+        """Return the setting value with SQL comments removed, so a value
+        written as `0 /* keep */` or `false -- keep` normalizes to `0` /
+        `false` for the `allowed_values` comparison. The value scan above only
+        breaks on the next top-level comma or trailing clause, so a comment
+        sitting between the value and that boundary is captured in
+        `query[value_start:i]` and would otherwise make a baseline-default
+        value miss the allowlist. Comment markers inside a string or backtick
+        literal are part of the value and are kept."""
+        out = []
+        pos = 0
+        length = len(text)
+        in_quote = None
+        while pos < length:
+            ch = text[pos]
+            nxt = text[pos + 1] if pos + 1 < length else ""
+            if in_quote is not None:
+                out.append(ch)
+                if ch == "\\" and pos + 1 < length:
+                    out.append(nxt)
+                    pos += 2
+                    continue
+                if ch == in_quote:
+                    # `''` inside a single-quoted string is an escaped quote.
+                    if in_quote == "'" and nxt == "'":
+                        out.append(nxt)
+                        pos += 2
+                        continue
+                    in_quote = None
+                pos += 1
+                continue
+            if (ch == "-" and nxt == "-") or ch == "#":
+                while pos < length and text[pos] != "\n":
+                    pos += 1
+                continue
+            if ch == "/" and nxt == "*":
+                pos += 2
+                while pos < length and not (
+                    text[pos] == "*"
+                    and (text[pos + 1] if pos + 1 < length else "") == "/"
+                ):
+                    pos += 1
+                pos += 2
+                continue
+            if ch in "'\"`":
+                in_quote = ch
+            out.append(ch)
+            pos += 1
+        return "".join(out).strip().lower()
+
     if allowed_values is not None:
-        stripped_value = query[value_start:i].strip().lower()
+        stripped_value = value_without_comments(query[value_start:i])
         if stripped_value not in allowed_values:
             return query
 
