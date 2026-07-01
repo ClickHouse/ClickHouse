@@ -78,6 +78,7 @@ namespace CurrentMetrics
     extern const Metric OptimizeFinalThreads;
     extern const Metric OptimizeFinalThreadsActive;
     extern const Metric OptimizeFinalThreadsScheduled;
+    extern const Metric BackgroundMergesAndMutationsPoolTask;
 }
 
 namespace DB
@@ -2065,13 +2066,22 @@ bool StorageMergeTree::optimize(
         /// OPTIMIZE FINAL assigns and runs the per-partition merges in parallel, so that merges for
         /// all partitions appear at once (e.g. in system.merges) instead of being processed one by
         /// one (issue #46770). Partitions are independent, so their merges can run concurrently.
-        /// The degree of parallelism is bounded by the configured background merge concurrency.
         /// Explicit transactions take the sequential path: parallel merges would otherwise share a
         /// single transaction object, which is not designed for concurrent use.
-        auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
-        const size_t max_concurrent_merges = std::min(
-            partition_ids.size(),
-            std::max<size_t>(1, merge_mutate_executor ? merge_mutate_executor->getMaxTasksCount() : 1));
+        ///
+        /// The parallelism is bounded by the currently free capacity of the background merge pool
+        /// (`background_pool_size` * `background_merges_mutations_concurrency_ratio` minus the merges
+        /// and mutations already running), so a foreground OPTIMIZE FINAL does not start more merges
+        /// than the operator's configured merge concurrency. This reads the same
+        /// `BackgroundMergesAndMutationsPoolTask` counter that background merge selection consults.
+        size_t max_concurrent_merges = 1;
+        if (auto merge_mutate_executor = getContext()->getMergeMutateExecutor())
+        {
+            const size_t max_tasks = merge_mutate_executor->getMaxTasksCount();
+            const auto occupied = CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask].load(std::memory_order_relaxed);
+            const size_t free_slots = (occupied >= 0 && static_cast<size_t>(occupied) < max_tasks) ? max_tasks - static_cast<size_t>(occupied) : 1;
+            max_concurrent_merges = std::min(partition_ids.size(), std::max<size_t>(1, free_slots));
+        }
 
         std::optional<PreformattedMessage> failure_reason;
 
