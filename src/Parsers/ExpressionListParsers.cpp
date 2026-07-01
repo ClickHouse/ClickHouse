@@ -3708,6 +3708,9 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     Expected stub;
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
+    /// 'AND INSERT' here is not an 'AND' operator.
+    if (ParserKeyword(Keyword::AND_INSERT).checkWithoutMoving(pos, stub))
+        return Action::NONE;
 
     /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
