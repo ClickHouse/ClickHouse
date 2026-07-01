@@ -2,6 +2,8 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -25,8 +27,10 @@ namespace Setting
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool optimize_limit_by_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_use_implicit_projections;
@@ -55,6 +59,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
@@ -75,6 +80,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
+    extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -87,7 +93,7 @@ namespace Setting
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
+    extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
@@ -102,9 +108,11 @@ namespace Setting
     extern const SettingsFloat min_filtered_ratio_for_lazy_final;
     extern const SettingsUInt64 max_rows_for_lazy_final;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
+    extern const SettingsUInt64 query_plan_max_limit_for_join_lazy_indexing;
     extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
+    extern const SettingsUInt64 query_plan_optimize_join_order_max_searched_plans;
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
@@ -162,6 +170,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "The value of the setting `query_plan_optimize_join_order_limit` is too large: {}, "
             "maximum allowed value is 64", query_plan_optimize_join_order_limit);
+    query_plan_optimize_join_order_max_searched_plans = from[Setting::query_plan_optimize_join_order_max_searched_plans];
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
@@ -183,9 +192,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_prewhere_after_pushdown = optimize_prewhere && from[Setting::optimize_prewhere_after_pushdown];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
     distinct_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_distinct_in_order];
+    limit_by_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_limit_by_in_order];
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
+    optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
@@ -201,11 +212,25 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+
+    /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
+    /// buckets the part, so the projection would be counted once per bucket and multiply the result.
+    /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
+    if (make_distributed_plan)
+        optimize_use_implicit_projections = false;
+
+    distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
 #ifdef OS_LINUX
     distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
+    if (!distributed_plan_force_exchange_kind.empty()
+        && distributed_plan_force_exchange_kind != "Persisted"
+        && distributed_plan_force_exchange_kind != "Streaming")
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `distributed_plan_force_exchange_kind` must be empty, 'Persisted', or 'Streaming', got '{}'",
+            distributed_plan_force_exchange_kind);
 #else
     if (from[Setting::distributed_plan_force_exchange_kind].changed && from[Setting::distributed_plan_force_exchange_kind].value != "Persisted")
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Only Persisted exchange is supported");
@@ -262,6 +287,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
+    min_columns_for_join_lazy_indexing = from[Setting::query_plan_enable_optimizations] ? from[Setting::query_plan_min_columns_for_join_lazy_indexing] : 0;
+    max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
+
     max_threads = from[Setting::max_threads];
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
@@ -291,5 +319,20 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
             if (auto nodes = cluster->getAnyShardInfo().getAllNodeCount())
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
+
+#ifdef OS_LINUX
+    /// Auto-select the exchange kind when it is not forced: use Streaming only when its listener will
+    /// run (both the port and a listen host are configured), otherwise Persisted. This avoids planning
+    /// Streaming exchanges that would connect to a listener that was never started. A forced kind and
+    /// local execution (which routes exchanges through in-memory queues) are left untouched.
+    if (distributed_plan_force_exchange_kind.empty() && !distributed_plan_execute_locally)
+    {
+        const auto & config = from->getConfigRef();
+        const bool streaming_listener_configured =
+            config.getUInt("distributed_query.streaming_exchange_port", 0) != 0
+            && !getMultipleValuesFromConfig(config, "distributed_query", "streaming_exchange_listen_host").empty();
+        distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
+    }
+#endif
 }
 }

@@ -1,5 +1,6 @@
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ReplxxLineReader.h>
+#include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <unordered_set>
 #include <chrono>
 #include <cerrno>
 #include <cstring>
@@ -32,6 +34,41 @@
 
 namespace
 {
+
+/// How many as-you-type hint rows to show at once (mirrors the Web UI completion window).
+constexpr size_t HINTS_MAX_ROWS = 5;
+
+/// Extract identifier-like words from a query so they can be prioritized in completions/hints
+/// (column names, aliases, etc. typed elsewhere in the same query). Uses the SQL lexer so that
+/// string literals, numbers, and comments are not mistaken for identifiers.
+std::vector<std::string> extractIdentifiers(const char * text)
+{
+    std::vector<std::string> result;
+    if (text == nullptr || *text == '\0')
+        return result;
+
+    const char * end = text + strlen(text);
+    DB::Lexer lexer(text, end);
+    std::unordered_set<std::string> seen;
+
+    for (DB::Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.isError())
+            break;
+
+        std::string word;
+        if (token.type == DB::TokenType::BareWord)
+            word.assign(token.begin, token.end);
+        else if (token.type == DB::TokenType::QuotedIdentifier && token.size() >= 2)
+            word.assign(token.begin + 1, token.end - 1); /// strip the surrounding quotes/backticks
+
+        /// The suggestion dictionary only contains words of 2+ characters.
+        if (word.size() >= 2 && seen.insert(word).second)
+            result.push_back(std::move(word));
+    }
+
+    return result;
+}
 
 /// Trim ending whitespace inplace
 void rightTrim(String & s)
@@ -309,6 +346,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     )
     , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
     , highlighter(std::move(options.highlighter))
+    , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
@@ -348,9 +386,23 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest = options.suggest, this] (const String & context, size_t context_size)
+    auto callback = [this] (const String & context, size_t context_size)
     {
-        return suggest.getCompletions(context, context_size, word_break_characters);
+        /// When this completion corresponds to the hints currently displayed, reuse the exact
+        /// snapshot taken when they were shown. replxx accepts a hint by indexing this completion
+        /// list with the hint selection, and the background `Suggest::load` thread can insert a
+        /// word that sorts before the displayed one between display and acceptance; reusing the
+        /// snapshot guarantees the accepted word is the one that was shown. Any other completion
+        /// (plain Tab where no hints are shown — empty word, mid-line) is recomputed.
+        if (!hint_completions.empty()
+            && context == hint_completions_context
+            && static_cast<int>(context_size) == hint_completions_context_size)
+            return hint_completions;
+
+        /// Prioritize identifiers already present in the whole query line (not just up to the
+        /// cursor), so the same words rank first for both Tab completion and the inline hints.
+        auto priority = extractIdentifiers(rx.get_state().text());
+        return suggest.getCompletions(context, context_size, word_break_characters, priority);
     };
 
     rx.set_completion_callback(callback);
@@ -363,6 +415,80 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
 
+    /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
+    /// the same priority ordering as Tab completion. replxx renders a single hint inline after
+    /// the cursor and a navigable list (Ctrl-Up/Ctrl-Down) for several; Tab accepts the selected
+    /// one. Accepting a hint makes replxx index the *completion* list with the hint selection, so
+    /// the completion callback must return the same words in the same order as the displayed hints
+    /// — guaranteed here by computing the words once in the hint callback and reusing that exact
+    /// snapshot in the completion callback (`hint_completions`).
+    /// Hints need color, so they are only enabled together with highlighting (see ClientBase).
+    if (options.enable_hints && highlighter)
+    {
+        auto hint_callback = [this] (const String & context, int & context_size, Replxx::Color &)
+        {
+            /// The callback runs only when the input text changes (replxx caches hints while it
+            /// stays the same), so this is the right place to reset the navigation state and the
+            /// completion snapshot.
+            hint_selection = -1;
+            hint_count = 0;
+            hints_visible = false;
+            hint_completions.clear();
+            hint_completions_context.clear();
+            hint_completions_context_size = 0;
+
+            /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
+            /// every suggestion, and this callback runs on every zero-delay repaint, so we must not
+            /// fold and stable-sort the whole dictionary only to drop the result here.
+            const auto last_word_pos = context.find_last_of(word_break_characters);
+            const bool last_word_empty
+                = (last_word_pos == std::string::npos) ? context.empty() : (last_word_pos + 1 == context.size());
+            if (last_word_empty)
+                return replxx::Replxx::hints_t{};
+
+            const std::string text = rx.get_state().text();
+            auto priority = extractIdentifiers(text.c_str());
+            /// Compute the matches once and cache the full list, so accepting a hint reuses exactly
+            /// these words (see the completion callback). `getCompletions` returns the matches in
+            /// the same priority order as the hints, so the shown hints are simply its prefix.
+            hint_completions = suggest.getCompletions(context, context_size, word_break_characters, priority);
+            hint_completions_context = context;
+            hint_completions_context_size = context_size;
+
+            replxx::Replxx::hints_t hints;
+            const size_t shown = std::min(hint_completions.size(), HINTS_MAX_ROWS);
+            hints.reserve(shown);
+            for (size_t i = 0; i < shown; ++i)
+                hints.push_back(hint_completions[i].text());
+            hint_count = static_cast<int>(hints.size());
+
+            /// The "popup" is active only if at least one hint actually has something to complete
+            /// (a non-empty suffix). A fully-typed word matches itself with an empty suffix; that
+            /// must not count, otherwise Enter would accept the no-op instead of running the query.
+            for (const auto & hint : hints)
+            {
+                if (hint.size() > static_cast<size_t>(context_size))
+                {
+                    hints_visible = true;
+                    break;
+                }
+            }
+            return hints;
+        };
+        rx.set_hint_callback(hint_callback);
+        rx.set_hint_delay(0); /// Show hints immediately, without a delay.
+        rx.set_max_hint_rows(static_cast<int>(HINTS_MAX_ROWS));
+
+        /// replxx drops its internal hint selection on every action that regenerates the line — any
+        /// cursor movement, edit, etc. (see `handle_hints` on `HINT_ACTION::REGENERATE`) — but it
+        /// re-invokes the hint callback only when the input *text* changes. So a plain cursor
+        /// movement (e.g. Left then Right back to the end) silently clears replxx's selection while
+        /// leaving our mirror stale, making Right/Enter treat a no-longer-selected hint as chosen.
+        /// The modify callback runs on every dispatched action, so reset the mirror here to track
+        /// replxx; the hint-navigation keys re-set it *after* invoking, so a real navigation stays.
+        rx.set_modify_callback([this] (std::string &, int &) { hint_selection = -1; });
+    }
+
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
@@ -374,9 +500,22 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     auto commit_action = [this](char32_t code)
     {
+        /// When the user has navigated to a hint, Enter accepts it (like Tab and Right) instead
+        /// of running the query / inserting a newline. Only an explicitly selected hint is
+        /// accepted (not a single ghost shown while typing), so Enter keeps running the query in
+        /// the normal "type a command and press Enter" flow.
+        if (hintPopupActive() && hint_selection >= 0)
+            return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
         /// If we allow multiline and there is already something in the input, start a newline.
-        /// NOTE: Lexer is only available if we use highlighter.
-        if (highlighter && multiline && !replxx_last_is_delimiter)
+        /// Also, when bytes are still queued in the TTY (paste in progress without bracketed
+        /// paste support), fold the embedded newline into the same edit buffer instead of
+        /// committing a partial query and switching to the continuation prompt. This way the
+        /// whole paste lives in a single replxx edit buffer and arrow keys navigate across it.
+        /// The paste case does not depend on the highlighter: the `NEW_LINE` action only inserts
+        /// a newline into the edit buffer and does not use the lexer, so the paste stays under a
+        /// single prompt even with `--highlight 0`. The explicit `--multiline` continuation still
+        /// requires the highlighter, preserving the previous behavior.
+        if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
@@ -394,6 +533,74 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::meta(Replxx::KEY::BACKSPACE), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_BEGINING_OF_WORD, code); });
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
+
+    /// When the as-you-type hints are shown, let the arrow keys drive them like the Web UI
+    /// completion popup: Down steps into / advances the hint list, Up moves back through it, and
+    /// Tab/Right/Enter accept the chosen hint. Up only navigates the hints once one is selected;
+    /// before that Up keeps recalling command history, so the hints never shadow it. Right and
+    /// Enter act only on a chosen hint and never pop the old-style completion list (only Tab does
+    /// that). Outside the popup these keys behave normally. Ctrl-Up/Ctrl-Down (replxx's defaults)
+    /// are rebound to the same logic so the selection stays in sync. Note: Esc cannot be used to
+    /// dismiss the hints, because the bundled replxx reads a lone Esc by blocking for the next
+    /// byte (no escape-key timeout); the Up-to-history behavior above covers getting back to
+    /// history instead.
+    if (options.enable_hints && highlighter)
+    {
+        /// Down advances the selection (and steps into the list); these mirror replxx's internal
+        /// wrap (past the last hint -> nothing selected -> first hint) so we know which hint, if
+        /// any, is currently chosen.
+        /// `rx.invoke` runs the modify callback, which resets `hint_selection`, so compute the new
+        /// selection from the current one *before* invoking and re-apply it *after* — this keeps
+        /// our mirror equal to replxx's internal selection (which the same action advances).
+        auto hint_next = [this](char32_t code)
+        {
+            if (hintPopupActive())
+            {
+                const int next = (hint_selection + 1 >= hint_count) ? -1 : hint_selection + 1;
+                auto result = rx.invoke(Replxx::ACTION::HINT_NEXT, code);
+                hint_selection = next;
+                return result;
+            }
+            return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
+        };
+        /// Up navigates the hints only once a hint is selected; before that it keeps recalling
+        /// command history, so the hints do not shadow it.
+        auto hint_previous = [this](char32_t code)
+        {
+            if (hintPopupActive() && hint_selection >= 0)
+            {
+                const int next = hint_selection - 1; /// from the first hint this deselects; next Up recalls history
+                auto result = rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                hint_selection = next;
+                return result;
+            }
+            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        };
+        rx.bind_key(Replxx::KEY::DOWN, hint_next);
+        rx.bind_key(Replxx::KEY::UP, hint_previous);
+        /// Ctrl-Up/Ctrl-Down explicitly drive the hints (Ctrl-Up also enters the list from the end).
+        rx.bind_key(Replxx::KEY::control(Replxx::KEY::DOWN), hint_next);
+        rx.bind_key(Replxx::KEY::control(Replxx::KEY::UP), [this](char32_t code)
+        {
+            if (hintPopupActive())
+            {
+                const int next = (hint_selection - 1 < -1) ? hint_count - 1 : hint_selection - 1;
+                auto result = rx.invoke(Replxx::ACTION::HINT_PREVIOUS, code);
+                hint_selection = next;
+                return result;
+            }
+            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+        });
+
+        /// Right accepts the chosen hint (the single one shown, or the one selected by navigating);
+        /// it never triggers the old-style completion list. Otherwise it just moves the cursor.
+        rx.bind_key(Replxx::KEY::RIGHT, [this](char32_t code)
+        {
+            if (hintChosen())
+                return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
+            return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
+        });
+    }
 
     /// We don't want to allow opening EDITOR in the embedded mode.
     if (!options.embedded_mode)
@@ -499,6 +706,35 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     });
 }
 
+bool ReplxxLineReader::isCursorAtEndOfInput()
+{
+    const replxx::Replxx::State state(rx.get_state());
+    const char * text = state.text();
+    /// replxx cursor positions are counted in code points; count them in the UTF-8 text.
+    size_t code_points = 0;
+    for (const char * p = text; *p != '\0'; ++p)
+        if ((static_cast<unsigned char>(*p) & 0xC0) != 0x80)
+            ++code_points;
+    return state.cursor_position() >= static_cast<int>(code_points);
+}
+
+bool ReplxxLineReader::hintPopupActive()
+{
+    /// Treat Up/Down as hint navigation only where the hints are actually shown — at the end of
+    /// the input. Hints are shown only at the end of the buffer (including the last line of a
+    /// multi-line query), so elsewhere this returns false and Up/Down keep moving between lines
+    /// and through history.
+    return hints_visible && isCursorAtEndOfInput();
+}
+
+bool ReplxxLineReader::hintChosen()
+{
+    /// A hint is "chosen" when there is a single hint shown (the ghost) or the user has selected
+    /// one by navigating. In both cases accepting it inserts text rather than popping the
+    /// old-style completion list.
+    return hintPopupActive() && (hint_selection >= 0 || hint_count == 1);
+}
+
 ReplxxLineReader::~ReplxxLineReader()
 {
     if (history_file_fd >= 0 && close(history_file_fd))
@@ -536,6 +772,10 @@ void ReplxxLineReader::addToHistory(const String & line)
         locked = true;
 
     rx.history_add(line);
+
+    /// Remember identifiers from the committed query so they are prioritized in later
+    /// completions/hints this session (the "previously used" tier).
+    suggest.addUsedWords(extractIdentifiers(line.c_str()));
 
     // flush changes to the disk
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
