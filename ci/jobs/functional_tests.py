@@ -157,15 +157,16 @@ def run_tests(
         # clickhouse-test even starts. Read the timeout defensively from either a
         # mapping or a Job.Config object, defaulting to 2h when unset.
         job_cfg = Info().job_config
-        if isinstance(job_cfg, dict):
-            configured_timeout = job_cfg.get("timeout")
-        else:
-            configured_timeout = getattr(job_cfg, "timeout", None)
+        configured_timeout = job_cfg.get("timeout") if isinstance(job_cfg, dict) else getattr(job_cfg, "timeout", None)
         job_timeout = configured_timeout or 2 * 3600
         elapsed = int(job_stop_watch.duration) if job_stop_watch else 0
-        # Floor so a near-exhausted budget still passes a positive timeout to
-        # Shell.run (fire the SIGTERM promptly) rather than 0/negative.
-        outer_timeout = max(60, job_timeout - elapsed - RESERVE_SECONDS)
+        # Bound Shell.run by the time actually left before Praktika hard-kills the
+        # job (job_timeout - elapsed), reserving RESERVE_SECONDS of that for the
+        # SIGTERM + log/result collection. Once the reserve is already gone this goes
+        # <= 0; clamp to a minimal positive value (NOT a fixed floor like 60s, which
+        # would outlast the real remaining time and let the runner hard-kill fire
+        # first, losing logs) so clickhouse-test is SIGTERMed promptly instead.
+        outer_timeout = max(1, job_timeout - elapsed - RESERVE_SECONDS)
     return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
