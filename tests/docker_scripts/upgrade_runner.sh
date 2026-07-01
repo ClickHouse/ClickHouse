@@ -435,18 +435,22 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
-# `_inner_backup_database` + `is encrypted in the backup, it can be restored only to an encrypted disk` is a
-#       benign leftover-state error from the `Backup` database engine. `03279_database_backup_database_disk_engine`
-#       creates `CREATE DATABASE ..._inner_backup_database ENGINE = Backup(...)` and drops it, but the upgrade
-#       check runs the client with `--fake-drop` (DROP queries are ignored), so the database survives into the
-#       upgrade restart. When the upgrade run randomly enables `--encrypted-storage`, the backed-up parts are
-#       encrypted; on restart the Backup engine reads them through `DiskBackup` (a non-encrypted virtual disk),
-#       and `BackupImpl::readFileImpl` rejects the encrypted files with `CANNOT_RESTORE_TO_NONENCRYPTED_DISK`
-#       (Code 697). This is expected: an encrypted backup stores already-encrypted bytes and no disk key, so it
-#       can only be read back on an encrypted disk. Filtered via regex in the secondary pipe below to require the
-#       `_inner_backup_database` context AND the encrypted-restore message together, so other broken-part errors
-#       are not masked. The follow-up `Detaching broken part` + `backward incompatibility` line for the same
-#       database is matched by the sibling regex below.
+# `is encrypted in the backup, it can be restored only to an encrypted disk` is a benign leftover-state error
+#       from the `Backup` database engine. The `03277`/`03279` backup-database tests create a
+#       `CREATE DATABASE ... ENGINE = Backup(...)` database and drop it, but the upgrade check runs the client
+#       with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade restart. When the
+#       upgrade run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on restart the
+#       Backup engine reads them through `DiskBackup` (a non-encrypted virtual disk), and `BackupImpl::readFileImpl`
+#       rejects the encrypted files with `CANNOT_RESTORE_TO_NONENCRYPTED_DISK` (Code 697). This is expected: an
+#       encrypted backup stores already-encrypted bytes and no disk key, so it can only be read back on an
+#       encrypted disk. The message string is emitted only at the two Code 697 throw sites in `BackupImpl.cpp`, so
+#       anchoring on it alone does not mask genuine broken-part errors (which carry a different reason). This
+#       covers all Backup-engine restore variants regardless of the surviving database name (`03279` names it
+#       `..._inner_backup_database`; `03277` names it `..._restore`). The follow-up `Detaching broken part` +
+#       `backward incompatibility` cleanup line does not carry the Code 697 message, so it is matched by the
+#       sibling regex below, scoped to the `backup_database` database-name token (shared by the `03276`/`03277`/
+#       `03278`/`03279` backup-database tests) so unrelated backward-incompatibility broken-part errors are not
+#       masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -538,8 +542,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
-    | grep -av -e "_inner_backup_database.*is encrypted in the backup, it can be restored only to an encrypted disk" \
-    | grep -av -e "_inner_backup_database.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
