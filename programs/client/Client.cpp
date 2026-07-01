@@ -520,9 +520,11 @@ void Client::connect()
     UInt64 server_version_patch = 0;
 
     /// Capture the client local time zone before the branch below may switch the process default
-    /// to the server time zone. `connect()` can run again on reconnect, so only capture once.
+    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
+    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
     if (client_local_timezone.empty())
-        client_local_timezone = DateLUT::instance().getTimeZone();
+        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
 
     if (hosts_and_ports.empty())
     {

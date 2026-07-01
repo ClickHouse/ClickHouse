@@ -36,6 +36,13 @@ INSERT INTO ${CLICKHOUSE_DATABASE}.dt SETTINGS async_insert = 0 VALUES ('2017-07
 $TZC -q \
   "INSERT INTO ${CLICKHOUSE_DATABASE}.dt SETTINGS use_client_time_zone = 1, async_insert = 1, wait_for_async_insert = 1 VALUES ('2017-07-14 05:40:00', 'settings_async')"
 
+# Starting with an explicit --session_timezone override and then clearing it with
+# SET session_timezone = DEFAULT must fall back to the client time zone, not to the override value.
+$TZC --use_client_time_zone=1 --session_timezone=UTC -mn -q "
+SET session_timezone = DEFAULT;
+INSERT INTO ${CLICKHOUSE_DATABASE}.dt SETTINGS async_insert = 1, wait_for_async_insert = 1 VALUES ('2017-07-14 05:40:00', 'reset_default_async');
+"
+
 # All of the above interpret the literal in the client time zone: 2017-07-14 05:40:00 = 1500036000.
 ${CLICKHOUSE_CLIENT} -q "SELECT kind, toUnixTimestamp(a) FROM ${CLICKHOUSE_DATABASE}.dt ORDER BY kind"
 
