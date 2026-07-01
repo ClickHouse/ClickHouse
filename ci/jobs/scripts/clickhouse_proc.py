@@ -621,14 +621,17 @@ profiles:
         startup can take a while on a loaded sanitizer host. Each attempt kills,
         restarts, and waits for readiness; a dead or too-slow instance is simply
         killed and started again on the next iteration.
+
+        Returns None on success, or a concrete failure reason so the caller can
+        carry it into minio_setup_error (CIDB test_context_raw).
         """
         minio_bin = self._minio_binary()
         if not minio_bin:
-            print(
-                "ERROR: cannot find the minio binary (looked for /minio and "
-                f"{temp_dir}/minio); cannot restart MinIO"
+            reason = (
+                f"cannot find the minio binary (looked for /minio and {temp_dir}/minio)"
             )
-            return False
+            print(f"ERROR: {reason}; cannot restart MinIO")
+            return reason
         # Start MinIO with the same root credentials `setup_minio.sh` used.
         # Otherwise it comes up with different root credentials and the
         # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
@@ -649,13 +652,17 @@ profiles:
                 verbose=True,
             )
             if self._wait_minio_ready(ready_timeout_s):
-                return True
+                return None
             print(
                 f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
                 f"(attempt {attempt}/{attempts})"
             )
-        print("ERROR: Failed to restart MinIO after multiple attempts")
-        return False
+        reason = (
+            f"manual MinIO restart did not become ready within {ready_timeout_s}s "
+            f"after {attempts} attempts"
+        )
+        print(f"ERROR: {reason}")
+        return reason
 
     def _restart_minio_to_apply_config(self):
         # Restart minio so it picks up the webhook config set above. The clean
@@ -667,6 +674,9 @@ profiles:
         # loaded CI hosts (the clean restart routinely exceeds the timeout there;
         # see the bugfix-validation env-setup flake in PR #108821).
         restart_timeout = 60
+        # The clean-restart outcome that pushed us onto the manual fallback, so
+        # the terminal reason names why the reliable path was even attempted.
+        clean_restart_reason = "clean clickminio restart did not report a ready service"
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
             proc = subprocess.Popen(
@@ -698,22 +708,30 @@ profiles:
             # bucket is servable yet, so confirm readiness before trusting it.
             if "success" in status and self._wait_minio_ready(30):
                 return True
-            print(
-                f"WARNING: clickminio restart did not report a ready service, status: [{status}]"
+            clean_restart_reason = (
+                f"clean clickminio restart did not report a ready service, status: [{status}]"
             )
+            print(f"WARNING: {clean_restart_reason}")
         except (subprocess.TimeoutExpired, OSError):
-            print(f"WARNING: minio restart timed out after {restart_timeout}s")
+            clean_restart_reason = (
+                f"clean clickminio restart timed out after {restart_timeout}s"
+            )
+            print(f"WARNING: {clean_restart_reason}")
 
         print("Falling back to a manual MinIO restart")
-        if self._force_restart_minio():
+        manual_restart_reason = self._force_restart_minio()
+        if manual_restart_reason is None:
             return True
         # Non-fatal, but record the reason so the caller can persist it into the
         # setup Result (CIDB test_context_raw) instead of leaving minio failures
-        # in the opaque "Cannot start clickhouse-server" bucket.
+        # in the opaque "Cannot start clickhouse-server" bucket. Carry both the
+        # clean-restart status and the manual-restart failure, otherwise the real
+        # reason stays print-only and collapses to a generic CIDB bucket.
         self.minio_setup_error = (
-            "failed to restart clickminio (clean and manual restart both failed)"
+            f"failed to restart clickminio ({clean_restart_reason}; "
+            f"manual restart: {manual_restart_reason})"
         )
-        print("ERROR: Failed to restart clickminio after clean and manual restart")
+        print(f"ERROR: Failed to restart clickminio: {self.minio_setup_error}")
         return False
 
     def wait_ready(self, replica_num=0):
