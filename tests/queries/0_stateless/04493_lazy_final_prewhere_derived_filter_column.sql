@@ -42,4 +42,17 @@ FROM t_04493 FINAL
 WHERE (42 >= id) AND ('2019-01-01 00:00:00' <= update_ts) AND equals(and(8, 8), 1)
 SETTINGS query_plan_optimize_lazy_final = 0;
 
+-- Single-conjunct case: move_all_conditions_to_prewhere = 0 pushes only (42 >= id) to
+-- PREWHERE, so prewhere_column_name is that predicate itself and the residual WHERE
+-- (value != 7) still consumes it. The set build must keep, not remove, that column.
+SELECT count()
+FROM t_04493 FINAL
+WHERE (42 >= id) AND (value != 7)
+SETTINGS move_all_conditions_to_prewhere = 0;
+
+SELECT count()
+FROM t_04493 FINAL
+WHERE (42 >= id) AND (value != 7)
+SETTINGS move_all_conditions_to_prewhere = 0, query_plan_optimize_lazy_final = 0;
+
 DROP TABLE t_04493;

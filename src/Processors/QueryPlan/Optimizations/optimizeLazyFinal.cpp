@@ -523,7 +523,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             set_query_info.prewhere_info->prewhere_actions = cloneFilterSubDAG(
                 set_query_info.prewhere_info->prewhere_actions, set_query_info.prewhere_info->prewhere_column_name);
             exposeNodesAsDAGOutputs(set_query_info.prewhere_info->prewhere_actions, filter_derived_inputs);
-            set_query_info.prewhere_info->remove_prewhere_column = true;
+            /// Keep the prewhere predicate column in the output when the copied WHERE filter still
+            /// consumes it. `splitAndFillPrewhereInfo` flips `remove_prewhere_column` to false in the
+            /// single-conjunct case where the residual WHERE references the pushed predicate; forcing
+            /// removal here would erase that column and the WHERE could not resolve its input.
+            set_query_info.prewhere_info->remove_prewhere_column
+                = !filter_derived_inputs.contains(set_query_info.prewhere_info->prewhere_column_name);
         }
         if (set_query_info.row_level_filter)
         {
@@ -531,7 +536,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             fixed->actions = cloneFilterSubDAG(set_query_info.row_level_filter->actions, set_query_info.row_level_filter->column_name);
             exposeNodesAsDAGOutputs(fixed->actions, filter_derived_inputs);
             fixed->column_name = set_query_info.row_level_filter->column_name;
-            fixed->do_remove_column = true;
+            fixed->do_remove_column = !filter_derived_inputs.contains(fixed->column_name);
             set_query_info.row_level_filter = std::move(fixed);
         }
 
