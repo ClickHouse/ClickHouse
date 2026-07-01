@@ -257,7 +257,10 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
-            .execute_direct = execute_direct
+            .execute_direct = execute_direct,
+            .use_shared_memory = false,
+            .shared_memory_size = 0,
+            .shared_memory_path = {}
         };
 
         auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
