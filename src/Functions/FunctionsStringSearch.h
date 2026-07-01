@@ -149,8 +149,9 @@ public:
             ? "StringOrFixedString | Enum, String"
             : "String, StringOrFixedString | Enum";
         if constexpr (ImplIsLike<Impl>::value)
-            /// The optional 3rd argument for LIKE is the ESCAPE character (String).
-            return "(" + haystack + ", [String]) -> " + ret;
+            /// The optional 3rd argument for LIKE is the ESCAPE character. `executeImpl`
+            /// requires it to be a `ColumnConst`, so it is a constant option.
+            return "(" + haystack + ", [const String]) -> " + ret;
         else if constexpr (Impl::supports_start_pos)
             return "(" + haystack + ", [NativeUInt]) -> " + ret;
         else

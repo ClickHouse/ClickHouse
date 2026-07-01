@@ -59,7 +59,10 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, String) -> Array(String)";
+        /// The extension name (argument 0) is always constant: it is listed in
+        /// `getArgumentsThatAreAlwaysConstant` and `executeImpl` rejects anything but a
+        /// `ColumnConst` before reading it once.
+        return "(const String, String) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

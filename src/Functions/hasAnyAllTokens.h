@@ -110,7 +110,7 @@ public:
     String getSignatureString() const override
     {
         return "(N : MaybeNullable(StringOrFixedString | Array(StringOrFixedString)), "
-               "Any, [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
+               "const String | Array(String | IsNothing), [const String]) -> selectIf(anyNullable(N), Nullable(UInt8), UInt8)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
