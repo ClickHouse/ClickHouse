@@ -95,3 +95,11 @@ def test_unsupported_url_scheme():
         "configs/users.xml",
         "Unsupported URL scheme for vault: ftp",
     )
+
+
+def test_vault_not_loaded():
+    start_clickhouse(
+        "configs/config_no_vault.xml",
+        "configs/users_no_vault.xml",
+        "vault is not loaded",
+    )

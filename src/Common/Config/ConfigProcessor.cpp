@@ -627,8 +627,13 @@ void ConfigProcessor::doIncludesRecursive(
         process_include(attr_nodes["from_env"], get_env_node, "Env variable is not set: ");
     }
 
-    if (attr_nodes["from_hashicorp_vault"] && HashiCorpVault::instance().isLoaded())
+    if (attr_nodes["from_hashicorp_vault"])
     {
+        if (!HashiCorpVault::instance().isLoaded())
+            throw Poco::Exception(
+                "Element <" + node->nodeName()
+                + "> has 'from_hashicorp_vault' attribute but vault is not loaded.");
+
         std::string hashicorp_vault_key_value;
         if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
             hashicorp_vault_key_value = static_cast<Element *>(node)->getAttribute("hashicorp_vault_key");
