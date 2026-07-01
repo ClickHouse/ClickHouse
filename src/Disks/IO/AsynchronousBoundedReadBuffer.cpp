@@ -489,17 +489,39 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
         const size_t prefetch_end = result.file_offset_of_buffer_end;
         const size_t prefetch_begin = prefetch_end - prefetched_bytes;
 
-        if (prefetched_bytes != 0 && range_begin >= prefetch_begin && range_begin + n <= prefetch_end)
+        /// Serve as much of the requested range as the prefetch covers. If the prefetch covers the
+        /// head of the range, copy that prefix from memory and read only the missing suffix directly.
+        if (prefetched_bytes != 0 && range_begin >= prefetch_begin && range_begin < prefetch_end)
         {
+            const size_t from_prefetch = std::min(n, prefetch_end - range_begin);
+            memcpy(to, result.buf + result.offset + (range_begin - prefetch_begin), from_prefetch);
             ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
-            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
-            memcpy(to, result.buf + result.offset + (range_begin - prefetch_begin), n);
+            ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, from_prefetch);
+
+            if (from_prefetch == n)
+            {
+                if (progress_callback)
+                    progress_callback(n);
+                return n;
+            }
+
+            /// Report the prefix; honor cancellation before issuing the extra request.
+            if (progress_callback && progress_callback(from_prefetch))
+                return from_prefetch;
+
+            /// Read the missing suffix directly, keeping progress reporting cumulative over the range.
+            if (!impl->supportsReadAt())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
+
+            std::function<bool(size_t)> suffix_progress;
             if (progress_callback)
-                progress_callback(n);
-            return n;
+                suffix_progress = [&](size_t copied) { return progress_callback(from_prefetch + copied); };
+
+            return from_prefetch
+                + impl->readBigAt(to + from_prefetch, n - from_prefetch, range_begin + from_prefetch, suffix_progress);
         }
 
-        /// The prefetched range does not cover the request; drop it and read directly.
+        /// The prefetched range does not cover the head of the request; drop it and read directly.
         ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
     }
 

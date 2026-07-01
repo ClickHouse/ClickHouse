@@ -30,8 +30,9 @@ SETTINGS max_threads = 1,
 
 SYSTEM FLUSH LOGS query_log;
 
--- Expect at least one prefetch per small file (> 0). Before the fix this was 0 (synchronous reads).
-SELECT ProfileEvents['RemoteFSPrefetches'] > 0
+-- Expect the read to both issue a prefetch (RemoteFSPrefetches) and actually consume it
+-- (RemoteFSPrefetchedReads). Before the fix both were 0 and the reads were synchronous.
+SELECT ProfileEvents['RemoteFSPrefetches'] > 0, ProfileEvents['RemoteFSPrefetchedReads'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND current_database = currentDatabase()
   AND type = 'QueryFinish' AND query_kind = 'Select'
