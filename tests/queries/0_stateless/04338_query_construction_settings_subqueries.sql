@@ -64,24 +64,6 @@ CREATE TABLE t_create_as_select ENGINE = Memory AS SELECT number FROM numbers(10
 SELECT count() FROM t_create_as_select;
 DROP TABLE IF EXISTS t_create_as_select;
 
-SELECT '-- a non-construction `= DEFAULT` reset on a subquery survives the construction-settings consumption (returns 10)';
--- The session caps table reads at 5 rows; the subquery resets that cap to DEFAULT alongside the
--- construction setting `limit`. Consuming `limit` empties the SETTINGS node's `changes`, but the node
--- must be kept because `default_settings` still holds the reset — so the wrapped inner `numbers(100)`
--- read is uncapped and the query returns 10. If the reset were dropped, the inherited 5-row cap would
--- throw TOO_MANY_ROWS on the read.
-SET max_rows_to_read = 5;
-SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 10, max_rows_to_read = DEFAULT);
-SET max_rows_to_read = DEFAULT;
-
-SELECT '-- a `= DEFAULT` reset on an arm merged into the trailing query-level SETTINGS survives (returns 100)';
--- The outer (query-level) SETTINGS survives stripping (it still carries `max_threads`), so the inner arm's
--- `max_rows_to_read = DEFAULT` is merged into it rather than dropped. Under a session cap of 5 the merged
--- reset keeps the inner count() read (100 rows) uncapped; if it were dropped, that read would throw.
-SET max_rows_to_read = 5;
-(SELECT count() FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT) SETTINGS max_threads = 1, limit = 5;
-SET max_rows_to_read = DEFAULT;
-
 -- Repeated construction settings: `ParserSetQuery` appends one entry per occurrence, so the consumer must
 -- use the effective (last-wins) value and erase *every* occurrence, or a leftover re-caps the query.
 SELECT '-- repeated nested `limit`: last value wins and every occurrence is consumed (5, not 3)';

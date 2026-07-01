@@ -1147,24 +1147,47 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
 /// settings packet is stripped separately, on the per-shard context.
 static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
 {
+    /// Strip both `ASTSetQuery` lists: `changes` (`name = value`) and `default_settings` (`name = DEFAULT`).
+    /// `ASTSetQuery::formatImpl` serializes both, so a `... = DEFAULT` reset would otherwise still ride along
+    /// in the forwarded query text and trip `UNKNOWN_SETTING` on an older shard that lacks the name.
+    auto strip_set_query = [](ASTSetQuery & set_query)
+    {
+        std::erase_if(set_query.changes, [](const SettingChange & change) { return ClusterProxy::isInitiatorOnlySettingName(change.name); });
+        std::erase_if(set_query.default_settings, [](const String & name) { return ClusterProxy::isInitiatorOnlySettingName(name); });
+    };
+
     /// An `INSERT ... SELECT ... SETTINGS ...` keeps the source SELECT's own SETTINGS node too:
     /// `ParserInsertQuery` copies those settings onto the INSERT (via `InsertQuerySettingsPushDownVisitor`)
-    /// but does not remove them from the SELECT, and `ASTInsertQuery::formatImpl` serializes the SELECT
-    /// after this — so a setting written on the source SELECT would otherwise still ride along in the
-    /// forwarded query text. Strip the SELECT subtree with the shared query strip (both `changes` and
-    /// `default_settings`, across every SETTINGS carrier it contains); it is a no-op when there is no SELECT.
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
+    /// but does not remove them from the SELECT, and `ASTInsertQuery::formatImpl` serializes the SELECT after
+    /// this — so a setting written on the source SELECT would otherwise still leak. The optimized paths above
+    /// rebuild `query.select` as an `ASTSelectWithUnionQuery` whose `list_of_selects` is set as a member but
+    /// not registered in `children`, so a child-traversal strip would miss the arms; reach each arm's SETTINGS
+    /// through the member directly.
+    if (query.select)
+    {
+        if (auto * union_query = query.select->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
+        {
+            for (const auto & arm : union_query->list_of_selects->children)
+            {
+                auto * arm_select = arm->as<ASTSelectQuery>();
+                if (!arm_select)
+                    continue;
+                auto arm_settings = arm_select->settings();
+                auto * arm_set = arm_settings ? arm_settings->as<ASTSetQuery>() : nullptr;
+                if (!arm_set)
+                    continue;
+                strip_set_query(*arm_set);
+                if (arm_set->changes.empty() && arm_set->default_settings.empty() && arm_set->query_parameters.empty())
+                    arm_select->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
+        }
+    }
 
     if (!query.settings_ast)
         return;
 
     auto & set_query = query.settings_ast->as<ASTSetQuery &>();
-    /// Strip from both lists, matching `stripQuerySettings`'s `ASTSetQuery` treatment: `changes` holds
-    /// `name = value` overrides and `default_settings` holds `name = DEFAULT` resets. `ASTSetQuery::formatImpl`
-    /// serializes both, so an initiator-only setting written as `... = DEFAULT` would otherwise still ride
-    /// along in the forwarded query text and trip `UNKNOWN_SETTING` on an older shard that lacks the name.
-    std::erase_if(set_query.changes, [](const SettingChange & change) { return ClusterProxy::isInitiatorOnlySettingName(change.name); });
-    std::erase_if(set_query.default_settings, [](const String & name) { return ClusterProxy::isInitiatorOnlySettingName(name); });
+    strip_set_query(set_query);
 
     /// `ASTInsertQuery::formatImpl` always prints a bare `SETTINGS` keyword when `settings_ast` is set,
     /// so drop an emptied clause entirely to keep the forwarded query valid.

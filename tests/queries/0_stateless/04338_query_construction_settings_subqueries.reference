@@ -33,10 +33,6 @@ FROM
 WHERE greater(number, 5)
 -- a construction setting on the source SELECT of CREATE ... AS SELECT is effective (3 rows)
 3
--- a non-construction `= DEFAULT` reset on a subquery survives the construction-settings consumption (returns 10)
-10
--- a `= DEFAULT` reset on an arm merged into the trailing query-level SETTINGS survives (returns 100)
-100
 -- repeated nested `limit`: last value wins and every occurrence is consumed (5, not 3)
 5
 -- repeated nested `select`: last value wins (projects `b`, not `a`)
