@@ -96,30 +96,40 @@ TEST_F(AsynchronousBoundedReadBufferTest, throwsWhenFileGrewBeyondCachedSize)
     /// object-storage metadata file (e.g. a Paimon LATEST snapshot hint) rewritten by
     /// a concurrent external writer after its size was cached. The cached file size
     /// stays 1 while the reader hands back the grown content, so the read must throw a
-    /// catchable CANNOT_READ_ALL_DATA rather than aborting on a failed assertion.
-    String file_path = makeTempFile("1");
-    ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
-
-    AsynchronousBoundedReadBuffer read_buffer(
-        createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
-        DBMS_DEFAULT_BUFFER_SIZE, /* min_bytes_for_seek */ 0,
-        Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
-
+    /// catchable CANNOT_READ_ALL_DATA rather than aborting or returning a stale prefix.
+    ///
+    /// Both bound configurations must throw: no explicit bound (readAt-capable pipelines),
+    /// and read_until_position set to the cached size by setReadUntilEnd (the bound that
+    /// StorageObjectStorageSource sets before prefetch for !supportsReadAt pipelines).
+    for (bool with_read_until_end : {false, true})
     {
-        WriteBufferFromFile out{file_path};
-        out.write("100", 3);
-        out.finalize();
-    }
+        String file_path = makeTempFile("1");
+        ThreadPoolRemoteFSReader remote_fs_reader(4, 0);
 
-    String str;
-    str.resize(16);
-    try
-    {
-        [[maybe_unused]] size_t bytes_read = read_buffer.read(str.data(), str.size());
-        FAIL() << "Expected CANNOT_READ_ALL_DATA to be thrown";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::CANNOT_READ_ALL_DATA);
+        AsynchronousBoundedReadBuffer read_buffer(
+            createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
+            DBMS_DEFAULT_BUFFER_SIZE, /* min_bytes_for_seek */ 0,
+            Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+        if (with_read_until_end)
+            read_buffer.setReadUntilEnd();
+
+        {
+            WriteBufferFromFile out{file_path};
+            out.write("100", 3);
+            out.finalize();
+        }
+
+        String str;
+        str.resize(16);
+        try
+        {
+            [[maybe_unused]] size_t bytes_read = read_buffer.read(str.data(), str.size());
+            FAIL() << "Expected CANNOT_READ_ALL_DATA to be thrown (with_read_until_end=" << with_read_until_end << ")";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_READ_ALL_DATA) << "with_read_until_end=" << with_read_until_end;
+        }
     }
 }

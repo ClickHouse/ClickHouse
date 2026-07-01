@@ -44,7 +44,7 @@ public:
 
     void setReadUntilPosition(size_t position) override; /// [..., position).
 
-    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); read_until_position_is_file_size = true; }
 
     size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
 
@@ -71,6 +71,10 @@ private:
 
     size_t file_offset_of_buffer_end = 0;
     std::optional<size_t> read_until_position;
+    /// True when read_until_position was set to the (cached) file size by setReadUntilEnd,
+    /// as opposed to an explicit caller-chosen subrange. Overshooting the former means the
+    /// file grew under us; overshooting the latter is just an over-read to trim.
+    bool read_until_position_is_file_size = false;
     /// If nonzero then working_buffer is empty.
     /// If a prefetch is in flight, the prefetch task has been instructed to ignore this many bytes.
     size_t bytes_to_ignore = 0;
