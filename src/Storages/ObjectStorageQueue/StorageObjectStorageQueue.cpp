@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 interactive_delay;
 }
 
 namespace FailPoints
@@ -268,7 +269,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     ASTStorage * engine_args,
     LoadingStrictnessLevel mode,
     bool keep_data_in_keeper_)
-    : IStorage(table_id_)
+    : IStreamingStorage(table_id_)
     , WithContext(context_)
     , type(configuration_->getType())
     , engine_name(engine_args->engine->name)
@@ -415,6 +416,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         auto task = getContext()->getSchedulePool().createTask(getStorageID(), "ObjectStorageQueueStreamingTask", [this, i]{ threadFunc(i); });
         streaming_tasks.emplace_back(std::move(task));
     }
+    streaming_task_refresh_epochs.resize(task_count, 0);
     max_files_override = 0;
 }
 
@@ -529,6 +531,12 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         files_metadata.reset();
     }
     LOG_TRACE(log, "Shut down storage");
+}
+
+void StorageObjectStorageQueue::scheduleStreamingTasksImpl()
+{
+    for (auto & task : streaming_tasks)
+        task->schedule();
 }
 
 void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
@@ -727,7 +735,8 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         log,
         commit_once_processed,
         add_deduplication_info,
-        is_deduplication_v2);
+        is_deduplication_v2,
+        *this);
 }
 
 size_t StorageObjectStorageQueue::getDependencies() const
@@ -747,7 +756,29 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
     const auto storage_id = getStorageID();
 
-    if (getContext()->getS3QueueDisableStreaming())
+    const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
+
+    if (!stream_control.claimCycle(streaming_task_refresh_epochs.at(streaming_tasks_index)))
+    {
+        /// SYSTEM STOP/PAUSE blocks polling: skip processing. SYSTEM START wakes the task promptly
+        /// via `onActionLockRemove`; meanwhile reschedule with a moderate period to avoid busy-looping.
+        static constexpr auto paused_reschedule_period = 5000;
+
+        LOG_TRACE(log, "Background consumption is stopped, rescheduling next check in {} ms", paused_reschedule_period);
+
+        try
+        {
+            files_metadata->unregisterActive(storage_id);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
+
+        std::lock_guard lock(mutex);
+        reschedule_processing_interval_ms = paused_reschedule_period;
+    }
+    else if (getContext()->getS3QueueDisableStreaming())
     {
         static constexpr auto disabled_streaming_reschedule_period = 5000;
 
@@ -767,7 +798,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
 
                 files_metadata->registerActive(storage_id);
 
-                if (streamToViews(streaming_tasks_index))
+                if (streamToViews(streaming_tasks_index, cycle_epoch))
                 {
                     /// Reset the reschedule interval.
                     std::lock_guard lock(mutex);
@@ -820,7 +851,7 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
 }
 
-bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
+bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch)
 {
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
@@ -879,7 +910,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     LOG_TEST(log, "Using {} processing threads (processing_threads_num: {}, parallel_inserts: {}, async deduplicate: {})",
         threads, processing_threads_num, parallel_inserts, is_deduplication_v2);
 
-    while (!shutdown_called && !file_iterator->isFinished())
+    while (!shutdown_called && !file_iterator->isFinished() && !stream_control.isCancelRequested(cycle_epoch))
     {
         /// All tasks share a single batch size override so that the halving
         /// converges regardless of which task encounters the bad file.
@@ -949,11 +980,31 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         try
         {
+            std::atomic_bool cancelled_mid_insert = false;
             CompletedPipelineExecutor executor(block_io.pipeline);
+            /// Aborting while the insert is running and reprocessing re-adds the same rows
+            /// that is only safe when deduplication is on.
+            if (is_deduplication_v2)
+                executor.setCancelCallback(
+                    [this, cycle_epoch, &cancelled_mid_insert]
+                    {
+                        if (stream_control.isCancelRequested(cycle_epoch))
+                        {
+                            cancelled_mid_insert = true;
+                            return true;
+                        }
+                        return false;
+                    },
+                    std::max<UInt64>(100, queue_context->getSettingsRef()[Setting::interactive_delay] / 1000));
             executor.execute();
+
+            if (cancelled_mid_insert)
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption was interrupted");
         }
         catch (...)
         {
+            const int error_code = getCurrentExceptionCode();
+            const bool interrupted = error_code == ErrorCodes::QUERY_WAS_CANCELLED;
             std::string message = getCurrentExceptionMessage(true);
             try
             {
@@ -962,10 +1013,16 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     rows,
                     sources,
                     transaction_start_time,
-                    getCurrentExceptionMessage(true),
-                    getCurrentExceptionCode());
+                    message,
+                    error_code);
 
                 file_iterator->releaseFinishedBuckets();
+
+                if (interrupted)
+                {
+                    LOG_DEBUG(log, "Consumption interrupted by SYSTEM STOP/CANCEL; in-flight files reset for reprocessing");
+                    return false;
+                }
 
                 /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
@@ -999,6 +1056,9 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
         file_iterator->releaseFinishedBuckets();
         max_files_override = 0;
         total_rows += rows;
+
+        if (stream_control.isBlocked())
+            break;
     }
 
     LOG_TEST(log, "Processed rows: {}", total_rows);
