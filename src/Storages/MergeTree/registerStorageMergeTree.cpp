@@ -46,6 +46,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_cuckoo_filter_index;
+    extern const SettingsBool allow_experimental_binary_fuse_filter_index;
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
@@ -865,7 +867,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                auto index_description
+                    = IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context);
+                if (args.mode <= LoadingStrictnessLevel::CREATE && !args.is_restore_from_backup && index_description.type == "cuckoo_filter"
+                    && !local_settings[Setting::allow_experimental_cuckoo_filter_index])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'cuckoo_filter' is experimental. Enable setting 'allow_experimental_cuckoo_filter_index' to use it");
+                if (args.mode <= LoadingStrictnessLevel::CREATE && !args.is_restore_from_backup && index_description.type == "binary_fuse_filter"
+                    && !local_settings[Setting::allow_experimental_binary_fuse_filter_index])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Skip index type 'binary_fuse_filter' is experimental. Enable setting 'allow_experimental_binary_fuse_filter_index' to use it");
+                metadata.secondary_indices.push_back(std::move(index_description));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =

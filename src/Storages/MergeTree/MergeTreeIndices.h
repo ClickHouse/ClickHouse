@@ -368,6 +368,12 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
+MergeTreeIndexPtr cuckooFilterIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
+void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+MergeTreeIndexPtr binaryFuseFilterIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
+void binaryFuseFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
