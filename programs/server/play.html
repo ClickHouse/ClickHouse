@@ -2723,7 +2723,9 @@ const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
 /// Run query instantly after page is loaded if the run parameter is present.
-const run_immediately = current_url.searchParams.has("run");
+/// Mutable: a stale reload (the URL hash is older than a persisted, never-run local edit)
+/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`.
+let run_immediately = current_url.searchParams.has("run");
 
 let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
@@ -6150,6 +6152,12 @@ async function reconcileStartup() {
                         /// without re-syncing the URL. The IndexedDB value is newer — keep it,
                         /// and don't let the stale URL parameters override the saved ones.
                         preserve_local_query = true;
+                        /// The URL's `run=1` was meant to auto-run the (now stale) URL query, not
+                        /// the newer local edit the user never ran. Drop the stale run directive so
+                        /// the edit is neither auto-run below nor re-stamped with `run=1` into the
+                        /// synced URL (which would auto-run it on the next reload). A destructive
+                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun.
+                        run_immediately = false;
                     }
                 }
                 activeTabId = match.id;
@@ -6205,7 +6213,11 @@ async function reconcileStartup() {
         if (tab) tab.params = getParamValues();
     }
 
-    if (defer_run_for_reconcile && query_area.value) {
+    /// Auto-run only when the URL is still authoritative. On a stale reload
+    /// (`preserve_local_query`), the persisted local edit is newer than the URL and was never
+    /// run by the user, so the stale `run=1` must not execute it; just sync the restored tab
+    /// into the URL instead (with the `run=1` directive already dropped above).
+    if (defer_run_for_reconcile && query_area.value && !preserve_local_query) {
         postAll();   /// saves history itself on completion
     } else if (activated) {
         syncHistory();   /// reflect the restored active tab in the URL (replaceState)
