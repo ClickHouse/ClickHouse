@@ -85,6 +85,18 @@ mkdir -p "$TEST_DIR_ABS/adj/root/a"
 printf "row1\n" > "$TEST_DIR_ABS/adj/root/file.txt"
 ln -s .. "$TEST_DIR_ABS/adj/root/a/back"
 
+# Bounded finite tail after the last `**`: `overprune/root/deep/mid/back -> ../..`
+# (canonical == `overprune/root`), real file `overprune/root/f.txt`. Pattern
+# `overprune/root/**/mid/*/*.txt` has the `**` match `deep`, then a BOUNDED tail
+# `mid/*/*.txt` with no whole-segment `**`, so no unbounded recursion is possible; the
+# inner `*` legitimately matches the symlink `back` whose canonical equals the
+# `**`-frame ancestor `overprune/root`, reaching `back/f.txt`. The guard must be keyed
+# off the REMAINING pattern (still has a `**`?) rather than the whole expanded pattern,
+# otherwise it activates in the bounded tail and drops this valid finite-tail match.
+mkdir -p "$TEST_DIR_ABS/overprune/root/deep/mid"
+printf "row1\n" > "$TEST_DIR_ABS/overprune/root/f.txt"
+ln -s ../.. "$TEST_DIR_ABS/overprune/root/deep/mid/back"
+
 trap 'rm -rf "$TEST_DIR_ABS"' EXIT
 
 # Ancestor-loop symlink: `loop/dir1/dir2/loop_to_root` points back at `loop/dir1`,
@@ -145,6 +157,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/preast/root
 # `a**` as recursive, activate the guard, and drop the match.
 echo "finite-glob-with-adjacent-asterisks"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/adj/root/a**/back/*.txt', 'TSV', 'val String')"
+
+# Bounded finite tail after the last `**`: must return 1. The `**` matches `deep`, then
+# the bounded suffix `mid/*/*.txt` reaches `f.txt` via the `back -> ../..` symlink. No
+# `**` remains in the suffix, so no unbounded recursion is possible and the guard must
+# not prune the match even though canonical(`.../mid/back`) equals the on-stack root.
+echo "bounded-finite-tail-after-last-globstar"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM file('$TEST_DIR_NAME/overprune/root/**/mid/*/*.txt', 'TSV', 'val String')"
 
 # Server alive afterwards.
 $CLICKHOUSE_CLIENT --query "SELECT 'alive'"

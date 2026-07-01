@@ -153,6 +153,17 @@ namespace
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
+/// True when the glob pattern contains a path component equal to exactly `**` (the recursive
+/// globstar that matches any number of directory levels). Finite components such as `a**` or
+/// `**.txt` must NOT count: those are ordinary single-level globs, not recursive descents.
+bool patternHasGlobstarSegment(const std::string & pattern)
+{
+    for (const auto & segment : fs::path(pattern))
+        if (segment == "**")
+            return true;
+    return false;
+}
+
 /// Recursive directory listing with matched paths as a result.
 /// Have the same method in StorageHDFS.
 void listFilesWithRegexpMatchingImpl(
@@ -162,7 +173,6 @@ void listFilesWithRegexpMatchingImpl(
     std::vector<std::string> & result,
     std::unordered_set<std::string> & matched_paths,
     bool recursive,
-    bool recursive_anywhere,
     size_t depth,
     std::unordered_set<std::string> & active_dirs_on_stack,
     bool zero_level_reapplication = false)
@@ -247,21 +257,28 @@ void listFilesWithRegexpMatchingImpl(
     if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
         return;
 
-    /// Activate the recursion-stack cycle guard whenever the EXPANDED pattern contains a
-    /// `**` segment ANYWHERE (`recursive_anywhere`), not only when the current segment
-    /// is the `**` itself. Finite ancestor segments (`*`) traversed before reaching `**`
-    /// must also be seeded so a deeper symlink whose canonical resolves to one of those
-    /// ancestors (including the initial glob root) is recognized as a cycle.
-    /// Patterns without any `**` (purely finite globs) skip the guard entirely so that
-    /// legitimate matches through ancestor symlinks like `file('root/*/*/*.txt')` with
-    /// `root/a/back -> ..` continue to work.
+    /// Activate the recursion-stack cycle guard only while the REMAINING pattern for this
+    /// frame (`for_match`) still contains a whole-segment `**`, i.e. unbounded recursion is
+    /// still reachable from here. This covers the `**` segment itself and every finite `*`
+    /// ancestor traversed before reaching a `**` (their remaining pattern still has the `**`
+    /// ahead), so a deeper symlink whose canonical resolves to one of those ancestors
+    /// (including the initial glob root) is recognized as a cycle.
+    ///
+    /// Once the walk is inside a BOUNDED finite tail after the last `**` (the remaining
+    /// pattern has no whole-segment `**`), no unbounded recursion is possible, so the guard
+    /// must be inactive: a finite suffix like `*/*.txt` may legitimately reach a file through
+    /// a symlink whose canonical equals an on-stack `**`-frame ancestor (e.g.
+    /// `file('root/**/mid/*/*.txt')` with `root/deep/mid/back -> ../..`), and pruning it there
+    /// would drop a valid match. Purely finite globs (no `**` anywhere) never activate the
+    /// guard, so `file('root/*/*/*.txt')` with `root/a/back -> ..` keeps working.
     ///
     /// The zero-level `**/` re-application (see below) re-enters the SAME directory the
     /// caller already put on the stack, so it must be exempt: the caller frame still holds
     /// this canonical path in `active_dirs_on_stack` for the duration of the re-application,
-    /// which keeps protecting any genuine descent that loops back here.
+    /// which keeps protecting any genuine descent that loops back here. (Needed when the
+    /// suffix begins with another `**`, e.g. adjacent globstars `**/**/*.txt`.)
     std::optional<std::string> active_dir_to_erase;
-    if (recursive_anywhere && !zero_level_reapplication)
+    if (patternHasGlobstarSegment(for_match) && !zero_level_reapplication)
     {
         std::error_code prefix_canon_ec;
         const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
@@ -288,7 +305,7 @@ void listFilesWithRegexpMatchingImpl(
     /// (`recursive` is `false`) to avoid producing the same results twice.
     if (current_glob == "/**" && looking_for_directory)
         listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                        total_bytes_to_read, result, matched_paths, false, recursive_anywhere, depth + 1,
+                                        total_bytes_to_read, result, matched_paths, false, depth + 1,
                                         active_dirs_on_stack, /*zero_level_reapplication=*/true);
 
     const fs::directory_iterator end;
@@ -349,11 +366,11 @@ void listFilesWithRegexpMatchingImpl(
                     : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
                                                 descent_pattern,
-                                                total_bytes_to_read, result, matched_paths, recursive, recursive_anywhere, depth + 1, active_dirs_on_stack);
+                                                total_bytes_to_read, result, matched_paths, recursive, depth + 1, active_dirs_on_stack);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, matched_paths, false, recursive_anywhere, depth + 1, active_dirs_on_stack);
+                                                total_bytes_to_read, result, matched_paths, false, depth + 1, active_dirs_on_stack);
         }
     }
 }
@@ -377,22 +394,12 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
         /// Tracks canonical paths currently on the recursion descent stack so symlink cycles are
         /// broken without affecting sibling brace-expansion alternatives. Scoped per expanded
-        /// pattern for the same reason as `matched_paths`.
+        /// pattern for the same reason as `matched_paths`. The guard activates per frame based on
+        /// whether the REMAINING pattern still has a whole-segment `**` (see
+        /// `patternHasGlobstarSegment` inside `listFilesWithRegexpMatchingImpl`).
         std::unordered_set<std::string> active_dirs_on_stack;
 
-        /// True when the expansion has a path component equal to `**`. Mirrors the
-        /// per-segment test inside `listFilesWithRegexpMatchingImpl` (`current_glob == "/**"`):
-        /// finite components like `a**` or `**.txt` must NOT count.
-        bool recursive_anywhere = false;
-        for (auto seg : fs::path(for_match_expanded))
-        {
-            if (seg == "**")
-            {
-                recursive_anywhere = true;
-                break;
-            }
-        }
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, recursive_anywhere, 0, active_dirs_on_stack);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, 0, active_dirs_on_stack);
     }
 
     return result;

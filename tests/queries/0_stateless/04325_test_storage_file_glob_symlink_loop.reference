@@ -15,4 +15,6 @@ pre-asterisk-ancestor-seed
 1
 finite-glob-with-adjacent-asterisks
 1
+bounded-finite-tail-after-last-globstar
+1
 alive
