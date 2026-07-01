@@ -4694,16 +4694,21 @@ async function loadCompletions() {
     }
 }
 
-/// Invalidate the cached completions when the connection settings change, so suggestions are
-/// reloaded (with the new privileges) on the next focus and any in-flight load is discarded.
-function resetCompletions() {
+/// Invalidate the connection-scoped state when the connection settings change.
+/// Cached completions are reloaded (with the new privileges) on the next focus and any
+/// in-flight load is discarded. The remembered set of expanded databases is also cleared:
+/// it describes what the user expanded on the previous connection, so keeping it would
+/// auto-expand same-named databases (and fire `system.tables` queries) on a different
+/// server or user when the panel is reopened.
+function resetConnectionScopedState() {
     completionsLoadGeneration++;
     completionsLoadStarted = false;
     completionWords = [];
     closeCompletions();
+    opened_databases.clear();
 }
 
-[url_elem, user_elem, password_elem].forEach(el => el.addEventListener('input', resetCompletions));
+[url_elem, user_elem, password_elem].forEach(el => el.addEventListener('input', resetConnectionScopedState));
 
 /// Lower-bound binary search for the first word whose lowercased form is >= `key`.
 function completionLowerBound(key) {
