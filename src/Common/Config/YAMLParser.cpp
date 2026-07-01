@@ -151,7 +151,24 @@ namespace
         xml->appendChild(root_node);
         try
         {
-            processNode(node_yml, *root_node);
+            if (node_yml.IsSequence())
+            {
+                /// A YAML document whose root is a sequence is a special case. `processNode` represents a
+                /// sequence by repeating the *parent* element for every item after the first (see the
+                /// `Sequence` case), so here it would clone the synthetic `clickhouse` root and append
+                /// several root elements to the document. `XMLUtils::getRootNode` then returns only the
+                /// first of them, silently dropping every item but the first. Splice each item directly
+                /// under the single synthetic root instead.
+                for (auto it = node_yml.begin(); it != node_yml.end(); ++it)
+                {
+                    const auto & item = *it;
+                    processNode(item, *root_node);
+                }
+            }
+            else
+            {
+                processNode(node_yml, *root_node);
+            }
         }
         catch (const YAML::TypedBadConversion<std::string>&)
         {
