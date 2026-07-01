@@ -19,6 +19,8 @@ _distance Float32
 3
 4
 5
+-- Test that FINAL keeps rows added by exact-mode skip-index recovery.
+2	1	[0.1,0]
 Test "SELECT id, vec" without and with rescoring
 5	[0,2]
 6	[0,2.1]

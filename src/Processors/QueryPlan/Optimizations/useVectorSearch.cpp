@@ -382,7 +382,10 @@ bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, Q
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring;
+    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
+    /// vector row hints only describe the original candidates and must not filter
+    /// rows added for the final merge.
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
