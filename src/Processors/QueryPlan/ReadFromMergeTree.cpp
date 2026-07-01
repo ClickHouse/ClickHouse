@@ -4727,7 +4727,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
 {
     /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
     /// worker, so fall back to a serial read instead of bucketing and then failing when the fragment ships.
-    if (hasUnsupportedBucketedReadCarrier())
+    if (!supportsBucketedRead())
         return 0;
 
     /// A non-FINAL read needs no merge, so its marks can be split arbitrarily: cut the analyzed marks into
@@ -4813,7 +4813,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
     /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
     /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
-    /// read-in-order read is caught by `hasUnsupportedBucketedReadCarrier` at the top of this method and
+    /// read-in-order read is caught by `supportsBucketedRead` at the top of this method and
     /// falls back to a serial read before reaching here, so the split needs no read-in-order guard.
     const bool split_non_intersecting
         = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
@@ -4932,30 +4932,31 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 }
 
 
-bool ReadFromMergeTree::hasUnsupportedBucketedReadCarrier() const
+bool ReadFromMergeTree::supportsBucketedRead() const
 {
     bool unsupported_deferred_filters = deferred_row_level_filter || deferred_prewhere_info;
 #if CLICKHOUSE_CLOUD
     /// Deferred FINAL filters are reapplied after the merge only by the shared-storage stateless-worker
-    /// read, which carries them explicitly. The replica path and the non-shared full-replica fallback would
+    /// read, which ships them explicitly. The replica path and the non-shared full-replica fallback would
     /// apply them before FINAL, so a deferred-FINAL read can be bucketed only on the shared-storage worker.
     if (data.isSharedStorage()
         && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
         unsupported_deferred_filters = false;
 #endif
-    return query_info.input_order_info
-        || unsupported_deferred_filters
-        || (analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
-        || !index_read_tasks.empty();
+    return !query_info.input_order_info
+        && !unsupported_deferred_filters
+        && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
+        && index_read_tasks.empty();
 }
 
 
 void ReadFromMergeTree::verifyBucketedReadSupported() const
 {
     /// A bucketed read is pinned to the coordinator's part list and cannot re-derive read-in-order,
-    /// a projection, or text index tasks. A non-bucket read is rebuilt and re-optimized on the worker,
-    /// which re-derives them, so it has no such limitation. Deferred FINAL filters are gated in
-    /// hasUnsupportedBucketedReadCarrier (bucketed only for the worker path) and rejected in serialize.
+    /// a projection, or text index tasks. A non-bucket read reaches a node that re-plans it locally
+    /// and re-derives them (a full replica; reads the stateless worker cannot reproduce are routed to
+    /// a replica too). Deferred FINAL filters are gated in supportsBucketedRead (bucketed only for the
+    /// worker path) and rejected in serialize.
     if (distributed_read_bucket_count == 0)
         return;
 

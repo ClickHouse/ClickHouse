@@ -439,10 +439,10 @@ public:
     /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
     void verifyBucketedReadSupported() const;
 
-    /// True if this read uses a feature a bucketed distributed read cannot reproduce on the worker
-    /// (read-in-order, deferred FINAL filters, a projection, or direct text index tasks), so it must
-    /// fall back to a serial read instead of being split into buckets.
-    bool hasUnsupportedBucketedReadCarrier() const;
+    /// Whether this read can be split into distributed read buckets. False when it uses a feature a
+    /// bucketed read cannot reproduce on the receiving node (read-in-order, deferred FINAL filters,
+    /// a projection, or direct text index tasks); such a read stays serial.
+    bool supportsBucketedRead() const;
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
