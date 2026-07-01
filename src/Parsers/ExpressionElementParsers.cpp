@@ -1758,6 +1758,7 @@ const char * ParserAlias::restricted_keywords[] =
     "SAMPLE",
     "SEMI",
     "SETTINGS",
+    "SIMILAR",
     "STREAM",
     "UNION",
     "USING",

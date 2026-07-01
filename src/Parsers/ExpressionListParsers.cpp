@@ -900,7 +900,7 @@ protected:
     int state = 0;
 };
 
-/// Tweaks for better highlighting of LIKE and REGEXP functions.
+/// Tweaks for better highlighting of LIKE, SIMILAR TO and REGEXP functions.
 static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
 {
     static constexpr size_t max_depth = 1000;
@@ -922,11 +922,16 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
         return;
 
     bool is_like = false;
+    bool is_similar_to = false;
     bool is_regexp = false;
     if (func->name == "like" || func->name == "notLike"
         || func->name == "ilike" || func->name == "notILike")
     {
         is_like = true;
+    }
+    else if (func->name == "similarTo" || func->name == "notSimilarTo")
+    {
+        is_similar_to = true;
     }
     else if (func->name == "match"
              || func->name == "extract" || func->name == "extractAll"
@@ -960,11 +965,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (it == expected.literal_token_map->end())
         return;
 
-    chassert(is_like || is_regexp);
+    chassert(is_like || is_similar_to || is_regexp);
     expected.highlight({
        .begin = it->second.begin,
        .end = it->second.end,
-       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
+       .highlight = is_like ? Highlight::string_like : (is_similar_to ? Highlight::string_similar_to : Highlight::string_regexp)});
 }
 
 struct ParserExpressionImpl
@@ -3243,6 +3248,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
+    {toStringView(Keyword::SIMILAR_TO),    Operator("similarTo",       9,  2)},
+    {toStringView(Keyword::NOT_SIMILAR_TO),Operator("notSimilarTo",    9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},

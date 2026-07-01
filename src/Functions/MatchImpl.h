@@ -1,7 +1,9 @@
 #pragma once
 
 #include <type_traits>
+#include <absl/base/attributes.h>
 #include <base/types.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -20,7 +22,8 @@ inline bool likePatternMatchesEverything(std::string_view pattern)
     return !pattern.empty() && pattern.find_first_not_of('%') == std::string_view::npos;
 }
 
-/// Is the [I]LIKE expression equivalent to a substring search?
+/// Is the [I]LIKE/SIMILAR TO expression equivalent to a substring search?
+template <bool is_similar_to>
 inline bool likePatternIsSubstring(std::string_view pattern, String & res)
 {
     /// TODO: ignore multiple leading or trailing %
@@ -54,6 +57,30 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                     case '\\':
                         res += *pos;
                         break;
+                    /// Escaped excluded metacharacters ^ $ . are literal characters in SIMILAR TO,
+                    /// the same as their unescaped forms. For [I]LIKE the backslash is not special
+                    /// before these characters, so keep the literal backslash (same as the default).
+                    case '^':
+                    case '$':
+                    case '.':
+                        if constexpr (is_similar_to)
+                            res += *pos;
+                        else
+                        {
+                            res += '\\';
+                            res += *pos;
+                        }
+                        break;
+#define CASES(c) case c:
+                    SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                        if constexpr (is_similar_to)
+                        {
+                            res += *pos;
+                            break;
+                        }
+                        else
+                            ABSL_FALLTHROUGH_INTENDED;
                     /// For all other escape sequences, the backslash loses its special meaning
                     default:
                         res += '\\';
@@ -62,6 +89,13 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
                 }
 
                 break;
+#define CASES(c) case c:
+            SIMILAR_TO_EXCLUDING_LIKE_METACHARS(CASES)
+#undef CASES
+                if constexpr (is_similar_to)
+                    return false;
+                else
+                    ABSL_FALLTHROUGH_INTENDED;
             default:
                 res += *pos;
                 break;
@@ -72,6 +106,7 @@ inline bool likePatternIsSubstring(std::string_view pattern, String & res)
     return true;
 }
 
+
 }
 
 // For more readable instantiations of MatchImpl<>
@@ -80,7 +115,8 @@ struct MatchTraits
 enum class Syntax : uint8_t
 {
     Like,
-    Re2
+    Re2,
+    SimilarTo
 };
 
 enum class Case : uint8_t
@@ -110,6 +146,8 @@ struct MatchImpl
     using ResultType = UInt8;
 
     static constexpr bool is_like = (syntax_ == MatchTraits::Syntax::Like);
+    static constexpr bool is_similar_to = (syntax_ == MatchTraits::Syntax::SimilarTo);
+    static constexpr bool is_like_or_similar_to = is_like || is_similar_to;
     static constexpr bool case_insensitive = (case_ == MatchTraits::Case::Insensitive);
     static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
@@ -136,18 +174,19 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%' / any run of '%'
+        /// - col [not] similar to '%' / '%%' / any run of '%'
         /// - match(col, '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle))
+            || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
             return;
         }
 
-        /// Special case that the [I]LIKE expression reduces to finding a substring in a string
+        /// Special case that the [I]LIKE or SIMILAR TO expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -186,7 +225,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial = false;
@@ -300,8 +339,9 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%' / any run of '%'
+        /// - col [not] similar to '%' / '%%' / any run of '%'
         /// - match(col, '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle)) || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle)) || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
@@ -310,7 +350,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -354,7 +394,7 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial = false;
@@ -468,12 +508,13 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - 'foo' [not] [i]like '%' / '%%' / any run of '%'
+        /// - 'foo' [not] similar to '%' / '%%' / any run of '%'
         /// - match('foo', '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle))
+            || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
             return !negate;
 
-        if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+        if (is_like_or_similar_to && impl::likePatternIsSubstring<is_similar_to>(needle, required_substr))
         {
             if (required_substr.size() > haystack_length)
                 return negate;
@@ -483,7 +524,7 @@ struct MatchImpl
             return negate ^ (match != haystack_end);
         }
 
-        regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(String(needle));
+        regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(String(needle));
 
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.

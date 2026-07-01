@@ -3496,7 +3496,7 @@ static const std::unordered_set<String> higher_order_map_funcs = {
 
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
-        {"ilike", "like", "match", "notILike", "notLike"},
+        {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
         /// Set membership operators
         {"globalIn", "globalNotIn", "in", "notIn"},
         /// Null predicate and conversion functions

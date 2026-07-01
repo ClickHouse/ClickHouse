@@ -452,7 +452,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         }
         if (!written && (arguments->children.size() == 2 || is_like_with_escape))
         {
-            static constexpr std::array<FunctionOperatorMapping, 21> operators =
+            static constexpr std::array<FunctionOperatorMapping, 23> operators =
             {{
                 {"multiply",          " * "},
                 {"divide",            " / "},
@@ -471,6 +471,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"ilike",             " ILIKE "},
                 {"notLike",           " NOT LIKE "},
                 {"notILike",          " NOT ILIKE "},
+                {"similarTo",         " SIMILAR TO "},
+                {"notSimilarTo",      " NOT SIMILAR TO "},
                 {"in",                " IN "},
                 {"notIn",             " NOT IN "},
                 {"globalIn",          " GLOBAL IN "},

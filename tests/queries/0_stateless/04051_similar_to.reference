@@ -1,0 +1,169 @@
+-- +: one or more
+1
+0
+-- *: zero or more
+1
+1
+-- ?: zero or one
+1
+0
+-- _: any single char
+1
+-- %: zero or more chars (substring match)
+1
+1
+-- Anchored by default (matches full string)
+0
+1
+-- []: character class
+1
+0
+1
+-- [^]: negated bracket expression
+0
+1
+-- POSIX character classes
+1
+1
+1
+0
+-- Repeated count
+1
+0
+1
+0
+-- Escaping metacharacters
+1
+0
+1
+1
+-- Escaping inside brackets
+1
+1
+1
+1
+1
+1
+-- % and _ are literal inside bracket expressions
+1
+0
+-- Empty string
+1
+1
+0
+-- Nested grouping
+1
+1
+0
+-- Many patterns in one
+1
+-- Function syntax
+1
+-- Regex but non-SIMILAR-TO metachars: ^$.
+1
+1
+1
+-- NOT SIMILAR TO
+0
+1
+-- Character class within bracket expression
+1
+0
+1
+1
+1
+-- Bracket expression ending with colon
+1
+1
+0
+1
+-- Bracket expression starting with colon
+1
+0
+1
+-- Bracket expression containing metacharacter
+1
+1
+0
+0
+1
+-- Multiple classes
+1
+1
+0
+0
+-- Metacharacter before/after class in bracket expression
+1
+1
+0
+1
+1
+0
+-- Two classes with literal between
+1
+1
+1
+0
+-- Top-level alternation must match the whole string
+1
+1
+0
+0
+0
+1
+0
+0
+-- Leading ] inside bracket is a literal (POSIX rule)
+1
+1
+1
+0
+0
+1
+-- Literal [ inside bracket (no spurious lookahead)
+1
+0
+0
+1
+1
+1
+0
+-- Escaped metacharacter inside bracket is a single literal member
+1
+0
+0
+1
+0
+1
+1
+0
+-- re2 Perl classes are not part of SIMILAR TO: escaped letters inside a bracket are literal
+1
+0
+1
+0
+1
+0
+1
+1
+0
+-- re2 extension groups like (?...) are not part of SIMILAR TO and are rejected
+1
+1
+-- Escaped excluded metacharacters ^ $ . denote the literal character (same as unescaped)
+1
+0
+1
+0
+1
+0
+1
+0
+-- Escaped excluded metacharacters in the substring fast path (%...%)
+1
+1
+0
+1
+0
+1
+0
