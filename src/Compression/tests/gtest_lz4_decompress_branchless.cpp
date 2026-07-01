@@ -1,10 +1,11 @@
 #include <Compression/LZ4_decompress_faster.h>
 
+#include <base/types.h>
+
 #include <lz4.h>
 
 #include <gtest/gtest.h>
 
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -27,14 +28,14 @@ namespace
 
 /// Append the LZ4 length-extension bytes for the part of a length that exceeds the
 /// 15 already encoded in the token nibble.
-void appendLengthExtension(std::vector<uint8_t> & out, size_t remainder)
+void appendLengthExtension(std::vector<UInt8> & out, size_t remainder)
 {
     while (remainder >= 255)
     {
         out.push_back(255);
         remainder -= 255;
     }
-    out.push_back(static_cast<uint8_t>(remainder));
+    out.push_back(static_cast<UInt8>(remainder));
 }
 
 /** Hand-encode a raw LZ4 block (no ClickHouse frame, no checksum) consisting of:
@@ -43,32 +44,32 @@ void appendLengthExtension(std::vector<uint8_t> & out, size_t remainder)
   *
   * Decoding it yields exactly `seed` ++ (match replicated from `offset` back) ++ `trailing`.
   */
-std::vector<uint8_t> encodeBlock(
-    const std::vector<uint8_t> & seed,
-    uint16_t offset,
+std::vector<UInt8> encodeBlock(
+    const std::vector<UInt8> & seed,
+    UInt16 offset,
     size_t match_length,
-    const std::vector<uint8_t> & trailing)
+    const std::vector<UInt8> & trailing)
 {
-    std::vector<uint8_t> b;
+    std::vector<UInt8> b;
 
     const size_t lit = seed.size();
     const size_t ml = match_length - 4; /// LZ4 minMatch is 4.
 
-    const uint8_t lit_nibble = static_cast<uint8_t>(std::min<size_t>(lit, 15));
-    const uint8_t ml_nibble = static_cast<uint8_t>(std::min<size_t>(ml, 15));
-    b.push_back(static_cast<uint8_t>((lit_nibble << 4) | ml_nibble));
+    const UInt8 lit_nibble = static_cast<UInt8>(std::min<size_t>(lit, 15));
+    const UInt8 ml_nibble = static_cast<UInt8>(std::min<size_t>(ml, 15));
+    b.push_back(static_cast<UInt8>((lit_nibble << 4) | ml_nibble));
     if (lit >= 15)
         appendLengthExtension(b, lit - 15);
     b.insert(b.end(), seed.begin(), seed.end());
 
-    b.push_back(static_cast<uint8_t>(offset & 0xFF));
-    b.push_back(static_cast<uint8_t>((offset >> 8) & 0xFF));
+    b.push_back(static_cast<UInt8>(offset & 0xFF));
+    b.push_back(static_cast<UInt8>((offset >> 8) & 0xFF));
     if (ml >= 15)
         appendLengthExtension(b, ml - 15);
 
     const size_t tl = trailing.size();
-    const uint8_t tl_nibble = static_cast<uint8_t>(std::min<size_t>(tl, 15));
-    b.push_back(static_cast<uint8_t>(tl_nibble << 4));
+    const UInt8 tl_nibble = static_cast<UInt8>(std::min<size_t>(tl, 15));
+    b.push_back(static_cast<UInt8>(tl_nibble << 4));
     if (tl >= 15)
         appendLengthExtension(b, tl - 15);
     b.insert(b.end(), trailing.begin(), trailing.end());
@@ -78,13 +79,13 @@ std::vector<uint8_t> encodeBlock(
 
 /// The bytes that decoding `encodeBlock(seed, offset, match_length, trailing)` must produce,
 /// derived independently from the LZ4 overlap semantics.
-std::vector<uint8_t> expectedOutput(
-    const std::vector<uint8_t> & seed,
-    uint16_t offset,
+std::vector<UInt8> expectedOutput(
+    const std::vector<UInt8> & seed,
+    UInt16 offset,
     size_t match_length,
-    const std::vector<uint8_t> & trailing)
+    const std::vector<UInt8> & trailing)
 {
-    std::vector<uint8_t> out = seed;
+    std::vector<UInt8> out = seed;
     for (size_t i = 0; i < match_length; ++i)
         out.push_back(out[out.size() - offset]);
     out.insert(out.end(), trailing.begin(), trailing.end());
@@ -95,11 +96,11 @@ std::vector<uint8_t> expectedOutput(
 /// Both buffers carry the mandatory `ADDITIONAL_BYTES_AT_END_OF_BUFFER` slack so the
 /// wild copies never read or write out of bounds.
 bool decodeWithForcedVariant(
-    const std::vector<uint8_t> & block,
+    const std::vector<UInt8> & block,
     size_t dest_size,
-    std::vector<uint8_t> & out)
+    std::vector<UInt8> & out)
 {
-    std::vector<uint8_t> source(block.size() + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER, 0);
+    std::vector<UInt8> source(block.size() + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER, 0);
     std::copy(block.begin(), block.end(), source.begin());
 
     out.assign(dest_size + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER, 0);
@@ -128,31 +129,31 @@ const std::vector<size_t> match_lengths = {4, 15, 16, 17, 31, 32};
 TEST(LZ4DecompressBranchless, ForcedMethod1MatchesReferenceForSmallOffsets)
 {
     /// Non-trivial literal payloads so a wrong copy cannot accidentally pass.
-    std::vector<uint8_t> trailing(18);
+    std::vector<UInt8> trailing(18);
     for (size_t i = 0; i < trailing.size(); ++i)
-        trailing[i] = static_cast<uint8_t>(0x80 + i);
+        trailing[i] = static_cast<UInt8>(0x80 + i);
 
-    for (uint16_t offset = 1; offset <= 15; ++offset)
+    for (UInt16 offset = 1; offset <= 15; ++offset)
     {
-        std::vector<uint8_t> seed(offset);
+        std::vector<UInt8> seed(offset);
         for (size_t i = 0; i < seed.size(); ++i)
-            seed[i] = static_cast<uint8_t>(0x10 + i);
+            seed[i] = static_cast<UInt8>(0x10 + i);
 
         for (size_t match_length : match_lengths)
         {
             SCOPED_TRACE("offset=" + std::to_string(offset) + " match_length=" + std::to_string(match_length));
 
-            const std::vector<uint8_t> block = encodeBlock(seed, offset, match_length, trailing);
-            const std::vector<uint8_t> expected = expectedOutput(seed, offset, match_length, trailing);
+            const std::vector<UInt8> block = encodeBlock(seed, offset, match_length, trailing);
+            const std::vector<UInt8> expected = expectedOutput(seed, offset, match_length, trailing);
             const size_t dest_size = expected.size();
 
             /// Forced branchless variant.
-            std::vector<uint8_t> got;
+            std::vector<UInt8> got;
             ASSERT_TRUE(decodeWithForcedVariant(block, dest_size, got));
             ASSERT_EQ(got, expected);
 
             /// Canonical reference decoder.
-            std::vector<uint8_t> reference(dest_size);
+            std::vector<UInt8> reference(dest_size);
             const int ref_size = LZ4_decompress_safe(
                 reinterpret_cast<const char *>(block.data()),
                 reinterpret_cast<char *>(reference.data()),
@@ -171,12 +172,12 @@ TEST(LZ4DecompressBranchless, ForcedMethod1MatchesReferenceForSmallOffsets)
 /// not silently reported as a successful decode. The reference decoder rejects it too.
 TEST(LZ4DecompressBranchless, ForcedMethod1RejectsTruncatedInput)
 {
-    std::vector<uint8_t> trailing(18, 0x55);
-    std::vector<uint8_t> seed = {0x10, 0x11, 0x12};
-    const uint16_t offset = 3;
+    std::vector<UInt8> trailing(18, 0x55);
+    std::vector<UInt8> seed = {0x10, 0x11, 0x12};
+    const UInt16 offset = 3;
     const size_t match_length = 32;
 
-    const std::vector<uint8_t> block = encodeBlock(seed, offset, match_length, trailing);
+    const std::vector<UInt8> block = encodeBlock(seed, offset, match_length, trailing);
     const size_t dest_size = expectedOutput(seed, offset, match_length, trailing).size();
 
     /// Cut the block off in the middle of the 2-byte match offset, so the stream is
@@ -184,14 +185,14 @@ TEST(LZ4DecompressBranchless, ForcedMethod1RejectsTruncatedInput)
     /// Layout up to here: token (1) + literals (seed) + first offset byte (1).
     const size_t truncated = 1 + seed.size() + 1;
     ASSERT_LT(truncated, block.size());
-    const std::vector<uint8_t> truncated_block(block.begin(), block.begin() + truncated);
+    const std::vector<UInt8> truncated_block(block.begin(), block.begin() + truncated);
 
     /// The forced variant must signal failure, never claim a successful decode.
-    std::vector<uint8_t> got;
+    std::vector<UInt8> got;
     ASSERT_FALSE(decodeWithForcedVariant(truncated_block, dest_size, got));
 
     /// The reference decoder cannot reconstruct the full intended output either.
-    std::vector<uint8_t> reference(dest_size);
+    std::vector<UInt8> reference(dest_size);
     const int ref_size = LZ4_decompress_safe(
         reinterpret_cast<const char *>(truncated_block.data()),
         reinterpret_cast<char *>(reference.data()),
@@ -203,21 +204,21 @@ TEST(LZ4DecompressBranchless, ForcedMethod1RejectsTruncatedInput)
 /// A block whose match offset points before the start of the output must be rejected.
 TEST(LZ4DecompressBranchless, ForcedMethod1RejectsOutOfRangeOffset)
 {
-    std::vector<uint8_t> trailing(18, 0x66);
-    std::vector<uint8_t> seed = {0x10, 0x11, 0x12};
+    std::vector<UInt8> trailing(18, 0x66);
+    std::vector<UInt8> seed = {0x10, 0x11, 0x12};
 
     /// Offset 100 is far larger than the 3 bytes of output produced so far.
-    const uint16_t bad_offset = 100;
+    const UInt16 bad_offset = 100;
     const size_t match_length = 16;
-    const std::vector<uint8_t> block = encodeBlock(seed, bad_offset, match_length, trailing);
+    const std::vector<UInt8> block = encodeBlock(seed, bad_offset, match_length, trailing);
 
     /// dest_size as if the (impossible) match had been decoded.
     const size_t dest_size = seed.size() + match_length + trailing.size();
 
-    std::vector<uint8_t> got;
+    std::vector<UInt8> got;
     ASSERT_FALSE(decodeWithForcedVariant(block, dest_size, got));
 
-    std::vector<uint8_t> reference(dest_size);
+    std::vector<UInt8> reference(dest_size);
     const int ref_size = LZ4_decompress_safe(
         reinterpret_cast<const char *>(block.data()),
         reinterpret_cast<char *>(reference.data()),
