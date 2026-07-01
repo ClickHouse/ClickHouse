@@ -91,6 +91,27 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     return result;
 }
 
+/// Read up to `rows_to_read` rows from `istr` into a fresh column.
+/// `rows_to_read` is an untrusted per-mark granularity and may be arbitrarily large, so read in
+/// bounded batches instead of letting deserializeBinaryBulk eagerly resize the column to it.
+ColumnPtr readColumnForValidation(const ISerialization & serialization, const IDataType & type, ReadBuffer & istr, size_t rows_to_read)
+{
+    static constexpr size_t max_rows_per_batch = 1ULL << 20;
+
+    auto column = type.createColumn();
+    size_t rows_left = rows_to_read;
+    while (rows_left > 0 && !istr.eof())
+    {
+        size_t batch = std::min(rows_left, max_rows_per_batch);
+        size_t size_before = column->size();
+        serialization.deserializeBinaryBulk(*column, istr, 0, batch, 0.0);
+        rows_left -= batch;
+        if (column->size() - size_before < batch) /// reached EOF mid-batch
+            break;
+    }
+    return column;
+}
+
 }
 
 MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
@@ -683,9 +704,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 
         if (index_granularity_rows == 0)
         {
-            auto column = type->createColumn();
-
-            serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
+            auto column = readColumnForValidation(*serialization, *type, bin_in, 1000000000);
 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"
@@ -705,9 +724,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                             index_granularity->getMarksCount());
         }
 
-        auto column = type->createColumn();
-
-        serialization->deserializeBinaryBulk(*column, bin_in, 0, index_granularity_rows, 0.0);
+        auto column = readColumnForValidation(*serialization, *type, bin_in, index_granularity_rows);
 
         if (bin_in.eof())
         {
@@ -748,9 +765,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
                         mark_num, index_granularity->getMarksCount(), index_granularity_rows);
     if (!bin_in.eof())
     {
-        auto column = type->createColumn();
-
-        serialization->deserializeBinaryBulk(*column, bin_in, 0, 1000000000, 0.0);
+        auto column = readColumnForValidation(*serialization, *type, bin_in, 1000000000);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Still have {} rows in bin stream, last mark #{}"
