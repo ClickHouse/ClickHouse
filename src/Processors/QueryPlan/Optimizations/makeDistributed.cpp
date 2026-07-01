@@ -61,6 +61,27 @@ bool canExecuteRemotely(const QueryPlan::Node & node)
     return true;
 }
 
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
+
+/// True if any step in the plan is a logical exchange (Gather/Scatter/Shuffle/Broadcast). These have a
+/// no-op `transformPipeline`; `makeDistributedPlan` is the only thing that turns them into real
+/// send/receive stages. If such a step ever reaches ordinary local execution it silently drops the
+/// merge/redistribution it stands for.
+bool planContainsLogicalExchange(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (dynamic_cast<const LogicalExchangeStep *>(node->step.get()))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
+}
+
 /// A bucket count sizes the exchange fan-out: each bucket becomes a separate task and a scatter
 /// output port. The cap limits memory consumption.
 constexpr UInt64 MAX_DISTRIBUTED_PLAN_BUCKET_COUNT = 256;

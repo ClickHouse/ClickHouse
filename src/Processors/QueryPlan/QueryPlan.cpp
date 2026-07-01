@@ -798,6 +798,7 @@ namespace QueryPlanOptimizations
 {
 
 bool canExecuteRemotely(const QueryPlan::Node & node);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 }
@@ -805,7 +806,18 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!QueryPlanOptimizations::canExecuteRemotely(*root))
+    {
+        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
+        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
+        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
+        /// exchange runs correctly on one node, so fall back to it.
+        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
+                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
+                "if executed locally (producing wrong results)");
         return;
+    }
 
     SharedHeader result_header = root->step->getOutputHeader();
 
