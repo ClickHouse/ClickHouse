@@ -2910,6 +2910,46 @@ private:
     bool has_case_expr{};
 };
 
+/// Layer for table function 'obfuscate'
+class ObfuscateLayer : public Layer
+{
+public:
+    bool getResult(ASTPtr & node) override
+    {
+        node = makeASTFunction("obfuscate", std::move(elements));
+        return true;
+    }
+
+    bool parse(IParser::Pos & pos, Expected & expected, Action & /*action*/) override
+    {
+        /// obfuscate(SELECT ...)
+        ///
+        /// 0. Parse the SELECT query (finished)
+
+        ASTPtr query;
+
+        bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+        if (!ParserSelectWithUnionQuery().parse(pos, query, expected))
+            return false;
+
+        auto & select_ast = query->as<ASTSelectWithUnionQuery &>();
+        if (select_ast.list_of_selects->children.size() == 1 && maybe_an_subquery)
+        {
+            // It's an subquery. Bail out.
+            return false;
+        }
+
+        pushResult(query);
+
+        if (!ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+            return false;
+
+        finished = true;
+        return true;
+    }
+};
+
 /// Layer for table function 'view' and 'viewIfPermitted'
 class ViewLayer : public Layer
 {
@@ -3033,6 +3073,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "obfuscate")
+            return std::make_unique<ObfuscateLayer>();
     }
 
     if (function_name == "tuple")

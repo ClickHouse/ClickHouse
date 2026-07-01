@@ -56,6 +56,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
+            {"obfuscate_seed", "", "", "New setting: seed string for the obfuscate table function."},
+            {"obfuscate_markov_order", 5, 5, "New setting: Markov model order for the obfuscate table function."},
+            {"obfuscate_markov_frequency_cutoff", 5, 5, "New setting: frequency cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_num_buckets_cutoff", 0, 0, "New setting: number-of-buckets cutoff for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_add", 0, 0, "New setting: constant added to every frequency count in the obfuscate table function's Markov model."},
+            {"obfuscate_markov_frequency_desaturate", 0.0, 0.0, "New setting: frequency desaturation factor in [0,1] for the obfuscate table function's Markov model."},
+            {"obfuscate_markov_determinator_sliding_window_size", 8, 8, "New setting: sliding-window size used to seed the RNG in the obfuscate table function's Markov model."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
         });
 

@@ -416,6 +416,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"GenerateRandom", "TABLE"},
     {"FuzzJSON", "TABLE"},
     {"FuzzQuery", "TABLE"},
+    {"Obfuscate", "TABLE"},
 };
 
 const static std::string & getTableTypeMap()

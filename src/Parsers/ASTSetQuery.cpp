@@ -89,6 +89,17 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
         hash_state.update(change.name);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
+
+    /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not into `changes`, and is rendered
+    /// back by `formatImpl`. It must participate in the hash too, otherwise two queries that format
+    /// differently would compare equal - e.g. the query result cache key would fail to distinguish
+    /// an inner `SETTINGS obfuscate_seed = DEFAULT` (which resets the seed to the empty,
+    /// non-deterministic value) from no override at all (the deterministic session seed).
+    for (const auto & setting_name : default_settings)
+    {
+        hash_state.update(setting_name.size());
+        hash_state.update(setting_name);
+    }
 }
 
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const

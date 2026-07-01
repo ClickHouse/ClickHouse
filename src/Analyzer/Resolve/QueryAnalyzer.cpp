@@ -42,6 +42,7 @@
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -4782,13 +4783,37 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     /// the query context, and switching to the QueryNode's own context copy could change
     /// non-settings state (e.g. isDistributed) and break table function execution
     /// (for example, causing s3 to create a remote StorageObjectStorageCluster).
+    /// A subquery customizes its settings context when it has either `SETTINGS x = value` changes (recorded
+    /// on the `QueryNode`) or `SETTINGS x = DEFAULT` resets. The latter are parsed into
+    /// `ASTSetQuery::default_settings`, are not stored on the `QueryNode`, and so are invisible to
+    /// `hasSettingsChanges()` even though `QueryTreeBuilder` applies them to the node's context. Detect them
+    /// from the original AST so that a `DEFAULT` reset that is the only inner setting still takes effect for
+    /// the table function (otherwise it would execute with the outer/session settings instead).
+    auto subquery_customizes_settings = [](const QueryNode & query_node) -> bool
+    {
+        if (query_node.hasSettingsChanges())
+            return true;
+
+        const auto & original_ast = query_node.getOriginalAST();
+        if (!original_ast)
+            return false;
+        const auto * select_query = original_ast->as<ASTSelectQuery>();
+        if (!select_query)
+            return false;
+        const auto settings_ast = select_query->settings();
+        if (!settings_ast)
+            return false;
+        const auto * set_query = settings_ast->as<ASTSetQuery>();
+        return set_query && !set_query->default_settings.empty();
+    };
+
     ContextPtr execution_context = scope_context->getQueryContext();
     {
         const IdentifierResolveScope * scope_to_check = &scope;
         while (scope_to_check != nullptr)
         {
             if (auto * query_node = scope_to_check->scope_node->as<QueryNode>();
-                query_node && query_node->hasSettingsChanges() && query_node->isSubquery())
+                query_node && query_node->isSubquery() && subquery_customizes_settings(*query_node))
             {
                 auto * nearest_query_scope = scope.getNearestQueryScope();
                 if (nearest_query_scope)

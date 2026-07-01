@@ -309,6 +309,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             updated_context->applySettingsChanges(set_query.changes);
             settings_changes = set_query.changes;
         }
+
+        /// `SETTINGS x = DEFAULT` is parsed into `default_settings`, not `changes`. Reset those settings
+        /// to their default values in the subquery scope as well, so that the reset actually takes effect
+        /// for the subquery (e.g. a table function such as `obfuscate` reading the effective setting),
+        /// consistent with how `changes` are applied here and with how top-level query settings are
+        /// handled by `InterpreterSetQuery`.
+        if (!set_query.default_settings.empty())
+            updated_context->resetSettingsToDefaultValue(set_query.default_settings);
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];

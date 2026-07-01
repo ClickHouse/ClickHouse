@@ -55,6 +55,7 @@ namespace Setting
 {
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
+    extern const SettingsString obfuscate_seed;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
@@ -195,12 +196,50 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// The `obfuscate` table function with an empty seed derives a fresh random seed per execution
+/// (see `ObfuscateStep`), so its result is non-deterministic and must not be cached. A non-empty
+/// `obfuscate_seed` makes the output reproducible and therefore cacheable. The setting can be
+/// overridden by the SETTINGS clause of any enclosing SELECT, and that override is what the
+/// table function effectively runs with, so track the effective value while descending into the AST.
+static bool hasNonDeterministicObfuscate(const ASTPtr & node, bool seed_is_empty)
+{
+    if (!node)
+        return false;
+
+    if (const auto * select = node->as<ASTSelectQuery>())
+    {
+        if (const auto * settings_ast = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
+        {
+            for (const auto & change : settings_ast->changes)
+                if (change.name == "obfuscate_seed")
+                    seed_is_empty = change.value.getType() == Field::Types::String && change.value.safeGet<String>().empty();
+
+            /// `SETTINGS obfuscate_seed = DEFAULT` is stored separately and resets the seed
+            /// to its default, which is the empty (non-deterministic) one.
+            for (const auto & name : settings_ast->default_settings)
+                if (name == "obfuscate_seed")
+                    seed_is_empty = true;
+        }
+    }
+
+    if (const auto * function = node->as<ASTFunction>())
+        if (function->name == "obfuscate" && seed_is_empty)
+            return true;
+
+    for (const auto & child : node->children)
+        if (hasNonDeterministicObfuscate(child, seed_is_empty))
+            return true;
+
+    return false;
+}
+
 /// Does AST contain non-deterministic functions like rand() and now()?
 static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
-    return finder_data.has_non_deterministic_functions;
+    return finder_data.has_non_deterministic_functions
+        || hasNonDeterministicObfuscate(ast, context->getSettingsRef()[Setting::obfuscate_seed].value.empty());
 }
 
 /// Does AST contain system tables like "system.processes"?
@@ -308,7 +347,10 @@ public:
                 /// E.g. SELECT 1 SETTINGS use_query_cache = true
                 /// and SET use_query_cache = true; SELECT 1;
                 /// will match.
-                if (set_clause->changes.empty())
+                /// Keep it when `default_settings` (i.e. `SETTINGS x = DEFAULT`) is non-empty: such
+                /// overrides are never query-cache-related, are not stripped above, and must remain
+                /// part of the cache key (see `ASTSetQuery::updateTreeHashImpl`).
+                if (set_clause->changes.empty() && set_clause->default_settings.empty())
                     select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
