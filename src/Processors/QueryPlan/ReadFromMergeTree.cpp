@@ -248,6 +248,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
@@ -2560,9 +2561,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
+    /// Skip force_index_by_date / force_primary_key for a parallel replicas view read, where the predicate lives outside this reading step; a follower skips only when the initiator's local plan already enforced them.
+    const bool skip_force_index_guards = is_parallel_reading_from_replicas_
+        && (context_->isViewInnerQuery()
+            || (context_->canUseParallelReplicasOnFollower()
+                && settings[Setting::parallel_replicas_local_plan]
+                && settings[Setting::parallel_replicas_prefer_local_replica]));
+
     if (indexes->key_condition.alwaysUnknownOrTrue())
     {
-        if (settings[Setting::force_primary_key])
+        if (settings[Setting::force_primary_key] && !skip_force_index_guards)
         {
             throw Exception(ErrorCodes::INDEX_NOT_USED,
                 "Primary key ({}) is not used and setting 'force_primary_key' is set",
@@ -2598,7 +2606,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         context_,
         max_block_numbers_to_read.get(),
         log,
-        result.index_stats);
+        result.index_stats,
+        /*enforce_force_index_by_date=*/ !skip_force_index_guards);
 
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
