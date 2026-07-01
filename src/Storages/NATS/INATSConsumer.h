@@ -40,6 +40,15 @@ public:
     virtual void subscribe() = 0;
     void unsubscribe();
 
+    /// Returns true if this consumer must be re-subscribed after a NATS
+    /// reconnect (i.e. its subscription is NOT auto-restored by libnats).
+    /// JetStream pull subscriptions need re-subscription because they are
+    /// driven by application-level `PUB $JS.API.CONSUMER.MSG.NEXT` calls
+    /// that the library does not auto-restore. Plain `Subscribe` and
+    /// `QueueSubscribe` subscriptions are auto-restored by libnats and do
+    /// not need re-subscription.
+    virtual bool needsResubscribeOnReconnect() const = 0;
+
     size_t subjectsCount() { return subjects.size(); }
 
     bool isConsumerStopped() { return stopped; }
