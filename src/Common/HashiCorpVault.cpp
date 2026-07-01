@@ -126,6 +126,7 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 
 void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
+    std::lock_guard lock(mutex);
     reset();
 
     if (config.has(prefix))
@@ -336,6 +337,7 @@ String HashiCorpVault::login()
 
 String HashiCorpVault::readSecret(const String & secret, const String & key)
 {
+    std::lock_guard lock(mutex);
     LOG_DEBUG(log, "readSecret {} {}", secret, key);
 
     String client_token;

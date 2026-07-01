@@ -629,17 +629,19 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"])
     {
-        if (!HashiCorpVault::instance().isLoaded())
+        /// Load vault from the config being processed if it has a <hashicorp_vault> section.
+        /// This ensures from_hashicorp_vault is resolved against the correct vault config
+        /// even on live reloads (ConfigReloader processes config before the callback, so
+        /// the old singleton state would be used) and first-time loads.
+        /// The vault section is resolved after from_zk and from_env substitutions, so any
+        /// ZK- or env-backed vault settings are available when loading.
+        if (getRootNode(config.get())->getNodeByPath("hashicorp_vault"))
         {
-            /// If the config document being processed contains a <hashicorp_vault> section,
-            /// vault will be loaded later, so skip the substitution for now.
-            /// Otherwise, fail closed — vault cannot be loaded.
-            if (!getRootNode(config.get())->getNodeByPath("hashicorp_vault"))
-                throw Poco::Exception(
-                    "Element <" + node->nodeName()
-                    + "> has 'from_hashicorp_vault' attribute but vault is not loaded.");
+            ConfigurationPtr cfg(new Poco::Util::XMLConfiguration(config.get()));
+            HashiCorpVault::instance().load(*cfg, "hashicorp_vault");
         }
-        else
+
+        if (HashiCorpVault::instance().isLoaded())
         {
             std::string hashicorp_vault_key_value;
             if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
@@ -666,6 +668,12 @@ void ConfigProcessor::doIncludesRecursive(
             };
 
             process_include(attr_nodes["from_hashicorp_vault"], get_vault_node, "Vault secret is not set: ");
+        }
+        else if (!getRootNode(config.get())->getNodeByPath("hashicorp_vault"))
+        {
+            throw Poco::Exception(
+                "Element <" + node->nodeName()
+                + "> has 'from_hashicorp_vault' attribute but vault is not loaded.");
         }
     }
 

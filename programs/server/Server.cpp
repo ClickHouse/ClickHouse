@@ -2413,19 +2413,6 @@ try
         {
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
-            /// Reload HashiCorpVault from the new config and re-resolve from_hashicorp_vault.
-            /// ConfigReloader processes from_hashicorp_vault before vault is reloaded,
-            /// so the old singleton state is used. This two-pass approach loads vault
-            /// from the new config first, then re-processes config to resolve substitutions.
-            if (config().has("hashicorp_vault"))
-            {
-                HashiCorpVault::instance().load(config(), "hashicorp_vault");
-                ConfigProcessor reload_processor(config_path, false, true);
-                auto reloaded = reload_processor.loadConfig(true);
-                config().replace("default", reloaded.configuration, PRIO_DEFAULT, true);
-                loaded_config = reloaded.configuration;
-            }
-
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
             ServerSettings new_server_settings;

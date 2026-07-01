@@ -6,6 +6,7 @@
 #    include <Poco/Net/Context.h>
 #endif
 
+#include <mutex>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
 namespace DB
@@ -34,7 +35,11 @@ public:
 
     String readSecret(const String & secret, const String & key);
 
-    bool isLoaded() const { return loaded; }
+    bool isLoaded() const
+    {
+        std::lock_guard lock(mutex);
+        return loaded;
+    }
 
 private:
     void reset()
@@ -58,6 +63,7 @@ private:
 #endif
     String makeRequest(const String & method, const String & path, const String & request_token, const String & body);
     String login();
+    mutable std::mutex mutex;
     LoggerPtr log;
     bool loaded = false;
     String url;
