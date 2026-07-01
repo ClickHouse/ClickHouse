@@ -9,6 +9,8 @@
     </proto_caps>
     <enable_http_close_session>true</enable_http_close_session>
     <enable_arrow_close_session>true</enable_arrow_close_session>
+    <!-- Read directly by `Context::loadUserDefinedExecutableFunctionDrivers` via `getMultipleValuesFromConfig`. -->
+    <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
     <!-- `ignore_table_dependencies_on_metadata_loading` is also read outside `ServerSettings`
          (by `TablesLoader`) and is kept in the allowlist, but it is intentionally NOT exercised
          here. It is a vestigial flag whose only remaining effect is to route databases into the

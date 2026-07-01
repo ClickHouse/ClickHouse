@@ -2006,6 +2006,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// Dictionaries and functions
         "dictionaries_config",
         "user_defined_executable_functions_config",
+        "user_defined_executable_function_drivers_config",
         "nb_models",
         "dictionary",
         "lemmatizers",
