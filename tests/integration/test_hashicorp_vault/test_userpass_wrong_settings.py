@@ -71,3 +71,19 @@ def test_wrong_password():
         "configs/users.xml",
         "DB::Exception: Cannot login in vault as user1",
     )
+
+
+def test_missing_password():
+    start_clickhouse(
+        "configs/config_userpass_missing_password.xml",
+        "configs/users.xml",
+        "DB::Exception: password is not specified for vault",
+    )
+
+
+def test_empty_password():
+    start_clickhouse(
+        "configs/config_userpass_empty_password.xml",
+        "configs/users.xml",
+        "DB::Exception: password is not specified for vault",
+    )

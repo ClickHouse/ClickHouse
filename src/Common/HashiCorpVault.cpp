@@ -166,6 +166,9 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
             if (username.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "username is not specified for vault.");
 
+            if (password.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "password is not specified for vault.");
+
             auth_method = HashiCorpVaultAuthMethod::Userpass;
         }
         else if (config.has(prefix + ".cert"))
