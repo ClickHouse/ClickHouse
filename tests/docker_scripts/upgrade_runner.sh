@@ -331,12 +331,14 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/39174 - bad mutation does not indicate backward incompatibility:
 #       stress tests may leave behind intentionally-broken mutations that retry after the upgrade restart and log
 #       an error from the background mutation. These come in two benign classes: CANNOT_PARSE_TEXT (a MODIFY
-#       COLUMN / mutation casts unconvertible String data to a numeric type) and FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
-#       (an UPDATE expression calls throwIf, e.g. 02597_column_update_tricky_expression_and_replication). The
-#       Stress test runs the fuzzer (randomized queries) before this stage, so the failing literal and target type
-#       are arbitrary (e.g. 'a', 'b', 'Hello', 'x', or any fuzzer-generated value) and an exact-literal allow-list
-#       can never be complete. Instead these are matched by error CLASS in the secondary pipe: one of those two
-#       error codes raised on a background-mutation executor (MutatePlainMergeTreeTask / MutateFromLogEntryTask /
+#       COLUMN / mutation casts unconvertible String data to a numeric type, e.g. 00834_kill_mutation,
+#       01414_mutations_and_errors_zookeeper, 04338_on_fly_mutation_read_overwritten_lc_source,
+#       01155_old_mutation_parts_to_do) and FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (an UPDATE expression calls
+#       throwIf, e.g. 02597_column_update_tricky_expression_and_replication). The Stress test runs the fuzzer
+#       (randomized queries) before this stage, so the failing literal and target type are arbitrary (e.g. 'a',
+#       'b', 'Hello', 'x', 'fail', or any fuzzer-generated value) and an exact-literal allow-list can never be
+#       complete. Instead these are matched by error CLASS in the secondary pipe: one of those two error codes
+#       raised on a background-mutation executor (MutatePlainMergeTreeTask / MutateFromLogEntryTask /
 #       MergeTreeBackgroundExecutor), regardless of the value or type. Only those two codes are suppressed, so any
 #       other error on the same executors (including unrelated replicated-mutation regressions on the
 #       MutateFromLogEntryTask path) still reaches upgrade_error_messages.txt. This filter does not broaden the
@@ -410,6 +412,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
 #       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
 #       `metric_log` errors are not masked.
+# `PostgreSQLConnectionPool: Connection error` and `DatabasePostgreSQL::removeOutdatedTables` + `Connection to`
+#       + `failed` are benign background-reconnection errors from a `DatabasePostgreSQL` engine left behind by
+#       `04210_show_remote_databases_in_system_tables` when the stress phase interrupts that test between its
+#       `CREATE DATABASE ... ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and the final `DROP DATABASE` (the
+#       documentation IP `192.0.2.1`, RFC 5737, is intentionally unreachable). `DatabasePostgreSQL::startup`
+#       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
+#       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
+#       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
+#       query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -484,6 +496,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "PostgreSQLConnectionPool: Connection error" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
     | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*(Cannot parse string .* as .*CANNOT_PARSE_TEXT|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
