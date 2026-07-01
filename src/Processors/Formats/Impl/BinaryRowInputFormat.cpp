@@ -101,7 +101,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
         type_names.reserve(read_columns);
         for (size_t i = 0; i < read_columns; ++i)
         {
-            read_data_types.push_back(decodeDataType(*in));
+            read_data_types.push_back(decodeDataType(*in, format_settings.binary.max_binary_type_complexity));
             type_names.push_back(read_data_types.back()->getName());
         }
     }

@@ -106,14 +106,6 @@ ThreadGroupPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
-UInt64 CurrentThread::getThreadGroupSequence() noexcept
-{
-    if (unlikely(!current_thread))
-        return 0;
-
-    return current_thread->getThreadGroupSequence();
-}
-
 ContextPtr CurrentThread::tryGetQueryContext()
 {
     if (unlikely(!current_thread))

@@ -358,7 +358,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             {
                 if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
                 {
-                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream));
+                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity));
                 }
                 else
                 {
@@ -384,7 +384,11 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             if ((settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format) || structure_state->structure_version.value == SerializationVersion::V3)
             {
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
-                    variants.push_back(decodeDataType(*structure_stream));
+                    /// V3 can be reached without format_settings; fall back to the context/default limit
+                    /// (fail-safe) rather than disabling the guard on that input path.
+                    variants.push_back(settings.format_settings
+                        ? decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity)
+                        : decodeDataType(*structure_stream));
             }
             else
             {
@@ -658,7 +662,7 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto field_type = decodeDataType(istr);
+    auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
         field = Null();
@@ -775,7 +779,7 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto variant_type = decodeDataType(istr);
+    auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {
         dynamic_column.insertDefault();

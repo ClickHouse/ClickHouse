@@ -166,6 +166,11 @@ struct FormatSettings
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
         UInt64 max_object_size = 100000;
+        /// Max number of type nodes when decoding binary types. 0 == unlimited. Default matches the setting
+        /// default so the guard is active by default; FormatFactory populates it from
+        /// input_format_binary_max_type_complexity for real input. Internal decoding of already-stored data
+        /// explicitly uses 0 (see ColumnObject::getFormatSettings) since stored data must always decode.
+        UInt64 max_binary_type_complexity = 1000;
     } binary{};
 
     struct

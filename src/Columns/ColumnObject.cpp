@@ -25,7 +25,15 @@ namespace
 
 const FormatSettings & getFormatSettings()
 {
-    static thread_local const FormatSettings settings;
+    static thread_local const FormatSettings settings = []
+    {
+        FormatSettings s;
+        /// This FormatSettings is used only for internal (de)serialization of already-stored Dynamic/JSON
+        /// data, which must always succeed. Do not apply the binary type-complexity guard here: it protects
+        /// against malicious *input*, not in-memory data we produced ourselves.
+        s.binary.max_binary_type_complexity = 0;
+        return s;
+    }();
     return settings;
 }
 

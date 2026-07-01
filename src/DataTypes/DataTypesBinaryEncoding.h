@@ -196,5 +196,9 @@ void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & bu
 DataTypePtr decodeDataType(const String & data);
 DataTypePtr decodeDataType(std::string_view data);
 DataTypePtr decodeDataType(ReadBuffer & buf);
+/// Same as above, but enforces a limit on the number of decoded type nodes (0 == unlimited). Input-format
+/// callers pass the effective `input_format_binary_max_type_complexity`; internal decoding of already-stored
+/// data uses the no-arg overload above (unlimited).
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity);
 
 }

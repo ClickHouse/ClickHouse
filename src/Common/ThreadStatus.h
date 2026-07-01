@@ -65,10 +65,6 @@ using QueryIsCanceledPredicate = std::function<bool()>;
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
-/// Returns a process-unique, monotonically increasing number. Used to identify a ThreadGroup without
-/// relying on its address (which the allocator may reuse for a later group).
-UInt64 nextThreadGroupSequenceNumber();
-
 class ThreadGroup
 {
 public:
@@ -79,10 +75,6 @@ public:
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
-
-    /// Process-unique, monotonically increasing id assigned at creation. Unlike the object address it is
-    /// never reused, so it is a safe cache key for detecting when a thread (re)attaches to a new query.
-    const UInt64 sequence_number = nextThreadGroupSequenceNumber();
 
     /// Set up at creation, no race when reading
     const ContextWeakPtr query_context;
@@ -257,11 +249,6 @@ public:
     ~ThreadStatus();
 
     ThreadGroupPtr getThreadGroup() const;
-
-    /// Sequence number of the thread group the thread is currently attached to (i.e. the query), or 0 when
-    /// not attached. Reads it without touching the shared_ptr refcount, so it is cheap enough to call on hot
-    /// paths as a cache key for detecting query (re)attachment; the number is never reused (no ABA).
-    UInt64 getThreadGroupSequence() const noexcept { return thread_group ? thread_group->sequence_number : 0; }
 
     void setQueryId(std::string && new_query_id) noexcept;
     void clearQueryId() noexcept;
