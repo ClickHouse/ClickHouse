@@ -437,6 +437,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+class MergeTreeIndexTextPostprocessor;
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -456,6 +458,9 @@ struct MergeTreeIndexTextGranuleBuilder
     bool empty() const { return is_empty; }
     void reset();
 
+    /// Filter-only postprocessor fast path.
+    void filterTokens(const MergeTreeIndexTextPostprocessor & postprocessor);
+
     MergeTreeIndexTextParams params;
     TokenizerPtr tokenizer;
     const IPostingListCodec * posting_list_codec = nullptr;
@@ -472,6 +477,8 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Tokens the filter-only postprocessor maps to the empty string.
+    absl::flat_hash_set<std::string_view> dropped_tokens;
 };
 
 class MergeTreeIndexTextPreprocessor;
@@ -509,6 +516,8 @@ private:
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// True when the postprocessor only drops tokens (filter-only) and positions are disabled.
+    bool use_filter_fast_path = false;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
