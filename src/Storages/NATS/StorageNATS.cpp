@@ -479,8 +479,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-            unsubscribeConsumers();
+        unsubscribeConsumers();
 
         if (consumers_connection)
         {

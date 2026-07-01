@@ -225,7 +225,7 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             }
 
             replicas_number = replicas.size();
-            size_t quorum_size = getQuorumSize();
+            size_t quorum_size = getQuorumSize(replicas_number);
 
             if (active_replicas < quorum_size)
             {
@@ -540,7 +540,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
     delayed_parts.clear();
 }
 
-bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
+bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part, bool deduplicate_part)
 {
     /// NOTE: No delay in this case. That's Ok.
     auto origin_zookeeper = storage.getZooKeeper();
@@ -575,7 +575,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
     part->info.mutation = 0;
     part->version.setCreationTID(Tx::PrehistoricTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;
-    if (deduplicate)
+    if (deduplicate && deduplicate_part)
     {
         switch (insert_deduplication_version)
         {
@@ -755,7 +755,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         {
             ReplicatedMergeTreeQuorumEntry quorum_entry;
             quorum_entry.part_name = part->name;
-            quorum_entry.required_number_of_replicas = getQuorumSize();
+            quorum_entry.required_number_of_replicas = getQuorumSize(total_replicas_count);
             quorum_entry.replicas.insert(storage.replica_name);
 
             /** At this point, this node will contain information that the current replica received a part.
@@ -812,7 +812,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         log_entry.source_replica = storage.replica_name;
         log_entry.new_part_name = part->name;
         /// TODO maybe add UUID here as well?
-        log_entry.quorum = getQuorumSize();
+        log_entry.quorum = getQuorumSize(total_replicas_count);
         log_entry.new_part_format = part->getFormat();
 
         if (!is_async_insert && !deduplication_hashes.empty() && deduplicate)
@@ -1201,7 +1201,7 @@ void ReplicatedMergeTreeSink::onStart()
     * And also check that during the insertion, the replica was not reinitialized or disabled (by the value of `is_active` node).
     * TODO Too complex logic, you can do better.
     */
-    quorum_replicas_num = checkQuorumPrecondition(zookeeper);
+    total_replicas_count = checkQuorumPrecondition(zookeeper);
 }
 
 void ReplicatedMergeTreeSink::onFinish()
@@ -1273,10 +1273,10 @@ String ReplicatedMergeTreeSink::quorumLogMessage() const
 {
     if (!isQuorumEnabled())
         return "";
-    return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(), quorum_replicas_num);
+    return fmt::format(" (quorum {} of {} replicas)", getQuorumSize(total_replicas_count), total_replicas_count);
 }
 
-size_t ReplicatedMergeTreeSink::getQuorumSize() const
+size_t ReplicatedMergeTreeSink::getQuorumSize(size_t total_replicas) const
 {
     if (!isQuorumEnabled())
         return 0;
@@ -1284,7 +1284,7 @@ size_t ReplicatedMergeTreeSink::getQuorumSize() const
     if (required_quorum_size)
         return required_quorum_size.value();
 
-    return quorum_replicas_num / 2 + 1;
+    return total_replicas / 2 + 1;
 }
 
 bool ReplicatedMergeTreeSink::isQuorumEnabled() const
