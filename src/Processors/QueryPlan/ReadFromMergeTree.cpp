@@ -3095,6 +3095,23 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
+void ReadFromMergeTree::addReadColumn(const String & column)
+{
+    if (std::ranges::find(all_column_names, column) != all_column_names.end())
+        return;
+
+    all_column_names.emplace_back(column);
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// If analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result.
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+}
+
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
 {
     if (isQueryWithFinal())

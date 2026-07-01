@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
@@ -386,6 +387,24 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     }
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
+
+    /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
+    /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
+    /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
+    /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
+    /// streams, so the subcolumn read would fall back to recomputing it and fail. This is restricted to that specific
+    /// serialization (a Quantize column is always dense) so it does not interfere with the Default/Sparse kind stack of
+    /// ordinary columns.
+    const auto & type_in_storage = required_column.getTypeInStorage();
+    if (const auto * custom = type_in_storage->getCustomSerialization();
+        custom && typeid(*custom) == typeid(SerializationQuantizedVector))
+    {
+        auto serialization = type_in_storage->getDefaultSerialization();
+        if (required_column.isSubcolumn())
+            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
+        return serialization;
+    }
+
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 

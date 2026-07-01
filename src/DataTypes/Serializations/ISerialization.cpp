@@ -171,6 +171,8 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
+    QuantizedCodes,
+    PQCodebook,
 };
 
 String ISerialization::Substream::toString() const
@@ -663,7 +665,9 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
-            || path[last_elem].type == Substream::ObjectTypedPath;
+            || path[last_elem].type == Substream::ObjectTypedPath
+            || path[last_elem].type == Substream::QuantizedCodes
+            || path[last_elem].type == Substream::PQCodebook;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
