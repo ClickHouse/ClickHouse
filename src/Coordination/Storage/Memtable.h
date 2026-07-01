@@ -109,7 +109,7 @@ struct MemtableChildrenSet
             ChildrenSet2::Set::const_iterator end;
         };
 
-        Mode mode;
+        Mode mode = Mode::Empty;
         union
         {
             ChildrenSet2::Entry entry;

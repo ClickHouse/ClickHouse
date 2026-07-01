@@ -164,6 +164,7 @@ void BlockData::readHeader()
     p += sizeof(base_zxid);
     memcpy(&base_time, p, sizeof(base_time));
     p += sizeof(base_time);
+    (void)p;
 
     if (size_t(header_size) < BLOCK_HEADER_SCALARS_SIZE + size_t(base_path_len))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "header_size too small");

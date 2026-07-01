@@ -153,7 +153,7 @@ bool Memtable::visitChildren(
     const std::function<bool(std::string_view /*name*/, const NodeRef &, const FullNode *)> & check_node,
     ChildrenSet2 & seen, DB::Arena & arena_) const
 {
-    auto lookup = children.find(path.hash);
+    const auto * lookup = children.find(path.hash);
     if (lookup)
     {
         auto it = lookup->getMapped().iterate();

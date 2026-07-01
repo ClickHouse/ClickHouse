@@ -321,23 +321,34 @@ void BackgroundWork::mergeThread()
                 ///   3. We decided to publish results. We got min_path_cutoff = A from output_run,
                 ///      but inputs' dropConsumedFiles dropped files with max_path <= B. The Remove
                 ///      for path B happened to be dropped, but the Create was kept.
-                ///   4. Readers now see a Create but no Remove for path B. Node was incorrectly
-                ///      resurrected from the dead.
+                ///   4. Readers now see a Create but no Remove for path B. We have accidentally
+                ///      performed necromancy.
                 ///  Currently this is not possible because we only call publish_results after
                 ///  appending non-cancelled-out node and after finishing the merge.)
-                NodePath min_path_cutoff = output_run->files.back()->blocks.back().max_path;
-                for (size_t i = 0; i < input_runs.size(); ++i)
+                if (is_final)
                 {
-                    input_runs[i]->setMinPathCutoff(min_path_cutoff);
-                    input_streams[i].dropConsumedFiles(removed_files);
-                    if (!input_runs[i]->files.empty())
-                        to_publish.push_back(input_runs[i]);
+                    /// (Assert that all input was consumed.)
+                    for (size_t i = 0; i < input_runs.size(); ++i)
+                    {
+                        input_streams[i].dropConsumedFiles(removed_files);
+                        chassert(input_runs[i]->files.empty());
+                    }
                 }
-                chassert(to_publish.empty() == is_final);
-
-                if (output_run->files.empty()) // all input nodes cancelled out
-                    chassert(is_final);
                 else
+                {
+                    chassert(!output_run->files.empty());
+                    NodePath min_path_cutoff = output_run->files.back()->blocks.back().max_path;
+                    for (size_t i = 0; i < input_runs.size(); ++i)
+                    {
+                        input_runs[i]->setMinPathCutoff(min_path_cutoff);
+                        input_streams[i].dropConsumedFiles(removed_files);
+                        if (!input_runs[i]->files.empty())
+                            to_publish.push_back(input_runs[i]);
+                    }
+                    chassert(!to_publish.empty());
+                }
+
+                if (!output_run->files.empty()) // may be empty if all input nodes cancelled out
                     to_publish.push_back(output_run);
 
                 if (!is_final)

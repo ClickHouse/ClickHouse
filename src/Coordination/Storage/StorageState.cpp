@@ -352,9 +352,21 @@ void StorageState::visitUncommittedChildren(
         {
             load_node = [&](const NodePathWithHash & child_path)
             {
-                const auto * lookup = it->nodes.find(child_path.hash);
-                chassert(lookup);
-                return lookup->getMapped();
+                /// The latest child info may be in a later memtable than the child-name entry,
+                /// because Update action doesn't touch Memtable::children. So we look at all
+                /// memtables here, not just `it`.
+                for (auto inner_it = uncommitted.rbegin();; ++inner_it)
+                {
+                    const auto * lookup = inner_it->nodes.find(child_path.hash);
+                    if (lookup)
+                    {
+                        NodeRef ref = lookup->getMapped();
+                        chassert(ref); // not a tombstone
+                        return ref;
+                    }
+                    /// Node must be present in memtable `it`, if nowhere else.
+                    chassert(inner_it != it);
+                }
             };
         }
 

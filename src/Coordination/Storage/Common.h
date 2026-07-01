@@ -47,6 +47,9 @@ using NodePathHash = UInt128;
 /// Inside uncommitted state we mostly use strict model (except that the first action may be Update
 /// or Remove). When merging committed and uncommitted lookup results we have to use loose model
 /// because there can be overlap between (the zxid ranges of) the two.
+///
+/// Our terminology is a bit ambiguous: the word "node" refers either to a znode or to an entry in
+/// file/memtable, which has znode info + NodeAction (e.g. node may be a Remove tombstone).
 enum class NodeAction : uint8_t
 {
     Remove = 0,
