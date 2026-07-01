@@ -2075,12 +2075,11 @@ bool StorageMergeTree::optimize(
         /// the two never race, and the metric never exceeds the configured maximum. It is held for
         /// the whole query and released here.
         ///
-        /// We request at most `getMaxThreads` (`background_pool_size`) slots, not `getMaxTasksCount`
-        /// (`background_pool_size` * `background_merges_mutations_concurrency_ratio`): these merges
-        /// run synchronously on real threads and cannot be postponed like scheduled executor tasks,
-        /// so a single OPTIMIZE FINAL must not spawn more merge threads than the pool has workers.
-        /// The reservation is additionally clamped to the currently free task capacity, so it also
-        /// backs off while the pool is busy.
+        /// `tryReserveTaskSlots` grants at most the number of currently free worker threads
+        /// (`background_pool_size`), never the larger task-slot count: these merges run
+        /// synchronously on real threads and cannot be postponed like scheduled executor tasks, so
+        /// OPTIMIZE FINAL must not spawn more merge threads than the pool has workers, even when the
+        /// pool is already busy with background merges.
         auto merge_mutate_executor = getContext()->getMergeMutateExecutor();
         size_t reserved_merge_slots = 0;
         SCOPE_EXIT({
@@ -2089,8 +2088,7 @@ bool StorageMergeTree::optimize(
         });
 
         if (txn == nullptr && partition_ids.size() > 1 && merge_mutate_executor)
-            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(
-                std::min(partition_ids.size(), merge_mutate_executor->getMaxThreads()));
+            reserved_merge_slots = merge_mutate_executor->tryReserveTaskSlots(partition_ids.size());
 
         const size_t max_concurrent_merges = std::max<size_t>(1, reserved_merge_slots);
 

@@ -185,11 +185,17 @@ size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
 
     auto & value = CurrentMetrics::values[metric];
     const Int64 current = value.load();
-    const Int64 max_count = static_cast<Int64>(max_tasks_count.load());
-    if (current >= max_count)
+
+    /// Bound the reservation by the number of worker threads, not the (larger) task-slot count.
+    /// Reserved slots are consumed by merges that run synchronously on dedicated threads and cannot
+    /// be postponed the way scheduled executor tasks can, so with a concurrency ratio > 1 reserving
+    /// up to the task-slot count could run several times more merge threads than the pool has
+    /// workers, exceeding the operator's configured merge parallelism.
+    const Int64 limit = std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
+    if (current >= limit)
         return 0;
 
-    const size_t granted = std::min(desired, static_cast<size_t>(max_count - current));
+    const size_t granted = std::min(desired, static_cast<size_t>(limit - current));
     value.fetch_add(static_cast<Int64>(granted));
     return granted;
 }
