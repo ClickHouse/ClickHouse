@@ -89,6 +89,11 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
             const auto counter = ProfileEvents::global_counters[i];
+            /// The summed per-CPU read is not a point-in-time snapshot and some events can
+            /// transiently decrease (see the same guard in `MetricLog`); skip the event this
+            /// round so the unsigned delta cannot wrap.
+            if (counter < prev_counters[i])
+                continue;
             const auto counter_increment = counter - prev_counters[i];
             prev_counters[i] = counter;
 
