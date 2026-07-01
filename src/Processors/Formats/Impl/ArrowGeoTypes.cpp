@@ -118,9 +118,9 @@ inline CartesianPoint parseWKTPoint(ReadBuffer & in_buffer)
             break;
         in_buffer.ignore();
     }
-    tryReadFloatText(x, in_buffer);
+    tryReadFloatTextPrecise(x, in_buffer);
     in_buffer.ignore();
-    readFloatText(y, in_buffer);
+    readFloatTextPrecise(y, in_buffer);
     return {x, y};
 }
 

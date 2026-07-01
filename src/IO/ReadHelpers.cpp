@@ -1891,7 +1891,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             ++buf.position();
 
         double v = 0;
-        if (!tryReadFloatText(v, buf))
+        if (!tryReadFloatTextPrecise(v, buf))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
@@ -2473,9 +2473,9 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
         {
             Float64 tmp = 0;
             if constexpr (throw_exception)
-                readFloatText(tmp, in);
+                readFloatTextPrecise(tmp, in);
             else
-                return tryReadFloatText(tmp, in);
+                return tryReadFloatTextPrecise(tmp, in);
         };
 
         return readParsedValueInto<ReturnType>(s, buf, parse_func);

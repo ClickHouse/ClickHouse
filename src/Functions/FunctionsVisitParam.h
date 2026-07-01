@@ -56,7 +56,7 @@ struct ExtractNumericType
         if (!in.eof())
         {
             if constexpr (is_floating_point<NumericType>)
-                tryReadFloatText(x, in);
+                tryReadFloatTextPrecise(x, in);
             else
                 tryReadIntText(x, in);
         }

@@ -96,7 +96,7 @@ Float64 readStrictJSONNumber(ReadBuffer & buf)
     String number = readStrictJSONNumberText(buf);
     Float64 result = 0;
     ReadBufferFromString number_buf(number);
-    readFloatText(result, number_buf);
+    readFloatTextPrecise(result, number_buf);
     if (!std::isfinite(result))
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: coordinate value is not finite");
     return result;
