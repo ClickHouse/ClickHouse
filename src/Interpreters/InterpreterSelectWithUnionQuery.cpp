@@ -267,12 +267,17 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeade
 
 SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
+    /// The header probe must also plan in its own settings scope: a probed branch (e.g. FINAL)
+    /// may disable parallel replicas on its context, and passing the mutable parent context here
+    /// would leak that into the siblings built afterwards, just like the real construction path.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
+        return InterpreterSelectWithUnionQuery(ast_ptr_, child_context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     if (ast_ptr_->as<ASTSelectQuery>())
-        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-    return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQuery(ast_ptr_, child_context, options.copy().analyze().noModify()).getSampleBlock();
+    return InterpreterSelectIntersectExceptQuery(ast_ptr_, child_context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>

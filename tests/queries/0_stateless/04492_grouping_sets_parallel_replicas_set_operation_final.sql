@@ -36,6 +36,27 @@ UNION ALL
 SELECT NULL FROM t_gs_final FINAL GROUP BY sign
 FORMAT Null;
 
+-- When the set operation is a column-pruned subquery (non-empty required_result_column_names),
+-- the constructor probes each child header first. That probe must also plan in its own settings
+-- scope: if the FINAL branch's probe disables parallel replicas on the shared context, the
+-- grouping-sets branch built afterwards silently loses parallel replicas. Assert the
+-- grouping-sets branch still reads with parallel replicas here.
+SELECT a FROM (
+    SELECT sign AS a, count() AS c FROM t_gs_final GROUP BY GROUPING SETS ((sign), ('x'))
+    UNION ALL
+    SELECT sign AS a, count() AS c FROM t_gs_final FINAL GROUP BY sign
+) ORDER BY a FORMAT Null SETTINGS log_comment = '04492_pruned_subquery_pr';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(sum(ProfileEvents['ParallelReplicasUsedCount']) > 0, 'pruned subquery: pr used', 'pruned subquery: pr NOT used')
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND log_comment = '04492_pruned_subquery_pr'
+  AND type = 'QueryFinish'
+  AND is_initial_query
+SETTINGS enable_parallel_replicas = 0;
+
 SELECT 'ok';
 
 DROP TABLE t_gs_final;
