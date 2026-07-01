@@ -396,8 +396,15 @@ void ASTTableIdentifier::readJSON(const Poco::JSON::Object & json)
     }
     if (r.has("uuid"))
     {
-        String uuid_str = r.getString("uuid");
-        uuid = parseFromString<UUID>(uuid_str);
+        /// A nested `ASTTableIdentifier` can carry a `UUID` from the parser (e.g. a `REFRESH DEPENDS ON src UUID '...'`
+        /// dependency), and `getTableId` feeds that `UUID` into the executed `StorageID`. But a table reference is
+        /// formatted through `ASTIdentifier::formatImplWithoutAlias`, which never emits a `UUID` clause, so
+        /// `formatQueryFromJSON` would print a name-only reference while the JSON AST still resolves the table by
+        /// `UUID`. Reject the `UUID`-bearing nested reference at the boundary (fail closed) rather than hiding
+        /// semantic state behind a lossy round trip.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableIdentifier JSON must not carry a 'uuid': a nested table reference with a UUID cannot be "
+            "formatted back to SQL faithfully during AST JSON deserialization");
     }
     r.readAlias(*this);
 }

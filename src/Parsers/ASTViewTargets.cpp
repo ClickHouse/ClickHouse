@@ -378,10 +378,15 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
             /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
             /// (`TO dst`) and names may contain dots, so do not reconstruct by splitting a full name.
             const String database = target_reader.getString("table_database");
-            UUID table_uuid = UUIDHelpers::Nil;
+            /// Unlike `inner_uuid` (emitted as `INNER UUID '...'`), `formatTarget` prints only `db.table` for a
+            /// `table_id` target, so a `table_uuid` would be dropped by `formatQueryFromJSON` while the JSON AST
+            /// still resolves the `StorageID` by `UUID`. Reject it at the boundary (fail closed) instead of hiding
+            /// semantic state behind a lossy round trip.
             if (target_obj->has("table_uuid"))
-                table_uuid = parseFromString<UUID>(target_reader.getString("table_uuid"));
-            target.table_id = StorageID(database, target_reader.getString("table_name"), table_uuid);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTViewTargets JSON must not carry a 'table_uuid': a `TO` target with a UUID cannot be "
+                    "formatted back to SQL faithfully during AST JSON deserialization");
+            target.table_id = StorageID(database, target_reader.getString("table_name"), UUIDHelpers::Nil);
         }
         if (target_obj->has("inner_uuid"))
         {
