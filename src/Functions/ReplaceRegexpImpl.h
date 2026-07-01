@@ -7,6 +7,15 @@
 #include <Functions/Regexps.h>
 #include <Functions/ReplaceStringImpl.h>
 #include <base/types.h>
+#include <re2/regexp.h>
+
+#include "config.h"
+
+#if USE_SIMDJSON
+#    include <simdjson.h>
+#else
+#    include <Common/isValidUTF8.h>
+#endif
 
 namespace DB
 {
@@ -147,6 +156,134 @@ struct ReplaceRegexpImpl
         return result.is_trivial && result.required_substring_is_prefix && result.required_substring == needle;
     }
 
+    /// Fast path for "anchored capture-then-truncate" patterns: a constant pattern `^ … (group N) … .*$`
+    /// (anchored at both ends, ending in `.*`) whose replacement is exactly a single backreference `\N` to
+    /// the N-th capturing group (N >= 1) returns just that group, e.g. ClickBench Q28's
+    /// `^https?://(?:www\.)?([^/]+)/.*$` with `\1`.
+    /// Rather than let RE2 scan and discard the trailing `.*` on every row, we match a "short" regexp with
+    /// `.*$` removed and emit group N directly. A non-dotall `.*$` matches the rest of the string iff it
+    /// has no newline, so we use the short capture when the suffix is newline-free and fall back to the
+    /// full regexp otherwise. Detection inspects the parsed RE2 syntax tree, not the textual pattern.
+    struct AnchoredExtract
+    {
+        std::unique_ptr<re2::RE2> short_searcher;
+        int substitution_num = 0;
+        int num_captures = 0;
+        bool needs_newline_check = true;
+    };
+
+    /// True if the subtree contains a multiline line anchor (`kRegexpBeginLine` / `kRegexpEndLine`, from an
+    /// interior `(?m:…)`). re2::Regexp::ToString renders these as bare `^` / `$`, which reparse as text
+    /// anchors under RE2's default one-line mode, so a round-tripped short pattern would change semantics.
+    static bool containsLineAnchor(re2::Regexp * re)
+    {
+        if (re == nullptr)
+            return false;
+        if (re->op() == re2::kRegexpBeginLine || re->op() == re2::kRegexpEndLine)
+            return true;
+        const int n = re->nsub();
+        re2::Regexp * const * subs = re->sub();
+        for (int i = 0; i < n; ++i)
+            if (containsLineAnchor(subs[i]))
+                return true;
+        return false;
+    }
+
+    static std::optional<AnchoredExtract> tryBuildAnchoredExtract(
+        const re2::RE2 & searcher, const Instructions & instructions, const re2::RE2::Options & options)
+    {
+        /// Replacement must be exactly a single backreference `\N`, with N >= 1.
+        if (instructions.size() != 1 || instructions[0].substitution_num < 1)
+            return {};
+        const int substitution_num = instructions[0].substitution_num;
+        if (substitution_num > searcher.NumberOfCapturingGroups())
+            return {};
+
+        re2::Regexp * re = searcher.Regexp();
+        if (re == nullptr || re->op() != re2::kRegexpConcat)
+            return {};
+
+        /// The smallest pattern that can qualify is `^(group).*$`, whose top-level concatenation has
+        /// exactly four nodes: BeginText (`^`), the capturing group, Star (`.*`) and EndText (`$`).
+        /// A shorter concatenation cannot hold all of them, so bail out early.
+        static constexpr int min_concat_nodes = 4;
+        const int nsub = re->nsub();
+        if (nsub < min_concat_nodes)
+            return {};
+        re2::Regexp ** subs = re->sub();
+
+        /// Anchored at both ends in non-multiline mode: ^ ... $  (kRegexpEndText, not kRegexpEndLine).
+        if (subs[0]->op() != re2::kRegexpBeginText || subs[nsub - 1]->op() != re2::kRegexpEndText)
+            return {};
+
+        /// The second-to-last node must be `.*` (a Star over `.`).
+        re2::Regexp * star = subs[nsub - 2];
+        if (star->op() != re2::kRegexpStar || star->nsub() != 1)
+            return {};
+
+        re2::Regexp * dot = star->sub()[0];
+        bool needs_newline_check = false;
+        if (dot->op() == re2::kRegexpAnyChar)
+        {
+            /// Dotall `.` matches everything, so the trailing `.*` always consumes the rest of the string.
+            needs_newline_check = false;
+        }
+        else if (dot->op() == re2::kRegexpCharClass)
+        {
+            /// Non-dotall `.` is the class of all runes except '\n'. Accept only exactly that class.
+            re2::CharClass * cc = dot->cc();
+            if (cc == nullptr || cc->Contains('\n') || cc->size() != re2::Runemax)
+                return {};
+            needs_newline_check = true;
+        }
+        else
+            return {};
+
+        /// re2::Regexp::ToString does not round-trip scoped multiline anchors: a `(?m:…)` line anchor
+        /// (kRegexpBeginLine / kRegexpEndLine) is rendered as a bare `^` / `$`, which reparses as a text
+        /// anchor under RE2's default one-line mode and changes the match. The outer anchors are already
+        /// required to be BeginText / EndText, so any line anchor must come from an interior `(?m:…)` in the
+        /// retained prefix; reject and let the caller fall back to the full regexp.
+        for (int i = 0; i < nsub - 2; ++i)
+            if (containsLineAnchor(subs[i]))
+                return {};
+
+        /// Build the short pattern: concatenation of all nodes except the trailing `.*` and `$`.
+        /// The compose helpers consume one reference per sub, so Incref each before passing them in.
+        VectorWithMemoryTracking<re2::Regexp *> short_subs;
+        short_subs.reserve(nsub - 2);
+        for (int i = 0; i < nsub - 2; ++i)
+            short_subs.push_back(subs[i]->Incref());
+        re2::Regexp * short_re = re2::Regexp::Concat(short_subs.data(), nsub - 2, re->parse_flags());
+        const std::string short_pattern = short_re->ToString();
+        short_re->Decref();
+
+        /// re2::Regexp::ToString() is not lossless for very large trees: it stops after a fixed number
+        /// of steps and appends " [truncated]". Such a string would recompile into a different,
+        /// incomplete pattern (and may still be a valid regexp, so RE2::ok() would not catch it), so
+        /// bail out on truncation and let the caller fall back to the full regexp.
+        if (short_pattern.ends_with(" [truncated]"))
+            return {};
+
+        /// re2::Regexp::ToString renders a dotall '.' (kRegexpAnyChar) as a bare '.', while a non-dotall
+        /// '.' is rendered as an explicit '[^\n]' character class and case-insensitive literals as explicit
+        /// '[Aa]' classes. Hence every bare '.' produced by ToString originates from kRegexpAnyChar, so the
+        /// short pattern must be recompiled with dot_nl=true to preserve the original semantics. For
+        /// non-dotall patterns there are no bare '.' to affect, so this is a no-op there.
+        re2::RE2::Options short_options = options;
+        short_options.set_dot_nl(true);
+        auto short_searcher = std::make_unique<re2::RE2>(short_pattern, short_options);
+        if (!short_searcher->ok() || substitution_num > short_searcher->NumberOfCapturingGroups())
+            return {};
+
+        AnchoredExtract opt;
+        opt.num_captures = std::min(short_searcher->NumberOfCapturingGroups() + 1, max_captures);
+        opt.short_searcher = std::move(short_searcher);
+        opt.substitution_num = substitution_num;
+        opt.needs_newline_check = needs_newline_check;
+        return opt;
+    }
+
     static void processString(
         const char * haystack_data,
         size_t haystack_length,
@@ -227,6 +364,63 @@ struct ReplaceRegexpImpl
         }
     }
 
+    static bool anchoredExtractTailMatches(const char * tail, size_t tail_length, bool needs_newline_check)
+    {
+        if (needs_newline_check && memchr(tail, '\n', tail_length) != nullptr)
+            return false;
+#if USE_SIMDJSON
+        return simdjson::validate_utf8(tail, tail_length);
+#else
+        return DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(tail), tail_length);
+#endif
+    }
+
+    /// Process one haystack using the anchored capture-then-truncate fast path (see tryBuildAnchoredExtract).
+    static void processStringAnchoredExtract(
+        const char * hs_data,
+        size_t hs_length,
+        ColumnString::Chars & res_data,
+        ColumnString::Offset & res_offset,
+        const re2::RE2 & searcher,
+        int num_captures,
+        const Instructions & instructions,
+        const AnchoredExtract & opt)
+    {
+        std::string_view matches[max_captures];
+        const std::string_view haystack(hs_data, hs_length);
+
+        if (opt.short_searcher->Match(haystack, 0, hs_length, re2::RE2::Anchor::UNANCHORED, matches, opt.num_captures))
+        {
+            const std::string_view & whole = matches[0];
+            const size_t match_end = static_cast<size_t>(whole.data() - hs_data) + whole.size();
+            const bool tail_ok = anchoredExtractTailMatches(hs_data + match_end, hs_length - match_end, opt.needs_newline_check);
+
+            if (tail_ok)
+            {
+                /// The full `.*$` would also match here, so the result is exactly capturing group N.
+                const std::string_view & group = matches[opt.substitution_num];
+                res_data.resize(res_data.size() + group.size());
+                if (!group.empty())
+                    memcpy(&res_data[res_offset], group.data(), group.size());
+                res_offset += group.size();
+            }
+            else
+            {
+                /// A newline in the discarded suffix means the full `.*$` would not match here.
+                /// Fall back to the full regexp for exact semantics.
+                processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+            }
+        }
+        else
+        {
+            /// Short pattern cannot match => full pattern cannot match => input is returned unchanged.
+            res_data.resize(res_data.size() + hs_length);
+            if (hs_length)
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], hs_data, hs_length);
+            res_offset += hs_length;
+        }
+    }
+
     static void vectorConstantConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
@@ -273,6 +467,20 @@ struct ReplaceRegexpImpl
         }
 
         Instructions instructions = createInstructions(replacement, num_captures);
+
+        /// Fast path for anchored capture-then-truncate patterns, e.g. `^...(\N)....*$` with replacement `\N`.
+        if (auto opt = tryBuildAnchoredExtract(searcher, instructions, regexp_options))
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t from = haystack_offsets[i - 1];
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+                const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
+                processStringAnchoredExtract(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions, *opt);
+                res_offsets[i] = res_offset;
+            }
+            return;
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -471,6 +679,20 @@ struct ReplaceRegexpImpl
 
         int num_captures = std::min(searcher.NumberOfCapturingGroups() + 1, max_captures);
         Instructions instructions = createInstructions(replacement, num_captures);
+
+        /// Fast path for anchored capture-then-truncate patterns. The trailing `\0` padding of a
+        /// FixedString is an ordinary byte to both `.` and the newline check, so it is treated exactly
+        /// as the full regexp treats it (consumed by `.*$`, or returned verbatim on no match).
+        if (auto opt = tryBuildAnchoredExtract(searcher, instructions, regexp_options))
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + i * n);
+                processStringAnchoredExtract(hs_data, n, res_data, res_offset, searcher, num_captures, instructions, *opt);
+                res_offsets[i] = res_offset;
+            }
+            return;
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

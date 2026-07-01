@@ -1,0 +1,717 @@
+q28_host	0
+simple_first_seg	0
+scheme_group1	0
+host_group2	0
+escaped_dot_prefix	0
+explicit_nonnl_tail	0
+no_dotall_scope	0
+backslash_A_z	0
+dotall_host	0
+anchored_no_dotstar	0
+astar_tail	0
+greedy_last_slash	0
+lazy_first_slash	0
+digits_prefix	0
+tail_class_has_nl	0
+tail_class_alpha	0
+tail_class_no_crlf	0
+FIRE q28 \\1	1	http://www.example.com/path/to/page?q=1	example.com	example.com
+FIRE q28 \\1	2	https://example.org/a	example.org	example.org
+FIRE q28 \\1	3	http://example.com	http://example.com	http://example.com
+FIRE q28 \\1	4	http://www.x.com/	x.com	x.com
+FIRE q28 \\1	5	http://a.com/b/c/d	a.com	a.com
+FIRE q28 \\1	6	http://x.com:8080/a	x.com:8080	x.com:8080
+FIRE q28 \\1	7	https://user:pass@h.com/p	user:pass@h.com	user:pass@h.com
+FIRE q28 \\1	8	http://пример.рф/путь/q	пример.рф	пример.рф
+FIRE q28 \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+FIRE q28 \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+FIRE q28 \\1	11	http://trailing.slash.com/	trailing.slash.com	trailing.slash.com
+FIRE q28 \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	sub.dom.co.uk	sub.dom.co.uk
+FIRE q28 \\1	13	http://1.2.3.4/page	1.2.3.4	1.2.3.4
+FIRE q28 \\1	14	http://[::1]/v6	[::1]	[::1]
+FIRE q28 \\1	15	http://x/y	x	x
+FIRE q28 \\1	16	https://x.com	https://x.com	https://x.com
+FIRE q28 \\1	17	http://a b.com/p	a b.com	a b.com
+FIRE q28 \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+FIRE q28 \\1	19	hello world	hello world	hello world
+FIRE q28 \\1	20			
+FIRE q28 \\1	21	http://www.www.com/x	www.com	www.com
+FIRE q28 \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com	h.com
+FIRE q28 \\1	23	http://www.x.com/a\nb	x.com	x.com
+FIRE q28 \\1	24	http://x.com/\nfoo	x.com	x.com
+FIRE q28 \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+FIRE q28 \\1	26	http://h.com/a\n	h.com	h.com
+FIRE q28 \\1	27	http://h.com/\n	h.com	h.com
+FIRE q28 \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+FIRE q28 \\1	29	http://h.com/a\r\nb	h.com	h.com
+FIRE q28 \\1	30	http://h.com/a\tb	h.com	h.com
+FIRE q28 \\1	31	http://h.com/a\0b	h.com	h.com
+FIRE q28 \\1	32	a\nb	a\nb	a\nb
+FIRE q28 \\1	33	abc/def	abc/def	abc/def
+FIRE q28 \\1	34	abc	abc	abc
+FIRE q28 \\1	35	a/b/c	a/b/c	a/b/c
+FIRE q28 \\1	36	x/	x/	x/
+FIRE q28 \\1	37	noslashhere	noslashhere	noslashhere
+FIRE q28 \\1	38	a/	a/	a/
+FIRE q28 \\1	39	/leading	/leading	/leading
+FIRE q28 \\1	40	a//b	a//b	a//b
+FIRE q28 \\1	41	123-abc	123-abc	123-abc
+FIRE q28 \\1	42	abc-1	abc-1	abc-1
+FIRE q28 \\1	43	a.b.c	a.b.c	a.b.c
+FIRE q28 \\1	44	ab.c	ab.c	ab.c
+FIRE q28 \\1	45	seg/ab1	seg/ab1	seg/ab1
+FIRE q28 \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+FIRE scheme \\1	1	http://www.example.com/path/to/page?q=1	http	http
+FIRE scheme \\1	2	https://example.org/a	https	https
+FIRE scheme \\1	3	http://example.com	http://example.com	http://example.com
+FIRE scheme \\1	4	http://www.x.com/	http	http
+FIRE scheme \\1	5	http://a.com/b/c/d	http	http
+FIRE scheme \\1	6	http://x.com:8080/a	http	http
+FIRE scheme \\1	7	https://user:pass@h.com/p	https	https
+FIRE scheme \\1	8	http://пример.рф/путь/q	http	http
+FIRE scheme \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+FIRE scheme \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+FIRE scheme \\1	11	http://trailing.slash.com/	http	http
+FIRE scheme \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https	https
+FIRE scheme \\1	13	http://1.2.3.4/page	http	http
+FIRE scheme \\1	14	http://[::1]/v6	http	http
+FIRE scheme \\1	15	http://x/y	http	http
+FIRE scheme \\1	16	https://x.com	https://x.com	https://x.com
+FIRE scheme \\1	17	http://a b.com/p	http	http
+FIRE scheme \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+FIRE scheme \\1	19	hello world	hello world	hello world
+FIRE scheme \\1	20			
+FIRE scheme \\1	21	http://www.www.com/x	http	http
+FIRE scheme \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http	http
+FIRE scheme \\1	23	http://www.x.com/a\nb	http	http
+FIRE scheme \\1	24	http://x.com/\nfoo	http	http
+FIRE scheme \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+FIRE scheme \\1	26	http://h.com/a\n	http	http
+FIRE scheme \\1	27	http://h.com/\n	http	http
+FIRE scheme \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+FIRE scheme \\1	29	http://h.com/a\r\nb	http	http
+FIRE scheme \\1	30	http://h.com/a\tb	http	http
+FIRE scheme \\1	31	http://h.com/a\0b	http	http
+FIRE scheme \\1	32	a\nb	a\nb	a\nb
+FIRE scheme \\1	33	abc/def	abc/def	abc/def
+FIRE scheme \\1	34	abc	abc	abc
+FIRE scheme \\1	35	a/b/c	a/b/c	a/b/c
+FIRE scheme \\1	36	x/	x/	x/
+FIRE scheme \\1	37	noslashhere	noslashhere	noslashhere
+FIRE scheme \\1	38	a/	a/	a/
+FIRE scheme \\1	39	/leading	/leading	/leading
+FIRE scheme \\1	40	a//b	a//b	a//b
+FIRE scheme \\1	41	123-abc	123-abc	123-abc
+FIRE scheme \\1	42	abc-1	abc-1	abc-1
+FIRE scheme \\1	43	a.b.c	a.b.c	a.b.c
+FIRE scheme \\1	44	ab.c	ab.c	ab.c
+FIRE scheme \\1	45	seg/ab1	seg/ab1	seg/ab1
+FIRE scheme \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+FIRE host \\2	1	http://www.example.com/path/to/page?q=1	www.example.com	www.example.com
+FIRE host \\2	2	https://example.org/a	example.org	example.org
+FIRE host \\2	3	http://example.com	http://example.com	http://example.com
+FIRE host \\2	4	http://www.x.com/	www.x.com	www.x.com
+FIRE host \\2	5	http://a.com/b/c/d	a.com	a.com
+FIRE host \\2	6	http://x.com:8080/a	x.com:8080	x.com:8080
+FIRE host \\2	7	https://user:pass@h.com/p	user:pass@h.com	user:pass@h.com
+FIRE host \\2	8	http://пример.рф/путь/q	пример.рф	пример.рф
+FIRE host \\2	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+FIRE host \\2	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+FIRE host \\2	11	http://trailing.slash.com/	trailing.slash.com	trailing.slash.com
+FIRE host \\2	12	https://www.sub.dom.co.uk/a/b?x=y#z	www.sub.dom.co.uk	www.sub.dom.co.uk
+FIRE host \\2	13	http://1.2.3.4/page	1.2.3.4	1.2.3.4
+FIRE host \\2	14	http://[::1]/v6	[::1]	[::1]
+FIRE host \\2	15	http://x/y	x	x
+FIRE host \\2	16	https://x.com	https://x.com	https://x.com
+FIRE host \\2	17	http://a b.com/p	a b.com	a b.com
+FIRE host \\2	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+FIRE host \\2	19	hello world	hello world	hello world
+FIRE host \\2	20			
+FIRE host \\2	21	http://www.www.com/x	www.www.com	www.www.com
+FIRE host \\2	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com	h.com
+FIRE host \\2	23	http://www.x.com/a\nb	www.x.com	www.x.com
+FIRE host \\2	24	http://x.com/\nfoo	x.com	x.com
+FIRE host \\2	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+FIRE host \\2	26	http://h.com/a\n	h.com	h.com
+FIRE host \\2	27	http://h.com/\n	h.com	h.com
+FIRE host \\2	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+FIRE host \\2	29	http://h.com/a\r\nb	h.com	h.com
+FIRE host \\2	30	http://h.com/a\tb	h.com	h.com
+FIRE host \\2	31	http://h.com/a\0b	h.com	h.com
+FIRE host \\2	32	a\nb	a\nb	a\nb
+FIRE host \\2	33	abc/def	abc/def	abc/def
+FIRE host \\2	34	abc	abc	abc
+FIRE host \\2	35	a/b/c	a/b/c	a/b/c
+FIRE host \\2	36	x/	x/	x/
+FIRE host \\2	37	noslashhere	noslashhere	noslashhere
+FIRE host \\2	38	a/	a/	a/
+FIRE host \\2	39	/leading	/leading	/leading
+FIRE host \\2	40	a//b	a//b	a//b
+FIRE host \\2	41	123-abc	123-abc	123-abc
+FIRE host \\2	42	abc-1	abc-1	abc-1
+FIRE host \\2	43	a.b.c	a.b.c	a.b.c
+FIRE host \\2	44	ab.c	ab.c	ab.c
+FIRE host \\2	45	seg/ab1	seg/ab1	seg/ab1
+FIRE host \\2	46	seg/x\ry	seg/x\ry	seg/x\ry
+FIRE dotall \\1	1	http://www.example.com/path/to/page?q=1	http:	http:
+FIRE dotall \\1	2	https://example.org/a	https:	https:
+FIRE dotall \\1	3	http://example.com	http:	http:
+FIRE dotall \\1	4	http://www.x.com/	http:	http:
+FIRE dotall \\1	5	http://a.com/b/c/d	http:	http:
+FIRE dotall \\1	6	http://x.com:8080/a	http:	http:
+FIRE dotall \\1	7	https://user:pass@h.com/p	https:	https:
+FIRE dotall \\1	8	http://пример.рф/путь/q	http:	http:
+FIRE dotall \\1	9	HTTP://UPPER.COM/x	HTTP:	HTTP:
+FIRE dotall \\1	10	http://only.host.no.slash	http:	http:
+FIRE dotall \\1	11	http://trailing.slash.com/	http:	http:
+FIRE dotall \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https:	https:
+FIRE dotall \\1	13	http://1.2.3.4/page	http:	http:
+FIRE dotall \\1	14	http://[::1]/v6	http:	http:
+FIRE dotall \\1	15	http://x/y	http:	http:
+FIRE dotall \\1	16	https://x.com	https:	https:
+FIRE dotall \\1	17	http://a b.com/p	http:	http:
+FIRE dotall \\1	18	ftp://nomatch.com/a	ftp:	ftp:
+FIRE dotall \\1	19	hello world	hello world	hello world
+FIRE dotall \\1	20			
+FIRE dotall \\1	21	http://www.www.com/x	http:	http:
+FIRE dotall \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http:	http:
+FIRE dotall \\1	23	http://www.x.com/a\nb	http:	http:
+FIRE dotall \\1	24	http://x.com/\nfoo	http:	http:
+FIRE dotall \\1	25	pre\nhttp://x.com/a	pre\nhttp:	pre\nhttp:
+FIRE dotall \\1	26	http://h.com/a\n	http:	http:
+FIRE dotall \\1	27	http://h.com/\n	http:	http:
+FIRE dotall \\1	28	\nhttp://h.com/a	\nhttp:	\nhttp:
+FIRE dotall \\1	29	http://h.com/a\r\nb	http:	http:
+FIRE dotall \\1	30	http://h.com/a\tb	http:	http:
+FIRE dotall \\1	31	http://h.com/a\0b	http:	http:
+FIRE dotall \\1	32	a\nb	a\nb	a\nb
+FIRE dotall \\1	33	abc/def	abc	abc
+FIRE dotall \\1	34	abc	abc	abc
+FIRE dotall \\1	35	a/b/c	a	a
+FIRE dotall \\1	36	x/	x	x
+FIRE dotall \\1	37	noslashhere	noslashhere	noslashhere
+FIRE dotall \\1	38	a/	a	a
+FIRE dotall \\1	39	/leading	/leading	/leading
+FIRE dotall \\1	40	a//b	a	a
+FIRE dotall \\1	41	123-abc	123-abc	123-abc
+FIRE dotall \\1	42	abc-1	abc-1	abc-1
+FIRE dotall \\1	43	a.b.c	a.b.c	a.b.c
+FIRE dotall \\1	44	ab.c	ab.c	ab.c
+FIRE dotall \\1	45	seg/ab1	seg	seg
+FIRE dotall \\1	46	seg/x\ry	seg	seg
+FIRE explicit[^nl] \\1	1	http://www.example.com/path/to/page?q=1	http:	http:
+FIRE explicit[^nl] \\1	2	https://example.org/a	https:	https:
+FIRE explicit[^nl] \\1	3	http://example.com	http:	http:
+FIRE explicit[^nl] \\1	4	http://www.x.com/	http:	http:
+FIRE explicit[^nl] \\1	5	http://a.com/b/c/d	http:	http:
+FIRE explicit[^nl] \\1	6	http://x.com:8080/a	http:	http:
+FIRE explicit[^nl] \\1	7	https://user:pass@h.com/p	https:	https:
+FIRE explicit[^nl] \\1	8	http://пример.рф/путь/q	http:	http:
+FIRE explicit[^nl] \\1	9	HTTP://UPPER.COM/x	HTTP:	HTTP:
+FIRE explicit[^nl] \\1	10	http://only.host.no.slash	http:	http:
+FIRE explicit[^nl] \\1	11	http://trailing.slash.com/	http:	http:
+FIRE explicit[^nl] \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https:	https:
+FIRE explicit[^nl] \\1	13	http://1.2.3.4/page	http:	http:
+FIRE explicit[^nl] \\1	14	http://[::1]/v6	http:	http:
+FIRE explicit[^nl] \\1	15	http://x/y	http:	http:
+FIRE explicit[^nl] \\1	16	https://x.com	https:	https:
+FIRE explicit[^nl] \\1	17	http://a b.com/p	http:	http:
+FIRE explicit[^nl] \\1	18	ftp://nomatch.com/a	ftp:	ftp:
+FIRE explicit[^nl] \\1	19	hello world	hello world	hello world
+FIRE explicit[^nl] \\1	20			
+FIRE explicit[^nl] \\1	21	http://www.www.com/x	http:	http:
+FIRE explicit[^nl] \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http:	http:
+FIRE explicit[^nl] \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+FIRE explicit[^nl] \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+FIRE explicit[^nl] \\1	25	pre\nhttp://x.com/a	pre\nhttp:	pre\nhttp:
+FIRE explicit[^nl] \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+FIRE explicit[^nl] \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+FIRE explicit[^nl] \\1	28	\nhttp://h.com/a	\nhttp:	\nhttp:
+FIRE explicit[^nl] \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+FIRE explicit[^nl] \\1	30	http://h.com/a\tb	http:	http:
+FIRE explicit[^nl] \\1	31	http://h.com/a\0b	http:	http:
+FIRE explicit[^nl] \\1	32	a\nb	a\nb	a\nb
+FIRE explicit[^nl] \\1	33	abc/def	abc	abc
+FIRE explicit[^nl] \\1	34	abc	abc	abc
+FIRE explicit[^nl] \\1	35	a/b/c	a	a
+FIRE explicit[^nl] \\1	36	x/	x	x
+FIRE explicit[^nl] \\1	37	noslashhere	noslashhere	noslashhere
+FIRE explicit[^nl] \\1	38	a/	a	a
+FIRE explicit[^nl] \\1	39	/leading	/leading	/leading
+FIRE explicit[^nl] \\1	40	a//b	a	a
+FIRE explicit[^nl] \\1	41	123-abc	123-abc	123-abc
+FIRE explicit[^nl] \\1	42	abc-1	abc-1	abc-1
+FIRE explicit[^nl] \\1	43	a.b.c	a.b.c	a.b.c
+FIRE explicit[^nl] \\1	44	ab.c	ab.c	ab.c
+FIRE explicit[^nl] \\1	45	seg/ab1	seg	seg
+FIRE explicit[^nl] \\1	46	seg/x\ry	seg	seg
+NOFIRE repl x\\1	1	http://www.example.com/path/to/page?q=1	xexample.com	xexample.com
+NOFIRE repl x\\1	2	https://example.org/a	xexample.org	xexample.org
+NOFIRE repl x\\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE repl x\\1	4	http://www.x.com/	xx.com	xx.com
+NOFIRE repl x\\1	5	http://a.com/b/c/d	xa.com	xa.com
+NOFIRE repl x\\1	6	http://x.com:8080/a	xx.com:8080	xx.com:8080
+NOFIRE repl x\\1	7	https://user:pass@h.com/p	xuser:pass@h.com	xuser:pass@h.com
+NOFIRE repl x\\1	8	http://пример.рф/путь/q	xпример.рф	xпример.рф
+NOFIRE repl x\\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE repl x\\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE repl x\\1	11	http://trailing.slash.com/	xtrailing.slash.com	xtrailing.slash.com
+NOFIRE repl x\\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	xsub.dom.co.uk	xsub.dom.co.uk
+NOFIRE repl x\\1	13	http://1.2.3.4/page	x1.2.3.4	x1.2.3.4
+NOFIRE repl x\\1	14	http://[::1]/v6	x[::1]	x[::1]
+NOFIRE repl x\\1	15	http://x/y	xx	xx
+NOFIRE repl x\\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE repl x\\1	17	http://a b.com/p	xa b.com	xa b.com
+NOFIRE repl x\\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE repl x\\1	19	hello world	hello world	hello world
+NOFIRE repl x\\1	20			
+NOFIRE repl x\\1	21	http://www.www.com/x	xwww.com	xwww.com
+NOFIRE repl x\\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	xh.com	xh.com
+NOFIRE repl x\\1	23	http://www.x.com/a\nb	xx.com	xx.com
+NOFIRE repl x\\1	24	http://x.com/\nfoo	xx.com	xx.com
+NOFIRE repl x\\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE repl x\\1	26	http://h.com/a\n	xh.com	xh.com
+NOFIRE repl x\\1	27	http://h.com/\n	xh.com	xh.com
+NOFIRE repl x\\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE repl x\\1	29	http://h.com/a\r\nb	xh.com	xh.com
+NOFIRE repl x\\1	30	http://h.com/a\tb	xh.com	xh.com
+NOFIRE repl x\\1	31	http://h.com/a\0b	xh.com	xh.com
+NOFIRE repl x\\1	32	a\nb	a\nb	a\nb
+NOFIRE repl x\\1	33	abc/def	abc/def	abc/def
+NOFIRE repl x\\1	34	abc	abc	abc
+NOFIRE repl x\\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE repl x\\1	36	x/	x/	x/
+NOFIRE repl x\\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE repl x\\1	38	a/	a/	a/
+NOFIRE repl x\\1	39	/leading	/leading	/leading
+NOFIRE repl x\\1	40	a//b	a//b	a//b
+NOFIRE repl x\\1	41	123-abc	123-abc	123-abc
+NOFIRE repl x\\1	42	abc-1	abc-1	abc-1
+NOFIRE repl x\\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE repl x\\1	44	ab.c	ab.c	ab.c
+NOFIRE repl x\\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE repl x\\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE repl \\2-\\1	1	http://www.example.com/path/to/page?q=1	www.example.com-http	www.example.com-http
+NOFIRE repl \\2-\\1	2	https://example.org/a	example.org-https	example.org-https
+NOFIRE repl \\2-\\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE repl \\2-\\1	4	http://www.x.com/	www.x.com-http	www.x.com-http
+NOFIRE repl \\2-\\1	5	http://a.com/b/c/d	a.com-http	a.com-http
+NOFIRE repl \\2-\\1	6	http://x.com:8080/a	x.com:8080-http	x.com:8080-http
+NOFIRE repl \\2-\\1	7	https://user:pass@h.com/p	user:pass@h.com-https	user:pass@h.com-https
+NOFIRE repl \\2-\\1	8	http://пример.рф/путь/q	пример.рф-http	пример.рф-http
+NOFIRE repl \\2-\\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE repl \\2-\\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE repl \\2-\\1	11	http://trailing.slash.com/	trailing.slash.com-http	trailing.slash.com-http
+NOFIRE repl \\2-\\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	www.sub.dom.co.uk-https	www.sub.dom.co.uk-https
+NOFIRE repl \\2-\\1	13	http://1.2.3.4/page	1.2.3.4-http	1.2.3.4-http
+NOFIRE repl \\2-\\1	14	http://[::1]/v6	[::1]-http	[::1]-http
+NOFIRE repl \\2-\\1	15	http://x/y	x-http	x-http
+NOFIRE repl \\2-\\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE repl \\2-\\1	17	http://a b.com/p	a b.com-http	a b.com-http
+NOFIRE repl \\2-\\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE repl \\2-\\1	19	hello world	hello world	hello world
+NOFIRE repl \\2-\\1	20			
+NOFIRE repl \\2-\\1	21	http://www.www.com/x	www.www.com-http	www.www.com-http
+NOFIRE repl \\2-\\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	23	http://www.x.com/a\nb	www.x.com-http	www.x.com-http
+NOFIRE repl \\2-\\1	24	http://x.com/\nfoo	x.com-http	x.com-http
+NOFIRE repl \\2-\\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE repl \\2-\\1	26	http://h.com/a\n	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	27	http://h.com/\n	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE repl \\2-\\1	29	http://h.com/a\r\nb	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	30	http://h.com/a\tb	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	31	http://h.com/a\0b	h.com-http	h.com-http
+NOFIRE repl \\2-\\1	32	a\nb	a\nb	a\nb
+NOFIRE repl \\2-\\1	33	abc/def	abc/def	abc/def
+NOFIRE repl \\2-\\1	34	abc	abc	abc
+NOFIRE repl \\2-\\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE repl \\2-\\1	36	x/	x/	x/
+NOFIRE repl \\2-\\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE repl \\2-\\1	38	a/	a/	a/
+NOFIRE repl \\2-\\1	39	/leading	/leading	/leading
+NOFIRE repl \\2-\\1	40	a//b	a//b	a//b
+NOFIRE repl \\2-\\1	41	123-abc	123-abc	123-abc
+NOFIRE repl \\2-\\1	42	abc-1	abc-1	abc-1
+NOFIRE repl \\2-\\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE repl \\2-\\1	44	ab.c	ab.c	ab.c
+NOFIRE repl \\2-\\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE repl \\2-\\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE astar_tail \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE astar_tail \\1	2	https://example.org/a	example.org	example.org
+NOFIRE astar_tail \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE astar_tail \\1	4	http://www.x.com/	www.x.com	www.x.com
+NOFIRE astar_tail \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE astar_tail \\1	6	http://x.com:8080/a	x.com:8080	x.com:8080
+NOFIRE astar_tail \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE astar_tail \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE astar_tail \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE astar_tail \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE astar_tail \\1	11	http://trailing.slash.com/	trailing.slash.com	trailing.slash.com
+NOFIRE astar_tail \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE astar_tail \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE astar_tail \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE astar_tail \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE astar_tail \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE astar_tail \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE astar_tail \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE astar_tail \\1	19	hello world	hello world	hello world
+NOFIRE astar_tail \\1	20			
+NOFIRE astar_tail \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE astar_tail \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE astar_tail \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE astar_tail \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE astar_tail \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE astar_tail \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE astar_tail \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE astar_tail \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE astar_tail \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE astar_tail \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE astar_tail \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE astar_tail \\1	32	a\nb	a\nb	a\nb
+NOFIRE astar_tail \\1	33	abc/def	abc/def	abc/def
+NOFIRE astar_tail \\1	34	abc	abc	abc
+NOFIRE astar_tail \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE astar_tail \\1	36	x/	x/	x/
+NOFIRE astar_tail \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE astar_tail \\1	38	a/	a/	a/
+NOFIRE astar_tail \\1	39	/leading	/leading	/leading
+NOFIRE astar_tail \\1	40	a//b	a//b	a//b
+NOFIRE astar_tail \\1	41	123-abc	123-abc	123-abc
+NOFIRE astar_tail \\1	42	abc-1	abc-1	abc-1
+NOFIRE astar_tail \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE astar_tail \\1	44	ab.c	ab.c	ab.c
+NOFIRE astar_tail \\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE astar_tail \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE no_dotstar \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE no_dotstar \\1	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE no_dotstar \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE no_dotstar \\1	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE no_dotstar \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE no_dotstar \\1	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE no_dotstar \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE no_dotstar \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE no_dotstar \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE no_dotstar \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE no_dotstar \\1	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE no_dotstar \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE no_dotstar \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE no_dotstar \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE no_dotstar \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE no_dotstar \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE no_dotstar \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE no_dotstar \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE no_dotstar \\1	19	hello world	hello world	hello world
+NOFIRE no_dotstar \\1	20			
+NOFIRE no_dotstar \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE no_dotstar \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE no_dotstar \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE no_dotstar \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE no_dotstar \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE no_dotstar \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE no_dotstar \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE no_dotstar \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE no_dotstar \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE no_dotstar \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE no_dotstar \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE no_dotstar \\1	32	a\nb	a\nb	a\nb
+NOFIRE no_dotstar \\1	33	abc/def	abc/def	abc/def
+NOFIRE no_dotstar \\1	34	abc	a	a
+NOFIRE no_dotstar \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE no_dotstar \\1	36	x/	x/	x/
+NOFIRE no_dotstar \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE no_dotstar \\1	38	a/	a/	a/
+NOFIRE no_dotstar \\1	39	/leading	/leading	/leading
+NOFIRE no_dotstar \\1	40	a//b	a//b	a//b
+NOFIRE no_dotstar \\1	41	123-abc	123-abc	123-abc
+NOFIRE no_dotstar \\1	42	abc-1	abc-1	abc-1
+NOFIRE no_dotstar \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE no_dotstar \\1	44	ab.c	ab.c	ab.c
+NOFIRE no_dotstar \\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE no_dotstar \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE no_begin \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE no_begin \\1	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE no_begin \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE no_begin \\1	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE no_begin \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE no_begin \\1	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE no_begin \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE no_begin \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE no_begin \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE no_begin \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE no_begin \\1	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE no_begin \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE no_begin \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE no_begin \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE no_begin \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE no_begin \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE no_begin \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE no_begin \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE no_begin \\1	19	hello world	hello world	hello world
+NOFIRE no_begin \\1	20			
+NOFIRE no_begin \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE no_begin \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE no_begin \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE no_begin \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE no_begin \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE no_begin \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE no_begin \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE no_begin \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE no_begin \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE no_begin \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE no_begin \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE no_begin \\1	32	a\nb	a\nb	a\nb
+NOFIRE no_begin \\1	33	abc/def	abc/def	abc/def
+NOFIRE no_begin \\1	34	abc	abc	abc
+NOFIRE no_begin \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE no_begin \\1	36	x/	x/	x/
+NOFIRE no_begin \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE no_begin \\1	38	a/	a/	a/
+NOFIRE no_begin \\1	39	/leading	/leading	/leading
+NOFIRE no_begin \\1	40	a//b	a//b	a//b
+NOFIRE no_begin \\1	41	123-abc	123-abc	123-abc
+NOFIRE no_begin \\1	42	abc-1	abc-1	abc-1
+NOFIRE no_begin \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE no_begin \\1	44	ab.c	ab.c	ab.c
+NOFIRE no_begin \\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE no_begin \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE no_end \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE no_end \\1	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE no_end \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE no_end \\1	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE no_end \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE no_end \\1	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE no_end \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE no_end \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE no_end \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE no_end \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE no_end \\1	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE no_end \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE no_end \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE no_end \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE no_end \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE no_end \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE no_end \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE no_end \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE no_end \\1	19	hello world	hello world	hello world
+NOFIRE no_end \\1	20			
+NOFIRE no_end \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE no_end \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE no_end \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE no_end \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE no_end \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE no_end \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE no_end \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE no_end \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE no_end \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE no_end \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE no_end \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE no_end \\1	32	a\nb	a\nb	a\nb
+NOFIRE no_end \\1	33	abc/def	abc/def	abc/def
+NOFIRE no_end \\1	34	abc	abc	abc
+NOFIRE no_end \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE no_end \\1	36	x/	x/	x/
+NOFIRE no_end \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE no_end \\1	38	a/	a/	a/
+NOFIRE no_end \\1	39	/leading	/leading	/leading
+NOFIRE no_end \\1	40	a//b	a//b	a//b
+NOFIRE no_end \\1	41	123-abc	123-abc	123-abc
+NOFIRE no_end \\1	42	abc-1	abc-1	abc-1
+NOFIRE no_end \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE no_end \\1	44	ab.c	ab.c	ab.c
+NOFIRE no_end \\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE no_end \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE multiline \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE multiline \\1	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE multiline \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE multiline \\1	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE multiline \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE multiline \\1	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE multiline \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE multiline \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE multiline \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE multiline \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE multiline \\1	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE multiline \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE multiline \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE multiline \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE multiline \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE multiline \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE multiline \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE multiline \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE multiline \\1	19	hello world	hello world	hello world
+NOFIRE multiline \\1	20			
+NOFIRE multiline \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE multiline \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE multiline \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE multiline \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE multiline \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE multiline \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE multiline \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE multiline \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE multiline \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE multiline \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE multiline \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE multiline \\1	32	a\nb	a\nb	a\nb
+NOFIRE multiline \\1	33	abc/def	abc/def	abc/def
+NOFIRE multiline \\1	34	abc	abc	abc
+NOFIRE multiline \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE multiline \\1	36	x/	x/	x/
+NOFIRE multiline \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE multiline \\1	38	a/	a/	a/
+NOFIRE multiline \\1	39	/leading	/leading	/leading
+NOFIRE multiline \\1	40	a//b	a//b	a//b
+NOFIRE multiline \\1	41	123-abc	123-abc	123-abc
+NOFIRE multiline \\1	42	abc-1	abc-1	abc-1
+NOFIRE multiline \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE multiline \\1	44	ab.c	ab.c	ab.c
+NOFIRE multiline \\1	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE multiline \\1	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE group_is_dotstar	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE group_is_dotstar	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE group_is_dotstar	3	http://example.com	http://example.com	http://example.com
+NOFIRE group_is_dotstar	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE group_is_dotstar	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE group_is_dotstar	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE group_is_dotstar	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE group_is_dotstar	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE group_is_dotstar	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE group_is_dotstar	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE group_is_dotstar	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE group_is_dotstar	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE group_is_dotstar	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE group_is_dotstar	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE group_is_dotstar	15	http://x/y	http://x/y	http://x/y
+NOFIRE group_is_dotstar	16	https://x.com	https://x.com	https://x.com
+NOFIRE group_is_dotstar	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE group_is_dotstar	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE group_is_dotstar	19	hello world	hello world	hello world
+NOFIRE group_is_dotstar	20			
+NOFIRE group_is_dotstar	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE group_is_dotstar	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE group_is_dotstar	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE group_is_dotstar	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE group_is_dotstar	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE group_is_dotstar	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE group_is_dotstar	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE group_is_dotstar	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE group_is_dotstar	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE group_is_dotstar	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE group_is_dotstar	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE group_is_dotstar	32	a\nb	a\nb	a\nb
+NOFIRE group_is_dotstar	33	abc/def	abc/def	abc/def
+NOFIRE group_is_dotstar	34	abc	abc	abc
+NOFIRE group_is_dotstar	35	a/b/c	a/b/c	a/b/c
+NOFIRE group_is_dotstar	36	x/	x/	x/
+NOFIRE group_is_dotstar	37	noslashhere	noslashhere	noslashhere
+NOFIRE group_is_dotstar	38	a/	a/	a/
+NOFIRE group_is_dotstar	39	/leading	/leading	/leading
+NOFIRE group_is_dotstar	40	a//b	a//b	a//b
+NOFIRE group_is_dotstar	41	123-abc	123-abc	123-abc
+NOFIRE group_is_dotstar	42	abc-1	abc-1	abc-1
+NOFIRE group_is_dotstar	43	a.b.c	a.b.c	a.b.c
+NOFIRE group_is_dotstar	44	ab.c	ab.c	ab.c
+NOFIRE group_is_dotstar	45	seg/ab1	seg/ab1	seg/ab1
+NOFIRE group_is_dotstar	46	seg/x\ry	seg/x\ry	seg/x\ry
+NOFIRE tail[^/]* \\1	1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1	http://www.example.com/path/to/page?q=1
+NOFIRE tail[^/]* \\1	2	https://example.org/a	https://example.org/a	https://example.org/a
+NOFIRE tail[^/]* \\1	3	http://example.com	http://example.com	http://example.com
+NOFIRE tail[^/]* \\1	4	http://www.x.com/	http://www.x.com/	http://www.x.com/
+NOFIRE tail[^/]* \\1	5	http://a.com/b/c/d	http://a.com/b/c/d	http://a.com/b/c/d
+NOFIRE tail[^/]* \\1	6	http://x.com:8080/a	http://x.com:8080/a	http://x.com:8080/a
+NOFIRE tail[^/]* \\1	7	https://user:pass@h.com/p	https://user:pass@h.com/p	https://user:pass@h.com/p
+NOFIRE tail[^/]* \\1	8	http://пример.рф/путь/q	http://пример.рф/путь/q	http://пример.рф/путь/q
+NOFIRE tail[^/]* \\1	9	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x	HTTP://UPPER.COM/x
+NOFIRE tail[^/]* \\1	10	http://only.host.no.slash	http://only.host.no.slash	http://only.host.no.slash
+NOFIRE tail[^/]* \\1	11	http://trailing.slash.com/	http://trailing.slash.com/	http://trailing.slash.com/
+NOFIRE tail[^/]* \\1	12	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z	https://www.sub.dom.co.uk/a/b?x=y#z
+NOFIRE tail[^/]* \\1	13	http://1.2.3.4/page	http://1.2.3.4/page	http://1.2.3.4/page
+NOFIRE tail[^/]* \\1	14	http://[::1]/v6	http://[::1]/v6	http://[::1]/v6
+NOFIRE tail[^/]* \\1	15	http://x/y	http://x/y	http://x/y
+NOFIRE tail[^/]* \\1	16	https://x.com	https://x.com	https://x.com
+NOFIRE tail[^/]* \\1	17	http://a b.com/p	http://a b.com/p	http://a b.com/p
+NOFIRE tail[^/]* \\1	18	ftp://nomatch.com/a	ftp://nomatch.com/a	ftp://nomatch.com/a
+NOFIRE tail[^/]* \\1	19	hello world	hello world	hello world
+NOFIRE tail[^/]* \\1	20			
+NOFIRE tail[^/]* \\1	21	http://www.www.com/x	http://www.www.com/x	http://www.www.com/x
+NOFIRE tail[^/]* \\1	22	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2	http://h.com/very/long/path/segment/here?a=1&b=2
+NOFIRE tail[^/]* \\1	23	http://www.x.com/a\nb	http://www.x.com/a\nb	http://www.x.com/a\nb
+NOFIRE tail[^/]* \\1	24	http://x.com/\nfoo	http://x.com/\nfoo	http://x.com/\nfoo
+NOFIRE tail[^/]* \\1	25	pre\nhttp://x.com/a	pre\nhttp://x.com/a	pre\nhttp://x.com/a
+NOFIRE tail[^/]* \\1	26	http://h.com/a\n	http://h.com/a\n	http://h.com/a\n
+NOFIRE tail[^/]* \\1	27	http://h.com/\n	http://h.com/\n	http://h.com/\n
+NOFIRE tail[^/]* \\1	28	\nhttp://h.com/a	\nhttp://h.com/a	\nhttp://h.com/a
+NOFIRE tail[^/]* \\1	29	http://h.com/a\r\nb	http://h.com/a\r\nb	http://h.com/a\r\nb
+NOFIRE tail[^/]* \\1	30	http://h.com/a\tb	http://h.com/a\tb	http://h.com/a\tb
+NOFIRE tail[^/]* \\1	31	http://h.com/a\0b	http://h.com/a\0b	http://h.com/a\0b
+NOFIRE tail[^/]* \\1	32	a\nb	a\nb	a\nb
+NOFIRE tail[^/]* \\1	33	abc/def	abc	abc
+NOFIRE tail[^/]* \\1	34	abc	abc	abc
+NOFIRE tail[^/]* \\1	35	a/b/c	a/b/c	a/b/c
+NOFIRE tail[^/]* \\1	36	x/	x	x
+NOFIRE tail[^/]* \\1	37	noslashhere	noslashhere	noslashhere
+NOFIRE tail[^/]* \\1	38	a/	a	a
+NOFIRE tail[^/]* \\1	39	/leading	/leading	/leading
+NOFIRE tail[^/]* \\1	40	a//b	a//b	a//b
+NOFIRE tail[^/]* \\1	41	123-abc	123-abc	123-abc
+NOFIRE tail[^/]* \\1	42	abc-1	abc-1	abc-1
+NOFIRE tail[^/]* \\1	43	a.b.c	a.b.c	a.b.c
+NOFIRE tail[^/]* \\1	44	ab.c	ab.c	ab.c
+NOFIRE tail[^/]* \\1	45	seg/ab1	seg	seg
+NOFIRE tail[^/]* \\1	46	seg/x\ry	seg	seg
+FS q28 \\1	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	6578616D706C652E636F6D	6578616D706C652E636F6D
+FS q28 \\1	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000
+FS q28 \\1	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
+FS q28 \\1	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	782E636F6D3A38303830	782E636F6D3A38303830
+FS q28 \\1	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
+FS q28 \\1	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	D0BFD180D0B8D0BCD0B5D1802ED180D184	D0BFD180D0B8D0BCD0B5D1802ED180D184
+FS q28 \\1	7	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
+FS q28 \\1	8	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000	68	68
+FS q28 \\1	9	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000
+FS q28 \\1	10	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000
+FS host \\2	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	7777772E6578616D706C652E636F6D	7777772E6578616D706C652E636F6D
+FS host \\2	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000
+FS host \\2	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
+FS host \\2	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	782E636F6D3A38303830	782E636F6D3A38303830
+FS host \\2	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
+FS host \\2	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	D0BFD180D0B8D0BCD0B5D1802ED180D184	D0BFD180D0B8D0BCD0B5D1802ED180D184
+FS host \\2	7	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000	682E636F6D	682E636F6D
+FS host \\2	8	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000	68	68
+FS host \\2	9	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000
+FS host \\2	10	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000
+FS dotall \\1	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
+FS dotall \\1	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	7	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	8	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000	687474703A	687474703A
+FS dotall \\1	9	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000
+FS dotall \\1	10	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	61	61
+FS noanchor \\1	1	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000	687474703A2F2F7777772E6578616D706C652E636F6D2F7000000000000000000000000000000000
+FS noanchor \\1	2	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D00000000000000000000000000000000000000000000000000000000
+FS noanchor \\1	3	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F610A62000000000000000000000000000000000000000000000000
+FS noanchor \\1	4	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000	687474703A2F2F782E636F6D3A383038302F70617468000000000000000000000000000000000000
+FS noanchor \\1	5	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000	00000000000000000000000000000000000000000000000000000000000000000000000000000000
+FS noanchor \\1	6	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000	687474703A2F2FD0BFD180D0B8D0BCD0B5D1802ED180D1842F710000000000000000000000000000
+FS noanchor \\1	7	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000	687474703A2F2F682E636F6D2F000000000000000000000000000000000000000000000000000000
+FS noanchor \\1	8	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000	687474703A2F2F682F61006200000000000000000000000000000000000000000000000000000000
+FS noanchor \\1	9	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000	6E6F2D6D617463680000000000000000000000000000000000000000000000000000000000000000
+FS noanchor \\1	10	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000	612F622F630000000000000000000000000000000000000000000000000000000000000000000000
+ml_end \\1	0
+ml_begin \\1	0
+ml_nested \\1	0
+ml_end \\1	1	610A62	61	61
+ml_end \\1	2	610A625A5A	61	61
+ml_end \\1	3	780A610A62	780A610A62	780A610A62
+ml_end \\1	4	717171	717171	717171
+ml_end \\1	5	610A620A63	61	61
+utf8 non-dotall \\1	0
+utf8 dotall \\1	0
+utf8 non-dotall \\1	1	612FFF	612FFF	612FFF
+utf8 non-dotall \\1	2	612F62	61	61
+utf8 non-dotall \\1	3	612FC328	612FC328	612FC328
+utf8 non-dotall \\1	4	612FD18F	61	61
+utf8 non-dotall \\1	5	612FEDA080	61	61
+utf8 non-dotall \\1	6	7A7A7A	7A7A7A	7A7A7A
