@@ -13,6 +13,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -470,6 +472,27 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         apply(result->joins);
 }
 
+/// The shard is selected by the hash of the join key's byte representation
+/// (`ScatterByPartitionTransform` -> `IColumn::computeHashInto`), while `FullSortingMergeJoin` matches keys
+/// with `compareAt`. For floating-point values the two disagree: `-0.0` and `+0.0` (and NaNs) compare equal
+/// for the merge but hash differently. Sharding by the hash would therefore scatter such equal keys into
+/// different shards, and the per-shard merge join would never see the match, returning fewer rows than the
+/// `full_sorting_merge` algorithm this one is documented to mirror. This detects a floating-point key type,
+/// including a float nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`.
+static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
+{
+    if (WhichDataType(type).isFloat())
+        return true;
+
+    bool has_float = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
 /// join keys.
 ///
@@ -526,14 +549,37 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                     && left_sort->getType() == SortingStep::Type::Full
                     && right_sort->getType() == SortingStep::Type::Full)
                 {
-                    left_sort->convertToScatteredFullSort(num_shards);
-                    right_sort->convertToScatteredFullSort(num_shards);
-
-                    JoinStep::PrimaryKeySharding sharding;
                     const auto & clause = table_join.getClauses().front();
-                    for (size_t i = 0; i < clause.key_names_left.size(); ++i)
-                        sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
-                    join_step->enableJoinByLayers(std::move(sharding));
+                    const auto & left_header = left_sort->getOutputHeader();
+                    const auto & right_header = right_sort->getOutputHeader();
+
+                    /// Do not shard when a join key is (or contains) a floating-point type: its hash-based
+                    /// shard selection is not consistent with the merge-join `compareAt` (`-0.0` == `+0.0`,
+                    /// NaN == NaN), so equal keys could land in different shards and the match would be lost
+                    /// (see `joinKeyTypeBreaksHashSharding`). If a key column cannot be found to check its
+                    /// type, be conservative and skip sharding as well. The join then runs as a single merge
+                    /// join, exactly like `full_sorting_merge`.
+                    bool can_shard = left_header && right_header;
+                    for (size_t i = 0; can_shard && i < clause.key_names_left.size(); ++i)
+                    {
+                        const auto * left_key = left_header->findByName(clause.key_names_left[i]);
+                        const auto * right_key = right_header->findByName(clause.key_names_right[i]);
+                        if (!left_key || !right_key
+                            || joinKeyTypeBreaksHashSharding(*left_key->type)
+                            || joinKeyTypeBreaksHashSharding(*right_key->type))
+                            can_shard = false;
+                    }
+
+                    if (can_shard)
+                    {
+                        left_sort->convertToScatteredFullSort(num_shards);
+                        right_sort->convertToScatteredFullSort(num_shards);
+
+                        JoinStep::PrimaryKeySharding sharding;
+                        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+                            sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
+                        join_step->enableJoinByLayers(std::move(sharding));
+                    }
                 }
             }
         }
