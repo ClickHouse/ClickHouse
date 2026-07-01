@@ -155,11 +155,18 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
                 port = 80;
         }
 
-        if (config.has(prefix + ".userpass"))
-        {
-            if (config.has(prefix + ".token"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple auth methods are specified for vault.");
+        bool has_token = config.has(prefix + ".token");
+        bool has_userpass = config.has(prefix + ".userpass");
+        bool has_cert = config.has(prefix + ".cert");
 
+        int auth_count = has_token + has_userpass + has_cert;
+        if (auth_count == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Auth sections are not specified for vault.");
+        if (auth_count > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple auth methods are specified for vault.");
+
+        if (has_userpass)
+        {
             username = config.getString(prefix + ".userpass.username", "");
             password = config.getString(prefix + ".userpass.password", "");
 
@@ -171,7 +178,7 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
 
             auth_method = HashiCorpVaultAuthMethod::Userpass;
         }
-        else if (config.has(prefix + ".cert"))
+        else if (has_cert)
         {
 #if USE_SSL
             cert_name = config.getString(prefix + ".cert.name", "");
@@ -186,9 +193,6 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         }
         else
         {
-            if (!config.has(prefix + ".token"))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Auth sections are not specified for vault.");
-
             token = config.getString(prefix + ".token", "");
 
             if (token.empty())

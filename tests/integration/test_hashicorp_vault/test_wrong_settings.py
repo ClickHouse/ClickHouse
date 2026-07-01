@@ -103,3 +103,19 @@ def test_vault_not_loaded():
         "configs/users_no_vault.xml",
         "vault is not loaded",
     )
+
+
+def test_userpass_with_cert():
+    start_clickhouse(
+        "configs/config_userpass_with_cert.xml",
+        "configs/users.xml",
+        "DB::Exception: Multiple auth methods are specified for vault",
+    )
+
+
+def test_cert_with_token():
+    start_clickhouse(
+        "configs/config_cert_with_token.xml",
+        "configs/users.xml",
+        "DB::Exception: Multiple auth methods are specified for vault",
+    )
