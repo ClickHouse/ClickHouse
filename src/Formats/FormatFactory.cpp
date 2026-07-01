@@ -123,12 +123,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
+    format_settings.csv.header_serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_header_serialize_tuple_into_separate_columns];
     format_settings.csv.deserialize_separate_columns_into_tuple = settings[Setting::input_format_csv_deserialize_separate_columns_into_tuple];
     format_settings.csv.crlf_end_of_line = settings[Setting::output_format_csv_crlf_end_of_line];
     format_settings.csv.allow_cr_end_of_line = settings[Setting::input_format_csv_allow_cr_end_of_line];
     format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.empty_as_default = settings[Setting::input_format_csv_empty_as_default];
+    format_settings.csv.missing_nullable_as_empty_string = settings[Setting::input_format_csv_missing_nullable_as_empty_string];
     format_settings.csv.enum_as_number = settings[Setting::input_format_csv_enum_as_number];
     format_settings.csv.null_representation = settings[Setting::format_csv_null_representation];
     format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
