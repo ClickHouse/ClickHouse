@@ -224,7 +224,7 @@ TEST(CodecPcoMalformedBlock, RejectsMalformedIntMultDecomposition)
     /// into the real header round-trips through `codec->decompress`. This proves the splice harness and
     /// the stream builder are sound, so the rejections below are attributable to the decomposition guard.
     {
-        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base=*/3, /*primary=*/2));
+        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base_latent=*/3, /*primary_latent=*/2));
         ASSERT_NO_THROW(codec->decompress(frame.data(), static_cast<UInt32>(frame.size()), reinterpret_cast<char *>(&decoded)));
         EXPECT_EQ(decoded, 6u);
     }
@@ -232,13 +232,13 @@ TEST(CodecPcoMalformedBlock, RejectsMalformedIntMultDecomposition)
     /// `primary * base` overflowing the 32-bit latent fabricates a value by wrapping; the decoder must
     /// fail closed instead of returning it, even though the block reaches it via the shared frame reader.
     {
-        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base=*/0x10000, /*primary=*/0x10000));
+        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base_latent=*/0x10000, /*primary_latent=*/0x10000));
         EXPECT_THROW(codec->decompress(frame.data(), static_cast<UInt32>(frame.size()), reinterpret_cast<char *>(&decoded)), Exception);
     }
 
     /// `base == 0` is never a valid IntMult base.
     {
-        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base=*/0, /*primary=*/5));
+        const auto frame = spliceStandalone(valid, buildIntMultStandaloneU32(/*base_latent=*/0, /*primary_latent=*/5));
         EXPECT_THROW(codec->decompress(frame.data(), static_cast<UInt32>(frame.size()), reinterpret_cast<char *>(&decoded)), Exception);
     }
 }

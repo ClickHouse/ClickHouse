@@ -262,16 +262,16 @@ TEST(CodecPcoEncodeBounds, IntMultDecompositionFailsClosed)
 TEST(CodecPcoEncodeBounds, FloatQuantDecompositionFailsClosed)
 {
     /// A well-formed single-value stream decodes cleanly (k = 3; primary and m both in range).
-    ASSERT_NO_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/3, /*primary=*/5, /*m=*/4)));
-    ASSERT_NO_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/3, /*primary=*/5, /*m=*/4)));
+    ASSERT_NO_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/3, /*primary_latent=*/5, /*secondary_latent=*/4)));
+    ASSERT_NO_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/3, /*primary_latent=*/5, /*secondary_latent=*/4)));
 
     /// `m` above `(1 << k) - 1` is out of range: with k = 1 the only valid `m` are 0 and 1.
-    EXPECT_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/1, /*primary=*/0, /*m=*/5)), PcodecError);
-    EXPECT_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/1, /*primary=*/0, /*m=*/5)), PcodecError);
+    EXPECT_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/1, /*primary_latent=*/0, /*secondary_latent=*/5)), PcodecError);
+    EXPECT_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/1, /*primary_latent=*/0, /*secondary_latent=*/5)), PcodecError);
 
     /// `primary` occupying more than `latentBits - k` bits makes `primary << k` drop its high bits.
-    EXPECT_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/1, /*primary=*/0x80000000u, /*m=*/0)), PcodecError);
-    EXPECT_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/1, /*primary=*/0x8000000000000000ULL, /*m=*/0)), PcodecError);
+    EXPECT_THROW(decodeSingle<float>(buildFloatQuantStream<float>(/*k=*/1, /*primary_latent=*/0x80000000u, /*secondary_latent=*/0)), PcodecError);
+    EXPECT_THROW(decodeSingle<double>(buildFloatQuantStream<double>(/*k=*/1, /*primary_latent=*/0x8000000000000000ULL, /*secondary_latent=*/0)), PcodecError);
 }
 
 /// Incompressible data spanning several `ENCODE_CHUNK_N` chunks: every chunk is at the no-expansion
