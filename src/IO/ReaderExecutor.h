@@ -101,10 +101,6 @@ public:
         /// (hits as well as misses) on every tier into the geometry, pins them, and reuses
         /// the plan across read-extent advances while the cursor stays inside the pinned span.
         size_t plan_look_ahead_max_window = DEFAULT_PLAN_LOOK_AHEAD_MAX_WINDOW;
-        /// Route the synchronous foreground serve through the same FetchMachine flow as the
-        /// prefetch (run inline by a `LocalFetchMachineRunner`). When false, the legacy
-        /// synchronous read-and-assemble path serves the foreground.
-        bool unified_foreground = true;
         /// Long-connection sizing bounds (see `DEFAULT_LONG_CONNECTION_OPEN_RANGE` /
         /// `DEFAULT_LONG_CONNECTION_MAX_BOUND`).
         size_t long_connection_open_range = DEFAULT_LONG_CONNECTION_OPEN_RANGE;
@@ -971,8 +967,6 @@ private:
     size_t max_tail_for_drain;
     /// Single fixed size for the plan window (Options).
     size_t plan_look_ahead_max_window;
-    /// Run the foreground serve through an inline FetchMachine instead of the legacy sync path (Options).
-    bool unified_foreground;
     /// Long-connection sizing bounds (Options): open range floor and hard cap.
     size_t long_connection_open_range;
     size_t long_connection_max_bound;
@@ -1008,8 +1002,8 @@ private:
     /// Drives the read-ahead (pool) FETCH machines only.
     std::unique_ptr<IFetchMachineRunner> runner;
     /// Inline driver, always present: runs a foreground serve machine synchronously on the read
-    /// thread (`unified_foreground`). Also the fallback collect-runner when there is no pool - its
-    /// verbs no-op on a settled inline machine (null `current_step`).
+    /// thread. Also the fallback collect-runner when there is no pool - its verbs no-op on a
+    /// settled inline machine (null `current_step`).
     std::unique_ptr<IFetchMachineRunner> local_runner;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY

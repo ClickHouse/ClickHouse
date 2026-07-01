@@ -3746,7 +3746,6 @@ TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
     opts.window_size = 2 * segment_size;   /// one window spans S0 + S1, so it straddles the boundary
     opts.min_bytes_for_seek = 0;
     opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    opts.unified_foreground = true;        /// the feature under test; NO prefetch_pool -> pure inline
 
     std::latch holding{1};      /// sibling holds S1's downloader (DOWNLOADING)
     std::latch go_commit{1};    /// main lets the sibling commit S1 (after window 1 returns)

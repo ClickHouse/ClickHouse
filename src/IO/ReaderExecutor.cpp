@@ -245,7 +245,6 @@ ReaderExecutor::ReaderExecutor(
     , block_size(options.block_size)
     , max_tail_for_drain(options.max_tail_for_drain)
     , plan_look_ahead_max_window(options.plan_look_ahead_max_window)
-    , unified_foreground(options.unified_foreground)
     , long_connection_open_range(options.long_connection_open_range)
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
@@ -764,11 +763,9 @@ ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, siz
         /// Promote this run up into any faster tier that misses it (no-op when served from
         /// the fastest tier or nothing faster populates), inline on the serve thread.
         maybePromote(run.tier, ByteRange{pos, got}, chunk, stats);
-        /// ...and (unified path only - the legacy path down-fills via `assembleAndWriteBack`) down-
-        /// fill it into any lower cell the schedule marked for cross-cache fill, so an embedded
-        /// upper-tier hit completes the lower segment without a remote over-read.
-        if (unified_foreground)
-            downFillScheduledLower(ByteRange{pos, got}, chunk, stats);
+        /// ...and down-fill it into any lower cell the schedule marked for cross-cache fill, so an
+        /// embedded upper-tier hit completes the lower segment without a remote over-read.
+        downFillScheduledLower(ByteRange{pos, got}, chunk, stats);
         chain.append(std::move(chunk));
         pos += got;
         if (pos < serve_end)
@@ -2494,24 +2491,21 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         return {};
     ByteRange window_phys{position_phys, want};
 
-    /// Unified foreground: run the fill INLINE on the serve thread (the same `FetchMachine` flow as
-    /// the background, driven by a local runner) until the cells cover the cursor window, then serve
-    /// from the just-committed cells. The fill starts at the cell's append-only frontier (see the
-    /// loop) and runs the plan's jobs locally - the foreground does not invent new jobs. A machine
-    /// already in flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds
-    /// the single slot, so we leave it and let the cell-serve / fallback below handle this window.
+    /// Run the fill INLINE on the serve thread (the same `FetchMachine` flow as the background,
+    /// driven by a local runner) until the cells cover the cursor window, then serve from the
+    /// just-committed cells. The fill starts at the cell's append-only frontier (see the loop) and
+    /// runs the plan's jobs locally - the foreground does not invent new jobs. A machine already in
+    /// flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds the single
+    /// slot, so we leave it and let the cell-serve / fallback below handle this window.
     ///
     /// `pre_committed` is the cell coverage BEFORE this serve fills anything (a prior window's
     /// over-read prefill or a worker's run-ahead). It is the cache-hit credit mask for the cell-
     /// serve: bytes this serve fetches from the source below transit the cell but are counted as
     /// `BytesFromSource`, not a cache hit - else a cold all-miss would report itself as served from
-    /// cache. The legacy path (null mask) credits every served byte, matching its run-ahead serve.
-    const IntervalSet * cache_credit = nullptr;
-    IntervalSet pre_committed;
-    if (unified_foreground)
+    /// cache.
+    IntervalSet pre_committed = committedCoverage(window_phys);
+    const IntervalSet * cache_credit = &pre_committed;
     {
-        pre_committed = committedCoverage(window_phys);
-        cache_credit = &pre_committed;
         const CoverageMap & geom = *read_plan.geometry();
         while (!committedCellCovers(window_phys))
         {

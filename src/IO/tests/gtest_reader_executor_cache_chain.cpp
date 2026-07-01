@@ -538,12 +538,11 @@ TEST_F(ReaderExecutorCacheChain, InlineFillPopulatesCacheFully)
            "so the warm re-read touches the source 0 times";
 }
 
-/// `reader_executor_unified_foreground` ON, NO prefetch pool: every foreground window is served
-/// by a one-window FetchMachine run INLINE on the read thread (LocalRunner) instead of the bespoke
-/// sync path. Asserts the cold scan (a) serves every byte, (b) actually ran inline machines
-/// (PrefetchHits > 0 with no pool - only the inline path creates machines without a pool), (c)
-/// never fell back to the legacy sync read (SyncReadMicroseconds == 0 - it served from the
-/// committed cells), and (d) populated the cache fully, so the warm re-read hits the source 0 times.
+/// NO prefetch pool: every foreground window is served by a one-window FetchMachine run INLINE on
+/// the read thread (LocalRunner). Asserts the cold scan (a) serves every byte, (b) actually ran
+/// inline machines (PrefetchHits > 0 with no pool - only the inline path creates machines without
+/// a pool), (c) served from the committed cells rather than a raw source read (SyncReadMicroseconds
+/// == 0), and (d) populated the cache fully, so the warm re-read hits the source 0 times.
 TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMachine)
 {
     constexpr size_t segment_size = 64;
@@ -566,7 +565,6 @@ TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMac
     opts.window_size = block_size;
     opts.min_bytes_for_seek = 0;
     opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    opts.unified_foreground = true;   /// the feature under test; NO prefetch_pool - pure inline serve
 
     const size_t src_before_cold = sourceRequestsSoFar();
     UInt64 cold_prefetch_hits = 0;
@@ -595,10 +593,10 @@ TEST_F(ReaderExecutorCacheChain, UnifiedForegroundServesAndPopulatesViaInlineMac
         << "the inline FetchMachine fills the cache fully, so the warm re-read touches source 0 times";
 }
 
-/// `reader_executor_unified_foreground` ON *with* a prefetch pool: the inline foreground serve
-/// must coexist with the read-ahead machine without clobbering the single machine slot (the inline
-/// launch is guarded by `!machine`, not `!machineFor(ri)`). Cold scan serves every byte; warm
-/// re-read hits the source 0 times - neither path corrupts the other's fill.
+/// The inline foreground serve *with* a prefetch pool: it must coexist with the read-ahead machine
+/// without clobbering the single machine slot (the inline launch is guarded by `!machine`, not
+/// `!machineFor(ri)`). Cold scan serves every byte; warm re-read hits the source 0 times - neither
+/// path corrupts the other's fill.
 TEST_F(ReaderExecutorCacheChain, UnifiedForegroundCoexistsWithReadAheadPool)
 {
     constexpr size_t segment_size = 64;
@@ -623,7 +621,6 @@ TEST_F(ReaderExecutorCacheChain, UnifiedForegroundCoexistsWithReadAheadPool)
     opts.min_bytes_for_seek = 0;
     opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
     opts.prefetch_pool = pool;
-    opts.unified_foreground = true;
 
     const size_t src_before_cold = sourceRequestsSoFar();
     {
@@ -1258,9 +1255,6 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     executor_options.window_size = window;
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    /// Exercise the unified inline-fill path explicitly (independent of the build default), since
-    /// its connection-carry under eviction is what this asserts.
-    executor_options.unified_foreground = true;
     auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
 
     auto flood_fs = [&](size_t round)
