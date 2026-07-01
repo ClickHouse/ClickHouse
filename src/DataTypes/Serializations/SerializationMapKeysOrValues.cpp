@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapLowCardinalityBuckets.h>
 #include <Columns/ColumnArray.h>
 #include <Common/SipHash.h>
 
@@ -173,6 +174,10 @@ void collectMapKeysOrValuesFromBuckets(const VectorWithMemoryTracking<ColumnPtr>
     size_t num_rows = keys_or_values_buckets[0]->size();
     offsets.reserve(offsets.size() + num_rows);
     data.prepareForSquashing(data_buckets, 1);
+
+    if (BucketedMapLowCardinality::collectDataFromBuckets(data_buckets, offsets_buckets, num_rows, data, &offsets))
+        return;
+
     for (size_t i = 0; i != num_rows; ++i)
     {
         for (size_t bucket = 0; bucket != keys_or_values_buckets.size(); ++bucket)

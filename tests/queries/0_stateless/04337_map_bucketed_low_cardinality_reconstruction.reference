@@ -1,0 +1,15 @@
+full maps sorted by key
+1	{'alpha':'one','beta':'two','delta':'four','gamma':'three'}	{'alpha':'one','beta':'two','delta':'four','gamma':'three'}	{'alpha':'one','beta':'two','delta':'four','gamma':'three'}
+2	{'beta':'twenty','epsilon':'five','zeta':'six'}	{'beta':'twenty','epsilon':'five','zeta':'six'}	{'beta':'twenty','epsilon':'five','zeta':'six'}
+3	{}	{}	{}
+4	{'alpha':'again','eta':'seven'}	{'alpha':'again','eta':'seven'}	{'alpha':'again','eta':'seven'}
+keys and values subcolumns
+1	['alpha','beta','delta','gamma']	['four','one','three','two']	['alpha','beta','delta','gamma']	['four','one','three','two']
+2	['beta','epsilon','zeta']	['five','six','twenty']	['beta','epsilon','zeta']	['five','six','twenty']
+3	[]	[]	[]	[]
+4	['alpha','eta']	['again','seven']	['alpha','eta']	['again','seven']
+full map together with key lookups and subcolumns
+1	one	two		{'alpha':'one','beta':'two','delta':'four','gamma':'three'}	['alpha','beta','delta','gamma']	['four','one','three','two']
+2		twenty	five	{'beta':'twenty','epsilon':'five','zeta':'six'}	['beta','epsilon','zeta']	['five','six','twenty']
+3				{}	[]	[]
+4	again			{'alpha':'again','eta':'seven'}	['alpha','eta']	['again','seven']
