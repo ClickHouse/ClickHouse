@@ -1223,6 +1223,9 @@ void KeeperSnapshotReader::Stream::readNodePathAndDataSize(char * out_path, size
 {
     in->readStrict(out_path, path_size);
     readVarUInt(out_data_size, *in);
+
+    if (out_data_size > static_cast<size_t>(INT32_MAX))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node data size in snapshot is too big: {}", out_data_size);
 }
 
 void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, char * out_data, size_t data_size, KeeperNodeStats & out_stats)

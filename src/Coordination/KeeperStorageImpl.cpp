@@ -671,6 +671,10 @@ static Coordination::Error preprocess(
     if (!visited_all)
         return error;
 
+    if (nodes_to_remove.empty())
+        /// The node doesn't exist. Don't update parent.
+        return Coordination::Error::ZOK;
+
     ++new_parent_stats.cversion;
     new_parent_stats.decreaseNumChildren();
 
@@ -1066,15 +1070,6 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & st
             zk_request.path, node,
             [&](std::string_view child_name, const auto * child_node)
             {
-                using enum Coordination::ListRequestType;
-                if (Coordination::ListRequestType::ALL != list_request_type)
-                {
-                    bool is_ephemeral = child_node->stats.isEphemeral();
-                    if ((is_ephemeral && list_request_type == PERSISTENT_ONLY) ||
-                        (!is_ephemeral && list_request_type == EPHEMERAL_ONLY))
-                        return true;
-                }
-
                 /// Check child's ACLs because we're going to report its data or stats - this
                 /// information should not be accessible without Read permission.
                 /// (Even if only list_request_type filtering is enabled, we'll expose the
@@ -1083,6 +1078,15 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, Storage & st
                 {
                     auth_failed = true;
                     return false;
+                }
+
+                using enum Coordination::ListRequestType;
+                if (Coordination::ListRequestType::ALL != list_request_type)
+                {
+                    bool is_ephemeral = child_node->stats.isEphemeral();
+                    if ((is_ephemeral && list_request_type == PERSISTENT_ONLY) ||
+                        (!is_ephemeral && list_request_type == EPHEMERAL_ONLY))
+                        return true;
                 }
 
                 response->names.emplace_back(child_name);
@@ -1369,6 +1373,10 @@ static Coordination::Error preprocess(
     KeeperNodeStats new_stats = node->stats;
     ++new_stats.aversion;
     new_stats.acl_id = storage.acl_map.convertACLs(node_acls);
+    if (new_stats.acl_id == node->stats.acl_id)
+        /// Undo the usage increment done by convertACLs. Delta that doesn't change acl_id doesn't
+        /// call removeUsage on commit or rollback.
+        storage.acl_map.removeUsage(new_stats.acl_id);
     storage.nodes.prepareUpdateNodeStat(zk_request.path, std::move(node_ref), new_stats, storage.staging);
 
     return Coordination::Error::ZOK;
