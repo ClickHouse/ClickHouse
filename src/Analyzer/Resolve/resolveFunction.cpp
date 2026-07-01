@@ -1303,7 +1303,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// can optimize away the IN expression and silently hide the mismatch.
         auto in_second_argument_type = in_second_argument->getNodeType();
         auto in_first_argument_result_type = in_first_argument->getResultType();
-        if ((in_second_argument_type == QueryTreeNodeType::QUERY || in_second_argument_type == QueryTreeNodeType::UNION)
+        if ((in_second_argument_type == QueryTreeNodeType::QUERY
+                || in_second_argument_type == QueryTreeNodeType::UNION
+                || in_second_argument_type == QueryTreeNodeType::TABLE)
             && in_first_argument_result_type)
         {
             /// `getResultType` may be null for unresolved nodes (e.g. a lambda used as the left side of IN).
@@ -1323,6 +1325,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 right_projection_columns = query_node->getProjectionColumns();
             else if (const auto * union_node = in_second_argument->as<UnionNode>())
                 right_projection_columns = union_node->computeProjectionColumns();
+            else if (const auto * in_table_node = in_second_argument->as<TableNode>())
+            {
+                /// `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`: the set is
+                /// built from the table's ordinary columns (a `StorageSet` keeps its declared columns,
+                /// other tables build the set in the Planner). The `TableNode` is left intact above
+                /// rather than rewritten into a subquery, so derive the right-side columns from the
+                /// storage snapshot here - the same columns the table-function rewrite selects. Without
+                /// this, an empty one-column table lets `(1, 1) IN table` reach `FunctionIn`'s empty-set
+                /// fast path and silently return `0` instead of throwing `NUMBER_OF_COLUMNS_DOESNT_MATCH`.
+                if (const auto & storage_snapshot = in_table_node->getStorageSnapshot())
+                {
+                    auto table_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+                    right_projection_columns = NamesAndTypes(table_columns.begin(), table_columns.end());
+                }
+            }
 
             size_t right_columns_count = right_projection_columns.size();
 

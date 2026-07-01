@@ -76,3 +76,37 @@ SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Tu
 -- probe of the left default `(NULL, 0)` fails to cast to `Nullable(Tuple(UInt8, UInt8))` and is misreported
 -- as a column-count mismatch. Regression for the false positive flagged in PR #97540.
 SELECT CAST((1, 2), 'Tuple(Nullable(UInt8), UInt8)') IN (SELECT CAST((1, 2), 'Nullable(Tuple(UInt8, UInt8))'));
+
+-- `x IN table` is a documented equivalent of `x IN (SELECT * FROM table)`, so the same column-count
+-- validation must apply to a table (or `Set`) right-hand side. The right columns are the table's
+-- ordinary columns, taken from the storage snapshot. In particular an empty one-column table (or `Set`)
+-- previously let `(1, 1) IN table` reach `FunctionIn`'s empty-set fast path and silently return 0 instead
+-- of erroring. Regression for the `IN table` gap flagged in PR #97540.
+DROP TABLE IF EXISTS t_in_one_col;
+DROP TABLE IF EXISTS t_in_two_col;
+DROP TABLE IF EXISTS t_in_tuple_col;
+DROP TABLE IF EXISTS s_in_one_col;
+
+CREATE TABLE t_in_one_col (x UInt8) ENGINE = Memory;
+CREATE TABLE t_in_two_col (x UInt8, y UInt8) ENGINE = Memory;
+CREATE TABLE t_in_tuple_col (x Tuple(UInt8, UInt8)) ENGINE = Memory;
+CREATE TABLE s_in_one_col (x UInt8) ENGINE = Set;
+
+-- Empty tables: the arity mismatch must be caught during analysis, not folded into a silent 0.
+SELECT (1, 1) IN t_in_one_col; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT 1 IN t_in_two_col; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT (1, 1, 1) IN t_in_two_col; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+SELECT (1, 1) IN s_in_one_col; -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
+
+-- Matching arity against a table is valid (the empty set returns 0).
+SELECT (1, 1) IN t_in_two_col;
+SELECT 1 IN t_in_one_col;
+
+-- A single `Tuple` column of the same arity as the left tuple is a one-key comparison and must NOT be
+-- rejected at analysis: the whole left tuple is compared against it as one key.
+SELECT (1, 1) IN t_in_tuple_col;
+
+DROP TABLE t_in_one_col;
+DROP TABLE t_in_two_col;
+DROP TABLE t_in_tuple_col;
+DROP TABLE s_in_one_col;
