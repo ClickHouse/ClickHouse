@@ -73,7 +73,7 @@ def test_parallel_shutdown_logs_and_data_intact(started_cluster):
         # zgrep uses BRE — escape +. Database name is unquoted unless it needs
         # backquoting; `many_tables` is a plain identifier so no backticks appear.
         shutdown_log = node.grep_in_log(
-            f"flushAndShutdown for [0-9][0-9]* tables in {DATABASE} took",
+            f"Shut down [0-9][0-9]* tables in {DATABASE} in",
             only_latest=True,
         )
         assert shutdown_log, (
@@ -81,17 +81,10 @@ def test_parallel_shutdown_logs_and_data_intact(started_cluster):
             "the parallel shutdown path may not have run."
         )
 
-        # Format: "flushAndShutdown for N tables in many_tables took M ms"
-        match = re.search(r"flushAndShutdown for (\d+) tables", shutdown_log)
+        # Format: "Shut down N tables in many_tables in M ms"
+        match = re.search(r"Shut down (\d+) tables", shutdown_log)
         assert match, f"Could not parse table count from log line: {shutdown_log!r}"
         assert int(match.group(1)) == NUM_TABLES
-
-        # Both phases should have run.
-        prepare_log = node.grep_in_log(
-            f"flushAndPrepareForShutdown for [0-9][0-9]* tables in {DATABASE} took",
-            only_latest=True,
-        )
-        assert prepare_log, "Did not see the flushAndPrepareForShutdown phase log line."
 
         node.start_clickhouse()
         restarted = True
