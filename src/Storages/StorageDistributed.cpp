@@ -1803,6 +1803,14 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
 
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
 
+    /// Advance the distributed depth carried to the next server. The remote probe re-enters
+    /// `system.tables` -> `StorageDistributed::getModificationHash` on a fresh thread on the shard, where
+    /// the thread-local cycle guard above cannot see this thread's set, so a cross-server wrapper cycle
+    /// (`A.d1` -> `B.d2` -> `A.d1`) would otherwise recurse unbounded. `updateSettingsForCluster` does not
+    /// bump the depth (unlike `ClusterProxy::executeQuery`), so bump it here; `getModificationHash` fails
+    /// closed once the depth reaches its limit.
+    new_context->increaseDistributedDepth();
+
     auto hash_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
     auto uuid_type = std::make_shared<DataTypeString>();
     auto sample_block = std::make_shared<const Block>(Block{
@@ -1850,6 +1858,21 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
     if (!tables_being_hashed.insert(this).second)
         return {};
     SCOPE_EXIT({ tables_being_hashed.erase(this); });
+
+    /// The thread-local set above only catches same-server, same-thread cycles. A cross-server cycle
+    /// recurses through the remote `system.tables` probe, which lands on a fresh thread on the next server
+    /// with an empty set, so we bound it by the distributed depth instead: each remote probe advances
+    /// `ClientInfo::distributed_depth` (see `getModificationHashOfRemoteTableInShard`), and here we fail
+    /// closed (return nullopt) once it reaches the limit. The limit is `max_distributed_depth` when set,
+    /// like ordinary distributed reads, and also a hard cap (generous relative to the default depth of 5,
+    /// but bounded) so the probe still terminates when the user disabled the depth limit
+    /// (`max_distributed_depth = 0`) or set it very high. No real wrapper chain nests this deep.
+    const auto & settings = query_context->getSettingsRef();
+    static constexpr UInt64 max_modification_hash_probe_depth = 16;
+    const UInt64 distributed_depth = query_context->getClientInfo().distributed_depth;
+    if (distributed_depth >= max_modification_hash_probe_depth
+        || (settings[Setting::max_distributed_depth] && distributed_depth >= settings[Setting::max_distributed_depth]))
+        return {};
 
     /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
     if (remote_table_function_ptr)
