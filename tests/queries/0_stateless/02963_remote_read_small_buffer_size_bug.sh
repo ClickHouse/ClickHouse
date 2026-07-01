@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, long, no-random-detach
+# Tags: no-random-settings, long, no-random-detach, no-flaky-check
 # no-random-detach: test checks profile events
+# no-flaky-check: long test runs too long in the flaky check (which reruns each test many times); its
+# OPTIMIZE TABLE ... FINAL exceeds the receive timeout in the debug build under the flaky check's load
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
