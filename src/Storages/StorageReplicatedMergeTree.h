@@ -795,6 +795,8 @@ private:
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
       * If quorum != 0, then the node for tracking the quorum is updated.
+      * If `is_merge_fetch`, this fetch satisfies a MERGE_PARTS log entry (the result of a merge)
+      * and therefore owes a DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES waits for.
       * Returns false if part is already fetching right now.
       */
     bool fetchPart(
@@ -805,7 +807,8 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        bool try_fetch_shared = true,
+        bool is_merge_fetch = false);
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
@@ -820,11 +823,13 @@ private:
 
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
-    /// Subset of currently_fetching_parts: only the fetches that satisfy a scheduled merge and
-    /// therefore owe a DOWNLOAD_PART part_log row (fetchPart with to_detached = false). Detached
-    /// fetches (SYSTEM FETCH PART/PARTITION) and fetchExistsPart (shared-storage move) queue no
-    /// success part_log row, so they must not make SYSTEM SYNC MERGES wait. Guarded by the same
-    /// currently_fetching_parts_mutex.
+    /// Subset of currently_fetching_parts: only the fetches that satisfy a MERGE_PARTS log entry
+    /// (the merged result part) and therefore owe a DOWNLOAD_PART part_log row that SYSTEM SYNC
+    /// MERGES waits for. Ordinary replication fetches (GET_PART / ATTACH_PART, which can resolve to
+    /// a covering merged part via findReplicaHavingCoveringPart), mutation fetches, detached fetches
+    /// (SYSTEM FETCH PART/PARTITION), and fetchExistsPart (shared-storage move) are NOT merge results
+    /// and must not make SYNC MERGES wait, even when they cover a scheduled source part. Guarded by
+    /// the same currently_fetching_parts_mutex.
     std::unordered_set<String> currently_fetching_merged_parts;
     mutable std::mutex currently_fetching_parts_mutex;
 

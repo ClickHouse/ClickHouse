@@ -2784,7 +2784,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /* to_detached= */ false,
                 entry.quorum,
                 /* zookeeper_ */ nullptr,
-                /* try_fetch_shared= */ true))
+                /* try_fetch_shared= */ true,
+                /* is_merge_fetch= */ entry.type == LogEntry::MERGE_PARTS))
             {
                 return false;
             }
@@ -5458,7 +5459,8 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool try_fetch_shared)
+    bool try_fetch_shared,
+    bool is_merge_fetch)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5485,9 +5487,12 @@ bool StorageReplicatedMergeTree::fetchPart(
             LOG_DEBUG(log, "Part {} is already fetching right now", part_name);
             return false;
         }
-        /// Only a merge-satisfying fetch owes a DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES
-        /// must wait for. A detached fetch (SYSTEM FETCH PART/PARTITION) writes no success row.
-        if (!to_detached)
+        /// Only a fetch that satisfies a MERGE_PARTS log entry (the merged result part) owes a
+        /// DOWNLOAD_PART part_log row that SYSTEM SYNC MERGES must wait for. Ordinary GET_PART /
+        /// ATTACH_PART fetches (which can resolve to a covering merged part), mutation fetches, and
+        /// detached fetches (SYSTEM FETCH PART/PARTITION) are not merge results and must not make
+        /// SYNC MERGES wait, even when they cover a scheduled source part.
+        if (!to_detached && is_merge_fetch)
             currently_fetching_merged_parts.insert(part_name);
     }
 
@@ -5495,7 +5500,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     ({
         std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
-        if (!to_detached)
+        if (!to_detached && is_merge_fetch)
             currently_fetching_merged_parts.erase(part_name);
     });
 
@@ -5782,9 +5787,11 @@ bool StorageReplicatedMergeTree::hasInFlightFetchCoveringParts(const NameSet & s
         return false;
 
     std::lock_guard lock(currently_fetching_parts_mutex);
-    /// Only merge-satisfying fetches (to_detached = false) owe a DOWNLOAD_PART part_log row, so we
-    /// wait on that subset. An unrelated SYSTEM FETCH PART/PARTITION (detached) or shared-storage
-    /// move of a covering part queues no success row and must not make SYNC MERGES wait or time out.
+    /// Only fetches that satisfy a MERGE_PARTS log entry (the merged result part) owe a DOWNLOAD_PART
+    /// part_log row, so we wait on that subset. An ordinary GET_PART / ATTACH_PART fetch (which can
+    /// resolve to a covering merged part), a mutation fetch, an unrelated SYSTEM FETCH PART/PARTITION
+    /// (detached), or a shared-storage move of a covering part queues no success row for a scheduled
+    /// merge and must not make SYNC MERGES wait or time out.
     for (const auto & fetching_part_name : currently_fetching_merged_parts)
     {
         const auto fetching_part_info = MergeTreePartInfo::fromPartName(fetching_part_name, format_version);
