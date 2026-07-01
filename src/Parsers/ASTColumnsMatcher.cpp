@@ -57,9 +57,16 @@ void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSetting
         ostr << ".";
     }
 
-    ostr << "COLUMNS" << "(";
-    ostr << quoteString(pattern);
-    ostr << ")";
+    if (format_as_asterisk_like)
+    {
+        ostr << "* " << (asterisk_like_case_insensitive ? "ILIKE " : "LIKE ") << quoteString(asterisk_like_pattern);
+    }
+    else
+    {
+        ostr << "COLUMNS" << "(";
+        ostr << quoteString(pattern);
+        ostr << ")";
+    }
 
     if (transformers)
     {
@@ -177,9 +184,16 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const Form
 {
     qualifier->format(ostr, settings, state, frame);
 
-    ostr << ".COLUMNS" << "(";
-    ostr << quoteString(pattern);
-    ostr << ")";
+    if (format_as_asterisk_like)
+    {
+        ostr << ".* " << (asterisk_like_case_insensitive ? "ILIKE " : "LIKE ") << quoteString(asterisk_like_pattern);
+    }
+    else
+    {
+        ostr << ".COLUMNS" << "(";
+        ostr << quoteString(pattern);
+        ostr << ")";
+    }
 
     if (transformers)
     {

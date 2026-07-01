@@ -28,6 +28,14 @@ public:
     ASTPtr expression;
     ASTPtr transformers;
 
+    /// When set, format this matcher as the equivalent `[expr.]* LIKE/ILIKE '<asterisk_like_pattern>'`
+    /// syntax instead of `COLUMNS('<regexp>')`. Only the query fuzzer sets this, to exercise the
+    /// asterisk LIKE/ILIKE parser path; the parser never sets it, so normal query round-trips are
+    /// unaffected (a parsed `* LIKE ...` still becomes a plain regexp matcher).
+    bool format_as_asterisk_like = false;
+    bool asterisk_like_case_insensitive = false;
+    String asterisk_like_pattern;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
@@ -69,6 +77,11 @@ public:
 
     ASTPtr qualifier;
     ASTPtr transformers;
+
+    /// See ASTColumnsRegexpMatcher: format as `<qualifier>.* LIKE/ILIKE '<asterisk_like_pattern>'`.
+    bool format_as_asterisk_like = false;
+    bool asterisk_like_case_insensitive = false;
+    String asterisk_like_pattern;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
