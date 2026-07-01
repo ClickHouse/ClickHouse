@@ -109,6 +109,16 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
     if (const UInt64 max_ast_elements = settings[Setting::max_ast_elements])
         ast->checkSize(max_ast_elements);
 
+    /// `checkDepth` / `checkSize` above follow only `IAST::children`, but if the submitted query is
+    /// itself a `CREATE RULE` / `ALTER RULE` its rule templates (`source_query` / `resulting_query`)
+    /// live outside `children`. Those templates are first fully walked by the matcher's tree hash
+    /// below (through the rule-DDL node's `updateTreeHashImpl`), before the generic
+    /// `checkRewriteRuleTemplateLimits` gate runs later from `checkASTSizeLimits` in `executeQuery`.
+    /// Bound the submitted templates here too, so an oversized submitted rule template cannot force
+    /// the matcher to hash/walk an unbounded tree. Like the checks above this only runs when there
+    /// are active rules, so it costs nothing on the common no-rules path.
+    checkRewriteRuleTemplateLimits(*ast, settings);
+
     /// Build a name -> rule lookup once, then apply the requested rules in the order they
     /// are listed in `query_rules`. A listed rule that does not exist is an error, so a
     /// typo in `query_rules` fails the query instead of silently applying nothing.
