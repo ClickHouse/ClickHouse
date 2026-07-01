@@ -96,11 +96,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
-}
-
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
@@ -1327,9 +1322,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         data->entries.size(),
         std::move(adding_defaults_transform));
 
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        insert_context->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
     for (const auto & entry : data->entries)
     {
@@ -1372,9 +1365,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        context_->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
     auto result_columns = header.cloneEmptyColumns();
 
     for (const auto & entry : data->entries)
