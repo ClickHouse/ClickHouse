@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings
+# Tags: long, no-random-settings, no-random-merge-tree-settings
 #
 # Regression guard for issue #85785: with parallel replicas and `LIMIT`, the
 # `rows_read` statistic emitted in JSON/XML output could be lost (reported as 0
