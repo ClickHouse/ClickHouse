@@ -4,3 +4,11 @@ Not enough privileges
 1
 2
 3
+=== NONE: direct table access denied ===
+Not enough privileges
+=== NONE: view access succeeds with pushdown ===
+1
+2
+3
+=== NONE: pushdown fires (no VIEW subquery step) ===
+1

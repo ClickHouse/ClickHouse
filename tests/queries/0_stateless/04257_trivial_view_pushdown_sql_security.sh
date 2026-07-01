@@ -86,9 +86,62 @@ ${CLICKHOUSE_CLIENT} \
         SELECT id FROM ${db}.v04257_invoker_subset ORDER BY id;
     "
 
+# -------------------------------------------------------------------
+# Scenario 3: SQL SECURITY NONE — the pushdown executes the inner
+# query via getSQLSecurityOverriddenContext (no-user/global context),
+# not the calling user's context. A user with SELECT on the view but
+# not on the underlying Distributed table must succeed.
+# -------------------------------------------------------------------
+
+# Revoke the per-column grant added in Scenario 2; the user must have
+# no direct access to t04257_dist for this scenario to be meaningful.
+${CLICKHOUSE_CLIENT} --query "
+    REVOKE SELECT ON ${db}.t04257_dist FROM ${user};
+
+    DROP VIEW  IF EXISTS ${db}.v04257_none;
+    CREATE VIEW ${db}.v04257_none SQL SECURITY NONE
+        AS SELECT id FROM ${db}.t04257_dist;
+    GRANT SELECT ON ${db}.v04257_none TO ${user};
+"
+
+echo "=== NONE: direct table access denied ==="
+${CLICKHOUSE_CLIENT} \
+    --user "${user}" \
+    --query "
+        SET enable_analyzer = 1;
+        SET enable_parallel_replicas = 0;
+        SET prefer_localhost_replica = 0;
+        SELECT id FROM ${db}.t04257_dist ORDER BY id;
+    " 2>&1 | grep -o "Not enough privileges" | head -1
+
+echo "=== NONE: view access succeeds with pushdown ==="
+${CLICKHOUSE_CLIENT} \
+    --user "${user}" \
+    --query "
+        SET enable_analyzer = 1;
+        SET enable_parallel_replicas = 0;
+        SET prefer_localhost_replica = 0;
+        SET serialize_query_plan = 0;
+        SET optimize_trivial_view_pushdown_to_distributed = 1;
+        SELECT id FROM ${db}.v04257_none ORDER BY id;
+    "
+
+echo "=== NONE: pushdown fires (no VIEW subquery step) ==="
+${CLICKHOUSE_CLIENT} \
+    --query "
+        SET enable_analyzer = 1;
+        SET explain_query_plan_default = 'legacy';
+        SET enable_parallel_replicas = 0;
+        SET prefer_localhost_replica = 0;
+        SET optimize_trivial_view_pushdown_to_distributed = 1;
+        SELECT countIf(explain LIKE '%VIEW subquery%') = 0 AS pushdown_fires
+        FROM (EXPLAIN SELECT id FROM ${db}.v04257_none);
+    "
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP VIEW  IF EXISTS ${db}.v04257_invoker;
     DROP VIEW  IF EXISTS ${db}.v04257_invoker_subset;
+    DROP VIEW  IF EXISTS ${db}.v04257_none;
     DROP TABLE IF EXISTS ${db}.t04257_dist;
     DROP TABLE IF EXISTS ${db}.t04257_local;
     DROP USER  IF EXISTS ${user};
