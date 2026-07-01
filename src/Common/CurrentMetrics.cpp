@@ -59,6 +59,7 @@
     M(RemoteRead, "Number of read with remote reader in fly") \
     M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
     M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
+    M(ReaderExecutorLongConnections, "Number of long source connections currently held open by ReaderExecutor for sequential read optimization.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \

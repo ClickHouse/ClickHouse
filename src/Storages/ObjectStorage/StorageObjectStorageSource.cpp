@@ -1406,6 +1406,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.getPath(), object_size, use_prefetch ? "with" : "without",
         pipeline.describe());
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential windows
+    /// for direct object-storage reads (s3()/azureBlobStorage() and the object-storage engines),
+    /// mirroring the wiring in DiskObjectStorage::prepareRead for the disk-based path.
+    if (modified_read_settings.reader_executor.enabled && modified_read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
+
     auto impl = pipeline.build();
 
     if (use_prefetch && impl && !impl->supportsReadAt())

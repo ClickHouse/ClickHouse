@@ -56,6 +56,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
+            {"reader_executor_use_long_connections", true, true, "New experimental ReaderExecutor setting: reuse a held source connection across sequential windows."},
+            {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
+            {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
         });
 

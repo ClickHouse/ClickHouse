@@ -60,6 +60,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/AsynchronousReader.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
@@ -348,6 +349,9 @@ namespace Setting
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool use_reader_executor;
+    extern const SettingsBool reader_executor_use_long_connections;
+    extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
+    extern const SettingsUInt64 reader_executor_max_tail_for_drain;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
@@ -369,6 +373,7 @@ namespace MergeTreeSetting
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
     extern const ServerSettingsUInt64 background_common_pool_size;
     extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
@@ -511,6 +516,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag async_loader_initialized;
     mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
+
+    mutable OnceFlag long_connection_limit_initialized;
+    mutable std::shared_ptr<LongConnectionLimit> long_connection_limit; /// Bounds source connections held open by ReaderExecutor for sequential-read reuse
 
     mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
@@ -8005,6 +8013,24 @@ ThreadPool & Context::getThreadPoolWriter() const
     return *shared->threadpool_writer;
 }
 
+std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const
+{
+    callOnce(shared->long_connection_limit_initialized, [&]
+    {
+        const auto & server_settings = getServerSettings();
+        shared->long_connection_limit
+            = std::make_shared<LongConnectionLimit>(server_settings[ServerSetting::max_remote_read_connections]);
+    });
+    return shared->long_connection_limit;
+}
+
+void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const
+{
+    /// Routed through `getLongConnectionLimit` so there is a single creation path and a first use
+    /// racing a reload can never both construct the limit.
+    getLongConnectionLimit()->setCapacity(max_remote_read_connections);
+}
+
 ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
@@ -8054,7 +8080,10 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
-    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
+    res.reader_executor.enabled = settings_ref[Setting::use_reader_executor];
+    res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
+    res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
+    res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
