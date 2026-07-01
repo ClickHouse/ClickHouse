@@ -482,13 +482,27 @@ void Reader::prepareBloomFilterCondition()
             continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
-        /// dictionary page, so that the same hashes can later be looked up in whichever of the two
-        /// we end up using. Check only the first row group, expecting that usually either all or
-        /// none of the row groups have a bloom filter / dictionary for any given column.
-        const parq::ColumnChunk * column_chunk_meta = row_groups[0].columns[primitive_idx].meta;
-        bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
-            && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
-        if (!has_bloom_filter && !columnChunkCanUseDictionaryFilter(*column_chunk_meta))
+        /// dictionary page in at least one surviving row group, so that the same hashes can later be
+        /// looked up in whichever of the two we end up using. The per-row-group decision is made
+        /// again in initializePrefetches (via columnChunkCanUseDictionaryFilter and the bloom filter
+        /// offset); here we only need to know whether hashing the constants can ever be useful for
+        /// this column. Encoding is a per-row-group property - a high-cardinality row group can fall
+        /// back to PLAIN (and, unless bloom filters are written, becomes ineligible) while a
+        /// low-cardinality one stays dictionary-encoded - so we must scan all row groups rather than
+        /// assume the first one is representative, otherwise later row groups silently lose pruning.
+        bool any_row_group_eligible = false;
+        for (const RowGroup & row_group : row_groups)
+        {
+            const parq::ColumnChunk * column_chunk_meta = row_group.columns[primitive_idx].meta;
+            bool has_bloom_filter = options.format.parquet.bloom_filter_push_down
+                && column_chunk_meta->meta_data.__isset.bloom_filter_offset;
+            if (has_bloom_filter || columnChunkCanUseDictionaryFilter(*column_chunk_meta))
+            {
+                any_row_group_eligible = true;
+                break;
+            }
+        }
+        if (!any_row_group_eligible)
             continue;
 
         parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
