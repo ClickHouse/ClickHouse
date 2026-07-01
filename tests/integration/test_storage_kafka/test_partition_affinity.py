@@ -21,7 +21,7 @@ instance = cluster.add_instance(
         "kafka_group_name_new": "affinity_group",
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
-        "kafka_shard_num_bad": "2",
+        "kafka_shard_num_bad": "3",
     },
 )
 
@@ -333,8 +333,8 @@ def test_partition_affinity_invalid_partition_num_fails(kafka_cluster):
 def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
     """
     Regression test: when kafka_partition_shard_num uses a macro that expands
-    to a value >= kafka_shard_count, CREATE TABLE must fail with BAD_ARGUMENTS.
-    The macro {kafka_shard_num_bad} expands to '2', which is not < shard_count=2.
+    to a value > kafka_shard_count, CREATE TABLE must fail with BAD_ARGUMENTS.
+    The macro {kafka_shard_num_bad} expands to '3', which is greater than shard_count=2.
     """
     with pytest.raises(QueryRuntimeException) as exc_info:
         instance.query(
@@ -348,7 +348,70 @@ def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
             SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
             """
         )
-    assert "must be less than" in str(exc_info.value)
+    assert "must not be greater than" in str(exc_info.value)
+
+
+def test_partition_affinity_equality_1based_succeeds(kafka_cluster):
+    """
+    Positive test: kafka_partition_shard_num == kafka_shard_count is allowed
+    to support 1-based shard numbering. E.g. shard_num=2, shard_count=2 is valid
+    because 2 % 2 == 0, effectively mapping to shard 0.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "affinity_1based_topic"
+    num_partitions = 4
+    keeper_path = "/clickhouse/test/affinity_1based"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        # Produce messages to each partition
+        for p in range(num_partitions):
+            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(2)]
+            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+
+        # kafka_partition_shard_num=2 with kafka_shard_count=2 should succeed
+        # (1-based: shard 2 maps to effective shard 2%2=0, consuming partitions 0,2)
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_1based (partition_id UInt64, value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '{keeper_path}',
+                     kafka_replica_name = 'r1',
+                     kafka_partition_shard_num = '2',
+                     kafka_shard_count = 2
+            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+
+            CREATE TABLE test.dst_1based (partition_id UInt64, value UInt64)
+            ENGINE = MergeTree() ORDER BY (partition_id, value);
+
+            CREATE MATERIALIZED VIEW test.mv_1based TO test.dst_1based AS
+            SELECT * FROM test.kafka_1based;
+            """
+        )
+
+        # Wait for messages: shard_num=2 with shard_count=2 -> effective shard 0
+        # Should consume partitions where partition_id % 2 == 0, i.e. partitions 0, 2
+        expected_count = 4  # 2 partitions * 2 messages
+        for _ in range(60):
+            count = int(
+                instance.query(
+                    "SELECT count() FROM test.dst_1based SETTINGS max_execution_time=5"
+                ).strip()
+            )
+            if count >= expected_count:
+                break
+            time.sleep(1)
+
+        # Verify only partitions 0 and 2 are consumed (2 % 2 == 0)
+        partitions = instance.query(
+            "SELECT DISTINCT partition_id FROM test.dst_1based ORDER BY partition_id"
+        ).strip()
+        assert partitions == "0\n2", f"1-based shard got unexpected partitions: {partitions}"
+
+        total_count = int(
+            instance.query("SELECT count() FROM test.dst_1based").strip()
+        )
+        assert total_count == expected_count, f"Expected {expected_count}, got {total_count}"
 
 
 def test_partition_affinity_fewer_partitions_than_shards(kafka_cluster):
