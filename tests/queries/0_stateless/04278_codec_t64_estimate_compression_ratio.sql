@@ -64,3 +64,25 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_t64' AND active AND column = 'x';
 
 DROP TABLE t_t64;
+
+
+SELECT 'T64 Int64 cross-zero';
+
+DROP TABLE IF EXISTS t_t64;
+
+CREATE TABLE t_t64 (x Int64 CODEC(T64))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_compress_block_size = 0, max_compress_block_size = 65536;
+
+-- Values span both sides of zero, exercising the signed cross-zero branch of `getValuableBitsNumber`.
+INSERT INTO t_t64 SELECT toInt64(number) - 50000 FROM numbers(100000);
+
+SELECT
+    column_data_compressed_bytes AS on_disk_bytes,
+    toUInt64(round(column_data_uncompressed_bytes /
+                   (SELECT estimateCompressionRatio('T64', 65536)(x) FROM t_t64))) AS aggregate_predicted_bytes,
+    on_disk_bytes = aggregate_predicted_bytes AS matches
+FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_t64' AND active AND column = 'x';
+
+DROP TABLE t_t64;
