@@ -6775,15 +6775,23 @@ function setParamValues(values)
 /// query against the wrong bindings (a correctness bug, not just a stale UI). Take the values
 /// from the destination tab's own saved `params` instead (parameters are tab-owned), and write
 /// them back so the inputs reflect what actually ran.
+///
+/// The parameter NAMES must also come from the destination tab's snapshot, NOT from the global
+/// `currentQueryParams`: that list is only rewritten by `updateQueryParams` after its own
+/// `await tokenize(...)`, which the still-pending restore has not reached, so it can still describe
+/// the PREVIOUS tab's query. Enumerating it here would send the wrong parameter set — e.g. for a
+/// switch from `SELECT {x}` to `SELECT {y}`, it would send `param_x` and drop `param_y`, running
+/// the destination query with blank/default bindings. The tab's saved `params` already lists this
+/// tab's own parameters (captured when it was last committed / restored), so use its keys.
 function resolveRunParams(params_restore_pending)
 {
     if (!params_restore_pending) return getParamValues();
     const tab = getActiveTab();
     const saved = (tab && tab.params) || {};
     const values = {};
-    for (const param of currentQueryParams)
+    for (const name of Object.keys(saved))
     {
-        values[param.name] = saved[param.name] !== undefined ? saved[param.name] : '';
+        values[name] = saved[name] !== undefined ? saved[name] : '';
     }
     setParamValues(values);
     return values;
