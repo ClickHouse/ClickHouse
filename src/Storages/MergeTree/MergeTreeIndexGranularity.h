@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class Block;
+
 /// Class that contains information about index granularity in rows of IMergeTreeDataPart
 class MergeTreeIndexGranularity
 {
@@ -85,12 +87,27 @@ size_t computeIndexGranularity(
     bool blocks_are_granules,
     bool can_use_adaptive_index_granularity);
 
+/// Uncompressed size of the block as it will be written into a data part, used to choose the index
+/// granularity against index_granularity_bytes. Equal to Block::bytes() except for AggregateFunction
+/// state columns, whose true size Block::bytes() cannot report (their states live in shared arenas
+/// that ColumnAggregateFunction::byteSize() intentionally does not count).
+size_t getBlockSizeForGranularity(const Block & block);
+
 struct MergeTreeSettings;
 struct MergeTreeIndexGranularityInfo;
 
 MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
     size_t rows,
     size_t bytes_uncompressed,
+    const MergeTreeSettings & settings,
+    const MergeTreeIndexGranularityInfo & info,
+    bool blocks_are_granules);
+
+/// Overload for the write path: computes the block size (which serializes AggregateFunction
+/// states) only when the constant-granularity path will use it, avoiding a wasted sizing pass
+/// on the non-const adaptive path where the per-block writer recomputes it anyway.
+MergeTreeIndexGranularityPtr createMergeTreeIndexGranularity(
+    const Block & block,
     const MergeTreeSettings & settings,
     const MergeTreeIndexGranularityInfo & info,
     bool blocks_are_granules);

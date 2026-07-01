@@ -6,6 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
@@ -482,6 +483,36 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 size_t ColumnAggregateFunction::byteSize() const
 {
     return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
+}
+
+size_t ColumnAggregateFunction::serializedSizeEstimate() const
+{
+    const size_t rows = data.size();
+    if (rows == 0)
+        return 0;
+
+    const size_t ptr_bytes = rows * sizeof(data[0]);
+
+    /// Fixed-layout states (trivial destructor, no arena) keep all their data in the sizeOfData() blob,
+    /// so size them from it without serializing. hasTrivialDestructor() reflects the combinator-wrapped
+    /// Data, so combinators are handled too.
+    if (func->hasTrivialDestructor() && !func->allocatesMemoryInArena())
+        return ptr_bytes + rows * func->sizeOfData();
+
+    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
+    /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
+    /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
+    /// Sum the exact serialized size of every state instead. States are immutable on the write path, so
+    /// serializing them here is safe even if they live in shared arenas.
+    size_t total_serialized = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        NullWriteBuffer out;
+        func->serialize(data[i], out, version);
+        total_serialized += out.count();
+    }
+
+    return ptr_bytes + total_serialized;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const
