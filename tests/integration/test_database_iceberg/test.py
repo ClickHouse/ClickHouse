@@ -820,6 +820,43 @@ def test_drop_table_delete_data(started_cluster):
     assert len(list_s3_objects(minio, bucket, prefix=f"{table_off}/")) > 0
 
 
+def test_drop_table_delete_data_parallel_replicas(started_cluster):
+    # With parallel replicas enabled, tryGetTable returns a StorageObjectStorageCluster
+    # wrapper that implements neither drop() nor checkTableCanBeDropped(). DROP must still
+    # remove both the catalog entry and (with iceberg_delete_data_on_drop) the S3 files.
+    node = started_cluster.instances["node1"]
+    minio = started_cluster.minio_client
+    bucket = "warehouse-rest"
+
+    parallel_replicas = {
+        "parallel_replicas_for_cluster_engines": 1,
+        "enable_parallel_replicas": 2,
+        "cluster_for_parallel_replicas": "cluster_simple",
+    }
+
+    test_ref = f"test_drop_delete_data_pr_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    table_name = f"{test_ref}_tbl"
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 1
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_name}/")) > 0
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+        settings={"iceberg_delete_data_on_drop": 1, **parallel_replicas},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 0
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_name}/")) == 0
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
