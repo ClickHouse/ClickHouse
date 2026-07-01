@@ -11,12 +11,6 @@
 namespace DB
 {
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-#define CHECK_NOT_CONSUMED() chassert(!consumed.load(std::memory_order_acquire))
-#else
-#define CHECK_NOT_CONSUMED() ((void)0)
-#endif
-
 void SparseOffsetsShare::insert(
     const std::string & part_name,
     const std::string & column_name,
@@ -26,7 +20,6 @@ void SparseOffsetsShare::insert(
     ColumnPtr offsets)
 {
     std::unique_lock lock(mutex);
-    CHECK_NOT_CONSUMED();
     auto & bucket = store[part_name][column_name];
     bucket.ranges.push_back(SparseOffsetsRange{range, start_row_in_part, total_rows, std::move(offsets)});
 }
@@ -35,10 +28,6 @@ const SparseOffsetsShare::Bucket *
 SparseOffsetsShare::findBucket(const std::string & part_name, const std::string & column_name) const
 {
     std::shared_lock lock(mutex);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    consumed.store(true, std::memory_order_release);
-#endif
 
     auto part_it = store.find(part_name);
     if (part_it == store.end())
@@ -87,7 +76,6 @@ bool pruneColumns(
 void SparseOffsetsShare::retainRangesForPart(const std::string & part_name, const MarkRanges & surviving_ranges)
 {
     std::unique_lock lock(mutex);
-    CHECK_NOT_CONSUMED();
     auto it = store.find(part_name);
     if (it == store.end())
         return;
@@ -99,7 +87,6 @@ void SparseOffsetsShare::retainSurvivingRanges(
     const std::unordered_map<std::string, MarkRanges> & per_part_surviving_ranges)
 {
     std::unique_lock lock(mutex);
-    CHECK_NOT_CONSUMED();
     std::erase_if(store, [&](auto & part_entry)
     {
         const auto it = per_part_surviving_ranges.find(part_entry.first);
@@ -108,8 +95,6 @@ void SparseOffsetsShare::retainSurvivingRanges(
         return pruneColumns(part_entry.second, it->second);
     });
 }
-
-#undef CHECK_NOT_CONSUMED
 
 std::unique_ptr<SubstreamsCacheSparseOffsetsElement>
 SparseOffsetsShare::sliceFromBucket(

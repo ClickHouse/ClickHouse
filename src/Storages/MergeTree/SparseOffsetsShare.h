@@ -3,9 +3,7 @@
 #include <Columns/IColumn.h>
 #include <Common/SharedMutex.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <base/defines.h>
 
-#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -39,20 +37,21 @@ struct SparseOffsetsRange
 /// Per-query storage of analyzer-produced offsets indexed by `(part_name, column_name)`.
 /// Held by `MergeTreeIndexReadResultPool` so its lifetime coincides with one query.
 ///
-/// Lifecycle (callers must run the phases in order; mixing them is unsafe because
-/// `findBucket` hands out raw pointers into the store that mutations would invalidate):
-///   1. Populate: the analyzer fills the share via `insert`.
-///   2. Prune:    once the surviving mark ranges are known, the caller drops dead
-///                entries with `retainSurvivingRanges` (planning, whole-share) or
-///                `retainRangesForPart` (data_read, per-part).
-///   3. Consume:  scan readers resolve buckets via `findBucket` and slice from them.
+/// Lifecycle is per `(part, column)` key, not share-wide: for each key all
+/// `insert`/`retain*` calls must complete before any `findBucket` for that same key.
+/// Different keys progress independently and may be at different phases at the same
+/// time.
 ///
-/// In `planning` mode phases 1+2 happen back-to-back in `selectRangesToRead`, then
-/// scans run phase 3. In `data_read` mode the three phases happen per part inside the
-/// per-part `getOrBuildIndexReadResult`; the scan reader for that part runs phase 3
-/// only after its `getOrBuildIndexReadResult` returns.
-///
-/// Debug and sanitizer builds enforce "no phase 1/2 after phase 3" with a `chassert`.
+///   - `planning` mode: `filterMarkRangesBySparsityInfo` populates every key and the
+///     caller runs `retainSurvivingRanges` once, all before any scan reader exists.
+///     Effectively share-wide phasing.
+///   - `data_read` mode: `MergeTreeSparsityReader::read(part)` populates and calls
+///     `retainRangesForPart(part)` for one part; its scan reader only calls
+///     `findBucket(part, ...)` after `getOrBuildIndexReadResult(part)` returns.
+///     Other parts may still be in `read()` at that point — that is fine because
+///     each part touches only its own key and inserts on other keys don't invalidate
+///     the returned `Bucket *` (`std::unordered_map` insertion does not invalidate
+///     pointers to existing elements).
 class SparseOffsetsShare
 {
 public:
@@ -62,7 +61,8 @@ public:
         std::vector<SparseOffsetsRange> ranges;
     };
 
-    /// Phase 1: append one analyzer chunk to `(part, column)`'s bucket.
+    /// Append one analyzer chunk to `(part, column)`'s bucket. Must not race with a
+    /// `findBucket` on the same key.
     void insert(
         const std::string & part_name,
         const std::string & column_name,
@@ -71,23 +71,23 @@ public:
         size_t total_rows,
         ColumnPtr offsets);
 
-    /// Phase 3: resolve `(part, column)` to a stable pointer into the share. The pointer
-    /// stays valid for the share's lifetime because phases 1 and 2 are already done by
-    /// the time any reader calls this. Acquires the shared lock once; callers should
-    /// cache the result and call `sliceFromBucket` on the cached pointer to skip the
-    /// lock on every subsequent slice.
+    /// Resolve `(part, column)` to a stable pointer into the share. Callers must ensure
+    /// no further `insert`/`retain*` runs for this key after they hold the returned
+    /// pointer; other keys may continue to be populated. Acquires the shared lock once;
+    /// callers should cache the result and call `sliceFromBucket` on the cached pointer
+    /// to skip the lock on every subsequent slice.
     const Bucket * findBucket(const std::string & part_name, const std::string & column_name) const;
 
     /// True when no bucket has been inserted (no sparse columns / no recognised conjuncts).
     bool empty() const;
 
-    /// Phase 2 (per-part): drop ranges in `part_name`'s bucket that no surviving
+    /// Per-part cleanup: drop ranges in `part_name`'s bucket that no surviving
     /// `MarkRange` overlaps; remove the bucket if every range was dropped. Buckets for
-    /// other parts are untouched. Used by the `data_read` analyzer once it has computed
-    /// its verdict for the part.
+    /// other parts are untouched. Must not race with a `findBucket` for `part_name`.
+    /// Used by `MergeTreeSparsityReader::read` once the verdict is known.
     void retainRangesForPart(const std::string & part_name, const MarkRanges & surviving_ranges);
 
-    /// Phase 2 (whole-share): one-shot cleanup before any scan reader looks up buckets:
+    /// Whole-share cleanup, safe when no scan reader has resolved any bucket yet:
     ///   - Parts absent from `per_part_surviving_ranges` are dropped entirely.
     ///   - For surviving parts, `retainRangesForPart` is applied.
     /// Used after `planning`-mode pruning has settled the surviving mark ranges.
@@ -113,16 +113,10 @@ public:
 private:
     /// All store mutations (`insert`, `retain*`) take the unique lock; lookups (`findBucket`,
     /// `empty`) take the shared lock. `sliceFromBucket` runs on the `Bucket *` returned by
-    /// `findBucket` and is lock-free; the lifecycle contract (see class doc) is what makes
-    /// that pointer stable.
+    /// `findBucket` and is lock-free; the per-key lifecycle contract (see class doc) is
+    /// what keeps that pointer stable.
     mutable SharedMutex mutex;
     std::unordered_map<std::string, std::unordered_map<std::string, Bucket>> store;
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Flipped to true the first time `findBucket` runs. Any later phase-1/2 call
-    /// (`insert`/`retain*`) triggers a `chassert` failure.
-    mutable std::atomic<bool> consumed{false};
-#endif
 };
 
 using SparseOffsetsSharePtr = std::shared_ptr<SparseOffsetsShare>;
