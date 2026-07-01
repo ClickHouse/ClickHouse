@@ -133,8 +133,9 @@ private:
     /// source table and capture a pinned snapshot of the existing source data together, under a brief
     /// exclusive lock on the source, then populate the view from that snapshot without holding the lock.
     /// This guarantees every row inserted concurrently with the population is delivered to the view exactly
-    /// once. Returns std::nullopt when there is no single source table to subscribe to (the caller then
-    /// falls back to the regular, non-atomic path); throws when the source cannot provide a pinned snapshot.
+    /// once. Returns std::nullopt when atomic population does not apply - there is no single source table to
+    /// subscribe to, the source does not exist yet, or it cannot provide a pinned snapshot (see
+    /// getValidatedAtomicPopulateSource); the caller then falls back to the regular, non-atomic path.
     std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
