@@ -403,6 +403,16 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
 #       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
 #       `metric_log` errors are not masked.
+# `PostgreSQLConnectionPool: Connection error` and `DatabasePostgreSQL::removeOutdatedTables` + `Connection to`
+#       + `failed` are benign background-reconnection errors from a `DatabasePostgreSQL` engine left behind by
+#       `04210_show_remote_databases_in_system_tables` when the stress phase interrupts that test between its
+#       `CREATE DATABASE ... ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and the final `DROP DATABASE` (the
+#       documentation IP `192.0.2.1`, RFC 5737, is intentionally unreachable). `DatabasePostgreSQL::startup`
+#       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
+#       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
+#       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
+#       query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -487,6 +497,8 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "PostgreSQLConnectionPool: Connection error" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
