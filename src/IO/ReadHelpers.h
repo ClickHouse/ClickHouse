@@ -893,15 +893,33 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     {
         if (s[4] < '0' || s[4] > '9')
         {
-            if constexpr (!throw_exception)
-            {
-                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                    || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                    return ReturnType(false);
+            /// Validate before parsing as YYYY-MM-DD. Without this the throw path blindly consumed
+            /// non-date bytes ("0.0,true,...") as year/month/day, advancing the buffer by 10 chars
+            /// and corrupting subsequent field parsing.
+            ///
+            /// Also detect dt64 decimal timestamps like "3333.77\n..." where s[4]='.' but s[7]='\n':
+            /// a real dotted date like "2025.08.31" has the same separator at both positions.
+            const bool is_decimal_dt64 = dt64_mode && s[4] == '.' && s[7] != '.';
+            const bool looks_like_date
+                = !is_decimal_dt64
+                && isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
+                && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])
+                && isSymbolIn(s[4], allowed_date_delimiters) && isSymbolIn(s[7], allowed_date_delimiters);
 
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+            if (!looks_like_date)
+            {
+                if constexpr (!throw_exception)
                     return ReturnType(false);
+                if constexpr (!dt64_mode)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                /// For dt64_mode: only fall through when the input contains '.' at s[1..4],
+                /// indicating a decimal epoch like "0.0", "12.3", "123.4", "1234.5".
+                /// Any digit-starting input without '.' in that range is ambiguous and rejected.
+                else if (isNumericASCII(s[0]) && s[1] != '.' && s[2] != '.' && s[3] != '.' && s[4] != '.')
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             }
+            else
+            {
 
             UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
             UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
@@ -971,6 +989,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 buf.position() += date_broken_down_length;
 
             return ReturnType(true);
+            }
         }
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
@@ -1198,6 +1217,60 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     if (!buf.eof() && *buf.position() == '.')
     {
+        /// Disambiguate: dotted-date suffix ".MM.DD" vs decimal fraction.
+        /// When the ReadBuffer chunk boundary fell inside the six-byte date suffix,
+        /// readDateTimeTextFallback could not peek non-destructively; it returns the
+        /// integer year in 'whole' and leaves the buffer at '.'. Detect ".digit digit ."
+        /// (four bytes) to confirm a dotted date and parse month/day here.
+        if (buf.available() >= 4
+            && isNumericASCII(buf.position()[1])
+            && isNumericASCII(buf.position()[2])
+            && buf.position()[3] == '.')
+        {
+            ++buf.position(); /// skip '.'
+            const UInt8 month_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            const UInt8 month_ones = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            ++buf.position(); /// skip '.' between month and day
+            const UInt8 day_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            UInt8 day_ones = 0;
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                day_ones = static_cast<UInt8>(*buf.position() - '0');
+                ++buf.position();
+            }
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+            if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+            {
+                ++buf.position();
+                char time_buf[8];
+                if (buf.read(time_buf, 8) == 8)
+                {
+                    hour   = static_cast<UInt8>((time_buf[0] - '0') * 10 + (time_buf[1] - '0'));
+                    minute = static_cast<UInt8>((time_buf[3] - '0') * 10 + (time_buf[4] - '0'));
+                    second = static_cast<UInt8>((time_buf[6] - '0') * 10 + (time_buf[7] - '0'));
+                }
+            }
+            const auto year  = static_cast<UInt16>(whole);
+            const auto month = static_cast<UInt8>(month_tens * 10 + month_ones);
+            const auto day   = static_cast<UInt8>(day_tens   * 10 + day_ones);
+            components.whole = static_cast<DateTime64::NativeType>(
+                makeDateTime(date_lut, year, month, day, hour, minute, second));
+            components.fractional = 0;
+
+            bool is_ok = true;
+            if constexpr (std::is_same_v<ReturnType, void>)
+                datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_fraction_multiplier;
+            else
+            {
+                is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+                if (is_ok)
+                    datetime64 *= negative_fraction_multiplier;
+            }
+            return ReturnType(is_ok);
+        }
+
         ++buf.position();
 
         /// Read digits, up to 'scale' positions.
@@ -1325,6 +1398,60 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     /// parse fractional part if present
     if (!buf.eof() && *buf.position() == '.')
     {
+        /// Disambiguate: dotted-date suffix ".MM.DD" vs decimal fraction.
+        /// When the ReadBuffer chunk boundary fell inside the six-byte date suffix,
+        /// readDateTimeTextFallback could not peek non-destructively; it returns the
+        /// integer year in 'whole' and leaves the buffer at '.'. Detect ".digit digit ."
+        /// (four bytes) to confirm a dotted date and parse month/day here.
+        if (buf.available() >= 4
+            && isNumericASCII(buf.position()[1])
+            && isNumericASCII(buf.position()[2])
+            && buf.position()[3] == '.')
+        {
+            ++buf.position(); /// skip '.'
+            const UInt8 month_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            const UInt8 month_ones = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            ++buf.position(); /// skip '.' between month and day
+            const UInt8 day_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            UInt8 day_ones = 0;
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                day_ones = static_cast<UInt8>(*buf.position() - '0');
+                ++buf.position();
+            }
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+            if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+            {
+                ++buf.position();
+                char time_buf[8];
+                if (buf.read(time_buf, 8) == 8)
+                {
+                    hour   = static_cast<UInt8>((time_buf[0] - '0') * 10 + (time_buf[1] - '0'));
+                    minute = static_cast<UInt8>((time_buf[3] - '0') * 10 + (time_buf[4] - '0'));
+                    second = static_cast<UInt8>((time_buf[6] - '0') * 10 + (time_buf[7] - '0'));
+                }
+            }
+            const auto year  = static_cast<UInt16>(whole);
+            const auto month = static_cast<UInt8>(month_tens * 10 + month_ones);
+            const auto day   = static_cast<UInt8>(day_tens   * 10 + day_ones);
+            components.whole = static_cast<DateTime64::NativeType>(
+                makeDateTime(date_lut, year, month, day, hour, minute, second));
+            components.fractional = 0;
+
+            bool is_ok = true;
+            if constexpr (std::is_same_v<ReturnType, void>)
+                datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_fraction_multiplier;
+            else
+            {
+                is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+                if (is_ok)
+                    datetime64 *= negative_fraction_multiplier;
+            }
+            return ReturnType(is_ok);
+        }
+
         ++buf.position();
 
         /// Read digits, up to 'scale' positions.
@@ -1519,6 +1646,60 @@ inline ReturnType readTimeTextImpl(Decimal64 & time64, UInt32 scale, ReadBuffer 
 
     if (!buf.eof() && *buf.position() == '.')
     {
+        /// Disambiguate: dotted-date suffix ".MM.DD" vs decimal fraction.
+        /// When the ReadBuffer chunk boundary fell inside the six-byte date suffix,
+        /// readDateTimeTextFallback could not peek non-destructively; it returns the
+        /// integer year in 'whole' and leaves the buffer at '.'. Detect ".digit digit ."
+        /// (four bytes) to confirm a dotted date and parse month/day here.
+        if (buf.available() >= 4
+            && isNumericASCII(buf.position()[1])
+            && isNumericASCII(buf.position()[2])
+            && buf.position()[3] == '.')
+        {
+            ++buf.position(); /// skip '.'
+            const UInt8 month_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            const UInt8 month_ones = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            ++buf.position(); /// skip '.' between month and day
+            const UInt8 day_tens = static_cast<UInt8>(*buf.position() - '0'); ++buf.position();
+            UInt8 day_ones = 0;
+            if (!buf.eof() && isNumericASCII(*buf.position()))
+            {
+                day_ones = static_cast<UInt8>(*buf.position() - '0');
+                ++buf.position();
+            }
+            UInt8 hour = 0;
+            UInt8 minute = 0;
+            UInt8 second = 0;
+            if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+            {
+                ++buf.position();
+                char time_buf[8];
+                if (buf.read(time_buf, 8) == 8)
+                {
+                    hour   = static_cast<UInt8>((time_buf[0] - '0') * 10 + (time_buf[1] - '0'));
+                    minute = static_cast<UInt8>((time_buf[3] - '0') * 10 + (time_buf[4] - '0'));
+                    second = static_cast<UInt8>((time_buf[6] - '0') * 10 + (time_buf[7] - '0'));
+                }
+            }
+            const auto year  = static_cast<UInt16>(whole);
+            const auto month = static_cast<UInt8>(month_tens * 10 + month_ones);
+            const auto day   = static_cast<UInt8>(day_tens   * 10 + day_ones);
+            components.whole = static_cast<DateTime64::NativeType>(
+                makeDateTime(date_lut, year, month, day, hour, minute, second));
+            components.fractional = 0;
+
+            bool is_ok = true;
+            if constexpr (std::is_same_v<ReturnType, void>)
+                datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale) * negative_fraction_multiplier;
+            else
+            {
+                is_ok = DecimalUtils::tryGetDecimalFromComponents<DateTime64>(components, scale, datetime64);
+                if (is_ok)
+                    datetime64 *= negative_fraction_multiplier;
+            }
+            return ReturnType(is_ok);
+        }
+
         ++buf.position();
 
         /// Read digits, up to 'scale' positions.
