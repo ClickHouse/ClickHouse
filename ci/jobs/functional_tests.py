@@ -732,8 +732,14 @@ def main():
         global_time_limit = 0
         if is_flaky_check:
             FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            # Floor at a positive value (as the targeted check below does): if the
+            # remaining flaky budget hit 0, run_tests would see global_time_limit == 0
+            # and fall into the regular-run branch, arming Shell.run for the whole
+            # remaining *job* budget instead of stopping this flaky check once its own
+            # 45-min budget is spent. Keeping it >= 60 stays on the graceful
+            # `--global_time_limit` path (bounded outer_timeout = limit + 900).
             global_time_limit = max(
-                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
                 f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
