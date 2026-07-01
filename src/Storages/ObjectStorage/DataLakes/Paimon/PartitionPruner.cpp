@@ -21,7 +21,7 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
-    boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
+    static boost::intrusive_ptr<DB::IAST> createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         auto partition_key_ast = DB::make_intrusive<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
@@ -36,7 +36,7 @@ namespace Paimon
         return partition_key_ast;
     }
 
-    DB::ColumnsDescription getPartitionColumnsDescription(
+    static DB::ColumnsDescription getPartitionColumnsDescription(
         const DB::PaimonTableSchema & table_schema)
     {
         DB::NamesAndTypesList names_and_types;
@@ -68,13 +68,13 @@ namespace Paimon
                 {},
                 context_);
 
-            DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);
+            DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_, /* boolean_context */ true);
             key_condition.emplace(
                 inverted_dag, context_, partition_key.column_names, partition_key.expression, true /* single_point */);
         }
     }
 
-    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
+    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry) const
     {
         if (!key_condition.has_value())
             return false;

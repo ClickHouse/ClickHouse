@@ -19,10 +19,10 @@ m:   {'k':'v'}
 dt:  2023-01-02 03:04:05
 d:   2023-01-02
 u:   00000000-0000-0000-0000-000000000001
---- coerce Int32 -> Int64 ---
-42
---- coerce Int32 -> Int8 ---
-42
+--- coerce Int32 -> Int64 (in range) ---
+200
+--- coerce Int32(=200) -> Int8 (silent wrap to -56) ---
+-56
 --- error: coerce Int32 -> Float64 (not allowed) ---
 Code: 44
 --- Nullable round-trip ---

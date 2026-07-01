@@ -4,6 +4,8 @@
 -- Tag no-parallel, no-parallel-replicas: the cache is system-wide so concurrent queries can influence the cache
 
 set log_queries = 1;
+-- Suppress retryable AWS 5xx noise that would otherwise fail the test via stderr-fatal.
+set send_logs_level = 'fatal';
 system drop parquet metadata cache;
 
 select count(), ParamCurrency
@@ -11,14 +13,14 @@ from deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/h
 where Robotness > 0
 group by ParamCurrency
 format null 
-settings use_parquet_metadata_cache=1, input_format_parquet_use_native_reader_v3=1, log_comment='04103-pq-cache-miss-and-load';
+settings use_parquet_metadata_cache=1, log_comment='04103-pq-cache-miss-and-load';
 
 select count(), ParamCurrency
 from deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/', nosign, settings allow_experimental_delta_kernel_rs = 1)
 where Robotness > 0
 group by ParamCurrency
 format null
-settings use_parquet_metadata_cache=1, input_format_parquet_use_native_reader_v3=1, log_comment='04103-pq-cache-hit';
+settings use_parquet_metadata_cache=1, log_comment='04103-pq-cache-hit';
 
 system flush logs query_log;
 

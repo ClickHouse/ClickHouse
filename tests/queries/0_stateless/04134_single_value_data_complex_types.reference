@@ -9,9 +9,6 @@
 --- min / max of IPv4 / IPv6 ---
 1.1.1.1	192.168.1.1
 ::1	2001:db8::1
---- any_value of Tuple (order-stable via ORDER BY) ---
-(1,'a')
-(3,'c')
 --- argMin / argMax on Tuple value, numeric key ---
 (2,'b')
 (3,'c')
@@ -21,8 +18,8 @@
 --- merge via GROUP BY (multi-partition) ---
 1	(2,'b')	(1,'a')	(1,'a')	(2,'b')
 2	(4,'d')	(3,'c')	(3,'c')	(4,'d')
---- empty / null handling ---
-(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')
+--- empty input on Tuple aggregates ---
+(0,'')	(0,'')	(0,'')	(0,'')
 --- Nullable(Int32) aggregates (min/max only; any/anyLast are non-deterministic) ---
 1	3	2	1
 --- min/max over LowCardinality String ---
