@@ -52,6 +52,7 @@ private:
     VectorWithMemoryTracking<const uint8_t *> capture_starts;
     VectorWithMemoryTracking<const uint8_t *> capture_ends;
 
+    Pos begin{};
     Pos pos{};
     Pos end{};
 public:
@@ -103,6 +104,7 @@ public:
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
+        begin = pos_;
         pos = pos_;
         end = end_;
     }
@@ -115,10 +117,14 @@ public:
 
         if (matcher)
         {
-            /// `extractAll` re-anchors `^` at the current position: the subject is the substring `[pos, end)`.
-            const auto * b = reinterpret_cast<const uint8_t *>(pos);
-            const auto * e = reinterpret_cast<const uint8_t *>(end);
-            if (matcher.func(b, e, b, capture_starts.data(), capture_ends.data()) != 1)
+            /// Search for the leftmost match at or after `pos`, but keep the whole string `[begin, end)` as the
+            /// subject so that `^` stays anchored at the true string start (as in the RE2 path below) instead of
+            /// re-anchoring at every iteration. The matcher reports capture spans as absolute pointers into the
+            /// haystack (see `CompileRegexp.h`).
+            const auto * subject_begin = reinterpret_cast<const uint8_t *>(begin);
+            const auto * subject_end = reinterpret_cast<const uint8_t *>(end);
+            const auto * search_from = reinterpret_cast<const uint8_t *>(pos);
+            if (matcher.func(subject_begin, subject_end, search_from, capture_starts.data(), capture_ends.data()) != 1)
                 return false;
             if (capture_ends[0] == capture_starts[0]) /// empty whole match - stop, like the RE2 path
                 return false;
@@ -137,7 +143,9 @@ public:
             return true;
         }
 
-        if (!re->match(pos, end - pos, matches) || !matches[0].length)
+        /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
+        /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
+        if (!re->match(begin, end - begin, pos - begin, matches) || !matches[0].length)
             return false;
 
         if (matches[capture].offset == std::string::npos)
@@ -148,11 +156,11 @@ public:
         }
         else
         {
-            token_begin = pos + matches[capture].offset;
+            token_begin = begin + matches[capture].offset;
             token_end = token_begin + matches[capture].length;
         }
 
-        pos += matches[0].offset + matches[0].length;
+        pos = begin + matches[0].offset + matches[0].length;
 
         return true;
     }
