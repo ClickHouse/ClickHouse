@@ -63,7 +63,6 @@ namespace Setting
 {
 extern const SettingsDialect dialect;
 extern const SettingsBool use_client_time_zone;
-extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -520,6 +519,11 @@ void Client::connect()
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
+    /// Capture the client local time zone before the branch below may switch the process default
+    /// to the server time zone. `connect()` can run again on reconnect, so only capture once.
+    if (client_local_timezone.empty())
+        client_local_timezone = DateLUT::instance().getTimeZone();
+
     if (hosts_and_ports.empty())
     {
         String host = config().getString("host", "localhost");
@@ -652,13 +656,6 @@ void Client::connect()
                       << "Proceeding with local time zone." << std::endl
                       << std::endl;
         }
-    }
-    else if (!client_context->getSettingsRef().isChanged("session_timezone"))
-    {
-        /// The client parses DateTime string literals in its local time zone, but string literals interpreted
-        /// server-side (async INSERT, SELECT literals) use `session_timezone`. Propagate the local time zone as
-        /// `session_timezone` so both paths agree. An explicit `--session_timezone` from the user takes priority.
-        client_context->setSetting("session_timezone", DateLUT::instance().getTimeZone());
     }
 
     /// A custom prompt can be specified

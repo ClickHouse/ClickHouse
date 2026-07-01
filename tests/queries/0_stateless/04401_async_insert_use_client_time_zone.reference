@@ -1,2 +1,6 @@
-async	1500036000
-sync	1500036000
+flag_async	1500036000
+flag_sync	1500036000
+set_async	1500036000
+set_sync	1500036000
+settings_async	1500036000
+reset_async matches server tz	1
