@@ -61,22 +61,29 @@ done
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "${write_script}" >>"${LOG_FILE}" 2>&1 </dev/null &
 PIDS+=("$!")
 
-# Wait on each PID explicitly; bare `wait` would return 0 and hide background failures.
-# We don't fail the test on any non-zero exit, only on the specific LOGICAL_ERROR this
-# test exists to detect (see grep below): the concurrent workload can hit unrelated
-# transient errors (write-side metadata-version retries, JSON manifest read mid-write,
-# unrelated randomized-setting validation errors) that this test is not designed to gate.
+# Wait on each PID explicitly and fail on any non-zero exit. On debug/sanitizer builds the
+# LOGICAL_ERROR aborts the server, so the failing client exits non-zero but never prints the
+# error string below (it goes to the server log) -- the grep alone would miss the regression
+# there. A single writer and trivial reads over a pinned snapshot do not error under
+# CI-randomized settings, so a non-zero exit is signal, not noise.
+status=0
 for pid in "${PIDS[@]}"; do
-    wait "$pid" || true
+    if ! wait "$pid"; then
+        status=1
+    fi
 done
 
-# This test only exists to catch the specific LOGICAL_ERROR "Can't extract iceberg table state
-# from storage snapshot" thrown by `IcebergMetadata::iterate()` and `isDataSortedBySortingKey()`
-# when `datalake_table_state` is missing under concurrent commits. Match exactly that string;
-# the deterministic counterpart is `04305_iceberg_missing_table_state.sh`.
+# Second, descriptive gate for the release/thrown case: the specific LOGICAL_ERROR
+# "Can't extract iceberg table state from storage snapshot" thrown by `IcebergMetadata::iterate()`
+# and `isDataSortedBySortingKey()` when `datalake_table_state` is missing under concurrent
+# commits. Deterministic counterpart: `04305_iceberg_missing_table_state.sh`.
 if grep -qF "Can't extract iceberg table state" "${LOG_FILE}"; then
-    echo "FAIL: iceberg table state LOGICAL_ERROR observed in concurrent workload"
-    grep -F "Can't extract iceberg table state" "${LOG_FILE}" | head -5
+    status=1
+fi
+
+if [ "$status" -ne 0 ]; then
+    echo "FAIL: a concurrent Iceberg client failed or hit the table-state LOGICAL_ERROR"
+    cat "${LOG_FILE}"
     exit 1
 fi
 
