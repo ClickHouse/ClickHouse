@@ -52,7 +52,13 @@ done
 SQLANCER_USER="sqlancer"
 SQLANCER_PASSWORD="sqlancer"
 curl -fsS --data "CREATE USER OR REPLACE ${SQLANCER_USER} IDENTIFIED WITH plaintext_password BY '${SQLANCER_PASSWORD}'" 'http://localhost:8123/'
-curl -fsS --data "GRANT ALL ON *.* TO ${SQLANCER_USER} WITH GRANT OPTION" 'http://localhost:8123/'
+# Grant everything the `default` user itself holds (CURRENT GRANTS) rather than
+# `GRANT ALL`: on the embedded-config server the default user does not hold the
+# full ALL set (e.g. it lacks `SHOW NAMED COLLECTIONS SECRETS`), so a plain
+# `GRANT ALL ON *.* ... WITH GRANT OPTION` fails with ACCESS_DENIED (code 497)
+# on current ClickHouse. CURRENT GRANTS copies exactly the default user's
+# privileges, which is everything SQLancer++ needs (DDL/DML on any database).
+curl -fsS --data "GRANT CURRENT GRANTS ON *.* TO ${SQLANCER_USER} WITH GRANT OPTION" 'http://localhost:8123/'
 
 cd /sqlancer-pp
 
