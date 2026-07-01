@@ -4418,6 +4418,12 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
 )", 0) \
+    DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
+Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
+Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
+)", 0) \
     DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
 Connection pool size for each connection settings string in ODBC bridge.
 )", 0) \
@@ -7760,6 +7766,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
 )", 0) \
+    DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
+Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
+)", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
 )", 0) \
@@ -8116,16 +8125,16 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
-    DECLARE(Bool, use_text_index_tokens_cache, false, R"(
-Whether to use a cache of deserialized text index token infos.
+    DECLARE(Bool, use_text_index_tokens_cache, true, R"(
+Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, use_text_index_header_cache, false, R"(
-Whether to use a cache of deserialized text index header.
+    DECLARE(Bool, use_text_index_header_cache, true, R"(
+Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to use a cache of deserialized text index posting lists.
+Whether to cache deserialized text index deserialized posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(

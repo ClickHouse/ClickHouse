@@ -1002,7 +1002,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
 {
     const auto & arrow_type = static_cast<const TimeType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale);
+    auto internal_type = std::make_shared<DataTypeTime64>(scale);
     auto internal_column = internal_type->createColumn();
     validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<TimeArray>(chunk, column_name); });
     internal_column->reserve(arrow_column->length());
@@ -1015,7 +1015,7 @@ static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow:
         const auto & chunk = checkedCast<TimeArray>(*(arrow_column->chunk(chunk_i)), column_name);
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            assert_cast<DataTypeDateTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
+            assert_cast<DataTypeTime64::ColumnType &>(*internal_column).insertValue(chunk.Value(value_i));
         }
     }
 
@@ -2352,7 +2352,8 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
+    /// LowCardinality(Nullable(...)) holds nulls inside the dictionary, so canBeInsideNullable() is false; exclude it explicitly.
+    bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&

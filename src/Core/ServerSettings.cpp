@@ -1042,6 +1042,12 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     <keep_alive_timeout>30</keep_alive_timeout>
     ```
     )", 0) \
+    DECLARE(UInt64, max_http_index_page_size, 10 * 1024 * 1024, R"(
+    Maximum size of an HTTP index page response used for directory listing over HTTP.
+    If the response exceeds this limit, the query fails with an error.
+
+    Default: `10485760` (10 MiB).
+    )", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
     Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server.
 
@@ -1441,6 +1447,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
     DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
@@ -1492,6 +1499,16 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     ```xml
     <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+    ```
+    )", 0) \
+    DECLARE(String, dynamic_user_defined_executable_functions_path, "/var/lib/clickhouse/dynamic_user_defined_executable_functions/", R"(
+    The directory used to keep configuration files of executable UDFs created dynamically by drivers (see `CREATE FUNCTION ... ENGINE = DriverName(...)`).
+    On server restart, the directory is scanned for configuration files and the corresponding UDFs are loaded without invoking the driver again.
+
+    **Example**
+
+    ```xml
+    <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
     ```
     )", 0) \
     DECLARE(String, top_level_domains_path, "/var/lib/clickhouse/top_level_domains/", R"(
