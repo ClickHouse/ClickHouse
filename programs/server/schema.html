@@ -726,16 +726,28 @@ function storeCredentials() {
 
 /// Live credential feedback, as in `play.html`: paint the user/password fields green
 /// once a probe query succeeds and red when it fails, and surface the server version.
+/// The `Connected to ClickHouse v...` message shares the single `#status` line with the load
+/// status, so we record when that line currently holds a credential-probe message. That lets
+/// `resetCredentialsStatus` clear the stale message — and only that message — when the fields
+/// change, without wiping an unrelated load status such as `Loaded N tables`.
+let statusIsCredentialProbe = false;
 function setCredentialStatus(ok, version) {
     for (const id of ['user', 'password']) {
         $(id).classList.toggle('ok', ok);
         $(id).classList.toggle('fail', !ok);
     }
-    if (ok && version) setStatus(`Connected to ClickHouse v${version}.`);
+    if (ok && version) {
+        setStatus(`Connected to ClickHouse v${version}.`);
+        /// `setStatus` clears the flag, so claim ownership of the line afterwards.
+        statusIsCredentialProbe = true;
+    }
 }
 
 function resetCredentialsStatus() {
     for (const id of ['user', 'password']) $(id).classList.remove('ok', 'fail');
+    /// Editing a field invalidates the probe: drop the now-stale `Connected to ...` text, but
+    /// leave a load status in place — it describes the last load, not the current credentials.
+    if (statusIsCredentialProbe) setStatus('');
 }
 
 /// Capture the connection (`url` / `user` / `password`) a load is about to use. The captured
@@ -817,6 +829,9 @@ const state = {
 function setStatus(text, isError) {
     $('status').textContent = text;
     $('status').classList.toggle('error', !!isError);
+    /// Any non-credential status (load progress/result/failure) takes over the line, so a later
+    /// field edit must not treat it as a stale probe message. `setCredentialStatus` re-sets this.
+    statusIsCredentialProbe = false;
 }
 
 /// Unambiguous composite key for a `(database, table)` pair. We cannot use
