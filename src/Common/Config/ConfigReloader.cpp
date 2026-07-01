@@ -26,13 +26,15 @@ ConfigReloader::ConfigReloader(
         const std::string & preprocessed_dir_,
         std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
         const Coordination::EventPtr & zk_changed_event_,
-        Updater && updater_)
+        Updater && updater_,
+        PreUpdateHook && pre_update_hook_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
+    , pre_update_hook(std::move(pre_update_hook_))
 {
     auto config = reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 
@@ -169,6 +171,33 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         {
             files = std::move(new_files);
             need_reload_from_zk = false;
+        }
+
+        /// Invoke pre-updater hook (e.g. to reload HashiCorp Vault) and
+        /// re-process config if it returns true (two-pass loading).
+        bool needs_reprocess = false;
+        if (pre_update_hook)
+        {
+            try
+            {
+                needs_reprocess = pre_update_hook(loaded_config.configuration);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Pre-updater hook failed, continuing without re-processing");
+            }
+        }
+
+        if (needs_reprocess)
+        {
+            LOG_DEBUG(log, "Pre-updater hook triggered re-processing of config '{}'", config_path);
+            ConfigProcessor second_processor(config_path);
+            loaded_config = second_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
+            if (loaded_config.has_zk_includes)
+                loaded_config = second_processor.loadConfigWithZooKeeperIncludes(
+                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
+            second_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
+            LOG_DEBUG(log, "Re-processed config '{}'", config_path);
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);

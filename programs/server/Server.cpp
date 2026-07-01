@@ -2796,6 +2796,15 @@ try
 
             /// Must be the last.
             latest_config = loaded_config;
+        },
+        [](ConfigurationPtr new_config) -> bool
+        {
+            if (new_config->has("hashicorp_vault"))
+            {
+                HashiCorpVault::instance().load(*new_config, "hashicorp_vault");
+                return true;
+            }
+            return false;
         });
 
     const auto listen_hosts = getListenHosts(config());

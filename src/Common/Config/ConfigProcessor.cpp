@@ -629,18 +629,6 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"])
     {
-        /// Load vault from the config being processed if it has a <hashicorp_vault> section.
-        /// This ensures from_hashicorp_vault is resolved against the correct vault config
-        /// even on live reloads (ConfigReloader processes config before the callback, so
-        /// the old singleton state would be used) and first-time loads.
-        /// The vault section is resolved after from_zk and from_env substitutions, so any
-        /// ZK- or env-backed vault settings are available when loading.
-        if (getRootNode(config.get())->getNodeByPath("hashicorp_vault"))
-        {
-            ConfigurationPtr cfg(new Poco::Util::XMLConfiguration(config.get()));
-            HashiCorpVault::instance().load(*cfg, "hashicorp_vault");
-        }
-
         if (HashiCorpVault::instance().isLoaded())
         {
             std::string hashicorp_vault_key_value;

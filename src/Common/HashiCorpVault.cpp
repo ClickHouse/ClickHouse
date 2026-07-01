@@ -115,8 +115,8 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     bool cache_sessions = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_CACHE_SESSIONS, false);
     request_context->enableSessionCache(cache_sessions);
 
-    // Set to false in order to avoid memory leak
-    request_context->enableExtendedCertificateVerification(false);
+    bool extended_verification = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
+    request_context->enableExtendedCertificateVerification(extended_verification);
 
     bool prefer_server_ciphers = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     if (prefer_server_ciphers)
