@@ -1,11 +1,14 @@
 import psycopg2
 import pytest
+import socket
 import uuid
 import threading
 import time
 
 from helpers.cluster import ClickHouseCluster
+from helpers.port_forward import PortForward
 from helpers.postgres_utility import get_postgres_conn
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -66,6 +69,33 @@ SELECT generate_infinite_sequence() as counter;"""
 
 
 @pytest.fixture(scope="module")
+def setup_sleepy_view(started_cluster):
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """CREATE OR REPLACE FUNCTION sleepy_start()
+RETURNS SETOF integer AS $$
+BEGIN
+    PERFORM pg_sleep(600);
+    RETURN NEXT 1;
+END;
+$$ LANGUAGE plpgsql;"""
+    )
+    cursor.execute(
+        """CREATE OR REPLACE VIEW sleepy_view AS
+SELECT sleepy_start() AS id;"""
+    )
+
+    yield
+
+    cursor.close()
+    conn.close()
+
+
+@pytest.fixture(scope="module")
 def setup_big_data_table(started_cluster):
     # Connect to postgres_database database
     conn = get_postgres_conn(
@@ -96,6 +126,87 @@ FROM generate_series(1, 1000000);
     # Cleanup
     cursor.close()
     conn.close()
+
+
+def wait_for_port_forward_connection(port_forward):
+    for _ in range(50):
+        with port_forward._clients_lock:
+            if port_forward._clients:
+                return
+        time.sleep(0.1)
+
+    raise AssertionError("No active PostgreSQL proxy connection")
+
+
+def wait_for_proxy_listener_closed(host, port):
+    for _ in range(50):
+        try:
+            with socket.create_connection((host, port), timeout=0.1):
+                pass
+        except OSError:
+            return
+        time.sleep(0.1)
+
+    raise AssertionError("PostgreSQL proxy listener is still accepting connections")
+
+
+def test_kill_query_when_postgresql_cancel_connection_fails(
+    started_cluster, setup_sleepy_view
+):
+    port_forward = PortForward()
+    port = port_forward.start(
+        (started_cluster.postgres_ip, started_cluster.postgres_port)
+    )
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    query_id = str(uuid.uuid4())
+    query_errors = []
+    query_exceptions = []
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                f"""SELECT count() FROM postgresql(
+        '{proxy_host}:{port}',
+        'postgres_database',
+        'sleepy_view',
+        'postgres',
+        'ClickHouse_PostgreSQL_P@ssw0rd')""",
+                query_id=query_id,
+                timeout=60,
+            )
+            query_errors.append(error)
+        except Exception as ex:
+            query_exceptions.append(ex)
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    try:
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "1",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+        wait_for_port_forward_connection(port_forward)
+
+        # Keep the active `postgresql` data connection open, but refuse the separate
+        # `pqxx::connection::cancel_query` connection opened by `KILL QUERY`.
+        port_forward.stop()
+        wait_for_proxy_listener_closed(proxy_host, port)
+
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}'")
+        node1.wait_for_log_line("PQcancel\\(\\) -- connect\\(\\) failed", timeout=30)
+
+        assert node1.query("SELECT 1").strip() == "1"
+    finally:
+        port_forward.stop(force=True)
+
+    query_thread.join(timeout=30)
+    assert not query_thread.is_alive()
+    assert not query_exceptions
+    assert query_errors
 
 
 def test_kill_infinite_query(setup_infinite_query):
