@@ -153,6 +153,11 @@ settings, and `NULL` values are always written as Hive's default null sequence
 setting. This keeps the output readable by Hive's `LazySimpleSerDe` regardless of
 these generic text settings.
 
+Non-finite `Float32` and `Float64` values are written using Hive's Java spellings
+`NaN`, `Infinity` and `-Infinity`, rather than ClickHouse's usual `nan`/`inf`/`-inf`
+tokens, so that Hive's `FLOAT`/`DOUBLE` parser reads them back as the same values
+instead of `NULL`.
+
 ```sql title="Query"
 SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
 ```
