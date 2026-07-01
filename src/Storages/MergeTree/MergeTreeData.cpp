@@ -3288,20 +3288,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-const NameSet & MergeTreeData::getRootTemporaryDirectoryPrefixesForBackgroundCleanup()
-{
-    static const NameSet prefixes = {"tmp_", "tmp-fetch_"};
-    return prefixes;
-}
-
-const NameSet & MergeTreeData::getRootTemporaryDirectoryPrefixesForRecovery()
-{
-    static const NameSet prefixes = {"tmp_", "delete_tmp_", "tmp-fetch_"};
-    return prefixes;
-}
-
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3316,7 +3303,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3344,7 +3331,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4158,7 +4145,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, getRootTemporaryDirectoryPrefixesForRecovery());
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -5278,9 +5265,9 @@ void MergeTreeData::changeSettings(
 
                             const auto entry_path = fs::path(relative_data_path) / name;
                             bool is_temporary_directory = false;
-                            for (const auto & prefix : getRootTemporaryDirectoryPrefixesForRecovery())
+                            for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
                             {
-                                if (startsWith(name, prefix) && disk->existsDirectory(entry_path))
+                                if (std::string_view(name).starts_with(prefix) && disk->existsDirectory(entry_path))
                                 {
                                     is_temporary_directory = true;
                                     break;
