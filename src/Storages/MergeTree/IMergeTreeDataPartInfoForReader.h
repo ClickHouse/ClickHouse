@@ -56,6 +56,11 @@ public:
 
     virtual const String & getPartName() const = 0;
 
+    virtual String getParentPartName() const = 0;
+
+    /// `parent:projection` identity. See `IMergeTreeDataPart::getNameWithParent`.
+    virtual String getNameWithParent() const = 0;
+
     virtual const MergeTreePartInfo & getPartInfo() const = 0;
 
     virtual Int64 getMinDataVersion() const = 0;

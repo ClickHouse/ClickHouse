@@ -473,11 +473,22 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
 }
 
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
-    MergeTreeSkipIndexReaderPtr skip_index_reader_, MergeTreeProjectionIndexReaderPtr projection_index_reader_)
+    MergeTreeSkipIndexReaderPtr skip_index_reader_,
+    MergeTreeProjectionIndexReaderPtr projection_index_reader_,
+    MergeTreeSparsityReaderPtr sparsity_reader_,
+    SparseOffsetsSharePtr sparse_offsets_share_)
     : skip_index_reader(std::move(skip_index_reader_))
     , projection_index_reader(std::move(projection_index_reader_))
+    , sparsity_reader(std::move(sparsity_reader_))
+    , sparse_offsets_share(std::move(sparse_offsets_share_))
 {
-    chassert(skip_index_reader || projection_index_reader);
+    chassert(skip_index_reader || projection_index_reader || sparsity_reader || sparse_offsets_share);
+    if (sparsity_reader)
+    {
+        if (!sparse_offsets_share)
+            sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
+        sparsity_reader->setSparseOffsetsShare(sparse_offsets_share);
+    }
 }
 
 MergeTreeIndexReadResultPtr
@@ -514,6 +525,17 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart &
                 }
             }
 
+            if (sparsity_reader)
+            {
+                auto sparsity_res = sparsity_reader->read(part);
+                if (sparsity_res)
+                {
+                    if (!res)
+                        res = std::make_shared<MergeTreeIndexReadResult>();
+                    res->sparsity_read_result = std::move(sparsity_res);
+                }
+            }
+
             promise->set_value(res);
             return res;
         }
@@ -544,6 +566,9 @@ void MergeTreeIndexReadResultPool::cancel() noexcept
 
     if (projection_index_reader)
         projection_index_reader->cancel();
+
+    if (sparsity_reader)
+        sparsity_reader->cancel();
 }
 
 }

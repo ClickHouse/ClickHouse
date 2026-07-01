@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
 #include <Core/Names.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -58,6 +59,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Storages/MergeTree/SparseGranuleAnalyzer.h>
+#include <Storages/MergeTree/SparsityFilter.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
@@ -268,6 +271,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsSparsityPruningMode use_sparsity_info_for_pruning;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_top_k_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
@@ -634,6 +638,12 @@ Pipe ReadFromMergeTree::readFromPool(
 
     if (use_prefetched_read_pool)
     {
+        /// Hand the analyzer-populated share to the pool so prefetched readers can
+        /// skip prefetching `SparseOffsets` streams that are already in memory.
+        SparseOffsetsSharePtr sparse_offsets_share;
+        if (index_build_context && index_build_context->index_reader_pool)
+            sparse_offsets_share = index_build_context->index_reader_pool->getSparseOffsetsShare();
+
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
             std::move(parts_with_range),
             mutations_snapshot,
@@ -648,7 +658,8 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            dataflow_cache_updater);
+            dataflow_cache_updater,
+            std::move(sparse_offsets_share));
     }
     else
     {
@@ -2603,6 +2614,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
         res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsBySparsityInfo(
+        res_parts, query_info_, mutations_snapshot, context_, log, result.index_stats);
+
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
         metadata_snapshot->getColumns().getAllPhysical(),
@@ -2707,6 +2721,28 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (!distributed_index_analysis_enabled)
         {
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
+
+            /// Lazily create the share so the planning-mode analyzer (`filterMarkRangesBySparsityInfo`)
+            /// can persist its decompressed offsets here, and the scan-side `MergeTreeReader`s can
+            /// then serve their sparse-column reads from memory.
+            if (settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::Planning && !result.sparse_offsets_share)
+                result.sparse_offsets_share = std::make_shared<SparseOffsetsShare>();
+
+            result.parts_with_ranges = MergeTreeDataSelectExecutor::filterMarkRangesBySparsityInfo(
+                result.parts_with_ranges, query_info_, mutations_snapshot, data, metadata_snapshot, context_, result.sparse_offsets_share.get(), log, result.index_stats);
+
+            /// Drop offsets the scan cannot consume any more: buckets for fully-pruned
+            /// parts, plus per-range entries that no surviving `MarkRange` overlaps.
+            if (result.sparse_offsets_share)
+            {
+                std::unordered_map<std::string, MarkRanges> surviving;
+                surviving.reserve(result.parts_with_ranges.size());
+                for (const auto & p : result.parts_with_ranges)
+                    surviving.emplace(p.data_part->getNameWithParent(), p.ranges);
+                result.sparse_offsets_share->retainSurvivingRanges(surviving);
+                if (result.sparse_offsets_share->empty())
+                    result.sparse_offsets_share.reset();
+            }
 
             if (final_second_pass)
             {
@@ -2905,11 +2941,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
-                String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                                                 : data_part->name;
                 query_condition_cache->write(
                     data_part->storage.getStorageID().uuid,
-                    part_name,
+                    data_part->getNameWithParent(),
                     *condition_hash,
                     output->result_name,
                     remaining_ranges.ranges,
@@ -3488,12 +3522,41 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
     required_source_columns = all_column_names;
 }
 
+bool ReadFromMergeTree::supportsPruningOnDataRead() const
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (queryHasJoinedTable(query_info.query_tree))
+        return false;
+
+    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
+    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if pruning metadata is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of a pruned column,
+    /// making existing on-disk pruning metadata incompatible with the current column type.
+    /// In the data-read phase pruning is applied after planning-time per-part compatibility
+    /// checks, so disable the feature entirely when any data/alter mutations or patches are pending.
+    if (!mutations_snapshot)
+        return false;
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+        return false;
+
+    return true;
+}
+
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 {
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
-    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// When a vector similarity index is present, disable the `use_skip_indexes_on_data_read` path entirely and apply
     /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
     /// remaining skip indexes run after it.
     const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
@@ -3507,36 +3570,21 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
 
-    /// Remove this after statistics based cardinality estimation is enabled.
-    if (query_info.query_tree)
-    {
-        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
-
-        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
-            return false;
-    }
-
     if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         return false;
 
-    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
-    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
-    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
-    /// if the skip index is evaluated during data read (scan).
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
-        return false;
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
-        return false;
+    return supportsPruningOnDataRead();
+}
 
-    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
-    /// making the existing on-disk index data incompatible with the current column type.
-    /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
-    /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
-    /// any data/alter mutations or patches are pending.
-    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+bool ReadFromMergeTree::supportsSparsityInfoOnDataRead() const
+{
+    const auto & settings = context->getSettingsRef();
+    /// Masking rewrites values at read time, so on-disk sparse offsets can't be trusted to
+    /// prune granules at scan time either (see MergeTreeData::hasEnabledMaskingPolicies).
+    if (data.hasEnabledMaskingPolicies(context))
         return false;
-
-    return true;
+    return settings[Setting::use_sparsity_info_for_pruning] == SparsityPruningMode::DataRead && !query_info.isFinal()
+        && !context->getCurrentTransaction() && query_info.query_tree && supportsPruningOnDataRead();
 }
 
 
@@ -3906,10 +3954,31 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
     }
 
-    if (skip_index_reader || projection_index_reader)
+    /// Lazy sparsity classification at scan time uses the same late-pruning
+    /// safety rules as scan-time skip indexes, plus sparsity-specific checks.
+    MergeTreeSparsityReaderPtr sparsity_reader;
+    if (supportsSparsityInfoOnDataRead())
+    {
+        if (auto * query_node = query_info.query_tree->as<QueryNode>(); query_node && query_node->hasWhere())
+        {
+            auto conjuncts = collectSparsityConjuncts(query_node->getWhere(), query_info.table_expression);
+            if (!conjuncts.empty())
+            {
+                sparsity_reader = std::make_shared<MergeTreeSparsityReader>(
+                    std::move(conjuncts), data, storage_snapshot, context, getLogger("MergeTreeSparsityReader"));
+            }
+        }
+    }
+
+    /// Planning-mode pruning may have already populated the offsets share; if so we must
+    /// still create the pool so the scan-side readers can pick it up via
+    /// `MergeTreeReadTask::initializeIndexReader`.
+    if (skip_index_reader || projection_index_reader || sparsity_reader || result.sparse_offsets_share)
     {
         MergeTreeIndexReadResultPoolPtr index_read_result_pool
-            = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader), std::move(projection_index_reader));
+            = std::make_shared<MergeTreeIndexReadResultPool>(
+                std::move(skip_index_reader), std::move(projection_index_reader), std::move(sparsity_reader),
+                result.sparse_offsets_share);
 
         RangesByIndex read_ranges;
         PartRemainingMarks part_remaining_marks;
@@ -4081,6 +4150,8 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "PrimaryKeyExpand";
         case ReadFromMergeTree::IndexType::NonIntersectingSplit:
             return "NonIntersectingSplit";
+        case ReadFromMergeTree::IndexType::Sparsity:
+            return "Sparsity";
     }
 }
 

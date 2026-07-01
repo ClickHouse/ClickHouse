@@ -1,0 +1,17 @@
+parts:	2
+fresh x!=0	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+fresh isNull	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+fresh isNot	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+reload x!=0	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+reload isNull	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+reload isNot	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+parts after merge:	1
+merged x!=0	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+merged isNull	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+merged isNot	ReadFromPreparedSource (Optimized trivial count with sparsity filter)
+planning x!=0	Sparsity
+planning isNull	Sparsity
+planning isNot	Sparsity
+conflict m IS NULL value:	2
+conflict m.null value:	3
+conflict trivial m.null:	3

@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
+            {"use_sparsity_info_for_pruning", "off", "off", "New (experimental) setting controlling sparsity-based pruning of parts (always at plan time) and granules (at plan or scan time)."},
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
@@ -1274,6 +1276,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"compute_exact_num_defaults_for_sparse_columns", false, false, "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
 

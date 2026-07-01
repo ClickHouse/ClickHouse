@@ -122,6 +122,28 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
     return false;
 }
 
+bool queryHasJoinedTable(const QueryTreeNodePtr & query_tree)
+{
+    if (!query_tree)
+        return false;
+    auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return false;
+    const auto & join_tree = query_node->getJoinTree();
+    if (!join_tree)
+        return false;
+    /// `ARRAY JOIN` can wrap a JOIN in the same join tree, so check every node, not just
+    /// the root. `buildTableExpressionsStack` already flattens through `ARRAY_JOIN` /
+    /// `JOIN` / `CROSS_JOIN`, so any join node in the tree shows up in the stack.
+    for (const auto & node : buildTableExpressionsStack(join_tree))
+    {
+        auto kind = node->getNodeType();
+        if (kind == QueryTreeNodeType::JOIN || kind == QueryTreeNodeType::CROSS_JOIN)
+            return true;
+    }
+    return false;
+}
+
 bool isNameOfInFunction(const std::string & function_name)
 {
     bool is_special_function_in = function_name == "in" ||

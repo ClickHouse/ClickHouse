@@ -28,6 +28,10 @@ public:
 
     const String & getPartName() const override { return data_part->name; }
 
+    String getParentPartName() const override { return data_part->getParentPartName(); }
+
+    String getNameWithParent() const override { return data_part->getNameWithParent(); }
+
     const MergeTreePartInfo & getPartInfo() const override { return data_part->info; }
 
     Int64 getMinDataVersion() const override

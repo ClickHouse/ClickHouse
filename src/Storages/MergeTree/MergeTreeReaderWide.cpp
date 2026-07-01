@@ -173,6 +173,14 @@ size_t MergeTreeReaderWide::readRows(
         prefetchForAllColumns(Priority{}, num_columns, from_mark, current_task_last_mark, continue_reading, /*deserialize_prefixes=*/ true);
         deserializePrefixForAllColumns(num_columns, from_mark, current_task_last_mark);
 
+        /// Establish the absolute row position the call starts at. For `continue_reading=true`
+        /// the reader is wherever the previous call left off (tracked in `current_scan_row`).
+        /// For `continue_reading=false` it seeks to `from_mark` and consumes `rows_offset`
+        /// rows from there as a per-call skip-zone before producing `max_rows_to_read` rows.
+        const size_t scan_row_start_for_this_call = continue_reading
+            ? current_scan_row
+            : data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
+
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
             /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
@@ -195,6 +203,14 @@ size_t MergeTreeReaderWide::readRows(
                 size_t column_size_before_reading = column->size();
                 auto & cache = caches[column_to_read.getNameInStorage()];
                 auto & deserialize_states_cache = deserialize_states_caches[column_to_read.getNameInStorage()];
+
+                seedSparseOffsetsCacheForColumn(
+                    column_to_read.getNameInStorage(),
+                    scan_row_start_for_this_call,
+                    rows_offset,
+                    max_rows_to_read,
+                    column_size_before_reading,
+                    cache);
 
                 readData(
                     column_to_read,
@@ -226,6 +242,11 @@ size_t MergeTreeReaderWide::readRows(
 
         prefetched_streams.clear();
         caches.clear();
+
+        /// Advance the next-row tracker by what was actually consumed (rows_offset rows
+        /// skipped + read_rows produced). The next `continue_reading=true` call uses this
+        /// to compute its `scan_row_start_for_this_call`.
+        current_scan_row = scan_row_start_for_this_call + rows_offset + read_rows;
 
         /// NOTE: positions for all streams must be kept in sync.
         /// In particular, even if for some streams there are no rows to be read,
@@ -570,6 +591,28 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
+        /// The values stream is skipped during deserialization when the caller only wants
+        /// `SparseOffsets`; mirror that here so the prefetcher doesn't issue reads for the
+        /// `SparseElements` substream we will never consume.
+        if (only_read_sparse_offsets)
+        {
+            for (const auto & elem : substream_path)
+            {
+                if (elem.type == ISerialization::Substream::SparseElements)
+                    return;
+            }
+        }
+
+        /// `SparseOffsets` already cached by the planning-mode analyzer; the scan will
+        /// serve them from `SparseOffsetsShare` without touching the file, so don't
+        /// prefetch (especially relevant for remote storage).
+        if (sparse_offsets_share && !substream_path.empty()
+            && substream_path.back().type == ISerialization::Substream::SparseOffsets)
+        {
+            if (sparse_offsets_share->findBucket(data_part_info_for_read->getNameWithParent(), name_and_type.getNameInStorage()))
+                return;
+        }
+
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
@@ -656,6 +699,7 @@ void MergeTreeReaderWide::readData(
     };
 
     deserialize_settings.continuous_reading = continue_reading;
+    deserialize_settings.skip_sparse_values_substream = only_read_sparse_offsets;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(

@@ -1,0 +1,8 @@
+truth_isnull	0
+truth_isnotnull	10000
+rewrite_isnull	0
+rewrite_isnotnull	10000
+planning_isnull	0
+planning_isnotnull	10000
+data_read_isnull	0
+data_read_isnotnull	10000

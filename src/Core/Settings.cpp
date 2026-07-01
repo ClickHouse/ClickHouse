@@ -4595,9 +4595,98 @@ The optimization is suppressed when the user has explicitly set `group_by_overfl
 
 Possible values:
 
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
+    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
+Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
+queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
+exactly partitions rows into defaults and non-defaults of `col`. The count is then
+served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
+keeps in `serialization.json`, with no data scan.
+
+Patterns recognised:
+
+- `col = default(col)` / `col != default(col)` for `Int*` / `UInt*`, `String` /
+  `FixedString`, `Date` / `DateTime` / `DateTime64`, `Decimal*`, `UUID`, `IPv4` / `IPv6`.
+- `IS NULL` / `IS NOT NULL` on `Nullable` columns.
+- `empty(col)` / `notEmpty(col)` on `String` columns.
+- `col = true` / `col != true` on `Bool` columns.
+- `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
+
+The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
+or composite types (`Tuple`, `Array`, `Map`, ...) — for these the count is served from the
+regular scan path.
+
+To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
+table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
+inserts and merges. Parts written without it are silently opted out of the rewrite, so
+enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
+
+For the `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns, the column must also
+have a `num_defaults` entry in `serialization.json`, which only happens when the MergeTree
+table setting `nullable_serialization_version` is set to `allow_sparse` at insert /
+merge time. With the default value `basic` `Nullable` columns get no per-column entry, so
+the optimization silently does not apply.
+
+Possible values:
+
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-)", 0) \
+
+See also:
+
+- [optimize_trivial_count_query](#optimize_trivial_count_query)
+- [use_sparsity_info_for_pruning](#use_sparsity_info_for_pruning)
+)", EXPERIMENTAL) \
+    DECLARE(SparsityPruningMode, use_sparsity_info_for_pruning, SparsityPruningMode::Off, R"(
+When and how to prune parts and granules whose `WHERE` predicate is provably false
+on every row, based on the per-column `num_defaults` / `num_rows` counters in
+`serialization.json` (part level) and on the offsets-stream marks of sparse-encoded
+columns (granule level).
+
+Possible values:
+
+   - `off`       — No sparsity-based pruning.
+   - `planning`  — Part-level and granule-level pruning at plan time. The pruned
+                   mark count is visible in `EXPLAIN indexes = 1` and downstream
+                   stages (parallel replicas, `max_rows_to_read` with `throw`)
+                   see the correct mark count. May load offsets-stream marks for
+                   the predicate column upfront, which can be costly on very wide
+                   / TB-size columns. Disabled for `FINAL`, pending mutations or
+                   patch parts, and active transactions.
+   - `data_read` — Part-level pruning at plan time; granule-level pruning deferred
+                   to scan time. Scales to TB-size columns because offsets-stream
+                   marks are only paged in for parts actually being scanned. Not
+                   visible in `EXPLAIN`. Subject to the same restrictions as
+                   [use_skip_indexes_on_data_read](#use_skip_indexes_on_data_read).
+
+A part is dropped when one of:
+
+- `col != default(col)` and the part records `num_defaults == num_rows` (every row is the default);
+- `col = default(col)` and the part records `num_defaults == 0` (no row is the default).
+
+A granule is dropped under the same condition, applied per-granule from the offsets-stream
+marks (sparse-encoded columns only).
+
+Recognised predicate shapes match those of [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter).
+
+Part-level pruning consumes the per-part `num_defaults` counter and only acts on parts
+that carry the `exact_num_defaults` flag, written by the MergeTree table setting
+`compute_exact_num_defaults_for_sparse_columns`. Parts without the flag (older servers
+or current servers with the table setting off) can still be pruned at the granule level.
+
+Granule-level pruning reads the column's `SparseOffsets` stream directly, so it works
+for any part whose column ended up sparse-serialized regardless of `exact_num_defaults`.
+For `Nullable` columns this additionally requires the MergeTree table setting
+`nullable_serialization_version = 'allow_sparse'` at insert / merge time; with the
+default value `basic`, `Nullable` columns never go sparse and granule pruning falls
+back to the regular scan path.
+
+See also:
+
+- [optimize_trivial_count_with_sparsity_filter](#optimize_trivial_count_with_sparsity_filter)
+)", EXPERIMENTAL) \
     DECLARE(Bool, optimize_count_from_files, true, R"(
 Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 

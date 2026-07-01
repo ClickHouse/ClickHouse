@@ -12,12 +12,14 @@ namespace ErrorCodes
 
 bool MergeTreeReaderIndex::canSkipAnyMark() const
 {
-    /// `canSkipMark` only ever returns true when a skip-index or projection-index read result is present.
-    /// `lazy_materializing_rows` alone affects row-level filtering inside a granule and never returns
-    /// true from `canSkipMark`, so a reader configured only for lazy materialization does not skip
-    /// whole marks.
+    /// Mirror every source `canSkipMark` consults. `lazy_materializing_rows` alone
+    /// affects row-level filtering inside a granule and never returns true from
+    /// `canSkipMark`, so a reader configured only for lazy materialization does not
+    /// skip whole marks.
     return index_read_result
-        && (index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+        && (index_read_result->skip_index_read_result
+            || index_read_result->projection_index_read_result
+            || index_read_result->sparsity_read_result);
 }
 
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
@@ -36,7 +38,10 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
     , main_reader(main_reader_)
 {
     chassert(lazy_materializing_rows || index_read_result);
-    chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
+    chassert(lazy_materializing_rows
+        || index_read_result->skip_index_read_result
+        || index_read_result->projection_index_read_result
+        || index_read_result->sparsity_read_result);
 }
 
 size_t MergeTreeReaderIndex::readRows(
@@ -183,6 +188,13 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
         size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
         size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);
         if (index_read_result->projection_index_read_result->rangeAllZero(begin, end))
+            return true;
+    }
+
+    if (index_read_result && index_read_result->sparsity_read_result)
+    {
+        const auto & selected = index_read_result->sparsity_read_result->granules_selected;
+        if (mark < selected.size() && !selected[mark])
             return true;
     }
 

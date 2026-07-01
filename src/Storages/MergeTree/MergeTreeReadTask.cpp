@@ -69,6 +69,17 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges)
         reader->updateAllMarkRanges(ranges);
 }
 
+void MergeTreeReadTask::Readers::setSparseOffsetsShare(const SparseOffsetsSharePtr & share)
+{
+    if (!share)
+        return;
+    if (main)
+        main->setSparseOffsetsShare(share);
+    for (auto & reader : prewhere)
+        if (reader)
+            reader->setSparseOffsetsShare(share);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -340,6 +351,12 @@ void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPt
     MergeTreeIndexReadResultPtr index_read_result;
     if (index_build_context)
         index_read_result = index_build_context->getPreparedIndexReadResult(*this);
+
+    /// `getPreparedIndexReadResult` is what triggers `MergeTreeSparsityReader::read`,
+    /// which populates the offsets share. Hand it to every reader so the column scan
+    /// can serve sparse-offsets reads from memory.
+    if (index_build_context)
+        readers.setSparseOffsetsShare(index_build_context->index_reader_pool->getSparseOffsetsShare());
 
     const PaddedPODArray<UInt64> * part_rows = nullptr;
     if (lazy_materializing_rows)

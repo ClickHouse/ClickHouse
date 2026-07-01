@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
 
@@ -99,6 +100,7 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        Sparsity,
     };
 
     struct DistributedIndexStat
@@ -169,6 +171,12 @@ public:
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
         std::atomic<bool> exceeded_row_limits = false;
+        /// Decompressed sparse-offsets produced during planning by
+        /// `filterMarkRangesBySparsityInfo` (or, in data_read mode, by the lazy
+        /// `MergeTreeSparsityReader::read`). Threaded into the scan-side
+        /// `MergeTreeReader` instances so they can serve sparse-column reads from
+        /// memory instead of re-decompressing the substream from disk.
+        SparseOffsetsSharePtr sparse_offsets_share;
 
         AnalysisResult() = default;
 
@@ -190,6 +198,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
+            , sparse_offsets_share(other.sparse_offsets_share)
         {}
 
         AnalysisResult(AnalysisResult && other) noexcept
@@ -210,6 +219,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
+            , sparse_offsets_share(std::move(other.sparse_offsets_share))
         {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
@@ -558,7 +568,9 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool supportsPruningOnDataRead() const;
     bool supportsSkipIndexesOnDataRead() const;
+    bool supportsSparsityInfoOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
     VirtualFields shared_virtual_fields;

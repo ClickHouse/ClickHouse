@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 
 namespace DB
 {
@@ -96,6 +97,19 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
+    /// Query-scoped store of analyzer-produced sparse offsets. When set, the Wide /
+    /// Compact reader's `readRows` may serve sparse-column offset reads from this
+    /// store instead of decompressing the substream from disk. Set after construction
+    /// because the share lives on `MergeTreeIndexReadResultPool`, which is constructed
+    /// independently of the reader.
+    void setSparseOffsetsShare(SparseOffsetsSharePtr share) { sparse_offsets_share = std::move(share); }
+
+    /// When enabled, the reader skips reading the `SparseElements` substream of any
+    /// sparse-serialised column it touches. Used by the sparsity analyzer, which only
+    /// inspects the offsets column and discards the read result. See the analogous flag
+    /// in `ISerialization::DeserializeBinaryBulkSettings` for safety constraints.
+    void setOnlyReadSparseOffsets(bool value) { only_read_sparse_offsets = value; }
+
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.
@@ -112,6 +126,22 @@ protected:
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const;
+
+    /// Seed `cache` with a pre-computed `SparseOffsets` entry sliced out of
+    /// `sparse_offsets_share` for the row window `[scan_row_start, +rows_offset + limit)`.
+    /// The caller is responsible for translating `from_mark`/`continue_reading` into
+    /// `scan_row_start`: with `continue_reading=false` it's `getMarkStartingRow(from_mark)`;
+    /// with `continue_reading=true` it's wherever the reader's internal state left off
+    /// from the previous call. Passing `from_mark` blindly would be wrong because the
+    /// reader doesn't seek when continuing.
+    /// A miss in the share is silently ignored: the reader falls back to a normal disk read.
+    void seedSparseOffsetsCacheForColumn(
+        const String & column_name_in_storage,
+        size_t scan_row_start,
+        size_t rows_offset,
+        size_t limit,
+        size_t frame_prev_size,
+        ISerialization::SubstreamsCache & cache);
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
@@ -134,6 +164,30 @@ protected:
 
     MergeTreeReaderSettings settings;
     MergeTreeSettingsPtr storage_settings;
+
+    /// Optional. See `setSparseOffsetsShare`.
+    SparseOffsetsSharePtr sparse_offsets_share;
+
+    /// Per-reader cache of the share's `(part, column)` lookup result. The reader is
+    /// scoped to one part and re-reads the same column thousands of times, so resolving
+    /// the bucket pointer once and reusing it skips the share's `SharedMutex` on every
+    /// slice call.
+    struct SharedBucketCacheEntry
+    {
+        String column_name_key;
+        const SparseOffsetsShare::Bucket * bucket = nullptr;
+        bool initialized = false;
+    } cached_share_bucket;
+
+    /// Next part-row position the reader will read at when `continue_reading=true`.
+    /// Maintained by the concrete reader's `readRows` (set at the start of each call
+    /// based on the seek target, then incremented by the rows actually consumed).
+    /// Used by `seedSparseOffsetsCacheForColumn`'s caller to feed the right row window
+    /// when the call doesn't seek to `from_mark`.
+    size_t current_scan_row = 0;
+
+    /// See `setOnlyReadSparseOffsets`.
+    bool only_read_sparse_offsets = false;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;

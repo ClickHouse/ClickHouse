@@ -4,6 +4,7 @@ SET explain_query_plan_default = 'legacy';
 set enable_analyzer=1;
 SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 0; -- CI may inject True, causing prewhere subcolumns to be kept in output positions, changing EXPLAIN plan
+SET use_sparsity_info_for_pruning = 'off'; -- Avoid altering the granules read (`n.null`)
 
 drop table if exists test;
 create table test (x UInt64, n Nullable(UInt32), t Tuple(a UInt32, b UInt32), json JSON) engine=MergeTree order by tuple() settings index_granularity=4;

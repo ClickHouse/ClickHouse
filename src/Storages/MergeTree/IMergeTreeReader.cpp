@@ -13,10 +13,20 @@
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Common/ProfileEvents.h>
+#include <DataTypes/Serializations/SerializationSparse.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/SparseOffsetsShare.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
+
+namespace ProfileEvents
+{
+extern const Event SparseOffsetsShareSeedHits;
+extern const Event SparseOffsetsShareSeedMisses;
+}
 
 
 namespace DB
@@ -513,6 +523,50 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
             "Expected {}, got {}",
             converted_requested_columns.size(),
             num_columns_to_read);
+}
+
+void IMergeTreeReader::seedSparseOffsetsCacheForColumn(
+    const String & column_name_in_storage,
+    size_t scan_row_start,
+    size_t rows_offset,
+    size_t limit,
+    size_t frame_prev_size,
+    ISerialization::SubstreamsCache & cache)
+{
+    if (!sparse_offsets_share)
+        return;
+
+    /// Resolve the share's bucket once per column on this reader and remember it.
+    if (!cached_share_bucket.initialized || cached_share_bucket.column_name_key != column_name_in_storage)
+    {
+        cached_share_bucket.column_name_key = column_name_in_storage;
+        cached_share_bucket.bucket = sparse_offsets_share->findBucket(
+            data_part_info_for_read->getNameWithParent(), column_name_in_storage);
+        cached_share_bucket.initialized = true;
+    }
+
+    if (!cached_share_bucket.bucket)
+    {
+        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedMisses);
+        return;
+    }
+
+    auto element = SparseOffsetsShare::sliceFromBucket(
+        *cached_share_bucket.bucket,
+        scan_row_start,
+        rows_offset,
+        limit,
+        frame_prev_size);
+    if (!element)
+    {
+        ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedMisses);
+        return;
+    }
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::SparseOffsets);
+    ISerialization::addElementToSubstreamsCache(&cache, path, std::move(element));
+    ProfileEvents::increment(ProfileEvents::SparseOffsetsShareSeedHits);
 }
 
 String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const

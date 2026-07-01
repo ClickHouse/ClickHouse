@@ -207,6 +207,31 @@ public:
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 
+    /// Drop a whole part when the predicate provably can't match any of its rows,
+    /// using per-column `num_defaults` / `num_rows` recorded in `serialization.json`.
+    /// See `SparsityFilter.h` for the recognised predicate shapes.
+    static RangesInDataParts filterPartsBySparsityInfo(
+        const RangesInDataParts & parts,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Drop individual granules from each part's `MarkRanges` by reading the sparse
+    /// offsets stream and classifying each granule. Works on any sparse-encoded part
+    /// (no `exact_num_defaults` flag required, unlike part-level pruning above).
+    static RangesInDataParts filterMarkRangesBySparsityInfo(
+        const RangesInDataParts & parts,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const MergeTreeData & data,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context,
+        SparseOffsetsShare * offsets_share,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
     struct IndexAnalysisContext
     {
         StorageMetadataPtr metadata_snapshot;
