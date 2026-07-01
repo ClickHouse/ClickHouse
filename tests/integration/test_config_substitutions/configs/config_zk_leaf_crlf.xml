@@ -1,0 +1,17 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a leaf value that contains a CR/LF (`a\r\nb`). The value must
+             survive byte-for-byte: XML end-of-line normalization would otherwise rewrite `\r\n` to
+             `\n` when the synthetic <from_zk> document is reparsed. -->
+        <log_comment from_zk="/leaf_with_crlf" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>

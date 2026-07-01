@@ -107,6 +107,19 @@ node14 = cluster.add_instance(
     user_configs=["configs/config_zk_leaf_cdata.xml"],
     with_zookeeper=True,
 )
+# from_zk structural <include> whose YAML document root is a sequence of two mappings: both
+# items must be inserted, not just the first.
+node15 = cluster.add_instance(
+    "node15",
+    user_configs=["configs/config_zk_yaml_sequence.xml"],
+    with_zookeeper=True,
+)
+# from_zk leaf value that contains a CR/LF: it must survive byte-for-byte.
+node16 = cluster.add_instance(
+    "node16",
+    user_configs=["configs/config_zk_leaf_crlf.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -163,6 +176,23 @@ def start_cluster():
             zk.create(
                 path="/leaf_with_cdata_end",
                 value=b"a]]>b",
+                makepath=True,
+            )
+            # A YAML document whose root is a *sequence* of two mappings, referenced from a
+            # structural <include from_zk=...>: every item must be spliced under one synthetic
+            # root, so both settings survive (a top-level sequence used to clone the synthetic
+            # `clickhouse` root and keep only the first item).
+            zk.create(
+                path="/profile_settings_yaml_sequence",
+                value=b"- max_query_size: 99999\n- max_result_rows: 12345\n",
+                makepath=True,
+            )
+            # A leaf value that contains a CR/LF (`a\r\nb`): it must survive byte-for-byte. XML
+            # end-of-line normalization would otherwise rewrite `\r\n` to `\n` when the synthetic
+            # <from_zk> document is reparsed.
+            zk.create(
+                path="/leaf_with_crlf",
+                value=b"a\r\nb",
                 makepath=True,
             )
 
@@ -512,4 +542,34 @@ def test_config_zk_leaf_cdata_end_sequence(start_cluster):
     assert (
         node14.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
         == "a]]>b\n"
+    )
+
+
+def test_config_zk_yaml_top_level_sequence_include(start_cluster):
+    """A structural <include from_zk=...> whose YAML document root is a sequence must insert every item.
+
+    A top-level sequence used to clone the synthetic `clickhouse` root, appending several root
+    elements of which only the first was kept, so every item after the first was silently dropped.
+    Both settings from the two-item sequence must therefore be present.
+    """
+    assert (
+        node15.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
+        == "99999\n"
+    )
+    assert (
+        node15.query("SELECT value FROM system.settings WHERE name = 'max_result_rows'")
+        == "12345\n"
+    )
+
+
+def test_config_zk_leaf_crlf_preserved(start_cluster):
+    """A from_zk leaf value containing a CR/LF must survive byte-for-byte.
+
+    XML end-of-line normalization (XML 1.0, section 2.11) rewrites `\\r\\n` to `\\n` when the
+    synthetic <from_zk> document is reparsed, so the value would otherwise be silently corrupted.
+    `a\\r\\nb` is 0x61 0x0D 0x0A 0x62, i.e. hex `610D0A62`.
+    """
+    assert (
+        node16.query("SELECT hex(value) FROM system.settings WHERE name = 'log_comment'")
+        == "610D0A62\n"
     )
