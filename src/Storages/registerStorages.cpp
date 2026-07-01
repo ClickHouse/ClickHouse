@@ -1,3 +1,4 @@
+#include <Storages/Elasticsearch/registerStorageElasticsearchQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
 
@@ -82,7 +83,6 @@ void registerStorageRedis(StorageFactory & factory);
 #if USE_RDKAFKA
 void registerStorageKafka(StorageFactory & factory);
 #endif
-
 #if USE_AMQPCPP
 void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
@@ -188,6 +188,7 @@ void registerStorages()
 #if USE_RDKAFKA
     registerStorageKafka(factory);
 #endif
+    registerStorageElasticsearchQueue(factory);
 
 #if USE_FILELOG
     registerStorageFileLog(factory);
