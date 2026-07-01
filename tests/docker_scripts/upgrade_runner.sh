@@ -337,14 +337,17 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       throwIf, e.g. 02597_column_update_tricky_expression_and_replication). The Stress test runs the fuzzer
 #       (randomized queries) before this stage, so the failing literal and target type are arbitrary (e.g. 'a',
 #       'b', 'Hello', 'x', 'fail', or any fuzzer-generated value) and an exact-literal allow-list can never be
-#       complete. Instead these are matched by error CLASS in the secondary pipe: one of those two error codes
-#       raised on a background-mutation executor (MutatePlainMergeTreeTask / MutateFromLogEntryTask /
-#       MergeTreeBackgroundExecutor), regardless of the value or type. Only those two codes are suppressed, so any
-#       other error on the same executors (including unrelated replicated-mutation regressions on the
-#       MutateFromLogEntryTask path) still reaches upgrade_error_messages.txt. This filter does not broaden the
-#       existing query-error suppression: user-initiated errors carry the `} <Error> TCPHandler:` /
-#       `} <Error> executeQuery:` prefix and are already dropped by the fixed-string entries above, so this class
-#       filter only adds the background-executor lines, which lack that prefix.
+#       complete. Instead these are matched by error CLASS in the secondary pipe: one of those two error codes,
+#       raised while evaluating a user expression ("while executing 'FUNCTION ...") on a background executor
+#       (MutatePlainMergeTreeTask / MutateFromLogEntryTask / MergeTreeBackgroundExecutor), regardless of value or
+#       type. The "while executing 'FUNCTION" frame is required, not just the executor name: MergeTreeBackgroundExecutor
+#       is a shared logger for all background merge AND mutate jobs, and its routine() re-logs the wrapped exception
+#       with only that shared name (no mutation-specific token). Merge-engine work (serialization, IO, checksums)
+#       never evaluates a user FUNCTION expression, so a genuine merge-path CANNOT_PARSE_TEXT / throwIf lacks that
+#       frame and still reaches upgrade_error_messages.txt; likewise any other error code on these executors still
+#       surfaces. This filter does not broaden the existing query-error suppression: user-initiated errors carry
+#       the `} <Error> TCPHandler:` / `} <Error> executeQuery:` prefix and are already dropped by the fixed-string
+#       entries above, so this class filter only adds the background-executor lines, which lack that prefix.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -498,7 +501,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error" \
     | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
-    | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*(Cannot parse string .* as .*CANNOT_PARSE_TEXT|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)" \
+    | grep -avE -e "(MutatePlainMergeTreeTask|MutateFromLogEntryTask|MergeTreeBackgroundExecutor).*while executing 'FUNCTION.*(CANNOT_PARSE_TEXT|FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
