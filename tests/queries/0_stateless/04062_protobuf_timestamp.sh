@@ -122,10 +122,10 @@ expect_rejected "DateTime('UTC')" '\x0D\x0A\x0B\x10\xFF\xFF\xFF\xFF\xFF\xFF\xFF\
 
 # Seconds outside the DateTime64 range [1900-01-01, 2299-12-31] must be rejected, not stored as a wrapping value.
 echo "Seconds before 1900 (DateTime64):"
-expect_rejected "DateTime64(9, 'UTC')" '\x08\x80\xFF\xF6\x81\xEC\xFF\xFF\xFF\xFF\x01' # Timestamp{seconds=-5364662400} = 1800-01-01
+expect_rejected "DateTime64(9, 'UTC')" '\x0D\x0A\x0B\x08\x80\xFF\xF6\x81\xEC\xFF\xFF\xFF\xFF\x01' # Message{ ts{seconds=-5364662400} } = 1800-01-01
 
 echo "Seconds after 2299 (DateTime64):"
-expect_rejected "DateTime64(0, 'UTC')" '\x08\x80\xB6\xD7\xE5\x26' # Timestamp{seconds=10413792000} = 2300-01-01
+expect_rejected "DateTime64(0, 'UTC')" '\x08\x0A\x06\x08\x80\xB6\xD7\xE5\x26' # Message{ ts{seconds=10413792000} } = 2300-01-01
 
 # A singular Timestamp split across repeated field occurrences must be merged, not read as only the last one.
 echo "Split Timestamp message (DateTime64):"
