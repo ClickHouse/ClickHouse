@@ -1,7 +1,7 @@
 Pattern 2 plan is marked with requires_pruning
-Top-K: limit=5, columns=1, directions=[1], requires_pruning=1
+│  Top-K: limit=5, columns=1, directions=[1], requires_pruning=1
 Pattern 1 plan is not
-Top-K: limit=5, columns=1, directions=[1]
+│  Top-K: limit=5, columns=1, directions=[1]
 UInt32 key (erasable hash table, heap + pruning active)
 5	5
 Composite key (pruning of composite heaps)
