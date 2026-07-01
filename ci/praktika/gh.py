@@ -1026,11 +1026,13 @@ class GH:
     def get_pr_url_by_branch(branch, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
-        get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state open"
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        get_url_cmd = f"gh pr list --repo {safe_repo} --head {safe_branch} --json url --jq '.[0].url' --state open"
         url = Shell.get_output(get_url_cmd)
         if not url:
             print(f"WARNING: No open PR found for branch [{branch}] - searching merged")
-            get_url_cmd = f"gh pr list --repo {repo} --head {branch} --json url --jq '.[0].url' --state merged"
+            get_url_cmd = f"gh pr list --repo {safe_repo} --head {safe_branch} --json url --jq '.[0].url' --state merged"
             url = Shell.get_output(get_url_cmd)
         if not url:
             print(f"ERROR: PR not found for branch [{branch}]")
