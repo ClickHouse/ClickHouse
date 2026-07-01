@@ -27,6 +27,7 @@ from pyiceberg.types import (
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import list_s3_objects
 
 BASE_URL = "http://rest:8181/v1"
 
