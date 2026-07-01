@@ -3540,7 +3540,7 @@ Possible values:
 
  Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.
 
- Only plain equality joins whose key types hash consistently with the merge-join comparison are sharded. Cases that cannot be sharded correctly - such as `ASOF` joins, read-in-order (`FinishSorting`) inputs, and floating-point / `JSON` / `Object` / `Dynamic` key types - transparently fall back to a single `full_sorting_merge`.
+ Only plain equality joins whose key types hash consistently with the merge-join comparison are sharded by the hash of the keys. This hash-sharding is skipped for `ASOF` joins, read-in-order (`FinishSorting`) inputs, floating-point / `JSON` / `Object` / `Dynamic` key types, and distributed plans (`make_distributed_plan`), in which case the join runs as a single `full_sorting_merge`. Read-in-order (`FinishSorting`) inputs are an exception: the hash-sharding rewrite is skipped for them, but they can still be sharded by primary-key ranges when `query_plan_join_shard_by_pk_ranges` is enabled.
 
 - prefer_partial_merge
 

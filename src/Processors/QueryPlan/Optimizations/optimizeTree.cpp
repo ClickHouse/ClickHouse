@@ -588,9 +588,20 @@ void optimizeTreeSecondPass(
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
 
-    /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. Unconditional: the
-    /// `join_algorithm` choice is the gate (this is a no-op unless a join uses that algorithm).
-    optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
+    /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
+    /// choice is the gate (this is a no-op unless a join uses that algorithm).
+    ///
+    /// Skipped while building a distributed plan (`make_distributed_plan`): `convertToScatteredFullSort`
+    /// gives the merge-join `SortingStep` a non-empty `partition_by_description`, which is not
+    /// serializable for remote execution (`SortingStep::isSerializable`), so `convertToDistributed`
+    /// would reject such a fragment. Today the pass already cannot fire here - a distributed plan keeps
+    /// its joins logical (`convertLogicalJoinToPhysical` returns early on `make_distributed_plan`), and
+    /// this pass only matches a physical `JoinStep` - so the join stays a single (serializable) merge
+    /// join and the physical join is built per fragment on the worker. The explicit guard documents and
+    /// preserves that invariant even if join physicalization is ever reordered. Local, single-fragment
+    /// distributed plans are re-optimized with `make_distributed_plan = false` and still get sharded.
+    if (!optimization_settings.make_distributed_plan)
+        optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }
