@@ -203,6 +203,11 @@ public:
         Int64 max_date = 0;
         Int16 min_year = 0;
         Int16 max_year = 0;
+        /// For DateTime64 the boundary years are only partially representable at high precision (ticks are stored in an
+        /// Int64), so a candidate that passes the [min_year, max_year] check can still have whole seconds outside the
+        /// representable window. These hold that window in whole seconds and are only consulted on the DateTime64 path.
+        Int64 min_whole_seconds = std::numeric_limits<Int64>::min();
+        Int64 max_whole_seconds = std::numeric_limits<Int64>::max();
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);
@@ -242,22 +247,28 @@ public:
             {
                 max_date = max_seconds * deg + (deg - 1);   /// last tick of 9999-12-31 at this scale
                 max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                max_whole_seconds = max_seconds;
             }
             else
             {
                 max_date = std::numeric_limits<Int64>::max();
                 max_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::max() / deg));
+                /// Largest whole second whose last tick (`whole * deg + deg - 1`) still fits in the Int64.
+                max_whole_seconds = (std::numeric_limits<Int64>::max() - (deg - 1)) / deg;
             }
 
             if (min_seconds >= std::numeric_limits<Int64>::min() / deg)
             {
                 min_date = min_seconds * deg;               /// first tick of 0000-01-01 at this scale
                 min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                min_whole_seconds = min_seconds;
             }
             else
             {
                 min_date = std::numeric_limits<Int64>::min();
                 min_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::min() / deg));
+                /// Smallest whole second whose first tick (`whole * deg`) still fits in the Int64.
+                min_whole_seconds = std::numeric_limits<Int64>::min() / deg;
             }
         }
 
@@ -303,20 +314,26 @@ public:
         else if (isDateTime(result_type))
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
+        {
+            /// DateTime64: saturate before constructing the value. A candidate that passed the [min_year, max_year]
+            /// check can still have whole seconds outside the representable window at high precision (e.g. only up to
+            /// 2262-04-11 at scale 9), and multiplying such a value by 10^scale inside 'dateTimeFromComponents' would
+            /// overflow the Int64 and raise DECIMAL_OVERFLOW instead of clamping.
+            const Int64 whole = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
+            if (whole > max_whole_seconds)
+                return max_date;
+            if (whole < min_whole_seconds)
+                return min_date;
 #ifndef __clang_analyzer__
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
-                fraction,
-                static_cast<UInt32>(scale));
+            result = DecimalUtils::dateTimeFromComponents(whole, fraction, static_cast<UInt32>(scale));
 #else
-        {
             UNUSED(fraction);
             result = 0;
-        }
 #endif
+        }
 
         if (result < min_date)
             return min_date;

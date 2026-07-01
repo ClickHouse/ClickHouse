@@ -18,3 +18,7 @@
 1	1
 -- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior
 1	1
+-- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW
+1	1	1	1
+-- toDateTime64 from a UInt64 above Int64::max saturates to the maximum instead of wrapping to a pre-epoch value
+1	1

@@ -545,7 +545,13 @@ struct ToDateTime64TransformUnsigned
                 return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(std::min<time_t>(from, max_whole), 0, scale_multiplier);
+        {
+            /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
+            /// `Int64::max` (e.g. `18446744073709551615`) is first converted to a negative `time_t` by `std::min<time_t>`
+            /// and the clamp returns a pre-epoch value instead of saturating to `max_whole`.
+            const time_t clamped = static_cast<UInt64>(from) > static_cast<UInt64>(max_whole) ? max_whole : static_cast<time_t>(from);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+        }
     }
 };
 
