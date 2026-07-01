@@ -1663,7 +1663,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+                       getDescription(), expected, Protocol::Server::toString(packet_type));
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
