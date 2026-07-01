@@ -8348,9 +8348,12 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, use_declared_schema_for_parameterized_views, false, R"(
 Allow to show schemas declared in parameterized views.
 
-For example:
+The schema declared in a parameterized view is only exposed when this setting is enabled.
+For example (note the `SET` before `CREATE VIEW`, without it the declared schema is not shown):
 
 ```sql
+SET use_declared_schema_for_parameterized_views = 1;
+
 CREATE VIEW v_nums
 (
     `n` UInt64
