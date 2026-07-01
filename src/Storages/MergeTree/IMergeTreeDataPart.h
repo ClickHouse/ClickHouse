@@ -182,7 +182,9 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
-    Estimates getEstimates() const;
+    /// Returns estimates for the requested columns, loading missing ones and caching them.
+    /// Empty `required_columns` means "load and cache every column with statistics".
+    Estimates getEstimates(const Names & required_columns = {}) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -777,10 +779,17 @@ private:
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
-    /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// Per-column estimates cache, populated incrementally by `getEstimates`.
+    /// `estimates_fully_loaded` becomes true once a non-filtered load has succeeded.
+    /// `estimates_attempted_columns` tracks columns probed at least once with a deterministic
+    /// miss (no statistics declared on the part, or a declared statistics file that is absent
+    /// or unreadable); we skip re-probing them. Transient errors while opening the file
+    /// propagate out of `loadStatistics` and are not recorded, so they can recover on the
+    /// next query.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable NameSet estimates_attempted_columns TSA_GUARDED_BY(estimates_mutex);
+    mutable bool estimates_fully_loaded TSA_GUARDED_BY(estimates_mutex) = false;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

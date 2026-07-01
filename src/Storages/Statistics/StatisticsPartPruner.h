@@ -25,7 +25,22 @@ public:
     /// Returns true if no columns with MinMax statistics are used in the filter, then all parts will match.
     bool isUseless() const { return useless; }
 
-    /// Get the list of column names used in the filter condition that have statistics.
+    /// Columns referenced by the filter that carry MinMax/Basic statistics. Known right after
+    /// construction, so callers can load exactly these statistics before the first
+    /// `checkPartCanMatch` call (which is what populates `used_column_names`). Passing this set
+    /// to `IMergeTreeDataPart::getEstimates` keeps statistics loading lazy: an empty argument
+    /// would be treated as "load every column's statistics".
+    Names getCandidateColumns() const
+    {
+        Names result;
+        result.reserve(stats_column_name_to_type_map.size());
+        for (const auto & [name, _] : stats_column_name_to_type_map)
+            result.push_back(name);
+        return result;
+    }
+
+    /// Get the list of column names actually used by the built key conditions. Only meaningful
+    /// after `checkPartCanMatch` has run for at least one part; used for query-plan reporting.
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
 private:

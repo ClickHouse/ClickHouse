@@ -94,6 +94,7 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexFiles;
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
+    extern const Event LoadedStatisticsColumns;
 }
 
 namespace DimensionalMetrics
@@ -1164,7 +1165,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
+            {
                 result.emplace(column_desc->name, std::move(column_stat));
+                ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
+            }
         }
         catch (...)
         {
@@ -1196,7 +1200,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
+            {
                 result.emplace(column_desc->name, std::move(column_stat));
+                ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
+            }
         }
         catch (...)
         {
@@ -1226,6 +1233,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
 {
+    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+    {
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Injected failure in loadStatistics");
+    });
+
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
@@ -1235,27 +1248,82 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
 {
-    std::lock_guard lock(estimates_mutex);
+    const bool load_all = required_columns.empty();
 
-    if (estimates.has_value())
-        return *estimates;
+    auto buildResult = [&](const Estimates & source) -> Estimates
+    {
+        if (load_all)
+            return source;
 
-    Estimates new_estimates;
-    auto statistics = loadStatistics();
+        Estimates result;
+        result.reserve(required_columns.size());
+        for (const auto & column_name : required_columns)
+            if (auto it = source.find(column_name); it != source.end())
+                result.emplace(column_name, it->second);
+        return result;
+    };
 
+    Names missing;
+
+    {
+        std::lock_guard lock(estimates_mutex);
+
+        if (load_all && estimates_fully_loaded)
+            return estimates;
+
+        if (!load_all && !estimates_fully_loaded)
+        {
+            for (const auto & column_name : required_columns)
+                if (!estimates.contains(column_name) && !estimates_attempted_columns.contains(column_name))
+                    missing.push_back(column_name);
+        }
+
+        if (!load_all && missing.empty())
+            return buildResult(estimates);
+    }
+
+    /// Build a fresh map first; commit to `estimates` only after all per-column
+    /// `getEstimate()` calls succeed so that a failure does not poison the cache.
+    auto statistics = load_all ? loadStatistics() : loadStatistics(missing);
+
+    Estimates fresh;
+    fresh.reserve(statistics.size());
     for (const auto & [column_name, stats] : statistics)
-        new_estimates.emplace(column_name, stats->getEstimate());
+        fresh.emplace(column_name, stats->getEstimate());
 
-    estimates = std::move(new_estimates);
-    return *estimates;
+    std::lock_guard lock(estimates_mutex);
+    for (auto & [column_name, estimate] : fresh)
+        estimates.insert_or_assign(column_name, std::move(estimate));
+
+    if (load_all)
+    {
+        estimates_fully_loaded = true;
+    }
+    else
+    {
+        /// Mark every miss as attempted so we don't re-read the same files on every query.
+        /// Reaching this point means the miss is deterministic: the column has no statistics
+        /// declared on this part, its statistics file is absent, or the file is unreadable
+        /// (corrupted, unsupported version, or a stale type left by an in-progress
+        /// `MODIFY COLUMN`, for which `ColumnStatistics::deserialize` returns a null pointer).
+        /// Transient errors while opening the statistics file propagate out of `loadStatistics`
+        /// and never reach this point, so they stay retryable; a fresh part object (after
+        /// reload or mutation) starts with an empty cache.
+        for (const auto & column_name : missing)
+            if (!estimates.contains(column_name))
+                estimates_attempted_columns.insert(column_name);
+    }
+
+    return buildResult(estimates);
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     std::lock_guard lock(estimates_mutex);
     estimates = new_estimates;
+    estimates_fully_loaded = true;
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)

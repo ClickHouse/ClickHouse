@@ -342,34 +342,149 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
+/// Collect names of every INPUT node reachable from `root`.
+static void collectReachableInputs(const ActionsDAG::Node * root, NameSet & out)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack = {root};
+    while (!stack.empty())
+    {
+        const auto * n = stack.back();
+        stack.pop_back();
+        if (!visited.insert(n).second)
+            continue;
+        if (n->type == ActionsDAG::ActionType::INPUT)
+            out.insert(n->result_name);
+        for (const auto * child : n->children)
+            stack.push_back(child);
+    }
+}
+
+/// For each `output_names` entry that names an output of `dag`, append the names of
+/// the source-side INPUT columns it transitively depends on. Names not present in
+/// `dag.outputs` are passed through unchanged. Used to translate names a parent
+/// step asked stats for from this DAG's outputs to its inputs.
+static void translateToInputColumns(const ActionsDAG & dag, const NameSet & output_names, NameSet & out)
+{
+    for (const auto & name : output_names)
+    {
+        if (const auto * output_node = dag.tryFindInOutputs(name))
+            collectReachableInputs(output_node, out);
+        else
+            out.insert(name);
+    }
+}
+
+struct StatsColumnsResult
+{
+    NameSet source_columns;
+    const ReadFromMergeTree * reading = nullptr;
+};
+
+/// Walk the relation subtree from the root to the underlying read step, translating
+/// `top_level_columns` to source-level column names for stats loading. Stops at
+/// `JoinStepLogical(isOptimized)` — such sub-joins have cached result stats on themselves.
+static StatsColumnsResult collectStatsColumnsForRelation(const QueryPlan::Node & node, const NameSet & top_level_columns)
+{
+    const IQueryPlanStep * step = node.step.get();
+
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
+    {
+        StatsColumnsResult result{.source_columns = top_level_columns, .reading = reading};
+        if (auto prewhere_info = reading->getPrewhereInfo())
+            for (const auto & column_name : prewhere_info->prewhere_actions.getRequiredColumnsNames())
+                result.source_columns.insert(column_name);
+        return result;
+    }
+
+    if (typeid_cast<const ReadFromMemoryStorageStep *>(step))
+        return {};
+
+    if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
+        return collectStatsColumnsForRelation(*reading->getSubplanReferenceRoot(), top_level_columns);
+
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
+        return {};
+
+    if (node.children.size() != 1)
+        return {};
+
+    NameSet mapped;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
+    {
+        translateToInputColumns(expression_step->getExpression(), top_level_columns, mapped);
+    }
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(step))
+    {
+        const auto & dag = filter_step->getExpression();
+        translateToInputColumns(dag, top_level_columns, mapped);
+        if (const auto * filter_node = dag.tryFindInOutputs(filter_step->getFilterColumnName()))
+            collectReachableInputs(filter_node, mapped);
+    }
+    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
+    {
+        mapped = top_level_columns;
+        for (const auto & key : aggregating_step->getAggregatorParameters().keys)
+            mapped.insert(key);
+    }
+    else if (typeid_cast<const SortingStep *>(step) || typeid_cast<const LimitStep *>(step)
+#if CLICKHOUSE_CLOUD
+        || dynamic_cast<const LogicalExchangeStep *>(step)
+#endif
+    )
+    {
+        mapped = top_level_columns;
+    }
+    else if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+             transform && transform->getTransformTraits().preserves_number_of_rows)
+    {
+        /// Generic row-preserving transform (e.g. a window function). Keep walking down so the
+        /// underlying read and any `FilterStep` columns are still discovered. This must stay in
+        /// sync with the matching branch in `estimateReadRowsCount`; otherwise the estimator would
+        /// not be built here while the fold still treats the step as a pass-through, dropping the
+        /// statistics-backed estimate for the whole relation.
+        mapped = top_level_columns;
+    }
+    else
+    {
+        return {};
+    }
+
+    return collectStatsColumnsForRelation(*node.children.front(), mapped);
+}
+
+/// Fold: walks plan subtree and returns row/column-stats estimates. No stats loading here;
+/// caller must construct `estimator` before calling.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr, const ConditionSelectivityEstimatorPtr & estimator = nullptr);
+RelationStats estimateReadRowsCount(
+    QueryPlan::Node & node,
+    const ActionsDAG::Node * filter,
+    const ConditionSelectivityEstimatorPtr & estimator)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
+        if (estimator)
         {
-            if (auto estimator = reading->getConditionSelectivityEstimator(reading->getAllColumnNames()))
-            {
-                auto prewhere_info = reading->getPrewhereInfo();
-                const ActionsDAG::Node * prewhere_node = prewhere_info
-                    ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
-                    : nullptr;
-                auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
-                RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
-                return stats;
-            }
+            auto prewhere_info = reading->getPrewhereInfo();
+            const ActionsDAG::Node * prewhere_node = prewhere_info
+                ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                : nullptr;
+            auto relation_profile = estimator->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
+            RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
+            LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+            return stats;
         }
+
         if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
-        ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
-        analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : reading->selectRangesToRead();
+        auto analyzed_result = reading->getAnalyzedResult();
+        if (!analyzed_result)
+            analyzed_result = reading->selectRangesToRead();
         if (!analyzed_result)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
@@ -378,27 +493,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 total_granules = 0;
         for (const auto & idx_stat : analyzed_result->index_stats)
         {
-            /// We expect the first element to be an index with None type, which is used to estimate the total amount of data in the table.
-            /// Further index_stats are used to estimate amount of filtered data after applying the index.
-            if (ReadFromMergeTree::IndexType::None == idx_stat.type)
+            if (idx_stat.type == ReadFromMergeTree::IndexType::None)
             {
                 total_parts = idx_stat.num_parts_after;
                 total_granules = idx_stat.num_granules_after;
                 continue;
             }
 
-            is_filtered_by_index = is_filtered_by_index
-                || (total_parts && idx_stat.num_parts_after < total_parts)
-                || (total_granules && idx_stat.num_granules_after < total_granules);
-
-            if (is_filtered_by_index)
+            if ((total_parts && idx_stat.num_parts_after < total_parts)
+                || (total_granules && idx_stat.num_granules_after < total_granules))
+            {
+                is_filtered_by_index = true;
                 break;
+            }
         }
-        bool has_filter = filter || reading->getPrewhereInfo();
 
-        /// If any conditions are pushed down to storage but not used in the index,
-        /// we cannot precisely estimate the row count
-        if (has_filter && !is_filtered_by_index)
+        if ((filter || reading->getPrewhereInfo()) && !is_filtered_by_index)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
@@ -415,25 +525,27 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     }
 
     if (const auto * reading = typeid_cast<const CommonSubplanReferenceStep *>(step))
-    {
-        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter);
-    }
+        return estimateReadRowsCount(*reading->getSubplanReferenceRoot(), filter, estimator);
 
     if (node.children.size() != 1)
         return {};
 
+    auto applyLimit = [](RelationStats & stats, UInt64 limit)
+    {
+        if (!stats.estimated_rows || stats.estimated_rows > limit)
+            stats.estimated_rows = limit;
+    };
+
     if (const auto * limit_step = typeid_cast<const LimitStep *>(step))
     {
-        auto estimated = estimateReadRowsCount(*node.children.front(), filter);
-        auto limit = limit_step->getLimit();
-        if (!estimated.estimated_rows || estimated.estimated_rows > limit)
-            estimated.estimated_rows = limit;
-        return estimated;
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, estimator);
+        applyLimit(stats, limit_step->getLimit());
+        return stats;
     }
 
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, estimator);
         remapColumnStats(stats.column_stats, expression_step->getExpression());
         return stats;
     }
@@ -442,16 +554,15 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
-        remapColumnStats(stats.column_stats, filter_step->getExpression());
+        auto stats = estimateReadRowsCount(*node.children.front(), predicate, estimator);
+        remapColumnStats(stats.column_stats, dag);
         return stats;
     }
 
     if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, stats);
-        return aggregation_stats;
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, estimator);
+        return estimateAggregatingStepStats(*aggregating_step, stats);
     }
 
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step); join_step && join_step->isOptimized())
@@ -464,27 +575,54 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
-        auto stats = estimateReadRowsCount(*node.children.front(), filter);
-        if (sorting_step->getLimit())
-        {
-            if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
-                stats.estimated_rows = sorting_step->getLimit();
-        }
+        auto stats = estimateReadRowsCount(*node.children.front(), filter, estimator);
+        if (auto limit = sorting_step->getLimit())
+            applyLimit(stats, limit);
         return stats;
     }
 
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, estimator);
 #endif
 
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
-        return estimateReadRowsCount(*node.children.front(), filter);
+        return estimateReadRowsCount(*node.children.front(), filter, estimator);
 
     return {};
 }
 
+/// Walk the plan tree to find the underlying `ReadFromMergeTree` step, then build a
+/// `ConditionSelectivityEstimator` for the columns that drive the row-count estimate
+/// (filters along the path plus `prewhere`). Used to restore statistics-backed row
+/// estimation without loading statistics for every column of the table. Not `static`:
+/// besides `optimizeJoinLegacy`, the distributed-plan strategy choices in
+/// `makeDistributed.cpp` call it (see the forward declaration there).
+ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node);
+ConditionSelectivityEstimatorPtr buildEstimatorForRelation(QueryPlan::Node & node)
+{
+    /// Reuse the same machinery the new join-order path uses so both paths agree
+    /// on which columns must be loaded. These callers do not consume per-column NDV,
+    /// so the top-level interest set is empty; `collectStatsColumnsForRelation`
+    /// still picks up columns referenced by `FilterStep`s and `prewhere`.
+    StatsColumnsResult stats_columns = collectStatsColumnsForRelation(node, /*top_level_columns=*/ {});
+    if (!stats_columns.reading)
+        return nullptr;
+
+    if (!stats_columns.reading->getContext()->getSettingsRef()[Setting::use_statistics])
+        return nullptr;
+
+    /// If no column on the path can drive estimation, skip stats loading entirely.
+    /// `estimateReadRowsCount` will fall back to `analyzed_result->selected_rows`,
+    /// avoiding a fabricated estimate from `default_factor * total_rows`.
+    if (stats_columns.source_columns.empty())
+        return nullptr;
+
+    Names source_columns(stats_columns.source_columns.begin(), stats_columns.source_columns.end());
+    std::sort(source_columns.begin(), source_columns.end());
+    return stats_columns.reading->getConditionSelectivityEstimator(source_columns);
+}
 
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {
@@ -513,8 +651,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     bool need_swap = false;
     if (!join_step->swap_join_tables.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]).estimated_rows;
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]).estimated_rows;
+        auto lhs_extimation = estimateReadRowsCount(*node.children[0], nullptr, buildEstimatorForRelation(*node.children[0])).estimated_rows;
+        auto rhs_extimation = estimateReadRowsCount(*node.children[1], nullptr, buildEstimatorForRelation(*node.children[1])).estimated_rows;
         LOG_TRACE(getLogger("optimizeJoinLegacy"), "Left table estimation: {}, right table estimation: {}",
             lhs_extimation ? toString(lhs_extimation.value()) : "unknown",
             rhs_extimation ? toString(rhs_extimation.value()) : "unknown");
@@ -753,22 +891,11 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     }
 
     graph.inputs.push_back(node);
-    RelationStats stats = estimateReadRowsCount(*node);
-
-    std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
-        stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
-
+    /// Seed table_name for logs before actual stats are computed in refreshQueryGraphRelationStats.
+    RelationStats stats;
     if (!label.empty())
         stats.table_name = label;
-
-    if (UInt64 seed = graph.context->effective_randomize_seed)
-        stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
-
-    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpStatsForLogs(stats));
-    graph.relation_stats.push_back(stats);
+    graph.relation_stats.push_back(std::move(stats));
     return 1;
 }
 
@@ -1006,6 +1133,62 @@ static const ActionsDAG::Node * trackInputColumn(const ActionsDAG::Node * node)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} has {} non const children, expected 1", node->result_name, non_const_children);
     }
     return node;
+}
+
+static void refreshQueryGraphRelationStats(QueryGraphBuilder & query_graph)
+{
+    std::vector<NameSet> join_keys_per_relation(query_graph.inputs.size());
+
+    for (const auto & edge : query_graph.join_edges)
+    {
+        if (!edge)
+            continue;
+        auto [op, lhs, rhs] = edge.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        for (auto * side : {&lhs, &rhs})
+        {
+            auto resolved = side->resolveAliases();
+            auto source_relation = resolved.getSourceRelations().getSingleBit();
+            if (source_relation && *source_relation < join_keys_per_relation.size())
+                collectReachableInputs(resolved.getNode(), join_keys_per_relation[*source_relation]);
+        }
+    }
+
+    for (size_t relation_id = 0; relation_id < query_graph.inputs.size() && relation_id < query_graph.relation_stats.size(); ++relation_id)
+    {
+        QueryPlan::Node * input_node = query_graph.inputs[relation_id];
+
+        StatsColumnsResult stats_columns = collectStatsColumnsForRelation(*input_node, join_keys_per_relation[relation_id]);
+
+        ConditionSelectivityEstimatorPtr estimator;
+        if (stats_columns.reading && !stats_columns.source_columns.empty()
+            && stats_columns.reading->getContext()->getSettingsRef()[Setting::use_statistics])
+        {
+            Names source_columns(stats_columns.source_columns.begin(), stats_columns.source_columns.end());
+            std::sort(source_columns.begin(), source_columns.end());
+            estimator = stats_columns.reading->getConditionSelectivityEstimator(source_columns);
+        }
+
+        RelationStats stats = estimateReadRowsCount(*input_node, /*filter=*/nullptr, estimator);
+
+        std::optional<size_t> num_rows_from_cache = query_graph.context->statistics_context.getCachedHint(input_node);
+        if (query_graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
+            stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
+
+        if (!query_graph.relation_stats[relation_id].table_name.empty())
+            stats.table_name = query_graph.relation_stats[relation_id].table_name;
+
+        if (UInt64 seed = query_graph.context->effective_randomize_seed)
+            stats = getRandomizedStats(seed, relation_id, stats.table_name, *input_node->step->getOutputHeader());
+
+        LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
+            num_rows_from_cache.has_value() ? " (from cache)" : "",
+            input_node->step->getName(), dumpStatsForLogs(stats));
+
+        query_graph.relation_stats[relation_id] = std::move(stats);
+    }
 }
 
 constexpr bool isSwapOnlyJoinKind(JoinKind kind)
@@ -1505,6 +1688,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
+    refreshQueryGraphRelationStats(query_graph_builder);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
 
