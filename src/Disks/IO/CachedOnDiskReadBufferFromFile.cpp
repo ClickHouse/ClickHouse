@@ -354,46 +354,43 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     /// If such a file was truncated outside ClickHouse, the segment is restored as fully `DOWNLOADED`
     /// but the on-disk file is shorter than recorded. Detect that here -- the file is already open, so
     /// reading its size needs no extra `stat` -- and treat it as a possible inconsistency rather than a
-    /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Discard the
-    /// broken segment with the same primitive `LockedKey::sync` uses for size mismatches; existing readers
-    /// keep their open descriptor, and the holder's destructor skips the now-`DETACHED` segment. On retry
-    /// the segment is gone, so it is re-fetched from the source. This covers the empty-file case
-    /// (`cache_file_size == 0 < downloaded_size`) as well.
+    /// `LOGICAL_ERROR` (a corrupted cache must not surface as a server-bug-class exception). Bypass the
+    /// broken segment by returning `nullptr` so the caller re-fetches the data from the source. This
+    /// covers the empty-file case (`cache_file_size == 0 < downloaded_size`) as well.
     ///
-    /// A short on-disk file means truncation only where `downloaded_size` is final. It is final for a
-    /// `DOWNLOADED` segment (a concurrent download that is still growing the file would give a benign
-    /// momentary mismatch, so those are excluded). It is *also* final if a concurrent reader already
-    /// discarded this very segment: `createReadFromFileSegmentState` only routes non-`DETACHED` states to
-    /// the cached read, so a `DETACHED` state observed here can only mean two readers opened the same
-    /// truncated file and the other detached it between our open and this check. `downloaded_size` is not
-    /// reset on detach, so it still reflects the recorded size. We must handle `DETACHED` too -- otherwise
-    /// the losing reader keeps its truncated descriptor and later reaches the `Having zero bytes...`
-    /// `LOGICAL_ERROR` instead of bypassing to the source.
+    /// We deliberately do *not* remove the broken segment from this read path. Removal
+    /// (`LockedKey::removeFileSegmentImpl`) invalidates the segment's priority-queue entry
+    /// (`queue_iterator->invalidate()`) while holding only the key and segment locks, not the cache
+    /// priority lock. A concurrent `FileSegment::increasePriority` -> `SLRUFileCachePriority::tryIncreasePriority`
+    /// marks the same entry `Moving` under the key lock, releases the key lock to do the protected-queue
+    /// work, then invalidates the old entry under the priority lock. If a read-path removal invalidates the
+    /// entry inside that window, `tryIncreasePriority` double-invalidates it and aborts with a
+    /// `LOGICAL_ERROR` (`Entry::setInvalidatedFlag`). As `EvictionCandidates` documents, priority-queue
+    /// entries may only be invalidated under the cache priority lock, which this read path does not hold.
+    /// Leaving the segment in place also closes the concurrent-reader windows around detachment: every read
+    /// of the truncated file re-detects the short size and bypasses, so no reader is left with a stale
+    /// descriptor. The corrupted entry lingers (reads keep bypassing) until a path that already holds the
+    /// cache lock -- eviction, `LockedKey::sync`, or metadata reload -- removes it; external truncation is
+    /// rare, so the small accounting drift until then is acceptable.
+    ///
+    /// A short on-disk file means truncation only where `downloaded_size` is final: for a `DOWNLOADED`
+    /// segment (a concurrent download that is still growing the file would give a benign momentary mismatch,
+    /// so `DOWNLOADING` is excluded) or a `DETACHED` one (`downloaded_size` is not reset on detach).
     const auto download_state = file_segment.state();
     if (cache_file_size < file_segment.getDownloadedSize()
         && (download_state == FileSegment::State::DOWNLOADED
             || download_state == FileSegment::State::DETACHED))
     {
-        /// Best-effort removal: if a concurrent reader already detached this segment, `key_metadata` is
-        /// reset (`tryGetKeyMetadata` returns null) and there is nothing left to remove -- bypassing the
-        /// cache is still the correct outcome. Using `tryGetKeyMetadata` (not `getKeyMetadata`, which
-        /// throws a `LOGICAL_ERROR` on a detached segment) keeps this race from surfacing as a
-        /// server-bug-class exception. `removeFileSegmentIfExists` is itself idempotent.
-        if (auto key_metadata = file_segment.tryGetKeyMetadata())
-            if (auto locked_key = key_metadata->tryLock())
-                locked_key->removeFileSegmentIfExists(file_segment.offset(), /* can_be_broken */true);
-
         LOG_WARNING(
             getLogger("CachedOnDiskReadBufferFromFile"),
             "Cache file {} is shorter than its recorded size ({} < {}); it was likely truncated outside "
-            "ClickHouse. Discarded the cache entry; the data will be re-fetched from the source",
+            "ClickHouse. Bypassing the cache; the data will be re-fetched from the source",
             path, cache_file_size, file_segment.getDownloadedSize());
 
-        /// The broken segment is now `DETACHED` (discarded here or by a concurrent reader). Returning
-        /// `nullptr` tells the caller to bypass the cache and read from the source -- the same outcome as
-        /// the `DETACHED` state -- rather than failing the read. Throwing `CANNOT_READ_ALL_DATA` here would
-        /// be misinterpreted as a broken part during `MergeTree` part loading (when the truncated file
-        /// happens to back a mark/metadata file), and the part would be wrongly detached instead of
+        /// Returning `nullptr` tells the caller to bypass the cache and read from the source -- the same
+        /// outcome as the `DETACHED` state -- rather than failing the read. Throwing `CANNOT_READ_ALL_DATA`
+        /// here would be misinterpreted as a broken part during `MergeTree` part loading (when the truncated
+        /// file happens to back a mark/metadata file), and the part would be wrongly detached instead of
         /// self-healing.
         info.cache_file_reader.reset();
         return nullptr;

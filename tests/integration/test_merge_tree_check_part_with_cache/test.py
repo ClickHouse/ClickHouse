@@ -84,9 +84,8 @@ def test_check_part_with_cache(start_cluster):
     )
 
     # Reading the truncated cache file no longer raises any error (and never a `LOGICAL_ERROR`, which
-    # previously crashed debug/sanitizer builds): the broken segment is discarded and the read is
-    # transparently re-routed to the source, so the query still returns the correct result. Discarding
-    # the corrupted entry is a side effect of that read.
+    # previously aborted debug/sanitizer builds): the broken segment is bypassed and the read is
+    # transparently re-routed to the source, so the query still returns the correct result.
     assert (
         node.query(
             "SELECT count() FROM s3_test WHERE NOT ignore(*)",
@@ -97,9 +96,9 @@ def test_check_part_with_cache(start_cluster):
 
     assert node.query("CHECK TABLE s3_test SETTINGS check_query_single_value_result = 1") == "1\n"
 
-    # The corrupted segment of all_1_1_0 was discarded by the read above, so CHECK TABLE reads it as a
-    # clean cache miss, re-fetches it from the source and re-populates a correct cache entry (the cache
-    # self-heals). The cache of the untouched part all_2_2_0 is unaffected.
+    # The truncated cache file of all_1_1_0 is bypassed (not removed) by the read above and stays in
+    # place, so its cache entry is still present; CHECK TABLE reads the data from the source and reports
+    # the part as intact. The cache of the untouched part all_2_2_0 is unaffected.
     cache_path = get_cache_path_of_data_file("all_1_1_0")
     assert len(cache_path) > 0
 
