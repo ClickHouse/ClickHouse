@@ -566,6 +566,17 @@ protected:
 
                 ++rows_count;
 
+                /// `SHOW COLUMNS` gates DDL-revealing columns to match `DESCRIBE` / `SHOW CREATE`.
+                const bool can_show_columns = access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
+
+                /// Dependency arrays expose other tables' names — `SHOW TABLES`-grade info about *those*
+                /// tables. Filter per element; skip only for users with global `SHOW TABLES`.
+                auto is_dependency_visible = [&](const StorageID & dependency_id)
+                {
+                    return !need_to_check_access_for_databases
+                        || access->isGranted(AccessType::SHOW_TABLES, dependency_id.database_name, dependency_id.table_name);
+                };
+
                 size_t src_index = 0;
                 size_t res_index = 0;
 
@@ -631,6 +642,9 @@ protected:
                         views_database_name_array.reserve(view_ids.size());
                         for (const auto & view_id : view_ids)
                         {
+                            if (!is_dependency_visible(view_id))
+                                continue;
+
                             views_table_name_array.push_back(view_id.table_name);
                             views_database_name_array.push_back(view_id.database_name);
                         }
@@ -645,7 +659,9 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    ASTPtr ast = can_show_columns
+                        ? database->tryGetCreateTableQuery(table_name, context)
+                        : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
@@ -692,7 +708,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -700,7 +716,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -708,7 +724,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getPrimaryKey().expression_list_ast))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -716,7 +732,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -724,7 +740,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
+                    if (can_show_columns && metadata_snapshot && (expression_ptr = metadata_snapshot->getUniqueKeyAST()))
                         res_columns[res_index++]->insert(format({context, *expression_ptr}));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -902,6 +918,9 @@ protected:
                     dependencies_tables.reserve(dependencies.size());
                     for (const auto & dependency : dependencies)
                     {
+                        if (!is_dependency_visible(dependency))
+                            continue;
+
                         dependencies_databases.push_back(dependency.database_name);
                         dependencies_tables.push_back(dependency.table_name);
                     }
@@ -912,6 +931,9 @@ protected:
                     dependents_tables.reserve(dependents.size());
                     for (const auto & dependent : dependents)
                     {
+                        if (!is_dependency_visible(dependent))
+                            continue;
+
                         dependents_databases.push_back(dependent.database_name);
                         dependents_tables.push_back(dependent.table_name);
                     }
@@ -938,8 +960,11 @@ protected:
                     if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
                     {
                         const auto target_id = mv->getTargetTableId();
-                        target_database = target_id.database_name;
-                        target_table = target_id.table_name;
+                        if (is_dependency_visible(target_id))
+                        {
+                            target_database = target_id.database_name;
+                            target_table = target_id.table_name;
+                        }
                     }
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(target_database);

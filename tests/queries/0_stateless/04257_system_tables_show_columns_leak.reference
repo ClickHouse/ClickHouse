@@ -1,0 +1,28 @@
+--- column-only grant ---
+secret
+0	0	0	0	0	0
+0	0
+--- + SHOW COLUMNS grant ---
+1	1	1	1	1	1
+--- table-level SELECT grant (regression guard) ---
+1	1	1	1	1	1
+--- SHOW TABLES only grant ---
+secret
+0	0	0	0	0	0
+--- dependent view visibility ---
+1	1
+--- db-level SHOW TABLES grant ---
+secret
+0	0	0	0	0	0
+--- cross-db dependent view filter ---
+1	1	0
+--- cross-db loading dependency filter ---
+1	1	1
+1	1
+1	0	0
+0	0
+--- cross-db materialized view target filter ---
+mv_cross	1	1
+mv_local	1	1
+mv_cross	0	0
+mv_local	1	1
