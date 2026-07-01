@@ -74,6 +74,20 @@ protected:
     bool convertImpl(String & out, IParser::Pos & pos) override;
 };
 
+class ArraySortAsc : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "array_sort_asc()"; }
+    bool convertImpl(String & out, IParser::Pos & pos) override;
+};
+
+class ArraySortDesc : public IParserKQLFunction
+{
+protected:
+    const char * getName() const override { return "array_sort_desc()"; }
+    bool convertImpl(String & out, IParser::Pos & pos) override;
+};
+
 class ArraySplit : public IParserKQLFunction
 {
 protected:

@@ -255,21 +255,7 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
 
     auto generator = std::make_shared<Generator>();
     const auto * tagged_paths = benchmark_context.getTaggedPaths().empty() ? nullptr : &benchmark_context.getTaggedPaths();
-    auto list_children = [&zk = *zookeepers[0]](const std::string & parent_path) -> std::vector<std::string>
-    {
-        auto list_promise = std::make_shared<std::promise<Coordination::ListResponse>>();
-        auto list_future = list_promise->get_future();
-        auto callback = [list_promise] (const Coordination::ListResponse & response)
-        {
-            if (response.error != Coordination::Error::ZOK)
-                list_promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
-            else
-                list_promise->set_value(response);
-        };
-        zk.list(parent_path, Coordination::ListRequestType::ALL, std::move(callback), {}, false, false);
-        return list_future.get().names;
-    };
-    generator->startup(*config_ptr, list_children, thread_state.thread_idx, tagged_paths);
+    generator->startup(*config_ptr, *zookeepers[0], thread_state.thread_idx, tagged_paths);
     generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
         [stats = info](const Coordination::WatchResponse &)
         {
@@ -390,23 +376,31 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         auto promise = std::make_shared<std::promise<RequestResult>>();
         auto future = promise->get_future();
 
-        auto inner_callback = std::move(request_with_callbacks.callback);
+        auto success_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_success_callbacks));
+        auto failure_callbacks = std::make_shared<std::vector<std::function<void()>>>(std::move(request_with_callbacks.on_failure_callbacks));
 
         auto watch = std::make_shared<Stopwatch>();
 
         Coordination::ResponseCallback callback =
             [promise,
-             inner_callback,
+             success_callbacks,
+             failure_callbacks,
              watch,
              generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
-            if (inner_callback)
-                inner_callback(&response);
             if (response.error == Coordination::Error::ZOK)
+            {
+                for (const auto & cb : *success_callbacks)
+                    cb();
                 promise->set_value(RequestResult{response.bytesSize(), elapsed});
+            }
             else
+            {
+                for (const auto & cb : *failure_callbacks)
+                    cb();
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+            }
         };
 
         auto & request = request_with_callbacks.request;
@@ -430,8 +424,8 @@ void Runner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper>> zookee
         }
         catch (...) // Ok: handle_request_exception logs and counts the error
         {
-            if (inner_callback)
-                inner_callback(nullptr);
+            for (const auto & cb : *failure_callbacks)
+                cb();
             handle_request_exception(slot.request);
         }
     }
@@ -593,8 +587,8 @@ struct RequestFromLog
     int64_t session_id = 0;
     size_t executor_id = 0;
     bool has_watch = false;
-    DB::DateTime64 request_event_time{};
-    DB::DateTime64 response_event_time{};
+    DB::DateTime64 request_event_time;
+    DB::DateTime64 response_event_time;
     std::shared_ptr<Coordination::ZooKeeper> connection;
 };
 
