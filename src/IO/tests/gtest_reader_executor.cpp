@@ -3813,8 +3813,9 @@ TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
         << "window 1 must stop at the sibling boundary (serve the led prefix), not read through S1";
     EXPECT_EQ(content.substr(0, got1.size()), got1) << "the prefix bytes must be correct";
     EXPECT_EQ(got1 + rest, content) << "the whole file is served correctly under real contention";
-    EXPECT_GT(inspect(executor).syncReadMicros(), 0u)
-        << "the sibling-led segment at the cursor is resolved via the sync fallback";
+    EXPECT_EQ(inspect(executor).syncReadMicros(), 0u)
+        << "the legacy sync fallback is gone: the sibling-led segment at the cursor is resolved by "
+           "waiting on the sibling's committed cell (a cache read), not a synchronous source read";
 }
 
 /// Reproduces the `chassert(!is_last_holder)` abort in `FileSegment::complete`'s

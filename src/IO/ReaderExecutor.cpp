@@ -624,16 +624,14 @@ void ReaderExecutor::initDecryption()
 
     LOG_DEBUG(log, "initDecryption: reading headers ({} bytes)", data_start_offset);
 
-    /// No plan built yet at init time: pass an empty geometry so the header is read
-    /// purely via the source/gap path. `serveLateHits` still serves a header byte already
-    /// cached by a sibling reader (a read-only `planResidencyView` probe), but with no
-    /// held write buffers the header itself is not populated here - it is read once and is
-    /// tiny.
-    CoverageMap init_geometry;
-    ChainedBuffers header_chain = readPhysicalWindow(ByteRange{0, data_start_offset},
-        init_geometry, reached_eof, stats);
+    /// No plan built yet at init time: read the header bytes directly from the source, once.
+    /// The header is tiny and read a single time per executor, so it is not cached/pinned - a
+    /// plain one-shot source read (no long connection, no plan) suffices.
+    ChainedBuffers header_chain = fetchGapsFromSource(ByteRange{0, data_start_offset},
+        /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
+        /*lc=*/nullptr, /*stop=*/nullptr, stats);
 
-    /// Under size-unknown sources `readPhysicalWindow` latches `reached_eof`
+    /// Under size-unknown sources `fetchGapsFromSource` latches `reached_eof`
     /// on short returns instead of throwing, so an empty chain means
     /// "empty object" (same as the size-known empty branch above) and a
     /// partial chain means corrupted/truncated.
@@ -932,142 +930,6 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     return true;
 }
 
-ChainedBuffers ReaderExecutor::syncGapRead(ByteRange physical_window)
-{
-    LOG_TRACE(log, "syncGapRead: synchronous gap read physical [{}, {})",
-        physical_window.offset, physical_window.end());
-    StatTimer sync_scope(stats, Stats::SyncReadMicroseconds);
-    ChainedBuffers chain = readWindowLogical(physical_window, *read_plan.geometry(), reached_eof, stats);
-    HistogramMetrics::ReaderExecutorSyncReadLatency.observe(
-        static_cast<HistogramMetrics::Value>(sync_scope.elapsedMicroseconds()));
-    return chain;
-}
-
-ChainedBuffers ReaderExecutor::readPhysicalWindow(ByteRange physical_window,
-    const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
-{
-    LOG_TRACE(log, "readPhysicalWindow [{}, {})", physical_window.offset, physical_window.end());
-
-    /// Foreground SYNCHRONOUS assembler: `initDecryption` (header) and the two sync gap
-    /// reads in `readNextWindow`. `fetchAndBackfillGaps` re-credits grown committed
-    /// prefixes, serves late hits, reads the still-missing ranges from the source, and
-    /// pushes them into the plan's held write buffers. A prefetch worker never comes
-    /// here: it runs the narrow `fetchGapsFromSource` over the plan gap the foreground
-    /// bounded at submit, and the foreground backfills its bytes at consume.
-    ChainedBuffers result;
-    /// Physical bytes already materialised in `result`. Keeps `result` disjoint:
-    /// resident and source bytes only fill what is not yet covered. The cache writes
-    /// happen AFTER assembly, into the plan's held write buffers - so a short/zero
-    /// landing never holes `result` (`[CF-contiguity]`).
-    IntervalSet covered;
-
-    /// Widen the FETCH to the cache-aligned miss extent (the segment/block-aligned head
-    /// below `physical_window.offset` and the tail past its end), mirroring the prefetch
-    /// path's `fetchWindowAt` at submit: the source over-reads to fill the whole
-    /// cache segment/block so the write buffers commit complete cells, and the alignment
-    /// slack is counted as `OverReadBytes`. With an empty geometry (`initDecryption`) this
-    /// is a no-op (`fetch_window == physical_window`). The result is sliced back to the
-    /// REQUESTED `physical_window` by `finalizeAssembledWindow`, so the caller still gets
-    /// only the requested bytes; the pin uses the aligned frontier.
-    const ByteRange fetch_window = geometry.fetchWindowAt(physical_window);
-
-    /// Serve resident bytes over the ALIGNED window: a byte that is a miss on the tier
-    /// driving the alignment but resident on a faster tier is covered here, so the gap
-    /// read below never re-fetches it.
-    serveResidentFromPlan(fetch_window, result, covered, geometry, out_stats);
-    /// The gap fill writes the cache inline on this read thread: the elected segment
-    /// downloader must be the thread that writes+completes it, so the fill is never deferred.
-    fetchAndBackfillGaps(
-        fetch_window, physical_window, result, covered, eof_latch, geometry.pressure_level,
-        /*push_to_writers=*/true, out_stats);
-
-    return finalizeAssembledWindow(physical_window, fetch_window.end(), result, eof_latch);
-}
-
-ChainedBuffers ReaderExecutor::readWindowLogical(ByteRange physical_window,
-    const CoverageMap & geometry, bool & eof_latch, Stats & out_stats)
-{
-    ChainedBuffers chain = readPhysicalWindow(physical_window, geometry, eof_latch, out_stats);
-    /// Physical offsets include the encryption header prefix; the consumer works
-    /// in logical (post-header) offsets. Shift once here. No-op when not encrypted.
-    if (data_start_offset)
-        chain.shift(-static_cast<ssize_t>(data_start_offset));
-    return chain;
-}
-
-void ReaderExecutor::serveResidentFromPlan(
-    ByteRange physical_window, ChainedBuffers & result, IntervalSet & covered,
-    const CoverageMap & geometry, Stats & out_stats)
-{
-    /// Foreground-only (reads `this->read_plan.bufs`). Does NOT re-plan: the foreground
-    /// re-plans before calling (in readNextWindow). An uncovered window simply yields no
-    /// resident bytes here - `recreditCommittedPrefixes` / `serveLateHits` / the source
-    /// backfill handle the rest.
-
-    /// Test hook: pause after residency is planned - the held read buffers pin the
-    /// resident segments - but before they are read, so a test can drop/evict the cache
-    /// and verify the pinned segments survive and a read still honors them. Gated on
-    /// there being resident geometry (entries can also be miss-only write targets, which
-    /// pin nothing). No-op in production.
-    bool any_resident = false;
-    for (const auto & entry : geometry.entries)
-        if (!entry.resident.empty())
-        {
-            any_resident = true;
-            break;
-        }
-    if (any_resident)
-        FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
-
-    /// Geometry is in cache-tier priority order, so the `covered` guard serves each
-    /// byte from the fastest tier that holds it. Each entry's held read buffers live in
-    /// the 1:1-positional foreground-private `read_plan.bufs[i].view`.
-    for (size_t i = 0; i < geometry.entries.size(); ++i)
-    {
-        const auto & entry = geometry.entries[i];
-        const bool is_page = entry.tier == CacheTier::PageCache;
-        const Stats::Counter tier_counter = is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache;
-
-        for (const auto & res : entry.resident)
-        {
-            const size_t lo = std::max(res.offset, physical_window.offset);
-            const size_t hi = std::min(res.end(), physical_window.end());
-            if (lo >= hi)
-                continue;
-            ByteRange clamped{lo, hi - lo};
-
-            auto useful = covered.subtract(clamped);
-            if (useful.empty())
-                continue;
-
-            /// The entry's held view lives in the 1:1-positional `read_plan.bufs`. If it
-            /// is missing, fail safe: leave the bytes for `serveLateHits` / the source.
-            if (i >= read_plan.bufs.size() || !read_plan.bufs[i].view)
-                continue;
-
-            out_stats.add(Stats::CacheGetRequests);
-            StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
-            ChainedBuffers resident_chain = readHitFromView(*read_plan.bufs[i].view, clamped);
-            HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-                static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-            for (const auto & sub : useful)
-            {
-                /// The held read buffer pins resident segments, so a byte the plan
-                /// reported resident MUST still be readable here. If not, the pin was
-                /// not honored - fail loudly rather than drop bytes.
-                if (!resident_chain.covers(sub))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "ReaderExecutor: residency plan promised a hit at [{}, {}) but read() did not "
-                        "return it - a pinned cache segment was not honored",
-                        sub.offset, sub.end());
-                result.append(resident_chain.slice(sub));
-                covered.add(sub);
-                out_stats.add(tier_counter, sub.size);
-            }
-        }
-    }
-}
-
 /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
 /// re-readable buffer (clamped to `readable()` so a partial prefix is never over-read),
@@ -1167,184 +1029,6 @@ void ReaderExecutor::serveLateHits(ByteRange window, ChainedBuffers & result, In
 
         remaining = std::move(still_missing);
     }
-}
-
-bool ReaderExecutor::fetchAndBackfillGaps(
-    ByteRange fetch_window,
-    ByteRange requested_window,
-    ChainedBuffers & result,
-    IntervalSet & covered,
-    bool & eof_latch,
-    MemoryPressureLevel pressure_level,
-    bool push_to_writers,
-    Stats & out_stats)
-{
-    /// Synchronous foreground gap path: serve any grown committed prefix and late cache hit
-    /// FIRST (so a concurrently/self-cached gap is served from cache, not re-fetched), then
-    /// read the still-missing gaps of the ALIGNED `fetch_window` from the source and hand
-    /// them to the shared `assembleAndWriteBack` (append + over-read + cache fill).
-    recreditCommittedPrefixes(fetch_window, result, covered, out_stats);
-    serveLateHits(fetch_window, result, covered, out_stats);
-    VectorWithMemoryTracking<ByteRange> remaining = covered.subtract(fetch_window);
-
-    /// Block size for the source-read tiles, from the per-plan cached pressure level.
-    const size_t window_block_size = effectiveBlockSize(pressure_level);
-
-    /// Read `ranges` from the source into `out_src` (merged by `min_bytes_for_seek` into one
-    /// contiguous physical run each), in sub-spans bounded by a held long connection's
-    /// `read_until`: each held GET drains EXACTLY to its bound (a clean release, not an
-    /// incomplete drop) and the next sub-span reopens a fresh long connection - one GET per
-    /// reach span. The long connection coalesces contiguous sub-spans across windows.
-    auto fetch_into = [&](const VectorWithMemoryTracking<ByteRange> & ranges, ChainedBuffers & out_src)
-    {
-        for (const auto & fr : ranges)
-        {
-            auto physical_ranges = offset_map.map(fr);
-            size_t logical_pos = fr.offset;
-            for (const auto & pr : physical_ranges)
-            {
-                LOG_TRACE(log, "fetchAndBackfillGaps: source read object={}, offset={}, size={}",
-                    pr.object.remote_path, pr.object_offset, pr.size);
-
-                const size_t pr_obj_end = pr.object_offset + pr.size;
-                size_t sub_obj_off = pr.object_offset;
-                size_t sub_logical = logical_pos;
-                while (sub_obj_off < pr_obj_end)
-                {
-                    /// W3: open/keep a long connection at the sub-span start when the run is long.
-                    openLongIfWarranted(pr.object, sub_obj_off, sub_logical, out_stats);
-                    size_t sub_end = pr_obj_end;
-                    if (long_conn && long_conn->servesObject(pr.object.remote_path)
-                        && long_conn->read_until > sub_obj_off && long_conn->read_until < pr_obj_end)
-                        sub_end = long_conn->read_until;
-                    const size_t sub_size = sub_end - sub_obj_off;
-
-                    /// Split at the REQUESTED window edges so user-data bytes and segment-aligned
-                    /// head/tail-extension bytes land in separate `OwnedChainedBuffer`s (released
-                    /// independently).
-                    VectorWithMemoryTracking<size_t> splits;
-                    if (requested_window.offset > sub_logical && requested_window.offset < sub_logical + sub_size)
-                        splits.push_back(requested_window.offset - sub_logical);
-                    if (requested_window.end() > sub_logical && requested_window.end() < sub_logical + sub_size)
-                        splits.push_back(requested_window.end() - sub_logical);
-                    std::sort(splits.begin(), splits.end());
-
-                    auto blocks = allocateBlocks(sub_size, window_block_size, splits);
-                    StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
-                    ChainedBuffers sr = readFromSource(pr.object, sub_obj_off, std::move(blocks), sub_logical,
-                        read_extent_end, &long_conn, /*stop=*/nullptr, out_stats);
-                    HistogramMetrics::ReaderExecutorSourceReadLatency.observe(
-                        static_cast<HistogramMetrics::Value>(src_scope.elapsedMicroseconds()));
-                    const size_t actual = sr.totalBytes();
-                    out_stats.add(Stats::BytesFromSource, actual);
-                    out_src.append(std::move(sr));
-                    /// Size-known short reads are fatal (the map promised those bytes).
-                    /// Size-unknown short reads are how EOF is learned - latch it and stop.
-                    if (actual != sub_size)
-                    {
-                        if (!offset_map.hasUnknownSize())
-                            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                                "ReaderExecutor: short read from {} at offset {}: requested {} bytes, got {}",
-                                pr.object.remote_path, sub_obj_off, sub_size, actual);
-                        eof_latch = true;
-                        break;
-                    }
-                    sub_obj_off = sub_end;
-                    sub_logical += sub_size;
-                }
-                logical_pos += pr.size;
-            }
-        }
-    };
-
-    /// Deferred-write path (a cache-filler pool offloads the cache write to another thread):
-    /// no per-segment downloader coordination here - the elected downloader must be the
-    /// thread that writes+completes the segment, which is not this one when the write is
-    /// deferred. Fetch the gaps plainly; the put step writes them later.
-    if (!push_to_writers)
-    {
-        ChainedBuffers source_bytes;
-        fetch_into(mergeRanges(remaining, min_bytes_for_seek), source_bytes);
-        assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
-        return !remaining.empty();
-    }
-
-    /// Inline-write path: per-segment downloader arbitration. For each still-missing range,
-    /// each overlapping write buffer elects the FileCache downloader of its segments: ones we
-    /// win are fetched+written here, ones a sibling already leads are served from that
-    /// sibling's cache fill instead of re-fetched - which dedups concurrent cold populate.
-    /// Safe because we fetch AND complete each led segment on THIS thread (the downloader).
-    VectorWithMemoryTracking<ByteRange> led_misses;
-    VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
-    for (const auto & r : remaining)
-    {
-        bool elected = false;
-        for (const auto & buf : read_plan.bufs)
-        {
-            if (!buf.provider)
-                continue;
-            for (const auto & w : buf.writers)
-            {
-                if (!w.writer)
-                    continue;
-                const size_t lo = std::max(r.offset, w.writer->range().offset);
-                const size_t hi = std::min(r.end(), w.writer->range().end());
-                if (lo >= hi)
-                    continue;
-                w.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, sibling_led);
-                elected = true;
-            }
-        }
-        if (!elected)
-            led_misses.push_back(r);  /// defensive: no writer → fetch as before
-    }
-
-    /// Coalesce the elected ranges into a DISJOINT set clamped to `fetch_window`: overlapping
-    /// tier writers can elect the same bytes, and `mergeRanges` is a no-op at
-    /// `min_bytes_for_seek == 0`, so without this the bytes would be fetched twice and the
-    /// assembled chain would be non-disjoint. (Round-trip through `IntervalSet`: subtract the
-    /// led set from the window to get the non-led parts, then subtract those to get the led.)
-    IntervalSet led_set;
-    for (const auto & r : led_misses)
-        led_set.add(r);
-    IntervalSet non_led;
-    for (const auto & g : led_set.subtract(fetch_window))
-        non_led.add(g);
-    VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(fetch_window);
-
-    /// Pass 1: fetch+write the segments WE lead. Committing them unblocks sibling waiters.
-    ChainedBuffers source_bytes;
-    fetch_into(mergeRanges(led_disjoint, min_bytes_for_seek), source_bytes);
-    assembleAndWriteBack(fetch_window, requested_window, source_bytes, result, covered, push_to_writers, out_stats);
-
-    /// Serve sibling-led segments from cache AFTER our led writes (the write-before-wait
-    /// order avoids a cross-thread deadlock); the wait blocks until the sibling commits.
-    for (const auto & sl : sibling_led)
-    {
-        for (const auto & u : covered.subtract(sl.sub))
-        {
-            ChainedBuffers c = sl.writer->waitAndReadSiblingLed(u);
-            if (!c.covers(u))
-                continue;  /// tolerate a short commit; the loser-tail fallback below fetches it
-            result.append(c.slice(u));
-            covered.add(u);
-            out_stats.add(Stats::BytesFromFilesystemCache, u.size);
-        }
-    }
-
-    /// Loser-tail fallback: bytes a sibling leader committed short of what we need are still
-    /// uncovered; fetch them from source (the leader reset the segment downloader on its
-    /// `completePart`, so our write re-elects and wins the remainder). Rare when the leader
-    /// fills the whole segment; required for correctness when it does not.
-    auto remaining_tail = covered.subtract(fetch_window);
-    if (!remaining_tail.empty())
-    {
-        ChainedBuffers tail_src;
-        fetch_into(mergeRanges(remaining_tail, min_bytes_for_seek), tail_src);
-        assembleAndWriteBack(fetch_window, requested_window, tail_src, result, covered, push_to_writers, out_stats);
-    }
-
-    return !led_misses.empty() || !remaining_tail.empty();
 }
 
 void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
@@ -2627,35 +2311,102 @@ ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & st
     return out;
 }
 
-ChainedBuffers ReaderExecutor::serveRetrieveForeground(size_t ri, size_t position_phys)
+ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, size_t position_phys)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
-    /// Read one window of THIS STEP only - never past the cursor step's end. A bridged
+    /// Serve one window of THIS STEP only - never past the cursor step's end. A bridged
     /// retrieve can span several steps (an embedded faster-tier hit splits a gap into
     /// gap / hit / gap); reading to `r.range.end()` would bank past the hit and serve the
     /// hit + the next gap as one window, so the serve would no longer map 1:1 to the
     /// schedule. The long connection still coalesces ACROSS steps: it persists in
-    /// `long_conn`, so the next gap step's source read continues it - skipping a small
-    /// cached hole (`canContinue`) - or reopens past a hole at/above `min_bytes_for_seek`
-    /// (the hole then filled down from the faster tier).
+    /// `long_conn`, so the next gap step's source read continues it.
     const size_t step_end = read_plan.schedule.steps[read_plan.cursor].output.end();
     const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
     if (want == 0)
         return {};
-    ChainedBuffers w = syncGapRead(ByteRange{position_phys, want});  /// returns logical, banked directly
-    if (!w.empty())
-        st.ready_bytes.append(std::move(w));
-    /// The launch frontier is a high-water mark of bytes fetched from `r.range.offset`, NOT
-    /// an accumulator: a foreground read at the cursor can land BELOW the frontier (the
-    /// cursor trails an ahead launch), so `+= want` would over-count and make the next
-    /// launch skip never-fetched bytes. Advance only if this read extends the frontier.
+    const ByteRange window{position_phys, want};
+
+    /// Fill the whole CELL (segment-aligned) so the cursor's later windows in the cell are served
+    /// from it and an eviction sweep cannot drop it mid-scan; a bypass gap has no cell, so
+    /// `fetchWindowAt` leaves the window unchanged and only the requested bytes are read.
+    const ByteRange fetch_window = read_plan.geometry()->fetchWindowAt(window);
+
+    ChainedBuffers result;
+    IntervalSet covered;
+    /// A committed prefix / late hit a sibling already populated (a bypass gap has none).
+    recreditCommittedPrefixes(fetch_window, result, covered, stats);
+    serveLateHits(fetch_window, result, covered, stats);
+
+    /// Wait on any DISK-tier cell covering the window that a sibling executor is downloading
+    /// (it holds the segment's downloader, so `FileSegment::wait` wakes; a page cell is filled
+    /// by promotion, not downloaded, so it has no downloader and is skipped). The writer reads
+    /// the sibling's committed bytes - deduping the concurrent cold populate instead of
+    /// re-fetching what the sibling already downloads. A bypass gap has no fill-target writer,
+    /// so this is a no-op there and the whole window falls to the source read below.
+    for (const auto & buf : read_plan.bufs)
+    {
+        if (!buf.provider || buf.provider->tier() == CacheTier::PageCache)
+            continue;
+        for (const auto & w : buf.writers)
+        {
+            if (!w.writer)
+                continue;
+            const size_t lo = std::max(w.writer->range().offset, fetch_window.offset);
+            const size_t hi = std::min(w.writer->range().end(), fetch_window.end());
+            if (lo >= hi)
+                continue;
+            for (const auto & u : covered.subtract(ByteRange{lo, hi - lo}))
+            {
+                ChainedBuffers c = w.writer->waitAndReadSiblingLed(u);
+                if (!c.covers(u))
+                    continue;   /// no sibling / short commit - the source read below fills it
+                result.append(c.slice(u));
+                covered.add(u);
+                stats.add(Stats::BytesFromFilesystemCache, u.size);
+            }
+        }
+    }
+
+    /// Source-fetch whatever is still uncovered (no tier holds it and no sibling is filling it),
+    /// opening a long connection at each OBJECT-piece start so the reads coalesce across windows
+    /// (and, across an object boundary, the tail object opens with its own reach) - the same
+    /// connection the prefetch path opens. Populate any covering cell (`push_to_writers`; a bypass
+    /// gap has no writer, and a sibling-held segment's write is skipped).
+    ChainedBuffers src;
+    for (const auto & g : covered.subtract(fetch_window))
+    {
+        auto physical_ranges = offset_map.map(g);
+        size_t logical_pos = g.offset;
+        for (const auto & pr : physical_ranges)
+        {
+            openLongIfWarranted(pr.object, pr.object_offset, logical_pos, stats);
+            src.append(fetchGapsFromSource(ByteRange{logical_pos, pr.size}, /*from_prefetch=*/false,
+                reached_eof, level, read_extent_end, &long_conn, /*stop=*/nullptr, stats));
+            logical_pos += pr.size;
+        }
+    }
+    if (!src.empty())
+        assembleAndWriteBack(fetch_window, window, src, result, covered, /*push_to_writers=*/true, stats);
+
+    /// Slice to the requested window and pin the filled segment at the fetched frontier (cleared at
+    /// EOF / for a transient), so an eviction sweep does not drop it before the next window - as the
+    /// legacy synchronous assembler did. Bank the window (logical) and serve it from the bank.
+    ChainedBuffers win = finalizeAssembledWindow(window, fetch_window.end(), result, reached_eof);
+    if (data_start_offset)
+        win.shift(-static_cast<ssize_t>(data_start_offset));
+    if (!win.empty())
+        st.ready_bytes.append(std::move(win));
+    /// The launch frontier is a high-water mark of bytes fetched from `r.range.offset`, NOT an
+    /// accumulator: an inline serve at the cursor can land BELOW the frontier (the cursor trails
+    /// an ahead launch), so `+= want` would over-count and make the next launch skip never-
+    /// fetched bytes. Advance only if this read extends the frontier.
     st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
     st.phase = RetrievePhase::Ready;
     ChainedBuffers out = serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
-    /// As on the prefetch path: the sync fetch filled only the bottom tier, so push just the
-    /// SERVED window up into the faster tiers on the serve front.
+    /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
+    /// tiers on the serve front.
     if (!out.empty())
         promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
     return out;
@@ -2679,7 +2430,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         if (machineFor(ri))
             collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
         else
-            return serveRetrieveForeground(ri, position_phys);  /// not prefetched: read it now
+            return serveWindowInline(ri, position_phys);  /// not prefetched: read it now
     }
     ChainedBuffers out = serveStepFromBanked(step, st, position_phys);
     /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
@@ -2792,7 +2543,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
                 collectInFlightInto(ri);
                 /// The inline Fill fetched the WHOLE cell-aligned run `[base, run_end)` - head-
                 /// aligned to the cell floor and tail-extended to the cell edge (or the next
-                /// embedded hit) - matching the legacy `readPhysicalWindow`'s `fetchWindowAt`. So
+                /// embedded hit) - a segment-aligned over-read that fills the whole cell. So
                 /// one cold cell is ONE source read and the cursor's later windows in the cell are
                 /// served from it. The bytes outside the cursor window - the `[base, cursor)` head
                 /// and the `[cursor.end, run_end)` tail - are over-read: source bytes the request
@@ -2857,13 +2608,13 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         }
     }
 
-    /// The cell is short and no in-flight machine is filling this exact window (the cursor caught
-    /// a front for another retrieve, or the cache refused the write): drain any in-flight machine
-    /// for THIS retrieve (finalize + free the slot), then fetch the minimum to serve here. This
-    /// fallback is the only populatable path that still banks - transiently, one window.
+    /// The cell is short and no in-flight machine is filling this exact window (the cursor sits on
+    /// a segment a sibling executor leads, or the cache refused the write): drain any in-flight
+    /// machine for THIS retrieve (finalize + free the slot), then serve inline - `serveWindowInline`
+    /// waits on the sibling-led cell (dedup) and source-fetches any remainder, banking one window.
     if (machineFor(ri))
         collectInFlightInto(ri);
-    return serveRetrieveForeground(ri, position_phys);
+    return serveWindowInline(ri, position_phys);
 }
 
 void ReaderExecutor::serveWindowFromCells(
@@ -3024,7 +2775,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// aligned — `residentAt`'s entry index maps into `bufs`). `caches` is fastest-first, so
     /// `upper_hits` (the running union of already-processed, faster tiers' hits) lets a
     /// slower tier PRUNE the miss cells a faster tier already holds. The streaming `covered`
-    /// guard in `readPhysicalWindow` re-establishes the same priority when serving.
+    /// guard in the serve path re-establishes the same priority when serving.
     /// Hits fold up to the ceiling OR the expanded `probe_range` end, whichever is larger,
     /// so a hit segment straddling the expanded end folds whole into the plan.
     const size_t resident_clip_end

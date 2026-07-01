@@ -547,33 +547,6 @@ private:
     /// queued, revoke it and return false so the caller reads synchronously.
     bool tryCollectMachine(ChainedBuffers & chain);
 
-    /// Read one gap window synchronously from the source (the no-prefetch /
-    /// cancelled path).
-    ChainedBuffers syncGapRead(ByteRange physical_window);
-
-    /// Foreground assembler for `physical_window`: resident bytes from the
-    /// plan, the rest from the source, then cache backfill + the Strategy-A
-    /// pin. A prefetch worker does NOT come through here. Returns one
-    /// contiguous run from the window start. `geometry` is the residency
-    /// snapshot; `eof_latch` is the size-unknown EOF latch.
-    ChainedBuffers readPhysicalWindow(ByteRange physical_window,
-        const CoverageMap & geometry, bool & eof_latch, Stats & out_stats);
-
-    /// `readPhysicalWindow` + remap offsets to logical (subtract the
-    /// encryption header). Payload decryption is deferred to the consumer, so
-    /// unconsumed read-ahead is never decrypted.
-    ChainedBuffers readWindowLogical(ByteRange physical_window,
-        const CoverageMap & geometry, bool & eof_latch, Stats & out_stats);
-
-    /// Append every byte `geometry` reports resident in `physical_window` to
-    /// `result` (recording it in `covered`), reading from the plan's held hit
-    /// buffers. FOREGROUND-only. Fastest-tier-first is preserved by the
-    /// `covered` guard. Also serves a grown committed prefix of a frozen miss
-    /// and a self-populated complete page block. Does NOT re-plan.
-    void serveResidentFromPlan(
-        ByteRange physical_window, ChainedBuffers & result, IntervalSet & covered,
-        const CoverageMap & geometry, Stats & out_stats);
-
     /// Serve a clamped resident sub-range from a view's hit buffers, clamping
     /// each read to the buffer's live `readable()` and recording it for the
     /// deferred LRU bump. The caller checks `covers`.
@@ -587,25 +560,6 @@ private:
     void serveLateHits(ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats);
 
     // ─── Gap fetch + backfill ────────────────────────────────────────────
-
-    /// Synchronous foreground gap read + backfill in one pass: late hits,
-    /// re-credited committed prefixes, source read of the still-missing
-    /// ranges, push into the plan's held write buffers. The prefetch path
-    /// splits this into the worker's `fetchGapsFromSource` + the consume's
-    /// `backfillBytes`. Returns true if any source read happened.
-    ///
-    /// `fetch_window` is the cache-ALIGNED window to read and cache;
-    /// `requested_window` is what the caller asked for. They differ by the
-    /// alignment slack, which is counted as over-read.
-    bool fetchAndBackfillGaps(
-        ByteRange fetch_window,
-        ByteRange requested_window,
-        ChainedBuffers & result,
-        IntervalSet & covered,
-        bool & eof_latch,
-        MemoryPressureLevel pressure_level,
-        bool push_to_writers,
-        Stats & out_stats);
 
     /// PURE source fetch: read the WHOLE `physical_window` from the source as
     /// one contiguous physical ChainedBuffers (short at EOF), no cache/plan/pin. This is
@@ -872,7 +826,11 @@ private:
     void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
         Stats & out_stats, const IntervalSet * cache_credit = nullptr);
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
-    ChainedBuffers serveRetrieveForeground(size_t ri, size_t position_phys);
+    /// Inline serve for a window no prefetch machine and no committed cell covers: a not-prefetched
+    /// bypass gap (pure source fetch, banked) or a populatable gap whose cursor segment a sibling
+    /// executor leads (wait the sibling's disk cell to dedup, source-fetch any remainder). Banks the
+    /// window in `ready_bytes` and serves it from there.
+    ChainedBuffers serveWindowInline(size_t ri, size_t position_phys);
     void collectInFlightInto(size_t ri);
     void maybeLaunchAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
