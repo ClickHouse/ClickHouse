@@ -1,8 +1,10 @@
 #include <unordered_map>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
+#include <Core/Block.h>
 #include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -45,25 +47,52 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     return hash.get64();
 }
 
+/// Two headers have the same byte layout when they carry the same column types in the same order.
+/// Names are intentionally ignored: a pure rename (e.g. `__table1.a` -> `a`) does not change the
+/// number of output bytes, so a rename-only step stays transparent and the single-replica and
+/// parallel-replicas plan builds still match. Only a change in the set/types of output columns
+/// changes `output_bytes`.
+bool sameByteLayout(const Block & lhs, const Block & rhs)
+{
+    if (lhs.columns() != rhs.columns())
+        return false;
+    for (size_t i = 0; i < lhs.columns(); ++i)
+        if (lhs.getByPosition(i).type->getName() != rhs.getByPosition(i).type->getName())
+            return false;
+    return true;
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
-    // The purpose of `HashTablesStatistics` is to provide cardinality estimations.
-    // Steps that preserve the number of input rows do not affect cardinality, so we can skip them.
-    if (!transform.getTransformTraits().preserves_number_of_rows)
-    {
-        WriteBufferFromOwnString wbuf;
-        SerializedSetsRegistry registry;
-        IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .skip_final_flag = true, .skip_cache_key = true};
+    /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
+    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
+    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
+    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
+    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
+    /// rename-only step keeps the same byte layout and stays transparent.
+    ///
+    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
+    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
+    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
+    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
+    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
+    /// consequence is a slightly-off estimate, never a wrong result.
+    if (transform.getTransformTraits().preserves_number_of_rows
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+        return 0;
 
-        writeStringBinary(transform.getSerializationName(), wbuf);
-        if (transform.isSerializable())
-            transform.serialize(ctx);
+    WriteBufferFromOwnString wbuf;
+    SerializedSetsRegistry registry;
+    registry.for_cache_key = true;
+    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry, .for_cache_key = true};
 
-        SipHash hash;
-        hash.update(wbuf.str());
-        return hash.get64();
-    }
-    return 0;
+    writeStringBinary(transform.getSerializationName(), wbuf);
+    if (transform.isSerializable())
+        transform.serialize(ctx);
+
+    SipHash hash;
+    hash.update(wbuf.str());
+    return hash.get64();
 }
 
 }
@@ -98,6 +127,14 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
     return hash.get64();
 }
 
+/// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
+/// itself approximate. Capturing every input that can affect the collected input/output bytes is a
+/// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
+/// (e.g. the column-blind read hash on the input side, or result-affecting `JoinSettings` such as
+/// `join_any_take_last_row` that the physical `JoinStep` no longer carries). A resulting key
+/// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
+/// replicas sub-optimally - it never changes query results. We trade that small estimation
+/// imprecision for a simpler, cheaper key.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
     std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
@@ -170,8 +207,98 @@ void calculateHashTableCacheKeys(
             continue;
         }
 
-        for (const auto * child : node.children)
-            frame.hash.update(cache_keys[child]);
+        /// Hash a `JoinStep`'s children in their physical order. `considerEnablingParallelReplicas`
+        /// picks the parallelized side by physical slot (child 0, or child 1 for `RIGHT`) — see
+        /// `ParallelReplicasLocalPlan::findReadingStep` — and later transplants the single-replica
+        /// reading-step analysis onto the parallel-replicas reading step found the same way. So a
+        /// hash match must imply both plans put the *same table* in the same physical slot. We must
+        /// therefore NOT canonicalize commutative kinds by sorting children: if the two plan builds
+        /// pick opposite child orders the parallelized side genuinely differs, and the right outcome
+        /// is to NOT match (skip the optimization) rather than transplant cross-table parts/ranges.
+        ///
+        /// `RIGHT` is the one safe remap: by the equivalence `A RIGHT JOIN B ≡ B LEFT JOIN A` we
+        /// swap the children and remap the kind to `LEFT`. This is consistent with the physical
+        /// selector, which is also kind-aware (`RIGHT`→child 1, `LEFT`→child 0), so both equivalent
+        /// representations resolve to the same table. The (remapped) kind is mixed into the hash so
+        /// that otherwise identical subtrees with different kinds (`INNER` vs `LEFT`) do not collide.
+        if (const auto * join_step = typeid_cast<const JoinStep *>(node.step.get()); join_step && node.children.size() == 2)
+        {
+            const auto & table_join = join_step->getJoin()->getTableJoin();
+            auto kind = table_join.kind();
+
+            /// Fold each physical side's equi-keys (with null-safety) and its on-clause residual
+            /// condition into that side's child hash, so they travel with the child under the
+            /// RIGHT->LEFT remap below (keeping `A RIGHT JOIN B ≡ B LEFT JOIN A`). Two joins over the
+            /// same inputs but with different keys/conditions then yield different child
+            /// contributions, hence different cache keys, instead of colliding.
+            SipHash keys_left;
+            SipHash keys_right;
+            for (const auto & clause : table_join.getClauses())
+            {
+                for (size_t i = 0; i < clause.keysCount(); ++i)
+                {
+                    const bool nullsafe = clause.nullsafe_compare_key_indexes.contains(i);
+                    keys_left.update(clause.key_names_left[i]);
+                    keys_left.update(nullsafe);
+                    keys_right.update(clause.key_names_right[i]);
+                    keys_right.update(nullsafe);
+                }
+                const auto [left_cond, right_cond] = clause.condColumnNames();
+                keys_left.update(left_cond);
+                keys_right.update(right_cond);
+            }
+            auto a = cache_keys[node.children.at(0)] ^ keys_left.get64();
+            auto b = cache_keys[node.children.at(1)] ^ keys_right.get64();
+            if (isRight(kind))
+            {
+                std::swap(a, b);
+                kind = JoinKind::Left;
+            }
+            /// Orientation-invariant semantics that still change the join's output and therefore the
+            /// collected statistics: the (remapped) kind, strictness (ALL/ANY/SEMI/ANTI/ASOF),
+            /// `join_use_nulls`, and any residual cross-side predicate in the mixed join expression.
+            /// (Locality is not mixed in: it is a distributed-execution strategy and does not change
+            /// the join result's cardinality, so it doesn't affect the collected output bytes.)
+            frame.hash.update(static_cast<uint8_t>(kind));
+            frame.hash.update(static_cast<uint8_t>(table_join.strictness()));
+            /// For ASOF the inequality (`<`, `<=`, `>`, `>=`) is part of the join semantics: it
+            /// changes which rows match and thus the output, so the same inputs under different
+            /// inequalities must not share collected statistics.
+            if (table_join.strictness() == JoinStrictness::Asof)
+                frame.hash.update(static_cast<uint8_t>(table_join.getAsofInequality()));
+            frame.hash.update(table_join.joinUseNulls());
+            if (const auto & mixed = table_join.getMixedJoinExpression())
+                mixed->getActionsDAG().updateHash(frame.hash);
+            /// Mix in the join's output column TYPES. The join produces its `required_output` columns
+            /// directly, so two joins over the same inputs/keys that project a different number/types of
+            /// columns have different output headers and different `output_bytes` when the join result
+            /// reaches the matched node - they must not share a statistics cache entry. This is
+            /// orientation-invariant, so it stays outside the RIGHT->LEFT remap above.
+            ///
+            /// We hash types only, NOT the column names. Names would distinguish two same-type columns
+            /// of different byte size (a short vs a long `String`) - but the JoinStep output names are
+            /// branch-local and need not be identical in the single-replica plan and the generated
+            /// parallel-replicas LOCAL plan: the latter is built from the shard-rewritten query tree and
+            /// only normalized by a `Convert distributed names` step that `findTopNodeOfReplicasPlan`
+            /// skips before hashing. Hashing names would risk the JoinStep failing to match and Auto-PR
+            /// silently never running for an otherwise-supported shape - strictly worse than the
+            /// same-type collision, which only yields a slightly-off estimate. So per the best-effort
+            /// policy above we keep matching robust and accept that residual collision.
+            for (const auto & column : *join_step->getOutputHeader())
+                frame.hash.update(column.type->getName());
+            /// Result-affecting `JoinSettings` (e.g. `join_any_take_last_row`, which picks a different
+            /// right-side row for ANY joins) are NOT mixed in: they are baked into the `IJoin` algorithm
+            /// and the physical `JoinStep` no longer carries `JoinSettings`. This is the best-effort
+            /// trade-off documented on `calculateHashTableCacheKeys` - a collision only skews the
+            /// approximate estimate, never the result.
+            frame.hash.update(a);
+            frame.hash.update(b);
+        }
+        else
+        {
+            for (const auto * child : node.children)
+                frame.hash.update(cache_keys[child]);
+        }
 
         if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*source));

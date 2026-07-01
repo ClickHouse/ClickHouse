@@ -38,6 +38,12 @@ public:
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
+    /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;
+    /// also it is not clear whether a Join is ever the top of a replicas plan,
+    /// i.e. not followed by an ExpressionStep.
+    /// Output-byte collection is nevertheless supported here for completeness.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
     void describePipeline(FormatSettings & settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;

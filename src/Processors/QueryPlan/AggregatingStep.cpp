@@ -959,7 +959,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final && !ctx.skip_final_flag)
+    if (final && !ctx.for_cache_key)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -995,7 +995,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 

@@ -1,10 +1,14 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
+#include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -164,6 +168,37 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
         // TODO(nickitat): support multiple read steps with parallel replicas
         const auto * lazy_joining = typeid_cast<const JoinLazyColumnsStep *>(reading_step->step.get());
 
+        // For a physical `JoinStep` (a plain `SELECT ... FROM a JOIN b` leaves it at/near the top of
+        // the replicas plan), follow the parallelized side: child 0, or child 1 for `RIGHT`. This
+        // mirrors the physical-slot selector used by `calculateHashTableCacheKeys` and
+        // `ParallelReplicasLocalPlan`, so both resolve the same table as the parallelized input.
+        if (const auto * join_step = typeid_cast<const JoinStep *>(reading_step->step.get());
+            join_step && reading_step->children.size() == 2)
+        {
+            // `swap_streams` swaps the physical pipelines at execution without reordering the plan
+            // children, so the kind-based side selection below would then descend into the wrong
+            // child. In the analyzer path that AutoPR requires this is never set: joins are built as
+            // `JoinStepLogical` and the logical->physical conversion applies any swap by reordering
+            // the children and flipping the kind together (only the dead `optimizeJoinLegacy` path
+            // sets `swap_streams`). Guard against it explicitly so that if a future change ever revives
+            // it, AutoPR fails closed (skips) instead of instrumenting/parallelizing the wrong side.
+            if (join_step->swap_streams)
+                return nullptr;
+            // Descending exactly one side is only a valid decomposition for join kinds that can be
+            // evaluated by parallelizing one input while the other is read in full on every replica:
+            // `INNER` (ALL), `LEFT`, and a leftmost `RIGHT`. It is NOT valid for `FULL` or
+            // position-sensitive joins like `PASTE`, where a preserved-side row matched on another
+            // replica would be emitted as unmatched here (or duplicated once per replica). We rely on
+            // the upstream parallel-replicas eligibility checks for that: `findParallelReplicasQuery`
+            // (`getSupportingParallelReplicasQueries` / `findTableForParallelReplicas`) admits only
+            // those decomposable kinds and rejects `FULL`/`PASTE`/`CROSS`/etc., so for any other kind no
+            // parallel-replicas plan is built and this function is never reached. The split below is
+            // therefore safe by that invariant, not by a check here.
+            const auto kind = join_step->getJoin()->getTableJoin().kind();
+            reading_step = reading_step->children[isRight(kind) ? 1 : 0];
+            continue;
+        }
+
         if (!lazy_joining && reading_step->children.size() > 1)
             return nullptr;
         reading_step = reading_step->children.front();
@@ -246,8 +281,10 @@ void considerEnablingParallelReplicas(
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
-    // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
-    // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // However, currently only relatively simple plans are supported (no UNIONs, etc.),
+    // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
+    // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
+    // so they are allowed to pass through the check.
     bool plan_is_simple_enough = true;
     traverseQueryPlan(
         stack,
@@ -255,6 +292,7 @@ void considerEnablingParallelReplicas(
         [&](auto & frame_node)
         {
             plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+                || typeid_cast<const BuildRuntimeFilterStep *>(frame_node.step.get())
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
         });
@@ -356,8 +394,30 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
-                local_replica_plan_reading_step->setAnalyzedResult(analysis);
+
+                /// Transplant the single-node index analysis onto the parallel-replicas branch read to honor
+                /// parallel_replicas_index_analysis_only_on_coordinator (analyze once, reuse on the replica).
+                /// For a plain table-on-top plan the freshly built branch read has no analysis yet. But when a
+                /// JOIN sits on top, findReadingStep descends into one side, and that side's read may already
+                /// have been analyzed while planning the join (e.g. a top-level DISTINCT or a scalar subquery in
+                /// the query). In that case keep its own analysis instead of overwriting it: it is the same
+                /// parallelized table (findReadingStep runs the same descent on the hash-matched JOIN node in
+                /// both plans, and the swap_streams case is already diverted to the throw above), so the existing
+                /// result is equivalent. A read for a *different* table would mean the single-node and
+                /// parallel-replicas plans diverged at the matched node - a broken invariant, so fail loudly
+                /// rather than silently apply a mismatched analysis.
+                if (local_replica_plan_reading_step->getAnalyzedResult() == nullptr)
+                {
+                    local_replica_plan_reading_step->setAnalyzedResult(analysis);
+                }
+                else if (&local_replica_plan_reading_step->getMergeTreeData() != &source_reading_step->getMergeTreeData())
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Parallel replicas branch read is analyzed for table {} but the single-node plan reads {}",
+                        local_replica_plan_reading_step->getStorageID().getNameForLogs(),
+                        source_reading_step->getStorageID().getNameForLogs());
+                }
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;
