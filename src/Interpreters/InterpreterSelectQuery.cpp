@@ -613,7 +613,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         ApplyWithSubqueryVisitor(context).visit(query_ptr);
     }
 
-    query_info.query = query_ptr->clone();
+    query_info.setQuery(query_ptr->clone());
 
     if (settings[Setting::count_distinct_optimization])
     {
@@ -873,7 +873,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     column_compressed_sizes[name] = sizes.data_compressed;
 
                 SelectQueryInfo current_info;
-                current_info.query = query_ptr;
+                current_info.setQuery(query_ptr);
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
@@ -1247,7 +1247,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 {
     auto & select_query = getSelectQuery();
 
-    query_info.query = query_ptr;
+    query_info.setQuery(query_ptr);
 
     /// NOTE: this is required for getQueryProcessingStage(), so should be initialized before ExpressionAnalysisResult.
     query_info.has_window = query_analyzer->hasWindow();
@@ -3760,7 +3760,7 @@ void InterpreterSelectQuery::initSettings()
 
 bool InterpreterSelectQuery::isQueryWithFinal(const SelectQueryInfo & info)
 {
-    bool result = info.query->as<ASTSelectQuery &>().final();
+    bool result = info.getQuery()->as<ASTSelectQuery &>().final();
     if (info.table_expression_modifiers)
         result |= info.table_expression_modifiers->hasFinal();
 

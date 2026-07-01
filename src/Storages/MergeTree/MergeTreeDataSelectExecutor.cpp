@@ -243,9 +243,10 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
         sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
     }
-    else
+    /// Analyzer path carries SAMPLE in `table_expression_modifiers`. Read it from the AST only on the legacy path (no `query_tree`).
+    else if (!select_query_info.query_tree)
     {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
+        auto & select = select_query_info.getQuery()->as<ASTSelectQuery &>();
 
         auto select_sample_size = select.sampleSize();
         auto select_sample_offset = select.sampleOffset();

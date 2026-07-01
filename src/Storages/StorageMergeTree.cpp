@@ -336,7 +336,7 @@ void StorageMergeTree::read(
         && !settings[Setting::allow_experimental_analyzer])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
-            query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+            query_plan, getStorageID(), processed_stage, query_info.getQuery(), local_context, query_info.storage_limits);
         return;
     }
 
@@ -356,7 +356,7 @@ void StorageMergeTree::read(
                 metadata_snapshot->getColumns(),
                 storage_snapshot,
                 processed_stage,
-                query_info.query,
+                query_info.getQuery(),
                 local_context);
             return;
         }

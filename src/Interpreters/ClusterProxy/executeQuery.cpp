@@ -441,7 +441,7 @@ void executeQuery(
         {
             const auto & shard_info = cluster->getShardsInfo()[i];
 
-            ASTPtr query_ast_for_shard = query_info.query->clone();
+            ASTPtr query_ast_for_shard = query_info.getQuery()->clone();
             if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
                 /// TODO: support composite sharding key
                 sharding_key_expr->getRequiredColumns().size() == 1)
@@ -941,8 +941,8 @@ void executeQueryWithParallelReplicasCustomKey(
     ContextPtr context)
 {
     auto header = InterpreterSelectQuery(query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-    query_info.query = ClusterProxy::rewriteSelectQuery(
-        context, query_info.query, storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr);
+    query_info.setQuery(ClusterProxy::rewriteSelectQuery(
+        context, query_info.getQuery(), storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr));
     executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
 }
 

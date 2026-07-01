@@ -102,7 +102,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
 
     /// Define query info
     SelectQueryInfo query_info;
-    query_info.query = query_ptr;
+    query_info.setQuery(query_ptr);
 
     /// From stage
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;

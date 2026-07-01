@@ -84,9 +84,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         || lim_info.limit_length == 0)
         return false;
 
-    chassert(query_info.query);
+    chassert(query_info.getQuery());
 
-    const auto & query = query_info.query->as<ASTSelectQuery &>();
+    const auto & query = query_info.getQuery()->as<ASTSelectQuery &>();
 
     /// `arrayJoin` (function or `ARRAY JOIN` clause) changes row cardinality after the
     /// source has run. Pushing the outer `LIMIT` into the source would truncate input
@@ -121,10 +121,10 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
 
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
-    if (!query_info.query)
+    if (!query_info.getQuery())
         return {};
 
-    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.getQuery()->as<ASTSelectQuery &>(), context);
 
     if (!shouldPushdownLimit(query_info, lim_info))
         return {};
