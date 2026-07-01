@@ -108,7 +108,10 @@ void ASTSystemQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
 #if USE_XRAY
     /// Fields set only for SYSTEM INSTRUMENT ADD / REMOVE.
     hash_state.update(instrumentation_function_name);
-    hash_state.update(instrumentation_handler_name);
+    /// The formatter emits the handler name upper-cased (`Poco::toUpper`), so fold the same
+    /// normalized form: otherwise `... ADD 'f' log ...` and its formatted `... ADD 'f' LOG ...`
+    /// re-parse to different handler-name cases and break the tree-hash consistency check.
+    hash_state.update(Poco::toUpper(instrumentation_handler_name));
     hash_state.update(instrumentation_entry_type);
     hash_state.update(instrumentation_point.has_value());
     if (instrumentation_point)
@@ -240,6 +243,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
         }
+
+        /// `WITH TABLES` (only parsed for `DROP DATABASE REPLICA`) must be emitted, otherwise it is
+        /// lost on a format -> parse round-trip: the folded `with_tables` flag would then differ
+        /// between the original and the re-parsed AST and break the tree-hash consistency check.
+        if (with_tables)
+            print_keyword(" WITH TABLES");
     };
 
     auto print_on_volume = [&]
