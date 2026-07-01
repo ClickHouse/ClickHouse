@@ -1,5 +1,4 @@
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -19,11 +18,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
-}
 
 namespace ErrorCodes
 {
@@ -91,9 +85,6 @@ void insertRowToLogTable(
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
-    IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
-    if (set_log_level < row_log_level)
-        return;
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");

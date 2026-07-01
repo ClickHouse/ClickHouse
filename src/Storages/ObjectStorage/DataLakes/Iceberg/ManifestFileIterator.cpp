@@ -26,12 +26,20 @@
 
 #include <Common/logger_useful.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
 
 namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
 }
 
 namespace ProfileEvents
@@ -232,14 +240,16 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
 {
-    insertRowToLogTable(
-        context_,
-        manifest_file_deserializer_->getMetadataContent(),
-        DB::IcebergMetadataLogLevel::ManifestFileMetadata,
-        path_resolver_.getTableRoot(),
-        path_to_manifest_file_,
-        std::nullopt,
-        std::nullopt);
+    IcebergMetadataLogLevel log_level = context_->getSettingsRef()[DB::Setting::iceberg_metadata_log_level].value;
+    if (log_level >= DB::IcebergMetadataLogLevel::ManifestFileMetadata)
+        insertRowToLogTable(
+            context_,
+            manifest_file_deserializer_->getMetadataContent(),
+            DB::IcebergMetadataLogLevel::ManifestFileMetadata,
+            path_resolver_.getTableRoot(),
+            path_to_manifest_file_,
+            std::nullopt,
+            std::nullopt);
 
     /// The manifest file's own format version governs how it is parsed. A v2 table may
     /// still reference v1 manifests produced before an external upgrade from v1 to v2,
@@ -381,16 +391,18 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
             row_index,
             path_to_manifest_file);
 
+    IcebergMetadataLogLevel log_level = context->getSettingsRef()[DB::Setting::iceberg_metadata_log_level].value;
     if (parsed_entry->status == ManifestEntryStatus::DELETED)
     {
-        insertRowToLogTable(
-            context,
-            manifest_file_deserializer->getContent(row_index),
-            DB::IcebergMetadataLogLevel::ManifestFileEntry,
-            path_resolver.getTableRoot(),
-            path_to_manifest_file,
-            row_index,
-            std::nullopt);
+        if (log_level >= DB::IcebergMetadataLogLevel::ManifestFileEntry)
+            insertRowToLogTable(
+                context,
+                manifest_file_deserializer->getContent(row_index),
+                DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                path_resolver.getTableRoot(),
+                path_to_manifest_file,
+                row_index,
+                std::nullopt);
         return nullptr;
     }
 
@@ -496,14 +508,15 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
         pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
-    insertRowToLogTable(
-        context,
-        manifest_file_deserializer->getContent(row_index),
-        DB::IcebergMetadataLogLevel::ManifestFileEntry,
-        path_resolver.getTableRoot(),
-        path_to_manifest_file,
-        row_index,
-        pruning_status);
+    if (log_level >= DB::IcebergMetadataLogLevel::ManifestFileEntry)
+        insertRowToLogTable(
+            context,
+            manifest_file_deserializer->getContent(row_index),
+            DB::IcebergMetadataLogLevel::ManifestFileEntry,
+            path_resolver.getTableRoot(),
+            path_to_manifest_file,
+            row_index,
+            pruning_status);
     switch (pruning_status)
     {
         case PruningReturnStatus::NOT_PRUNED: {
