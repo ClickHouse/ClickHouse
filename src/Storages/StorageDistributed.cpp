@@ -1159,28 +1159,19 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
     /// An `INSERT ... SELECT ... SETTINGS ...` keeps the source SELECT's own SETTINGS node too:
     /// `ParserInsertQuery` copies those settings onto the INSERT (via `InsertQuerySettingsPushDownVisitor`)
     /// but does not remove them from the SELECT, and `ASTInsertQuery::formatImpl` serializes the SELECT after
-    /// this — so a setting written on the source SELECT would otherwise still leak. The optimized paths above
-    /// rebuild `query.select` as an `ASTSelectWithUnionQuery` whose `list_of_selects` is set as a member but
-    /// not registered in `children`, so a child-traversal strip would miss the arms; reach each arm's SETTINGS
-    /// through the member directly.
+    /// this — and a nested source subquery (`WHERE x IN (SELECT ... SETTINGS ...)`) carries its own SETTINGS
+    /// too. All would otherwise leak. The optimized paths above rebuild `query.select` as an
+    /// `ASTSelectWithUnionQuery` whose `list_of_selects` is set as a member but not registered in `children`,
+    /// so a child-traversal strip on the union itself misses the arms; iterate the arms through the member and
+    /// run the shared query strip on each — an arm is a parsed clone with populated children, so this reaches
+    /// the arm's own SETTINGS and recurses through any nested-subquery SETTINGS (both `changes` and
+    /// `default_settings`), pruning emptied clauses.
     if (query.select)
     {
+        ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
         if (auto * union_query = query.select->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
-        {
             for (const auto & arm : union_query->list_of_selects->children)
-            {
-                auto * arm_select = arm->as<ASTSelectQuery>();
-                if (!arm_select)
-                    continue;
-                auto arm_settings = arm_select->settings();
-                auto * arm_set = arm_settings ? arm_settings->as<ASTSetQuery>() : nullptr;
-                if (!arm_set)
-                    continue;
-                strip_set_query(*arm_set);
-                if (arm_set->changes.empty() && arm_set->default_settings.empty() && arm_set->query_parameters.empty())
-                    arm_select->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-            }
-        }
+                ClusterProxy::stripInitiatorOnlySettingsFromQuery(arm);
     }
 
     if (!query.settings_ast)

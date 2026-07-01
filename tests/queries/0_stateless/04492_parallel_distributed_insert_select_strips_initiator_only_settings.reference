@@ -8,3 +8,5 @@
 1	0	0
 -- an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text
 1	0	0
+-- an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text
+1	0

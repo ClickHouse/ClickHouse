@@ -207,6 +207,36 @@ ${CLICKHOUSE_CLIENT} -q "
       AND type = 'QueryFinish'
       AND event_date >= today() - 1"
 
+echo "-- an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text"
+# The strip must recurse through the rebuilt arm's subtree, not just its top-level SETTINGS, so a nested
+# source subquery (WHERE x IN (SELECT ... SETTINGS ...)) does not forward the name either.
+QID_NESTED="04492-nested-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_NESTED}" -q "
+    INSERT INTO dist_dst
+    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1
+    SELECT * FROM dist_src WHERE x IN (SELECT x FROM src SETTINGS http_allow_table_as_file = 1)"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+${CLICKHOUSE_CLIENT} -q "
+    WITH initial AS
+    (
+        SELECT query_id
+        FROM system.query_log
+        WHERE current_database = currentDatabase()
+          AND query_id = '${QID_NESTED}'
+          AND is_initial_query = 1
+          AND type = 'QueryFinish'
+          AND event_date >= today() - 1
+    )
+    SELECT
+        count() >= 1 AS ran_on_shards,
+        countIf(query LIKE '%http_allow_table_as_file%') AS leaked_http_allow_table_as_file
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial)
+      AND is_initial_query = 0
+      AND query_kind = 'Insert'
+      AND type = 'QueryFinish'
+      AND event_date >= today() - 1"
+
 rm -f "${DATA_FILE}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE dist_src"
