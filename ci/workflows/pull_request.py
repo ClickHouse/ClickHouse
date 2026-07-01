@@ -47,7 +47,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.code_review,
+        JobConfigs.code_review.set_run_after(STYLE_AND_FAST_TESTS),
         JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
