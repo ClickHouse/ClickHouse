@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -76,8 +77,7 @@ void decodeRawSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & scr
         return;
 
     pl.resize(count);
-    /// Bulk-read the AoS payload, then de-interleave into the lanes. readBigStrict pulls the
-    /// whole blob in one pass; the per-entry readStrict loop it replaces cost ~16ns/entry.
+    /// Bulk-read the AoS payload in one pass, then de-interleave into the lanes.
     const size_t bytes = count * sizeof(RoaringishEntry);
     scratch.resize(bytes);
     in.readBigStrict(scratch.data(), bytes);
@@ -97,9 +97,7 @@ void decodeRawSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & scr
 
 /// ---- Pfor: the three UInt32 lanes bit-packed with the PFor codec (Compression/PFor.h) ----
 
-/// doc_id is non-decreasing across the sorted entries (integrated delta, d0); group and bitmap
-/// are packed plain. The three lane blobs are concatenated into one payload, prefixed by its
-/// byte length so the reader can slurp it into a contiguous buffer before decoding.
+/// doc_id delta-packed (d0, non-decreasing), group/bitmap plain; the three lane blobs are concatenated into one length-prefixed payload.
 void encodePfor(std::span<const RoaringishEntry> entries, WriteBuffer & out)
 {
     const UInt64 count = entries.size();
@@ -118,8 +116,7 @@ void encodePfor(std::span<const RoaringishEntry> entries, WriteBuffer & out)
         bm[i] = entries[i].bitmap;
     }
 
-    /// Note: PFor works on uint8_t buffers; ClickHouse's UInt8 is char8_t, so the raw byte
-    /// buffer must be uint8_t (not UInt8) to match the PFor API.
+    /// PFor works on uint8_t buffers (ClickHouse UInt8 is char8_t), so the byte buffer must be uint8_t.
     std::vector<uint8_t> payload(3 * PFor::maxCompressedBytes<UInt32>(count));
     size_t off = 0;
     off += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(doc), PFor::Delta::d0, payload.data() + off);
@@ -128,6 +125,15 @@ void encodePfor(std::span<const RoaringishEntry> entries, WriteBuffer & out)
 
     writeVarUInt(static_cast<UInt64>(off), out);
     out.write(reinterpret_cast<const char *>(payload.data()), off);
+}
+
+/// Decode one PFor lane fail-closed: throw CORRUPTED_DATA if truncated or malformed (decodeBlocks returns 0). Advances `p`.
+void decodePforLane(const uint8_t *& p, const uint8_t * end, UInt64 count, PFor::Delta mode, UInt32 * out)
+{
+    const size_t consumed = PFor::decodeBlocks<UInt32>(p, count, mode, out, end);
+    if (consumed == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (pfor): truncated or malformed lane");
+    p += consumed;
 }
 
 void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexPositionCodec::DecodeScratch & scratch)
@@ -141,8 +147,7 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexP
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, in);
 
-    /// Reused buffers; PaddedPODArray::resize does not value-initialize PODs (unlike
-    /// std::vector(count)) and keeps trailing padding for the SIMD PFor kernels.
+    /// Reused buffers; PaddedPODArray::resize skips value-init and keeps trailing SIMD padding.
     scratch.payload.resize(payload_bytes);
     if (payload_bytes > 0)
         in.readStrict(scratch.payload.data(), payload_bytes);
@@ -150,10 +155,16 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexP
     scratch.doc.resize(count);
     scratch.group.resize(count);
     scratch.bitmap.resize(count);
-    const uint8_t * p = reinterpret_cast<const uint8_t *>(scratch.payload.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::d0, scratch.doc.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, scratch.group.data());
-    PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, scratch.bitmap.data());
+    const uint8_t * const start = reinterpret_cast<const uint8_t *>(scratch.payload.data());
+    const uint8_t * const end = start + payload_bytes;
+    const uint8_t * p = start;
+    decodePforLane(p, end, count, PFor::Delta::d0, scratch.doc.data());
+    decodePforLane(p, end, count, PFor::Delta::none, scratch.group.data());
+    decodePforLane(p, end, count, PFor::Delta::none, scratch.bitmap.data());
+    if (p != end)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
+            static_cast<size_t>(p - start), payload_bytes);
 
     entries.resize(count);
     for (size_t i = 0; i < count; ++i)
@@ -174,13 +185,18 @@ void decodePforSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & pa
     if (payload_bytes > 0)
         in.readStrict(payload.data(), payload_bytes);
 
-    /// Decode the three columnar lanes straight into the SoA arrays — no temp lanes,
-    /// no interleave (the arrays ARE the decode targets).
+    /// Decode the three columnar lanes straight into the SoA arrays (fail-closed on corrupt input).
     pl.resize(count);
-    const uint8_t * p = reinterpret_cast<const uint8_t *>(payload.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::d0, pl.doc.data());
-    p += PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, pl.group.data());
-    PFor::decodeBlocks<UInt32>(p, count, PFor::Delta::none, pl.bitmap.data());
+    const uint8_t * const start = reinterpret_cast<const uint8_t *>(payload.data());
+    const uint8_t * const end = start + payload_bytes;
+    const uint8_t * p = start;
+    decodePforLane(p, end, count, PFor::Delta::d0, pl.doc.data());
+    decodePforLane(p, end, count, PFor::Delta::none, pl.group.data());
+    decodePforLane(p, end, count, PFor::Delta::none, pl.bitmap.data());
+    if (p != end)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
+            static_cast<size_t>(p - start), payload_bytes);
 }
 
 }

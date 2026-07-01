@@ -1,11 +1,8 @@
 #pragma once
 
-// One block of up to BLOCK residuals, encoded as frame-of-reference bit-packing with
-// patched exceptions (the PForDelta scheme). Independently authored.
-//
+// One block of up to BLOCK residuals: frame-of-reference bit-packing with patched exceptions (PForDelta).
 // Layout:
-//   byte0 high bit set  -> constant block: low 7 bits = k value bytes; then k LE bytes.
-//                          (k == 0 means the constant is 0.)
+//   byte0 high bit set  -> constant block: low 7 bits = k value bytes, then k LE bytes (k == 0 => constant 0).
 //   byte0 high bit clear -> normal block:
 //        byte0 = b        base bit width (0..typeBits<T>)
 //        byte1 = e        number of exceptions (values needing more than b bits)
@@ -13,14 +10,8 @@
 //        base             cnt values, low b bits each, bit-packed
 //        positions        e bytes (each < cnt), the exception indices
 //        patches          e values, hb bits each, bit-packed; patch = value >> b
-//
-// Decode unpacks the base (low bits), then ORs each exception's high bits back in.
-// b is chosen per block to minimise total bytes (base + exception overhead).
-//
-// The base of a full 128-value uint32 block with b in [1,31] uses the SIMD vertical
-// layout (vertical.hpp); partial blocks, uint64, and b in {0,32} use the scalar packer.
-// Both layouts occupy the same packedBytes(cnt,b) bytes, so the stream is identical in
-// size and (T, cnt, b) selects the layout deterministically on both encode and decode.
+// Decode unpacks the base then ORs each exception's high bits back in; b minimises total bytes.
+// A full 128-value uint32 block with b in [1,31] uses the SIMD vertical layout, else the scalar packer (same packedBytes, so the stream is identical).
 
 #include <Compression/PFor/bitpack.h>
 #include <Compression/PFor/common.h>
@@ -106,8 +97,7 @@ inline size_t blockEncode(const T * r, unsigned cnt, uint8_t * out) noexcept
 
     const unsigned b = best_b;
     unsigned ecount = 0;
-    // Exceptions exist only when b < maxw; then b < typeBits<T>, so r[i] >> b is defined
-    // (a full-width block, b == maxw == typeBits<T>, has no exceptions).
+    // Exceptions exist only when b < maxw, so r[i] >> b is shift-safe (a full-width block has none).
     if (b < maxw)
         for (unsigned i = 0; i < cnt; ++i)
             if ((r[i] >> b) != 0)
@@ -148,8 +138,7 @@ inline size_t blockEncode(const T * r, unsigned cnt, uint8_t * out) noexcept
     return static_cast<size_t>(p - out);
 }
 
-// Reconstruct values from residuals already in `out` (inclusive prefix sum + running
-// carry). SIMD for uint32 (deltaDecode32), scalar for uint64. plus is 0 for d0, 1 for d1.
+// Reconstruct values from residuals in `out` (prefix sum + carry). SIMD for uint32, scalar for uint64; plus is 0 for d0, 1 for d1.
 template <typename T>
 inline ALWAYS_INLINE void deltaApply(T * out, unsigned cnt, T & prev, uint32_t plus) noexcept
 {
@@ -171,14 +160,24 @@ inline ALWAYS_INLINE void deltaApply(T * out, unsigned cnt, T & prev, uint32_t p
     prev = acc;
 }
 
+// Decodes one block. With non-null `end` it is fail-closed: reads are bounded and every header field validated; returns 0 on any violation (a valid block is >= 1 byte) so the caller can report corruption. nullptr keeps the fast path (field validation still runs).
 template <typename T>
-inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode, T & prev) noexcept
+inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode, T & prev, const uint8_t * end = nullptr) noexcept
 {
+    const auto need = [end](const uint8_t * from, size_t bytes) noexcept
+    {
+        return !end || (from <= end && static_cast<size_t>(end - from) >= bytes);
+    };
+
     const uint32_t plus = (mode == Delta::d1) ? 1u : 0u;
+    if (!need(in, 1))
+        return 0;
     const uint8_t b0 = in[0];
     if (b0 & 0x80u)
     {
         const unsigned k = b0 & 0x7Fu;
+        if (k > sizeof(T) || !need(in + 1, k)) // loadLE reads k bytes
+            return 0;
         const T c = static_cast<T>(loadLE(in + 1, k));
         for (unsigned i = 0; i < cnt; ++i)
             out[i] = c;
@@ -188,14 +187,27 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
     }
 
     const unsigned b = b0;
+    if (b > typeBits<T> || !need(in, 2))
+        return 0;
     const unsigned e = in[1];
+    if (e > cnt || (e && b >= typeBits<T>)) // e values must fit patches[BLOCK]; exceptions need b < typeBits (shift-safe)
+        return 0;
     const uint8_t * p = in + 2;
     unsigned hb = 0;
     if (e)
+    {
+        if (!need(p, 1))
+            return 0;
         hb = *p++;
+        if (hb > typeBits<T>)
+            return 0;
+    }
 
-    // Fused single pass: a full uint32 delta block with no exceptions unpacks and
-    // prefix-sums in one sweep, with no second pass over the output.
+    const size_t base_bytes = packedBytes(cnt, b);
+    if (!need(p, base_bytes))
+        return 0;
+
+    // Fused single pass: a full uint32 delta block with no exceptions unpacks and prefix-sums in one sweep.
 #if PFOR_HAS_VERTICAL
     if constexpr (sizeof(T) == 4)
         if (mode != Delta::none && e == 0 && cnt == BLOCK && b >= 1 && b <= 31)
@@ -203,22 +215,31 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
             uint32_t carry = static_cast<uint32_t>(prev);
             unpackVertical32FusedDelta(p, b, reinterpret_cast<uint32_t *>(out), carry, plus);
             prev = static_cast<T>(carry);
-            return static_cast<size_t>((p + packedBytes(cnt, b)) - in);
+            return static_cast<size_t>((p + base_bytes) - in);
         }
 #endif
 
     unpackBase<T>(p, cnt, b, out);
-    p += packedBytes(cnt, b);
+    p += base_bytes;
 
     if (e)
     {
+        if (!need(p, e))
+            return 0;
         const uint8_t * pos = p;
         p += e;
+        const size_t patch_bytes = packedBytes(e, hb);
+        if (!need(p, patch_bytes))
+            return 0;
         T patches[BLOCK];
         unpackBits<T>(p, e, hb, patches);
-        p += packedBytes(e, hb);
+        p += patch_bytes;
         for (unsigned j = 0; j < e; ++j)
+        {
+            if (pos[j] >= cnt)
+                return 0;
             out[pos[j]] |= patches[j] << b;
+        }
     }
     if (mode != Delta::none)
         deltaApply<T>(out, cnt, prev, plus);

@@ -1,8 +1,6 @@
 #pragma once
 
-// Shared low-level helpers for the codec: bit-width / mask utilities, packed-size
-// arithmetic, and bounded little-endian byte loads/stores. Standard bit manipulation;
-// independently authored.
+// Shared low-level helpers: bit-width/mask utilities, packed-size arithmetic, little-endian byte loads/stores.
 
 #include <base/defines.h>
 
@@ -13,10 +11,7 @@
 namespace DB::PFor
 {
 
-/// Delta mode applied to a value stream before block encoding (fused into decode):
-///   none -> values stored as-is
-///   d0   -> store gaps v[i] - v[i-1]      (input non-decreasing; gap >= 0)
-///   d1   -> store gap-1 v[i] - v[i-1] - 1 (input strictly increasing; gap >= 1)
+/// Delta mode applied before block encoding: none = as-is, d0 = gaps v[i]-v[i-1] (non-decreasing), d1 = gaps-1 (strictly increasing).
 enum class Delta : uint8_t { none = 0, d0 = 1, d1 = 2 };
 
 namespace detail

@@ -1,8 +1,6 @@
 #pragma once
 
-// Block-stream framing + LEB128 varints + the delta transform (fused into encode/decode).
-// Independently authored. A stream is a sequence of fixed BLOCK-value blocks; the last
-// block may be partial. Counts and delta mode are supplied by the caller (headerless).
+// Block-stream framing + LEB128 varints + delta transform. Headerless: caller supplies count and mode; the last block may be partial.
 
 #include <Compression/PFor/block.h>
 #include <Compression/PFor/common.h>
@@ -75,8 +73,9 @@ inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noex
     return static_cast<size_t>(p - out);
 }
 
+// With non-null `end`, a corrupt block makes blockDecode return 0, propagated as a 0 return here so the caller can report CORRUPTED_DATA.
 template <typename T>
-inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out) noexcept
+inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
 {
     if (count == 0)
         return 0;
@@ -85,9 +84,11 @@ inline size_t bulkDecode(const uint8_t * in, size_t count, Delta mode, T * out) 
     for (size_t s = 0; s < count; s += BLOCK)
     {
         const unsigned cnt = static_cast<unsigned>((count - s < BLOCK) ? (count - s) : BLOCK);
-        // blockDecode reconstructs delta in-place (fused single pass when possible),
-        // threading the running carry through `prev`.
-        p += blockDecode<T>(p, cnt, out + s, mode, prev);
+        // blockDecode reconstructs delta in-place, threading the running carry through `prev`.
+        const size_t bytes = blockDecode<T>(p, cnt, out + s, mode, prev, end);
+        if (bytes == 0)
+            return 0;
+        p += bytes;
     }
     return static_cast<size_t>(p - in);
 }

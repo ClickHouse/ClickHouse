@@ -26,11 +26,11 @@ inline size_t encodeBlocks(std::span<const T> in, Delta mode, uint8_t * out) noe
     return detail::bulkEncode<T>(in.data(), in.size(), mode, out);
 }
 
-/// Inverse of encodeBlocks; decodes `count` values and returns bytes consumed from `in`.
+/// Inverse of encodeBlocks; returns bytes consumed. Pass `end` to decode fail-closed (reads bounded, returns 0 on corrupt input); nullptr keeps the unchecked fast path.
 template <typename T>
-inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out) noexcept
+inline size_t decodeBlocks(const uint8_t * in, size_t count, Delta mode, T * out, const uint8_t * end = nullptr) noexcept
 {
-    return detail::bulkDecode<T>(in, count, mode, out);
+    return detail::bulkDecode<T>(in, count, mode, out, end);
 }
 
 /// Self-describing compress into a caller buffer (>= maxCompressedBytes<T>): [varint count][u8 flags][block stream].
@@ -52,7 +52,7 @@ inline size_t decompressInto(std::span<const uint8_t> in, T * out) noexcept
     uint64_t count = 0;
     p += detail::getVarint(p, count);
     const uint8_t flags = *p++;
-    decodeBlocks<T>(p, static_cast<size_t>(count), static_cast<Delta>(flags & 3u), out);
+    decodeBlocks<T>(p, static_cast<size_t>(count), static_cast<Delta>(flags & 3u), out, in.data() + in.size());
     return static_cast<size_t>(count);
 }
 
