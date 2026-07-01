@@ -47,7 +47,8 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
-    const Params & params)
+    const Params & params,
+    QueryFinishCallback query_finish_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
@@ -89,10 +90,22 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
+    try
+    {
+        PullingPipelineExecutor executor(io.pipeline);
 
-    /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-    writeQueryResponse(response, executor, converter.getResultType());
+        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+        writeQueryResponse(response, executor, converter.getResultType());
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early so a slow client draining the response does not keep occupying it,
+    /// then flush the response (query_finish_callback) and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
