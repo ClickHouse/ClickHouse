@@ -348,6 +348,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_append_index", trueOrFalseSetting},
        {"optimize_arithmetic_operations_in_aggregate_functions", trueOrFalseSetting},
        {"optimize_and_compare_chain", trueOrFalseSetting},
+       {"optimize_redundant_comparisons", trueOrFalseSetting},
        {"optimize_dictget_tuple_element", trueOrFalseSetting},
        {"optimize_distinct_in_order", trueOrFalseSetting},
        {"optimize_distributed_group_by_sharding_key", trueOrFalseSetting},
