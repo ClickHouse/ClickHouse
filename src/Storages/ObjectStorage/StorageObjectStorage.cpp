@@ -710,6 +710,12 @@ void StorageObjectStorage::drop()
     /// one carrying the iceberg_delete_data_on_drop value captured in checkTableCanBeDropped.
     auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
     drop_context->setSetting("iceberg_delete_data_on_drop", delete_data_on_drop);
+    /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
+    /// initialized (no prior read/write), so configuration->drop() would be a no-op and leave
+    /// the files behind. Only initialize when we are going to delete data, so a plain DROP keeps
+    /// its no-op behavior and does not newly touch the object storage.
+    if (delete_data_on_drop && configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
     configuration->drop(drop_context);
 }
 

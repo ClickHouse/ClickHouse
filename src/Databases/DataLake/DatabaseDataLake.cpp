@@ -750,7 +750,13 @@ void DatabaseDataLake::dropTable( /// NOLINT
 {
     auto table = tryGetTable(name, context_);
     if (table)
+    {
+        /// tryGetTable returns a fresh storage instance, so replay checkTableCanBeDropped on it
+        /// (context_ is the query context here) to capture iceberg_delete_data_on_drop before the
+        /// background drop reads it, matching what InterpreterDropQuery does on the self-managed path.
+        table->checkTableCanBeDropped(context_);
         table->drop();
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot drop table {} because it does not exist", name);
 }

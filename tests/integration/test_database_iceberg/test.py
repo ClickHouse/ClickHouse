@@ -785,6 +785,48 @@ def test_drop_table(started_cluster):
     assert len(catalog.list_tables(root_namespace)) == 0
 
 
+def test_drop_table_delete_data(started_cluster):
+    # iceberg_delete_data_on_drop must also remove the S3 files on the catalog
+    # (DataLakeCatalog) path, not only for self-managed IcebergLocal/IcebergS3 tables.
+    node = started_cluster.instances["node1"]
+    minio = started_cluster.minio_client
+    bucket = "warehouse-rest"
+
+    test_ref = f"test_drop_delete_data_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Setting on: DROP removes the files under the table path.
+    table_on = f"{test_ref}_on"
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_on, "(x String)")
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_on}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_on}/")) > 0
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_on}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 0
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_on}/")) == 0
+
+    # Setting off (default): DROP leaves the files in place.
+    table_off = f"{test_ref}_off"
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_off, "(x String)")
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_off}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_off}/")) > 0
+
+    node.query(f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_off}`")
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_off}/")) > 0
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
