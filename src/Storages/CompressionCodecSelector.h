@@ -4,6 +4,7 @@
 #include <Common/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -74,12 +76,33 @@ public:
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
 
+        const auto & factory = CompressionCodecFactory::instance();
+
         for (const auto & name : keys)
         {
             if (!startsWith(name, "case"))
                 throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}.{}, must be 'case'", config_prefix, name);
 
-            elements.emplace_back(config, config_prefix + "." + name);
+            const Element & element = elements.emplace_back(config, config_prefix + "." + name);
+
+            /// The server-wide `<compression>` selector builds a codec from just its family name and
+            /// level, with no column type, and `choose` returns it as the part's default codec. The
+            /// part writer then re-resolves that stored `CODEC(...)` description with each column type,
+            /// bypassing the `allow_experimental_codecs` gate and the "requires column type" rejection
+            /// that the SQL/untyped codec settings (`default_compression_codec`, `marks_compression_codec`,
+            /// `primary_key_compression_codec`) enforce at validation time. Apply the same rejection here,
+            /// at config load, so an experimental or type-dependent codec (such as `PCO`) cannot be used
+            /// from server config and silently bypass that gate. Fail closed at load rather than at the
+            /// first part write.
+            CompressionCodecPtr codec = factory.get(element.family_name, element.level);
+            if (codec->requiresColumnTypeToCompress())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec {} requires the column type to compress and cannot be used in the <compression> configuration; "
+                    "specify it per column instead", element.family_name);
+            if (codec->isExperimental())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Codec {} is experimental and cannot be used in the <compression> configuration. "
+                    "You can enable it per column with the 'allow_experimental_codecs' setting", element.family_name);
         }
     }
 
