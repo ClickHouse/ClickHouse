@@ -182,6 +182,12 @@ class Job:
             return res
 
         def set_run_after(self, job, reset=False):
+            """
+            Return a copy of this `Job.Config` that must start after the named jobs.
+
+            `set_run_after` controls execution order only. Use `set_requires` when
+            the job consumes artifacts produced by another job.
+            """
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
