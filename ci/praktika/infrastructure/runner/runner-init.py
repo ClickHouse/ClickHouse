@@ -621,8 +621,7 @@ brew install \
     urllib3 \
     unidiff \
     dohq-artifactory \
-    pyjwt
-"$HOME/venv/bin/pip" install \
+    pyjwt \
     numpy==2.3.2 \
     pandas==2.3.3 \
     scipy==1.16.1
