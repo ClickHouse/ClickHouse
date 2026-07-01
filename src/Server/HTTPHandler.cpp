@@ -56,6 +56,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <algorithm>
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <memory>
 #include <optional>
@@ -966,6 +967,13 @@ void HTTPHandler::processQuery(
     String disposition_base = path_info.table;
     String disposition_path_format = path_info.format;
     String disposition_compression = settings[Setting::compression];
+    /// Only advertise a compression suffix when a codec is actually selected. The response-buffer setup
+    /// wraps via `chooseCompressionMethod` and skips wrapping when it returns `None` (the recognized no-op
+    /// hints `none` / `auto`), so mirror that here — otherwise a plain response would get a misleading
+    /// `.none` / `.auto` suffix in the attachment filename.
+    if (!disposition_compression.empty()
+        && chooseCompressionMethod({}, disposition_compression) == CompressionMethod::None)
+        disposition_compression.clear();
     /// Canonicalize the compression to its file-extension form (`gzip` -> `gz`, `zstd` -> `zst`, …) so
     /// the `Content-Disposition` filename uses the same suffix as the URL path. Otherwise an accepted
     /// alias would duplicate the extension: `/hits.CSV.gz?compression=gzip` has a path filename of
@@ -1004,8 +1012,17 @@ void HTTPHandler::processQuery(
         /// `dynamic_query_handler` may set `Content-Disposition: inline` or a fixed filename via
         /// `http_response_headers`; that explicit contract must win over the automatic attachment,
         /// mirroring the `Content-Type` guard above.
-        bool content_disposition_configured = http_response_headers_override
-            && http_response_headers_override->contains("Content-Disposition");
+        /// Configured HTTP header names are case-insensitive, so match `Content-Disposition` that way —
+        /// a config spelling like `content-disposition` is applied earlier and must still suppress the
+        /// automatic attachment header below.
+        bool content_disposition_configured = false;
+        if (http_response_headers_override)
+            for (const auto & header : *http_response_headers_override)
+                if (boost::iequals(header.first, "Content-Disposition"))
+                {
+                    content_disposition_configured = true;
+                    break;
+                }
         bool response_is_binary = details.format && isBinaryOutputFormat(*details.format);
         bool response_is_compressed = !disposition_compression.empty();
         if (!content_disposition_configured && (response_is_binary || response_is_compressed))
