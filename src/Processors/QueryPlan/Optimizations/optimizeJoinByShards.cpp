@@ -480,8 +480,12 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
 /// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
 /// in the same shard on both sides. The join output is unordered.
-void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root)
+void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
 {
+    /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
+    if (num_shards <= 1)
+        return;
+
     std::stack<QueryPlan::Node *> stack;
     stack.push(&root);
 
@@ -506,8 +510,8 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root)
                 if (left_sort && right_sort
                     && left_sort->isSortingForMergeJoin() && right_sort->isSortingForMergeJoin())
                 {
-                    left_sort->convertToScatteredFullSort();
-                    right_sort->convertToScatteredFullSort();
+                    left_sort->convertToScatteredFullSort(num_shards);
+                    right_sort->convertToScatteredFullSort(num_shards);
 
                     JoinStep::PrimaryKeySharding sharding;
                     const auto & clause = table_join.getClauses().front();

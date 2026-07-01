@@ -590,7 +590,7 @@ void optimizeTreeSecondPass(
 
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. Unconditional: the
     /// `join_algorithm` choice is the gate (this is a no-op unless a join uses that algorithm).
-    optimizeParallelFullSortingMergeJoin(root);
+    optimizeParallelFullSortingMergeJoin(root, optimization_settings.max_threads);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 }

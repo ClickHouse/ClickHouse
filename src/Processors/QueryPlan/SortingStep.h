@@ -114,10 +114,18 @@ public:
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
-    /// Switch to a full sort that scatters the input by the hash of the sort key into independent
-    /// partitions and sorts each partition separately, producing one sorted stream per partition (no
-    /// final merge). Used by `parallel_full_sorting_merge` to feed a hash-sharded merge join.
-    void convertToScatteredFullSort() { partition_by_description = result_description; type = Type::Full; }
+    /// Switch to a full sort that scatters the input by the hash of the sort key into exactly
+    /// `partitions` independent partitions and sorts each partition separately, producing one sorted
+    /// stream per partition (no final merge). Unlike the partition-by-window-frame scatter, the partition
+    /// count is fixed (not the pipeline's thread count), so both sides of a join scatter into the same
+    /// number of shards regardless of how many streams each side reads. Used by
+    /// `parallel_full_sorting_merge` to feed a hash-sharded merge join.
+    void convertToScatteredFullSort(size_t partitions)
+    {
+        partition_by_description = result_description;
+        type = Type::Full;
+        scatter_partitions = partitions;
+    }
 
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
@@ -174,6 +182,9 @@ private:
     const SortDescription result_description;
 
     SortDescription partition_by_description;
+    /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
+    /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
+    size_t scatter_partitions = 0;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
