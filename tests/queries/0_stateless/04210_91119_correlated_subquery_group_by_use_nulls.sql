@@ -1,3 +1,8 @@
+-- Tags: long
+-- long: the statistics-aggregate crash-guard cases below run at numbers(64) so the
+-- out-of-bounds read lands on an ASan redzone. That makes the test heavy enough to
+-- exceed the flaky-check 180s soft cap under debug + randomized settings, but the
+-- coverage must not be reduced, so the test is tagged long instead.
 -- https://github.com/ClickHouse/ClickHouse/issues/91119
 --
 -- A correlated subquery references an outer column that becomes `Nullable` after
