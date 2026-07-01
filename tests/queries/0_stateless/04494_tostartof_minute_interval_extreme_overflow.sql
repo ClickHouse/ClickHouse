@@ -1,6 +1,6 @@
 -- Regression test for a division by zero in `DateLUTImpl::toStartOfMinuteInterval` with an extreme
 -- interval count. This is the `MINUTE` sibling of the `toStartOfHourInterval` overflow covered by
--- 04492_tostartof_hour_interval_extreme_overflow: `toStartOfInterval` only validates that the interval
+-- 04493_tostartof_hour_interval_extreme_overflow: `toStartOfInterval` only validates that the interval
 -- value is positive, so a huge but positive `toIntervalMinute` reaches `toStartOfMinuteInterval`, where
 -- `60 * minutes` wraps. `INTERVAL 4611686018427387904 MINUTE` wraps the divisor to exactly zero
 -- (`60 * 2^62 ≡ 0 mod 2^64`), and the following division by it is undefined behaviour (a division-by-zero
