@@ -269,7 +269,7 @@ def main():
         # MergeTree settings to set more often
         "hot_table_settings": [
             "allow_coalescing_columns_in_partition_or_order_key",
-            # "allow_experimental_replacing_merge_with_cleanup",
+            "allow_experimental_text_index_positions",
             "allow_floating_point_partition_key",
             "allow_nullable_key",
             "allow_summing_columns_in_partition_or_order_key",
