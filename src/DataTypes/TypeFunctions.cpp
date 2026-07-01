@@ -92,6 +92,20 @@ static UInt32 fieldToScale(const Field & field, const std::string & type_functio
         type_function_name, argument_name);
 }
 
+/// A container type function (`Array(T)`, `Map(K, V)`, ...) is sometimes spelled bare
+/// (e.g. `-> Array`) in a documentation-only signature whose authoritative result type is
+/// produced by the function's own `getReturnTypeImpl`. On the types-only fallback the DSL still
+/// evaluates that return type and reaches the type function with no element operands. Report this
+/// as a clean, user-facing `ILLEGAL_COLUMN` — the element type is not expressible on this path —
+/// instead of the internal `LOGICAL_ERROR` a plain wrong-arity check would raise (which would
+/// abort a build with `ABORT_ON_LOGICAL_ERROR`).
+[[noreturn]] static void throwContainerTypeFunctionNeedsElement(const std::string & type_function_name)
+{
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+        "Type function {} requires an explicit element type to determine the result type",
+        type_function_name);
+}
+
 class TypeFunctionLeastSupertype : public ITypeFunction
 {
 public:
@@ -131,6 +145,8 @@ class TypeFunctionArray : public ITypeFunction
 public:
     Value apply(const Values & args) const override
     {
+        if (args.empty())
+            throwContainerTypeFunctionNeedsElement("Array");
         if (args.size() != 1)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Array");
         return Value(DataTypePtr(std::make_shared<DataTypeArray>(args.front().type())));

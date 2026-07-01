@@ -537,17 +537,19 @@ GTEST_TEST(FunctionSignature, BareContainerReturnHazardOnTypesOnly)
         checkSignatureTypesOnly("(Tuple, Tuple) -> Tuple", {makeColumn("Tuple(UInt8, UInt8)"), makeColumn("Tuple(UInt8, UInt8)")}),
         "Tuple()");
 
-    /// … and a bare `-> Array` raises an internal `LOGICAL_ERROR`, because the `Array` type function
-    /// needs exactly one element-type operand. The `getReturnTypeImpl(DataTypes)` overrides on those
-    /// functions never reach this DSL path, so neither hazard is observable through them.
+    /// … and a bare `-> Array` cannot produce a concrete element type on the types-only path, so it
+    /// surfaces as a clean, user-facing `ILLEGAL_COLUMN` (not the internal `LOGICAL_ERROR` a plain
+    /// wrong-arity check would raise — which would abort a build with `ABORT_ON_LOGICAL_ERROR`). The
+    /// `getReturnTypeImpl(DataTypes)` overrides on those functions never reach this DSL path, so
+    /// neither hazard is observable through them.
     try
     {
         checkSignatureTypesOnly("(Any) -> Array", {makeColumn("String")});
-        FAIL() << "expected a LOGICAL_ERROR for a bare `-> Array` return";
+        FAIL() << "expected an ILLEGAL_COLUMN for a bare `-> Array` return";
     }
     catch (const Exception & e)
     {
-        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR) << e.message();
+        EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_COLUMN) << e.message();
     }
 }
 
