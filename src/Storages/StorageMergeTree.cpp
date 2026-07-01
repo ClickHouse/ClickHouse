@@ -2109,13 +2109,18 @@ bool StorageMergeTree::optimize(
 
             for (size_t i = 0; i < partition_ids.size(); ++i)
             {
-                /// Capturing by reference is fine: partition_ids and optimize_partition outlive the runner.
-                runner.enqueueAndKeepTrack([i, results, &partition_ids, &optimize_partition]
-                {
-                    PreformattedMessage partition_reason;
-                    if (!optimize_partition(partition_ids[i], partition_reason))
-                        (*results)[i] = std::unexpected(std::move(partition_reason));
-                });
+                /// Everything the task needs is captured by value (or by shared_ptr), so the task
+                /// stays self-contained even if `enqueueAndKeepTrack` throws before it is tracked and
+                /// stack unwinding starts before the runner waits (ThreadPoolCallbackRunnerLocal
+                /// requires callbacks not to reference stack locals). `this` (the storage) and the
+                /// merge inputs outlive any such task.
+                runner.enqueueAndKeepTrack(
+                    [this, i, results, partition_id = partition_ids[i], deduplicate, deduplicate_by_columns, cleanup, txn, optimize_skip_merged_partitions]
+                    {
+                        PreformattedMessage partition_reason;
+                        if (!merge(true, partition_id, true, deduplicate, deduplicate_by_columns, cleanup, txn, partition_reason, optimize_skip_merged_partitions))
+                            (*results)[i] = std::unexpected(std::move(partition_reason));
+                    });
             }
             runner.waitForAllToFinishAndRethrowFirstError();
 
