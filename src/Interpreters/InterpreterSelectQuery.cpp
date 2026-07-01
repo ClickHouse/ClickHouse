@@ -2012,10 +2012,15 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
                         SortingStep::Settings sort_settings(context->getSettingsRef());
 
+                        /// Mark the pre-join sort the same way the analyzer path does (see `addSortingForMergeJoin`
+                        /// in `JoinStepLogical.cpp`). Besides being semantically correct (this sort is done locally
+                        /// before a merge join), it is what lets `optimizeParallelFullSortingMergeJoin` recognize the
+                        /// step and rewrite it into hash-scattered shards; otherwise `parallel_full_sorting_merge`
+                        /// would silently degrade to a single merge join with `enable_analyzer = 0`.
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
                             std::move(order_descr),
-                            0 /* LIMIT */, sort_settings);
+                            0 /* LIMIT */, sort_settings, /*is_sorting_for_merge_join_=*/ true);
                         sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_pos), options.max_step_description_length);
                         plan.addStep(std::move(sorting_step));
                     };
