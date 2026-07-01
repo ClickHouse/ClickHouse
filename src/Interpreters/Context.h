@@ -1085,6 +1085,10 @@ public:
 
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
+    /// Share the privilege-accounting object with another context, so privileges checked on this context are
+    /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on
+    /// a copy of the original query context but should still account its access checks to the original query.
+    void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
