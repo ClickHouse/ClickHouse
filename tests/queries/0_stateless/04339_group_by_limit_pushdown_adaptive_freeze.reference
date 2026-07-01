@@ -1,0 +1,12 @@
+Pattern 1 freeze then smaller keys: result matches non-optimized
+3
+Pattern 2 freeze (cardinality == LIMIT): every returned group complete
+5	5
+Composite Pattern 2 freeze (cardinality == LIMIT, q3 shape)
+10	10
+Eviction-heavy stream must not freeze (results stay top-K correct)
+0	1
+1	1
+2	1
+freeze path ran
+1

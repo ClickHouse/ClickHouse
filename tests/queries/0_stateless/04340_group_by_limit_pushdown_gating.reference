@@ -1,0 +1,18 @@
+external agg: Pattern 2 still applies
+1
+external agg: Pattern 1 still applies
+1
+huge limit: gated off
+0
+limit at cap: applies
+1
+limit above cap: gated off
+0
+nullable key eviction: result matches optimization off
+10	10
+non-prefix ORDER BY: not optimized
+0
+reordered ORDER BY: not optimized
+0
+non-prefix ORDER BY: result matches optimization off
+5

@@ -1,6 +1,6 @@
 <test>
     <!-- GROUP BY ... ORDER BY min/max LIMIT K pattern.
-         Exercises the TopNAggregation optimization when enabled. -->
+         Exercises the TopKAggregation optimization when enabled. -->
 
     <!-- max(EventTime) DESC, ~130K groups (CounterID) -->
     <query>SELECT CounterID, max(EventTime) AS m FROM hits_100m_single GROUP BY CounterID ORDER BY m DESC LIMIT 10 FORMAT Null</query>

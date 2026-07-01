@@ -1,0 +1,12 @@
+alternating negative and positive zero, stateful aggregate, LIMIT 1
+0	5
+same result without the optimization
+0	5
+alternating NaN payloads, LIMIT 1
+1	5
+zeros tied at the boundary among real eviction churn
+3	3
+tie-overflow after eviction freezes the heap
+1	1
+tie-overflow: every returned group complete
+5	5

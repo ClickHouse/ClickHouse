@@ -1,0 +1,43 @@
+Single numeric key, huge limit
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Single numeric key, huge limit with huge offset
+Composite key, huge limit
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+2	0
+2	1
+2	2
+3	0
+3	1
+3	2
+4	0
+4	1
+4	2
+String / serialized key, huge limit
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Pattern 2 (no ORDER BY), huge limit keeps all groups
+10
+Result matches the unoptimized aggregation
+1000	1000

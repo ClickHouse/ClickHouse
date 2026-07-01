@@ -3,9 +3,11 @@
 #include <Common/ColumnsHashing.h>
 
 #include <Columns/ColumnString.h>
+#include <Interpreters/TopKAggregationHeap.h>
+
 namespace DB
 {
-class IColumn;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -17,6 +19,7 @@ struct AggregationMethodOneNumber
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodOneNumber() = default;
 
@@ -60,6 +63,7 @@ struct AggregationMethodString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodString() = default;
 
@@ -96,6 +100,7 @@ struct AggregationMethodStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodStringNoCache() = default;
 
@@ -129,6 +134,7 @@ struct AggregationMethodFixedString
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodFixedString() = default;
 
@@ -162,6 +168,7 @@ struct AggregationMethodFixedStringNoCache
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodFixedStringNoCache() = default;
 
@@ -196,6 +203,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using Base::data;
+    TopKAggregationHeap top_k_heap;
 
     template <bool use_cache>
     using BaseStateImpl = typename Base::template StateImpl<use_cache>;
@@ -233,6 +241,7 @@ struct AggregationMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodKeysFixed() = default;
 
@@ -280,6 +289,7 @@ struct AggregationMethodSerialized
     using Mapped = typename Data::mapped_type;
 
     Data data;
+    TopKAggregationHeap top_k_heap;
 
     AggregationMethodSerialized() = default;
 

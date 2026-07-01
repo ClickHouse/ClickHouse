@@ -1,0 +1,12 @@
+int8_asc
+int8_desc
+int16_asc
+int16_desc
+int32_asc
+int32_desc
+int64_asc
+int64_desc
+date32_asc
+date32_desc
+optimization_applied_guard
+1

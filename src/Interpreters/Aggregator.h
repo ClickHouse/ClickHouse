@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -134,6 +135,16 @@ public:
         bool enable_producing_buckets_out_of_order_in_aggregation = true;
 
         bool serialize_string_with_zero_byte = false;
+
+        struct TopKParams
+        {
+            size_t keys = 0;                        /// the LIMIT N (heap capacity)
+            std::vector<int> directions;            /// per-column ORDER BY directions
+            std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
+            size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
+            bool requires_pruning = false;          /// Pattern 2: must erase evicted keys
+        };
+        std::optional<TopKParams> top_k;
 
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
@@ -408,6 +419,7 @@ private:
     void executeImpl(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -417,10 +429,11 @@ private:
         AggregateDataPtr overflow_row) const;
 
     /// Specialization for a particular value no_more_keys.
-    template <bool prefetch, typename Method, typename State>
+    template <bool prefetch, bool top_k = false, typename Method, typename State>
     void executeImplBatch(
         Method & method,
         State & state,
+        const ColumnRawPtrs & key_columns,
         Arena * aggregates_pool,
         size_t row_begin,
         size_t row_end,
@@ -429,6 +442,16 @@ private:
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
+
+    /// Trim the bounded heap back to capacity by batch-popping excess entries,
+    /// erasing evicted keys from the hash table and destroying their aggregate states.
+    /// When `destroyed_states` is non-null, evicted aggregate states are destroyed and
+    /// their pointers appended so the caller can redirect stale `places[]` entries.
+    /// When null (the simple-count path), entries are only erased - inline counts are
+    /// not real aggregate states, so destroying them would be undefined behaviour.
+    /// `pool` provides transient storage for reconstructed serialized keys.
+    template <typename Method>
+    void trimHeapAndPruneHashTable(Method & method, Arena & pool, std::vector<AggregateDataPtr> * destroyed_states) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,

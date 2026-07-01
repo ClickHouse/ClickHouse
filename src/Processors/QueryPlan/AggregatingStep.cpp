@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -175,6 +176,31 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+}
+
+void AggregatingStep::applyLimitPushdown(
+    size_t top_k,
+    std::vector<int> directions_,
+    std::vector<int> nulls_directions_,
+    size_t num_key_columns,
+    bool requires_pruning)
+{
+    params.top_k = Aggregator::Params::TopKParams{
+        .keys = top_k,
+        .directions = std::move(directions_),
+        .nulls_directions = std::move(nulls_directions_),
+        .key_columns = num_key_columns,
+        .requires_pruning = requires_pruning,
+    };
+
+    /// Pattern 2 (no ORDER BY) is only correct if evicted keys are erased from
+    /// the hash table; an external-aggregation spill would flush partial states
+    /// and reset the heap, letting a spilled-then-evicted key surface an
+    /// incomplete group in the unsorted LIMIT.  The heap already bounds the
+    /// table to ~1.5x the limit, so spilling is unnecessary - disable it for
+    /// this step to keep the optimization while removing the hazard.
+    if (requires_pruning)
+        params.max_bytes_before_external_group_by = 0;
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const
@@ -378,6 +404,19 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// TODO(nihalzp): Support it
         params.stats_collecting_params.disable();
     }
+
+    /// Pattern 2 of the top-K pushdown (`GROUP BY ... LIMIT` without `ORDER BY`,
+    /// marked by `top_k->requires_pruning`) prunes by erasing evicted keys from the
+    /// hash table.  That is only globally correct when every row for a key reaches
+    /// the same heap.  With several independent aggregating streams a key can be
+    /// pruned in one stream yet kept in another, and the merge would retain only the
+    /// surviving stream's partial state — an incomplete group the unsorted LIMIT can
+    /// return.  Sharded aggregation routes each key to a single shard, so it stays
+    /// safe; a single stream is safe trivially.  Otherwise disable the heap.
+    /// (Pattern 1 — with `ORDER BY` — is unaffected: its downstream global sort+limit
+    /// discards any key whose rank lost in some stream.)
+    if (params.top_k && params.top_k->requires_pruning && pipeline.getNumStreams() > 1 && !use_sharded_aggregation)
+        params.top_k.reset();
 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
