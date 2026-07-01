@@ -125,14 +125,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
             /// Push queued_row_count - offset rows.
             UInt64 to_push = queued_row_count > offset ? queued_row_count - offset : 0;
             if (to_push == 0)
-            {
-                for (auto & port : ports_data)
-                {
-                    port.input_port->close();
-                    port.output_port->finish();
-                }
-                return Status::Finished;
-            }
+                return finishAndRelease();
 
             /// Push front chunks consisting of `to_push` amount of rows to output ports, cutting the
             /// last chunk if it extends into the offset tail. Returns PortFull if no output can
@@ -141,12 +134,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
             if (status != Status::Finished)
                 return status;
 
-            for (auto & port : ports_data)
-            {
-                port.input_port->close();
-                port.output_port->finish();
-            }
-            return Status::Finished;
+            return finishAndRelease();
         }
 
         /// If we enter this stage, it means that we have all the input data and all input ports are closed, and there
@@ -195,12 +183,7 @@ NegativeLimitTransform::Status NegativeLimitTransform::prepare()
 
         chassert(queued_row_count <= offset);
 
-        for (auto & port : ports_data)
-        {
-            port.input_port->close();
-            port.output_port->finish();
-        }
-        return Status::Finished;
+        return finishAndRelease();
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "NegativeLimitTransform::prepare in unknown stage");
@@ -548,6 +531,23 @@ NegativeLimitTransform::Status NegativeLimitTransform::pushRows(UInt64 to_push)
             output->push(std::move(chunk));
             chunks.pop_front();
         }
+    }
+
+    return Status::Finished;
+}
+
+NegativeLimitTransform::Status NegativeLimitTransform::finishAndRelease()
+{
+    /// Once we finish, the only rows that can remain buffered are the offset tail (the data
+    /// suffix excluded by a negative OFFSET), which is never output. Drop them now so the memory
+    /// is freed immediately.
+    chunks.clear();
+    queued_row_count = 0;
+
+    for (auto & port : ports_data)
+    {
+        port.input_port->close();
+        port.output_port->finish();
     }
 
     return Status::Finished;

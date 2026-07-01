@@ -166,6 +166,10 @@ private:
     /// Returns PortFull if no output port can accept data.
     Status pushRows(UInt64 to_push);
 
+    /// Finish the processor: release any chunks still buffered in the deque (the offset tail,
+    /// which is never output), then close all input ports and finish all output ports.
+    Status finishAndRelease();
+
     /// Debug: verify that `queued_row_count` equals the sum of all chunk row counts.
     void assertRowCountConsistency() const
     {
