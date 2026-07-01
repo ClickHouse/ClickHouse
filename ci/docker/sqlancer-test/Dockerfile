@@ -1,4 +1,9 @@
 # docker build -t clickhouse/sqlancer-test .
+#
+# This image hosts two fuzzers that both run against clickhouse-server over the
+# `com.clickhouse` client-v2 transport under JDK 25:
+#   * SQLancer (ClickHouse/sqlancer) in /sqlancer/sqlancer-main
+#   * SQLancer++ (suyZhong/SQLancerPlusPlus) in /sqlancer-pp
 FROM ubuntu:22.04
 
 # ARG for quick switch to a given ubuntu mirror
@@ -46,4 +51,25 @@ RUN mkdir /sqlancer && \
     find /sqlancer -type f -exec chmod 666 {} \; && \
 	cd /sqlancer/sqlancer-main && \
 	mvn --no-transfer-progress package -Dmaven.test.skip=true -Djacoco.skip=true && \
+	rm -r /root/.m2
+
+# SQLancer++ (https://github.com/suyZhong/SQLancerPlusPlus): a generalised
+# successor to upstream SQLancer with a built-in ClickHouse engine in its
+# `general` provider. Built into this same image so the SQLancer++ CI job can
+# reuse it (JDK 25 + the client-v2 clickhouse-jdbc driver) instead of a separate
+# image. `swap-clickhouse-jdbc.py` pins the JDBC driver to the client-v2 release
+# and applies the ClickHouse-specific oracle/config patches (see the script).
+# `-Djacoco.skip=true`: jacoco 0.8.8 (pinned by SQLancer++) can't read JDK 25
+# class files; tests are skipped so the coverage agent is not needed anyway.
+ARG SQLANCER_PP_REF=9442649e63d55a86f556da5aef832fac82280a2e
+COPY swap-clickhouse-jdbc.py /tmp/swap-clickhouse-jdbc.py
+RUN mkdir /sqlancer-pp && \
+	wget -q -O- https://github.com/suyZhong/SQLancerPlusPlus/archive/${SQLANCER_PP_REF}.tar.gz | \
+	tar zx -C /sqlancer-pp --strip-components=1 && \
+	python3 /tmp/swap-clickhouse-jdbc.py /sqlancer-pp && \
+	rm /tmp/swap-clickhouse-jdbc.py && \
+    find /sqlancer-pp -type d -exec chmod 777 {} \; && \
+    find /sqlancer-pp -type f -exec chmod 666 {} \; && \
+	cd /sqlancer-pp && \
+	mvn --no-transfer-progress package -DskipTests -Djacoco.skip=true && \
 	rm -r /root/.m2
