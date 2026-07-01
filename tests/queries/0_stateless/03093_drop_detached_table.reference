@@ -64,4 +64,14 @@ test_table_03093_buffer	0
 Buffer DETACH PERMANENTLY
 test_table_03093_buffer_perm	1
 0
+reviewer-temp-shadow-feature-gate
+1
+0
+0
+0
+reviewer-if-exists-atomic
+0
+reviewer-if-exists-unsupported-db
+reviewer-non-table-detached-objects
+syntax
 total

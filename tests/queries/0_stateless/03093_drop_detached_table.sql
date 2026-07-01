@@ -199,6 +199,77 @@ SELECT table, is_permanently FROM system.detached_tables WHERE database='test_db
 DROP DETACHED TABLE test_db.test_table_03093_buffer_perm SYNC;
 SELECT count(table) FROM system.detached_tables WHERE database='test_db';
 
+USE test_db;
+
+SELECT 'reviewer-temp-shadow-feature-gate';
+CREATE TABLE test_table_03093_shadow (number UInt64) ENGINE=MergeTree ORDER BY number;
+DETACH TABLE test_table_03093_shadow PERMANENTLY;
+CREATE TEMPORARY TABLE test_table_03093_shadow (number UInt64) ENGINE=Memory;
+SET allow_experimental_drop_detached_table=0;
+DROP DETACHED TABLE test_table_03093_shadow SYNC; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count()
+FROM system.detached_tables
+WHERE database='test_db' AND table='test_table_03093_shadow';
+SELECT count() FROM test_table_03093_shadow;
+SET allow_experimental_drop_detached_table=1;
+DROP DETACHED TABLE test_table_03093_shadow SYNC;
+SELECT count()
+FROM system.detached_tables
+WHERE database='test_db' AND table='test_table_03093_shadow';
+SELECT count() FROM test_table_03093_shadow;
+
+SELECT 'reviewer-if-exists-atomic';
+DROP DETACHED TABLE IF EXISTS test_table_03093_if_exists_missing SYNC;
+CREATE TABLE test_table_03093_if_exists_attached (number UInt64)
+ENGINE=MergeTree ORDER BY number;
+DROP DETACHED TABLE IF EXISTS
+    test_table_03093_if_exists_attached SYNC; -- { serverError UNKNOWN_TABLE }
+DETACH TABLE test_table_03093_if_exists_attached;
+DROP DETACHED TABLE IF EXISTS test_table_03093_if_exists_attached SYNC;
+SELECT count()
+FROM system.detached_tables
+WHERE database='test_db' AND table='test_table_03093_if_exists_attached';
+
+SELECT 'reviewer-if-exists-unsupported-db';
+CREATE DATABASE test_memory_db_03093 ENGINE=Memory;
+DROP DETACHED TABLE IF EXISTS test_memory_db_03093.missing SYNC;
+CREATE TABLE test_memory_db_03093.existing (number UInt64) ENGINE=Memory;
+DROP DETACHED TABLE test_memory_db_03093.existing SYNC; -- { serverError UNKNOWN_TABLE }
+DROP DATABASE test_memory_db_03093;
+
+SELECT 'reviewer-non-table-detached-objects';
+CREATE TABLE test_table_03093_non_table_source (key UInt64, value String)
+ENGINE=MergeTree ORDER BY key;
+CREATE MATERIALIZED VIEW test_table_03093_non_table_mv
+ENGINE=MergeTree ORDER BY key
+AS SELECT key FROM test_table_03093_non_table_source;
+DETACH TABLE test_table_03093_non_table_mv;
+DROP DETACHED TABLE test_table_03093_non_table_mv SYNC; -- { serverError INCORRECT_QUERY }
+ATTACH TABLE test_table_03093_non_table_mv;
+CREATE DICTIONARY test_table_03093_non_table_dict (key UInt64, value String)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(TABLE 'test_table_03093_non_table_source' DB 'test_db'))
+LAYOUT(FLAT()) LIFETIME(0);
+DETACH DICTIONARY test_table_03093_non_table_dict;
+DROP DETACHED TABLE test_table_03093_non_table_dict SYNC; -- { serverError INCORRECT_QUERY }
+ATTACH DICTIONARY test_table_03093_non_table_dict;
+DROP DICTIONARY test_table_03093_non_table_dict;
+DROP TABLE test_table_03093_non_table_mv;
+DROP TABLE test_table_03093_non_table_source;
+
+SELECT 'syntax';
+CREATE TABLE test_table_03093_syntax (number UInt64) ENGINE=MergeTree ORDER BY number;
+DETACH TABLE test_table_03093_syntax;
+DETACH DETACHED TABLE test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+TRUNCATE DETACHED TABLE test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP DETACHED TABLE IF EMPTY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP DETACHED VIEW test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP DETACHED DICTIONARY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP DETACHED TABLE TEMPORARY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP DETACHED TABLE test_table_03093_syntax SYNC;
+
+USE default;
+
 SELECT 'total';
 SELECT table FROM system.detached_tables WHERE database='test_db';
 
