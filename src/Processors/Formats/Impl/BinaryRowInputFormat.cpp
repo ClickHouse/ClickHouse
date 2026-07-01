@@ -491,7 +491,7 @@ The underlying `Int64` value of the `DateTime64` type can be interpreted as the 
 - `DateTime64(6)` - microseconds.
 - `DateTime64(9)` - nanoseconds.
 
-Supported range of values: `[0000-01-01 00:00:00, 9999-12-31 23:59:59.99999999]` (for precision up to 7; precision 8 and 9 are narrower, see the note below).
+Supported range of values: `[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999]` (for precision up to 7; precision 8 and 9 are narrower, see the note below).
 
 Sample underlying values for `DateTime64`:
 
