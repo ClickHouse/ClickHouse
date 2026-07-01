@@ -69,6 +69,7 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -1302,7 +1303,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 /// parallel replicas are applied later as a plan transformation (see
                 /// ClusterProxy::applyParallelReplicasSplit), so skip the PR construction here.
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
-                    && !settings[Setting::parallel_replicas_plan_based]
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
                     if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
@@ -1385,19 +1385,39 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            till_stage = QueryProcessingStage::WithMergeableState;
-                            QueryPlan query_plan_parallel_replicas;
-                            QueryPlanStepPtr reading_step = std::move(reading_node->step);
-                            ClusterProxy::executeQueryWithParallelReplicas(
-                                query_plan_parallel_replicas,
-                                storage->getStorageID(),
-                                till_stage,
-                                table_expression_query_info.query_tree,
-                                table_expression_query_info.planner_context,
-                                query_context,
-                                table_expression_query_info.storage_limits,
-                                std::move(reading_step));
-                            query_plan = std::move(query_plan_parallel_replicas);
+                            if (!settings[Setting::parallel_replicas_plan_based])
+                            {
+                                till_stage = QueryProcessingStage::WithMergeableState;
+                                QueryPlan query_plan_parallel_replicas;
+                                QueryPlanStepPtr reading_step = std::move(reading_node->step);
+                                ClusterProxy::executeQueryWithParallelReplicas(
+                                    query_plan_parallel_replicas,
+                                    storage->getStorageID(),
+                                    till_stage,
+                                    table_expression_query_info.query_tree,
+                                    table_expression_query_info.planner_context,
+                                    query_context,
+                                    table_expression_query_info.storage_limits,
+                                    std::move(reading_step));
+                                query_plan = std::move(query_plan_parallel_replicas);
+                            }
+                            else
+                            {
+                                QueryPlan query_plan_parallel_replicas;
+                                storage->read(
+                                    query_plan_parallel_replicas,
+                                    columns_names,
+                                    storage_snapshot,
+                                    table_expression_query_info,
+                                    query_context,
+                                    till_stage,
+                                    max_block_size,
+                                    max_streams);
+                                QueryPlanStepPtr split_step = std::make_unique<DB::ParallelReplicasSplitStep>(
+                                    query_plan_parallel_replicas.getRootNode()->step->getOutputHeader(), query_context);
+                                query_plan_parallel_replicas.addStep(std::move(split_step));
+                                query_plan = std::move(query_plan_parallel_replicas);
+                            }
                         }
                         else
                         {

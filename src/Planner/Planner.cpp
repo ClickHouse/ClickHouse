@@ -1953,15 +1953,6 @@ void Planner::buildQueryPlanIfNeeded()
     else
         buildPlanForQueryNode();
 
-    /// inject parallel replicas split step if applicable
-    const auto & query_context = planner_context->getQueryContext();
-    if (query_context->getSettingsRef()[Setting::parallel_replicas_plan_based]
-        && !select_query_options.only_analyze
-        && !select_query_options.build_logical_plan)
-    {
-        ClusterProxy::applyParallelReplicasSplit(query_plan, query_context);
-    }
-
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 

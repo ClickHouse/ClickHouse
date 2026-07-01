@@ -8,6 +8,7 @@
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Core/UUID.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ using ThrottlerPtr = std::shared_ptr<IThrottler>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
-class ReadFromParallelReplicasStep : public SourceStepWithFilterBase
+class ReadFromParallelReplicasStep : public ISourceStep
 {
 public:
     ReadFromParallelReplicasStep(

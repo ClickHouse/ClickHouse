@@ -336,19 +336,9 @@ void optimizeTreeSecondPass(
             }
         });
 
-    const bool enable_parallel_replicas = optimization_settings.enable_parallel_replicas;
-    traverseQueryPlan(stack, root,
-        [&](auto &) {},
-        [&](auto & frame_node)
-        {
-            /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (enable_parallel_replicas)
-            {
-                applyParallelReplicas(frame_node, nodes, optimization_settings);
-            }
-        });
-    stack.push_back({.node = &root});
+    applyParallelReplicas(root, nodes, optimization_settings);
 
+    stack.push_back({.node = &root});
     while (!stack.empty())
     {
         {
