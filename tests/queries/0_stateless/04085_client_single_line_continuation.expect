@@ -1,0 +1,96 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+# In single-line mode, pressing <ENTER> on an incomplete query does not submit
+# it. Instead, a newline is inserted into the same edit buffer (like Alt+Enter),
+# keeping the whole query under a single prompt (no separate ":-] " prompt).
+
+# Incomplete "SELECT" continues on the next line; completing it runs the whole
+# query. If it had been submitted on the first <ENTER>, the result would be a
+# syntax error rather than "42".
+send -- "SELECT\r"
+send -- "42\r"
+expect "│ 42 │"
+expect ":) "
+
+# An unclosed opening parenthesis also continues; closing it on the next line
+# completes the query. The column name "plus(1, 2)" only appears if the full
+# "SELECT (1 + 2)" was executed as one query.
+send -- "SELECT (1\r"
+send -- "+ 2)\r"
+expect "plus(1, 2)"
+expect ":) "
+
+# A trailing semicolon forces submission even when the query is incomplete, so
+# the syntax error is reported instead of starting a continuation line.
+send -- "SELECT;\r"
+expect "Syntax error"
+expect ":) "
+
+# A trailing terminator forces submission even when an opening parenthesis is
+# still unclosed, so the user is never stuck unable to submit.
+send -- "SELECT (;\r"
+expect "Syntax error"
+expect ":) "
+
+# A ';' terminator is recognized even when followed by a trailing comment, so the
+# statement is submitted (here producing an error) rather than continued.
+send -- "SELECT (; -- force submission\r"
+expect "Syntax error"
+expect ":) "
+
+# The explicit trailing '\' line-extender is still handled by the line reader
+# (it shows the ":-] " prompt and strips the backslash) instead of being folded
+# into the buffer as literal SQL.
+send -- "SELECT (\\\r"
+expect ":-] "
+send -- "1)\r"
+expect "│ 1 │"
+expect ":) "
+
+# Continuation considers the whole buffer: when it holds several statements, an
+# incomplete final statement continues without committing (and running) the
+# earlier complete ones. "SELECT 1; SELECT" continues; after completing it with
+# "2", both statements run and no syntax error is produced.
+send -- "SELECT 1; SELECT\r"
+send -- "2\r"
+expect {
+    "Syntax error" { exit 1 }
+    "│ 2 │" {}
+}
+expect ":) "
+
+# Ctrl+C while editing a continued (incomplete) query discards it without
+# submitting; the client returns to a fresh prompt and still accepts new queries.
+send -- "SELECT\r"
+send -- "\x03"
+expect ":) "
+send -- "SELECT 99\r"
+expect "│ 99 │"
+expect ":) "
+
+send -- "\4"
+expect eof

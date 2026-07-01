@@ -309,6 +309,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     )
     , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
     , highlighter(std::move(options.highlighter))
+    , query_needs_continuation(std::move(options.query_needs_continuation))
     , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
@@ -385,6 +386,41 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// requires the highlighter, preserving the previous behavior.
         if (!replxx_last_is_delimiter && ((highlighter && multiline) || hasInputData()))
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+
+        /// In single-line mode, if the current input is an incomplete query (the
+        /// parser reached the end of input still expecting more tokens), insert a
+        /// newline and keep editing within the same prompt instead of committing
+        /// an incomplete query. This mirrors pressing Alt+Enter: the whole query
+        /// stays under one prompt, so arrow keys navigate across all of its lines.
+        /// A trailing delimiter (e.g. `;`) still forces submission, which is how
+        /// the user submits a query that is intentionally incomplete to see the
+        /// syntax error.
+        if (!replxx_last_is_delimiter && !multiline && query_needs_continuation)
+        {
+            replxx::Replxx::State state(rx.get_state());
+            std::string_view text(state.text());
+
+            /// Do not preempt the explicit trailing line-extender (e.g. `\`):
+            /// let `readLine` commit and strip it as before. `readLine` checks the
+            /// extender on the right-trimmed line, so mirror that here.
+            std::string_view trimmed = text;
+            if (size_t last = trimmed.find_last_not_of(" \t\v\f\r\n"); last != std::string_view::npos)
+                trimmed = trimmed.substr(0, last + 1);
+            else
+                trimmed = {};
+
+            bool ends_with_extender = false;
+            for (const char * extender : extenders)
+                if (trimmed.ends_with(extender))
+                {
+                    ends_with_extender = true;
+                    break;
+                }
+
+            if (!ends_with_extender && query_needs_continuation(std::string(text)))
+                return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        }
+
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
     };

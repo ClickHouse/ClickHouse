@@ -3200,6 +3200,130 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 }
 
 
+bool ClientBase::queryNeedsContinuation(const String & text) const
+{
+    /// Returns true if the buffer is an incomplete query, i.e. its last statement
+    /// fails to parse specifically because the parser reached the end of input and
+    /// expected more tokens. Used in single-line interactive mode to insert a
+    /// newline into the same edit buffer instead of submitting the query.
+    ///
+    /// This runs from the `replxx` <ENTER> key binding, which is outside the
+    /// `try`/`catch` around `processQueryText` in `runInteractive`. It must
+    /// therefore never throw (some parsers, e.g. `ParserPRQLQuery` or
+    /// `ParserPrometheusQuery`, throw on invalid input) and must have no side
+    /// effects -- on any error it returns false so the line is committed and the
+    /// regular query-processing path reports the error and returns to the prompt.
+    try
+    {
+        auto trimmed = trim(text, [](char c) { return isWhitespaceASCII(c); });
+        if (trimmed.empty())
+            return false;
+
+        /// A trailing `\G` vertical-output delimiter means "submit now" (it is not
+        /// a regular token, so it is matched on the raw text). The `;` terminator
+        /// is handled below, after tokenization, so it is still recognized when
+        /// followed by a comment.
+        if (trimmed.ends_with("\\G"))
+            return false;
+
+        const auto & settings = client_context->getSettingsRef();
+        const Dialect dialect = settings[Setting::dialect];
+
+        std::unique_ptr<IParserBase> parser;
+        const char * begin = text.data();
+        const char * end = begin + text.size();
+
+        if (dialect == Dialect::kusto)
+            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        else if (dialect == Dialect::prql)
+            parser = std::make_unique<ParserPRQLQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::promql)
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+        else if (dialect == Dialect::polyglot)
+            parser = std::make_unique<ParserPolyglotQuery>(0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
+        else
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        unsigned max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
+        unsigned max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+
+        Tokens tokens(begin, end, 0, true);
+        IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+
+        /// If there are no significant tokens, no continuation needed.
+        if (token_iterator->isEnd())
+            return false;
+
+        /// An explicit `;` terminator means "submit now", even if the statement is
+        /// otherwise incomplete (this is how the user forces an incomplete query to
+        /// be submitted to see its syntax error). The last significant token is
+        /// inspected, so the terminator is recognized even when followed by a
+        /// comment, and independently of the highlighter (with `--highlight 0`
+        /// `ReplxxLineReader` never sets its delimiter flag). Comments and
+        /// whitespace are skipped because `tokens` was built with skip_insignificant.
+        {
+            TokenIterator terminator_it(tokens);
+            TokenType last_significant_type = TokenType::Whitespace;
+            while (terminator_it->type != TokenType::EndOfStream)
+            {
+                last_significant_type = terminator_it->type;
+                ++terminator_it;
+            }
+            if (last_significant_type == TokenType::Semicolon)
+                return false;
+        }
+
+        /// Parse statements one by one. The buffer needs continuation only if its
+        /// last statement is incomplete because the parser reached the end of
+        /// input. Earlier complete statements must not be committed (and executed,
+        /// possibly with side effects) just because a later one is unfinished.
+        while (true)
+        {
+            while (token_iterator->type == TokenType::Semicolon)
+                ++token_iterator;
+            if (token_iterator->isEnd())
+                return false;
+
+            const char * statement_begin = token_iterator->begin;
+
+            ASTPtr ast;
+            Expected expected;
+            if (!parser->parse(token_iterator, ast, expected))
+            {
+                /// The statement does not parse. Check for an unclosed opening
+                /// bracket -- these clearly need continuation (and may make the
+                /// parser stop before the end of input). The check is done only
+                /// here, after a failed parse, and over the current statement's
+                /// text, so it does not apply SQL bracket rules to the inline data
+                /// of a successfully parsed INSERT. Only opens trigger it; an
+                /// excess closing bracket is a real syntax error.
+                Tokens statement_tokens(statement_begin, end, 0, true);
+                UnmatchedParentheses unmatched = checkUnmatchedParentheses(TokenIterator(statement_tokens));
+                for (const auto & token : unmatched)
+                    if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                        return true;
+
+                /// Otherwise continuation only if the failure is at the end of input.
+                return token_iterator.max().type == TokenType::EndOfStream;
+            }
+
+            if (token_iterator->isEnd())
+                return false;
+            if (token_iterator->type == TokenType::Semicolon)
+                continue;
+            /// Tokens remain after a fully parsed statement that are not a new
+            /// statement (e.g. INSERT data, or a real syntax error). Submit and
+            /// let the normal query-processing path handle it.
+            return false;
+        }
+    }
+    catch (...) /// Ok: on any error the line is committed and processQueryText reports it.
+    {
+        return false;
+    }
+}
+
+
 bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
@@ -4164,6 +4288,10 @@ void ClientBase::runInteractive()
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,
         .highlighter = highlight_callback,
+        /// In single-line mode, pressing Enter on an incomplete query inserts a
+        /// newline into the same edit buffer (like Alt+Enter) instead of
+        /// committing it. This keeps the whole query under one prompt.
+        .query_needs_continuation = [this](const String & text) { return queryNeedsContinuation(text); },
         .input_stream = input_stream,
         .output_stream = output_stream,
         .in_fd = stdin_fd,
