@@ -23,7 +23,7 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. The first argument to each function is the name of this collection.
+AI functions reference a **named collection** that stores provider credentials and configuration.
 
 Example statement to create a named collection with provider credentials:
 ```sql
@@ -48,6 +48,45 @@ CREATE NAMED COLLECTION ai_credentials AS
 :::note
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.
 :::
+
+### Selecting credentials {#selecting-credentials}
+
+A function resolves the named collection to use from, in order:
+
+1. the `credentials` key of its parameter map, when present;
+2. otherwise the applicable default-credentials setting:
+   - [`ai_function_text_default_credentials`](/operations/settings/settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   - [`ai_function_embedding_default_credentials`](/operations/settings/settings#ai_function_embedding_default_credentials) for `aiEmbed`.
+
+If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_credentials';
+
+-- Uses ai_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+### Parameter map {#parameter-map}
+
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default.
+
+| Key | Applies to | Description |
+|-----|------------|-------------|
+| `credentials` | all | Named collection to use (see above). |
+| `model` | all | Overrides the collection's `model`. |
+| `max_tokens` | text functions | Overrides the collection's `max_tokens`. |
+| `temperature` | text functions | Sampling temperature. Defaults: `aiGenerate` `0.7`, `aiClassify`/`aiExtract` `0.0`, `aiTranslate` `0.3`. |
+| `system_prompt` | `aiGenerate` | System-level instruction sent with each prompt. |
+| `instructions` | `aiTranslate` | Additional style/dialect instructions. |
+| `dimensions` | `aiEmbed` | Target vector dimensionality (`0` = model's native size). |
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
 
 ### Query-level settings {#query-level-settings}
 
