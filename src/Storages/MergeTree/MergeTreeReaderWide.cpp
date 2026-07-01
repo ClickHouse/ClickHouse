@@ -620,8 +620,12 @@ size_t MergeTreeReaderWide::readRows(
                             /// Check the budget BEFORE cut()/entry allocation, so an exhausted
                             /// budget does not keep paying the copy and allocation cost for
                             /// writes that will be skipped — exactly the work this cap exists
-                            /// to avoid for large scans. Slight overshoot under concurrency is
-                            /// acceptable; the budget is advisory.
+                            /// to avoid for large scans. The budget is an advisory soft
+                            /// threshold, not a hard cap: the entry that crosses it (including a
+                            /// single large first entry while the counter is still zero) is
+                            /// stored in full and charged afterwards, so the total written may
+                            /// overshoot by up to one entry (and slightly more under concurrency).
+                            /// This matches columns_cache_max_bytes_to_write_to_cache's docs.
                             if (max_bytes > 0 && bytes_written && bytes_written->load(std::memory_order_relaxed) >= max_bytes)
                             {
                                 LOG_TEST(log, "Skipping cache write: per-query budget exhausted ({} >= {})",

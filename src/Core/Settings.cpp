@@ -802,7 +802,7 @@ If the total compressed bytes estimated to be read by a query exceeds this value
 A value of `0` means use half of the server-level `columns_cache_size`.
 )", BETA) \
     DECLARE(UInt64, columns_cache_max_bytes_to_write_to_cache, 0, R"(
-Maximum total bytes that a single query may write to the columns cache. The amount of data written to the cache during the query is counted, and once it exceeds this value, further cache writes for the rest of the query are skipped.
+Soft per-query threshold on the bytes a single query writes to the columns cache. The bytes written during the query are counted, and once the counter reaches this value, further cache writes for the rest of the query are skipped. This is an advisory threshold, not a hard cap: the write that crosses it is still stored in full and the counter is only charged afterwards, so the actual amount written may exceed this value by up to one cache entry (and slightly more under concurrency). The purpose is to keep a single large scan from displacing useful data from the cache, not to bound cache usage exactly.
 
 A value of `0` means use half of the server-level `columns_cache_size`.
 )", BETA) \
