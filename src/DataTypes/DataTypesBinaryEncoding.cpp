@@ -708,7 +708,16 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             readVarUInt(dimension, buf);
             size_t stride = 0;
             readVarUInt(stride, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            auto qbit_type = std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            /// A strided QBit expands a tiny header into `element_size * (dimension / stride)` hidden FixedString
+            /// streams. The constructor has already validated the stride and bounded the number of stride groups by
+            /// MAX_STRIDE_GROUPS, but that alone lets a valid header such as QBit(Float64, 8192, 8) materialize
+            /// 64 * 1024 streams while charging only two units to the complexity budget. Charge the hidden streams here
+            /// so that a small header cannot decode into an unreasonably wide type under the default budget.
+            complexity += qbit_type->getElementSize() * qbit_type->getNumStrides();
+            if (max_complexity > 0 && complexity > max_complexity)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+            return qbit_type;
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();
