@@ -49,19 +49,23 @@ FORMAT Vertical
 
 # -----------------------------------------------------------------------------
 # 2. Cross-type coercion: write as Int32, read as Int64/Int8/String.
+# Use 200 (out of Int8 range) so the Int8 read forces the overflow path -- a
+# silent truncation regression would land the value in [-128, 127] and diff.
 # -----------------------------------------------------------------------------
 ${CLICKHOUSE_LOCAL} --query "
-SELECT 42::Int32 AS v FORMAT BSONEachRow
+SELECT 200::Int32 AS v FORMAT BSONEachRow
 " > "${OUT}"
 
-echo '--- coerce Int32 -> Int64 ---'
+echo '--- coerce Int32 -> Int64 (in range) ---'
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${OUT}', 'BSONEachRow', 'v Int64')"
 
-echo '--- coerce Int32 -> Int8 ---'
+# 200 mod 256 reinterpreted as signed -> -56. Codify to detect any change in
+# the narrowing path (e.g. an accidental switch from wrap to clamp or to error).
+echo '--- coerce Int32(=200) -> Int8 (silent wrap to -56) ---'
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${OUT}', 'BSONEachRow', 'v Int8')"
 
 echo '--- error: coerce Int32 -> Float64 (not allowed) ---'
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${OUT}', 'BSONEachRow', 'v Float64')" 2>&1 | grep -o "Code: [0-9]*" | head -1
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${OUT}', 'BSONEachRow', 'v Float64')" 2>&1 | grep -oE "Code: [0-9]+" | head -1
 
 # -----------------------------------------------------------------------------
 # 3. Nullable handling: BSON null -> Nullable column.
