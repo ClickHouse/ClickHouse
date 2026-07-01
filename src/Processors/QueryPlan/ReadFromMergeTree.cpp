@@ -70,6 +70,7 @@
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -80,6 +81,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <city.h>
+
+#include <boost/functional/hash.hpp>
 
 #include <fmt/ranges.h>
 
@@ -137,6 +140,32 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
+    return true;
+}
+
+/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
+/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
+/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
+///
+/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
+/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
+/// captures such constants could write QCC entries and reuse them later when the constant's
+/// value has changed.
+bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
+{
+    for (const auto * child : node->children)
+        if (!isDeterministicAllowingTopKFilter(child))
+            return false;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN)
+        return node->isDeterministic();
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION)
+        return true;
+
+    if (!node->function_base->isDeterministic())
+        return node->function_base->getName() == "__topKFilter";
+
     return true;
 }
 
@@ -265,8 +294,10 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
@@ -543,7 +574,8 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -653,7 +685,8 @@ Pipe ReadFromMergeTree::readFromPool(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -782,7 +815,8 @@ Pipe ReadFromMergeTree::readInOrder(
             actions_settings,
             reader_settings,
             index_build_context,
-            lazy_materializing_rows);
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -2484,9 +2518,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
     }
 
-    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource.
+    /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
+    /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
+    /// filter below. Fail closed rather than serve logically-deleted rows.
+    /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
     if (query_info_.isStream())
+    {
+        if (metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Streaming reads (FROM ... STREAM) are not supported on tables with UNIQUE KEY.");
         return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
@@ -2592,6 +2634,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     if (!allow_query_condition_cache_)
         reader_settings.use_query_condition_cache = false;
 
+    /// The query-condition cache is server-shared and CSN-oblivious (keyed on
+    /// part+condition+mark, no CSN). For a UNIQUE KEY read it can cache marks as
+    /// non-matching after a delete-bitmap + WHERE drop their rows, then let a
+    /// reader pinned at an OLDER snapshot skip a mark whose rows are live at its
+    /// CSN -> missing rows. Disable it for UK reads. The consult/skip side is the
+    /// filterPartsByQueryConditionCache call below (guarded here); the write side
+    /// is gated where the member reader_settings is finalized in initializePipeline.
+    /// This local reader_settings only drives index analysis, but keep it consistent.
+    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    const bool table_has_unique_key = metadata_snapshot->hasUniqueKey();
+    if (table_has_unique_key)
+        reader_settings.use_query_condition_cache = false;
+
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
         .metadata_snapshot = metadata_snapshot,
@@ -2620,7 +2675,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     }
     else
     {
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
+        if (!table_has_unique_key) /// consult/skip side of the query-condition cache; disabled for UK reads (see above).
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, context_, log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -2752,8 +2808,21 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 && !vector_search_parameters.has_value())
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
-            if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
-                condition_hash = outputs.front()->getHash();
+            /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
+            /// of `VirtualColumnUtils::isDeterministic` (rejects non-deterministic constants like
+            /// `now()` / `today()`) while admitting `__topKFilter` — its non-determinism is gated
+            /// by the TopK plan salt combined into `condition_hash` below, mirroring the write
+            /// path in `updateQueryConditionCache`.
+            if (outputs.size() == 1 && isDeterministicAllowingTopKFilter(outputs.front()))
+            {
+                size_t hash = outputs.front()->getHash();
+                /// Match the salting done on the read side in `filterPartsByQueryConditionCache` and
+                /// on the write side in `updateQueryConditionCache` so write/read keys agree under
+                /// `ORDER BY ... LIMIT N` plans.
+                if (top_k_filter_info)
+                    boost::hash_combine(hash, top_k_filter_info->condition_hash);
+                condition_hash = hash;
+            }
         }
 
         /// Fill query condition cache with ranges excluded by index analysis.
@@ -3005,7 +3074,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vector_column)
 {
     if (isVectorColumnReplaced())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector column unexpectedly already replaced.");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
+            "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -3707,6 +3778,15 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
     if (!allow_query_condition_cache || !has_where_or_prewhere)
+        reader_settings.use_query_condition_cache = false;
+
+    /// Disable the query-condition cache (write side: this `reader_settings` flows to
+    /// MergeTreeSelectProcessor) for UNIQUE KEY reads — the cache is CSN-oblivious and
+    /// server-shared, so caching marks as non-matching after a delete-bitmap drop can
+    /// make an older-snapshot reader skip a mark whose rows are live at its CSN. The
+    /// consult/skip side is gated separately in selectRangesToReadImpl.
+    /// TODO(unique-key): re-enable with a CSN/snapshot-aware query-condition cache.
+    if (storage_snapshot->metadata->hasUniqueKey())
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
@@ -4553,7 +4633,24 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 {
     top_k_filter_info = top_k_filter_info_;
-    reader_settings.use_query_condition_cache = false;
+
+    /// A TopK granule-skip decision recorded for one part is computed against the running
+    /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
+    /// The query condition cache key is `(table_uuid, part_name, condition_hash)`, so an entry
+    /// written for a part stays matchable as long as that part keeps its name - even after a
+    /// *different* part is dropped or mutated and the threshold that made the granule skippable
+    /// no longer holds. Fold a hash of the whole part-set snapshot into the salt so that any
+    /// change to the set of parts read (`DROP PARTITION`, mutation, merge, new `INSERT`) yields a
+    /// fresh key and the now-stale decisions of the unchanged parts are never reused.
+    SipHash parts_hash;
+    for (const auto & part_with_ranges : getParts())
+        parts_hash.update(part_with_ranges.data_part->name);
+
+    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
+    /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+    size_t combined_hash = top_k_filter_info->condition_hash;
+    boost::hash_combine(combined_hash, parts_hash.get64());
+    top_k_filter_info->condition_hash = combined_hash;
 }
 
 bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) const

@@ -49,12 +49,17 @@ struct L2DistanceTransposed
     static constexpr auto name = "L2DistanceTransposed";
 #if USE_SIMSIMD
     static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_l2_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max (a - b)^2 = 255^2). Used to bound the
+    /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 255 * 255;
 #endif
 
     template <typename T>
     static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-        if constexpr (std::is_same_v<T, BFloat16>)
+        if constexpr (std::is_same_v<T, Int8>)
+            distanceScalar<Int8, Float64>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, BFloat16>)
             distanceScalar<BFloat16, Float32>(x, y, array_size, result);
         else if constexpr (std::is_same_v<T, Float32>)
             distanceScalar<Float32, Float32>(x, y, array_size, result);
@@ -82,12 +87,17 @@ struct CosineDistanceTransposed
     static constexpr auto name = "cosineDistanceTransposed";
 #if USE_SIMSIMD
     static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_cos_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max a^2 = 128^2). Used to bound the
+    /// dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 128 * 128;
 #endif
 
     template <typename T>
     static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
     {
-        if constexpr (std::is_same_v<T, BFloat16>)
+        if constexpr (std::is_same_v<T, Int8>)
+            distanceScalar<Int8, Float64>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, BFloat16>)
             distanceScalar<BFloat16, Float32>(x, y, array_size, result);
         else if constexpr (std::is_same_v<T, Float32>)
             distanceScalar<Float32, Float32>(x, y, array_size, result);
@@ -126,6 +136,44 @@ struct CosineDistanceTransposed
     }
 };
 
+struct DotProductTransposed
+{
+    static constexpr auto name = "dotProductTransposed";
+#if USE_SIMSIMD
+    static constexpr simsimd_metric_kind_t metric_kind = simsimd_metric_dot_k;
+    /// Largest term the SimSIMD i8 kernel adds per element (max |a * b| = 128 * 128, both equal to -128). Used to
+    /// bound the dimension before that kernel's int32 accumulator overflows; beyond it we use the scalar path.
+    static constexpr UInt64 max_int8_simd_term = 128 * 128;
+#endif
+
+    template <typename T>
+    static void distance(const T * __restrict x, const T * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        if constexpr (std::is_same_v<T, Int8>)
+            distanceScalar<Int8, Float64>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, BFloat16>)
+            distanceScalar<BFloat16, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float32>)
+            distanceScalar<Float32, Float32>(x, y, array_size, result);
+        else if constexpr (std::is_same_v<T, Float64>)
+            distanceScalar<Float64, Float64>(x, y, array_size, result);
+    }
+
+    template <typename InputType, typename AccumulatorType>
+    static void distanceScalar(const InputType * __restrict x, const InputType * __restrict y, std::size_t array_size, Float64 * result)
+    {
+        /// This could be vectorized, but we consider this a fallback code path, so no need to optimize it heavily
+        AccumulatorType ab = 0;
+        for (size_t i = 0; i != array_size; ++i)
+        {
+            AccumulatorType xi = static_cast<AccumulatorType>(*(x + i));
+            AccumulatorType yi = static_cast<AccumulatorType>(*(y + i));
+            ab += xi * yi;
+        }
+        *result = static_cast<Float64>(ab);
+    }
+};
+
 /** Each [L2/cosine/...]DistanceTransposed has two calling conventions:
   * 1. User-facing (documented): DistanceTransposed(qbit, ref_vec, precision)
   * 2. Internal (undocumented): DistanceTransposed(vec.1, ..., vec.precision, qbit_size, ref_vec)
@@ -134,7 +182,7 @@ struct CosineDistanceTransposed
   * It is not exposed in documentation and users should not call it directly.
   *
   * IMPORTANT: In the second form, ref_vec type must match the original QBit element type
-  * (BFloat16/Float32/Float64). This is the only way to determine the QBit type since we
+  * (Int8/BFloat16/Float32/Float64). This is the only way to determine the QBit type since we
   * only receive individual bit planes. Type mismatches will produce incorrect results.
   */
 
@@ -232,7 +280,8 @@ public:
             return false;
 
         const auto ref_vec_type_id = ref_vec_type->getNestedType()->getTypeId();
-        if (ref_vec_type_id != TypeIndex::BFloat16 && ref_vec_type_id != TypeIndex::Float32 && ref_vec_type_id != TypeIndex::Float64)
+        if (ref_vec_type_id != TypeIndex::Int8 && ref_vec_type_id != TypeIndex::BFloat16 && ref_vec_type_id != TypeIndex::Float32
+            && ref_vec_type_id != TypeIndex::Float64)
             return false;
 
         const auto qbit_size = qbit_size_column->getUInt(0);
@@ -314,19 +363,28 @@ public:
         /// 16 meaningful bits to calculate the distance. So we can downcast the reference vector to BFloat16 and do calculations faster.
         auto dispatch_by_accum_type = [&]<typename RefT>(auto func)
         {
-            auto calc_type
-                = (precision <= 16 ? TypeToTypeIndex<BFloat16> : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
-
-            /// Float64 cannot be downcasted to Float32 or BFloat16 in an easy way by reordering bits. That is why with it we always do
-            /// calculations in full width. Alternatively, we could static_cast each element when calculating, but it is slower.
-            if (std::is_same_v<RefT, Float64>)
-                return func.template operator()<RefT, Float64>();
-            else if (calc_type == TypeToTypeIndex<Float32>)
-                return func.template operator()<RefT, Float32>();
-            else if (calc_type == TypeToTypeIndex<BFloat16>)
-                return func.template operator()<RefT, BFloat16>();
+            /// Int8 has only 8 bits and cannot be downcasted to a narrower type, so calculations are always done in Int8.
+            if constexpr (std::is_same_v<RefT, Int8>)
+            {
+                return func.template operator()<Int8, Int8>();
+            }
             else
-                UNREACHABLE();
+            {
+                auto calc_type
+                    = (precision <= 16 ? TypeToTypeIndex<BFloat16>
+                                       : (precision <= 32 ? TypeToTypeIndex<Float32> : TypeToTypeIndex<Float64>));
+
+                /// Float64 cannot be downcasted to Float32 or BFloat16 in an easy way by reordering bits. That is why with it we always do
+                /// calculations in full width. Alternatively, we could static_cast each element when calculating, but it is slower.
+                if (std::is_same_v<RefT, Float64>)
+                    return func.template operator()<RefT, Float64>();
+                else if (calc_type == TypeToTypeIndex<Float32>)
+                    return func.template operator()<RefT, Float32>();
+                else if (calc_type == TypeToTypeIndex<BFloat16>)
+                    return func.template operator()<RefT, BFloat16>();
+                else
+                    UNREACHABLE();
+            }
         };
 
         const bool ref_is_const = arguments.back().column->isConst();
@@ -345,6 +403,8 @@ public:
         /// Dispatch to type-specific implementation based on reference vector type
         switch (type_y)
         {
+            case TypeIndex::Int8:
+                return execute_with_type.template operator()<Int8>();
             case TypeIndex::BFloat16:
                 return execute_with_type.template operator()<BFloat16>();
             case TypeIndex::Float32:
@@ -413,9 +473,10 @@ private:
     template <typename CalcT>
     static simsimd_metric_dense_punned_t resolveSimdKernel()
     {
-        const simsimd_datatype_t datatype = std::is_same_v<CalcT, BFloat16>
-            ? simsimd_datatype_bf16_k
-            : (std::is_same_v<CalcT, Float32> ? simsimd_datatype_f32_k : simsimd_datatype_f64_k);
+        const simsimd_datatype_t datatype = std::is_same_v<CalcT, Int8>
+            ? simsimd_datatype_i8_k
+            : (std::is_same_v<CalcT, BFloat16> ? simsimd_datatype_bf16_k
+                                               : (std::is_same_v<CalcT, Float32> ? simsimd_datatype_f32_k : simsimd_datatype_f64_k));
         simsimd_kernel_punned_t simd_kernel = nullptr;
         simsimd_capability_t unused = simsimd_cap_any_k;
         simsimd_find_kernel_punned(Kernel::metric_kind, datatype, simsimd_capabilities(), simsimd_cap_any_k, &simd_kernel, &unused);
@@ -454,7 +515,11 @@ private:
         auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        using Word = std::conditional_t<sizeof(CalcT) == 2, UInt16, std::conditional_t<sizeof(CalcT) == 4, UInt32, UInt64>>;
+        /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
+        using Word = std::conditional_t<
+            sizeof(CalcT) == 1,
+            uint8_t,
+            std::conditional_t<sizeof(CalcT) == 2, UInt16, std::conditional_t<sizeof(CalcT) == 4, UInt32, UInt64>>>;
 
         /// We process 32 rows per iteration. It's a magic number, but gives a good trade-off between memory usage and performance
         constexpr size_t block_size = 32;
@@ -462,7 +527,12 @@ private:
         auto block_row = [&](size_t r) -> CalcT * { return block.data() + r * padded_array_size; };
 
 #if USE_SIMSIMD
-        const simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<CalcT>();
+        /// SimSIMD's i8 kernels accumulate in int32, which overflows for large dimensions (the scalar
+        /// fallback accumulates in Float64). Use the scalar path beyond the overflow-safe dimension.
+        if constexpr (std::is_same_v<CalcT, Int8>)
+            if (qbit_size > static_cast<size_t>(std::numeric_limits<Int32>::max()) / Kernel::max_int8_simd_term)
+                simd_kernel = nullptr;
 #endif
 
 #if USE_MULTITARGET_CODE
@@ -522,6 +592,7 @@ private:
 /// Used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_);
 
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
@@ -531,5 +602,10 @@ FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<CosineDistanceTransposed>::create(context_);
+}
+
+FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_)
+{
+    return FunctionArrayDistance<DotProductTransposed>::create(context_);
 }
 }
