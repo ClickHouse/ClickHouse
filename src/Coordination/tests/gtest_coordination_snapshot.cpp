@@ -314,7 +314,7 @@ createLocalObjectStorageDisk(const std::string & meta_path, const std::string & 
         std::unordered_map<DB::Location, DB::ObjectStoragePtr>{{"main", obj_storage}});
     auto meta_disk = std::make_shared<DB::DiskLocal>("SnapshotMetaDisk", meta_path);
     DB::MetadataStoragePtr metadata_storage = std::make_shared<DB::MetadataStorageFromDisk>(
-        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/0);
+        meta_disk, "", obj_storage->createKeyGenerator(), /*persist_removal_queue_=*/false, /*removal_log_compaction_threshold_=*/static_cast<size_t>(0));
     Poco::AutoPtr<Poco::Util::MapConfiguration> config_ptr(new Poco::Util::MapConfiguration);
     auto disk = std::make_shared<DB::DiskObjectStorage>(
         "SnapshotDisk", cluster, metadata_storage, router, /*wrapped_disk=*/nullptr, *config_ptr, "", /*use_fake_transaction=*/true);
@@ -602,7 +602,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
 
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 2);
     EXPECT_EQ(snapshot.session_id, 7);
-    EXPECT_EQ(snapshot.node_stream->node_count, 6);
+    EXPECT_EQ(snapshot.node_stream->node_count, 4 + this->keeper_context->getSystemNodesWithData().size());
     EXPECT_EQ(snapshot.session_and_timeout.size(), 2);
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
@@ -614,7 +614,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 6);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 4 +  + this->keeper_context->getSystemNodesWithData().size());
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/").size(), 3);
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello1").size(), 0);
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello2").size(), 0);
@@ -662,14 +662,14 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
 
     DB::KeeperStorageSnapshot snapshot(&storage, 50, nullptr, this->keeper_context->getWriteSnapshotVersion());
     EXPECT_EQ(snapshot.snapshot_meta->get_last_log_idx(), 50);
-    EXPECT_EQ(snapshot.node_stream->node_count, 54);
+    EXPECT_EQ(snapshot.node_stream->node_count, 52 + this->keeper_context->getSystemNodesWithData().size());
 
     for (size_t i = 50; i < 100; ++i)
     {
         addNode(storage, "/hello_" + std::to_string(i), "world_" + std::to_string(i));
     }
 
-    EXPECT_EQ(storage.getStorageStats().nodes_count, 104);
+    EXPECT_EQ(storage.getStorageStats().nodes_count, 102 + this->keeper_context->getSystemNodesWithData().size());
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
@@ -679,7 +679,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
     manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 54);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 52 + this->keeper_context->getSystemNodesWithData().size());
     for (size_t i = 0; i < 50; ++i)
     {
         EXPECT_EQ(committedNodeData(*restored_storage, "/hello_" + std::to_string(i)), "world_" + std::to_string(i));
@@ -722,7 +722,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotManySnapshots)
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
     manager.restoreFromLatestSnapshot(*restored_storage);
 
-    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 254);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 252 + this->keeper_context->getSystemNodesWithData().size());
 
     for (size_t i = 0; i < 250; ++i)
     {
@@ -759,20 +759,20 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMode)
             if (i % 2 == 0)
                 storage.nodes_storage->removeCommittedNode(fmt::format("/hello_{}", i));
         }
-        EXPECT_EQ(storage.getStorageStats().nodes_count, 29);
+        EXPECT_EQ(storage.getStorageStats().nodes_count, 27 + this->keeper_context->getSystemNodesWithData().size());
         if (const auto * mem_nodes_storage = dynamic_cast<const DB::KeeperMemNodesStorage *>(storage.nodes_storage))
         {
-            EXPECT_EQ(mem_nodes_storage->container.snapshotSizeWithVersion().first, 105);
+            EXPECT_EQ(mem_nodes_storage->container.snapshotSizeWithVersion().first, 103 + this->keeper_context->getSystemNodesWithData().size());
             EXPECT_EQ(mem_nodes_storage->container.snapshotSizeWithVersion().second, 1);
         }
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_EQ(snapshotFilesForIdx("./snapshots", 50).size(), 1);
-    EXPECT_EQ(storage.getStorageStats().nodes_count, 29);
+    EXPECT_EQ(storage.getStorageStats().nodes_count, 27 + this->keeper_context->getSystemNodesWithData().size());
     {
         auto stream = storage.nodes_storage->beginWritingSnapshot();
-        EXPECT_EQ(stream->node_count, 29);
+        EXPECT_EQ(stream->node_count, 27 + this->keeper_context->getSystemNodesWithData().size());
         storage.nodes_storage->finishWritingSnapshot(std::move(stream));
     }
     for (size_t i = 0; i < 50; ++i)
@@ -854,7 +854,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotDifferentCompressions
     auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
     new_manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 6);
+    EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 4 + this->keeper_context->getSystemNodesWithData().size());
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/").size(), 3);
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello1").size(), 0);
     EXPECT_EQ(restored_storage->nodes_storage->listCommittedChildrenNames("/hello2").size(), 0);
@@ -936,7 +936,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBlockACL)
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
+        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 3 + this->keeper_context->getSystemNodesWithData().size());
         DB::KeeperNodeStats stats;
         ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr));
         EXPECT_EQ(stats.acl_id, acl_id);
@@ -948,7 +948,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotBlockACL)
         auto restored_storage = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/ false);
         manager.deserializeSnapshotFromBuffer(debuf, *restored_storage);
 
-        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 5);
+        EXPECT_EQ(restored_storage->getStorageStats().nodes_count, 3 + this->keeper_context->getSystemNodesWithData().size());
         DB::KeeperNodeStats stats;
         ASSERT_TRUE(restored_storage->nodes_storage->getCommittedNodeSimple(path, &stats, /*out_data=*/nullptr));
         EXPECT_EQ(stats.acl_id, 0);
