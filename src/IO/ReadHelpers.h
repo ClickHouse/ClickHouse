@@ -876,13 +876,17 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
     if (optimistic_path_for_date_time_input)
     {
-        if (isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
-            && (s[4] < '0' || s[4] > '9') && isNumericASCII(s[5]) && isNumericASCII(s[6])
+        /// A YYYY-MM-DD date has digit month and day and the same delimiter at positions 4 and 7 (checked
+        /// left to right, so only the token's own bytes are read). Anything else is a unix timestamp.
+        if ((s[4] < '0' || s[4] > '9') && isNumericASCII(s[5]) && isNumericASCII(s[6])
             && s[4] == s[7] && isNumericASCII(s[8]) && isNumericASCII(s[9]))
         {
             if constexpr (!throw_exception)
             {
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3]))
+                    return ReturnType(false);
+
+                if (!isSymbolIn(s[4], allowed_date_delimiters))
                     return ReturnType(false);
             }
 
@@ -955,7 +959,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// A bare 4-digit integer is ambiguous with a year, so reject it (a decimal like `1234.5` parses)
+        /// A bare 4-digit integer is ambiguous with a year, so reject it (a decimal like `1234.5` parses).
         if (isNumericASCII(s[0]) && isNumericASCII(s[1]) && isNumericASCII(s[2]) && isNumericASCII(s[3])
             && (s[4] < '0' || s[4] > '9') && s[4] != '.')
         {

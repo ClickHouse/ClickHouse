@@ -1609,36 +1609,24 @@ ReturnType readDateTimeTextFallback(
     /// if negative, it is a timestamp with no ambiguity
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
-        /// A dot here (not a YYYY.MM.DD date) is a DateTime64 decimal timestamp like `1234.5`, parse
-        /// digits and leave the dot for the caller without consuming it
-        if (dt64_mode && *buf.position() == '.')
+        /// A bare 4-digit integer is ambiguous with a year; continue as a date only if the next character
+        /// can delimit one, otherwise reject it (as the optimistic path does) without consuming more input.
+        const char date_delimiter = *buf.position();
+        if (date_delimiter != '-' && date_delimiter != '/' && date_delimiter != '.'
+            && !(allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters)))
         {
-            const bool dotted_date = buf.available() >= date_broken_down_length - 4
-                && buf.position()[3] == '.'
-                && isNumericASCII(buf.position()[1]) && isNumericASCII(buf.position()[2])
-                && isNumericASCII(buf.position()[4]) && isNumericASCII(buf.position()[5]);
-            if (!dotted_date)
-            {
-                datetime = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-                return ReturnType(true);
-            }
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+            else
+                return false;
         }
 
         const auto already_read_length = s_pos - s;
         const size_t remaining_date_size = date_broken_down_length - already_read_length;
 
         size_t size = buf.read(s_pos, remaining_date_size);
-
-        if (!(size == remaining_date_size && s[4] == s[7]
-            && isNumericASCII(s[5]) && isNumericASCII(s[6]) && isNumericASCII(s[8]) && isNumericASCII(s[9])))
+        if (size != remaining_date_size)
         {
-            if (static_cast<size_t>(buf.position() - buf.buffer().begin()) >= size)
-            {
-                buf.position() -= size;
-                datetime = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
-                return ReturnType(true);
-            }
-
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
             else
@@ -1647,7 +1635,11 @@ ReturnType readDateTimeTextFallback(
 
         if constexpr (!throw_exception)
         {
-            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
+                return false;
+
+            if (s[4] != s[7] || !isSymbolIn(s[4], allowed_date_delimiters))
                 return false;
         }
 
