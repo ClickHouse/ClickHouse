@@ -61,6 +61,31 @@ def list_part_index_files(node, database, table, part_name):
     return sorted(f for f in files.splitlines() if f.endswith((".idx", ".idx2")))
 
 
+def get_latest_ddl_entry_with_query(zk, needle):
+    entries = sorted(
+        entry
+        for entry in zk.get_children("/clickhouse/task_queue/ddl")
+        if entry.startswith("query-")
+    )
+    for entry in reversed(entries):
+        value = zk.get(f"/clickhouse/task_queue/ddl/{entry}")[0]
+        if needle.encode() in value:
+            return entry
+    raise AssertionError(f"Could not find DDL entry containing {needle}")
+
+
+def wait_for_ddl_entry_failed_on_hosts(node, entry_path, expected_hosts):
+    node.query_with_retry(
+        f"""
+        SELECT count()
+        FROM system.zookeeper
+        WHERE path = '{entry_path}/finished'
+          AND position(value, 'Cannot execute replicated DDL query, maximum retries exceeded') > 0
+        """,
+        check_callback=lambda result: int(result.strip()) == expected_hosts,
+    )
+
+
 def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     # ON CLUSTER ALTER batches mixing MODIFY SETTING / RESET SETTING with
     # column or table comments must converge on every replica. The storage
@@ -313,3 +338,88 @@ def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
         database="test_db",
         sql="DROP TABLE escape_mixed ON CLUSTER 'cluster' SYNC",
     )
+
+
+def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluster):
+    zookeeper_path = "/clickhouse/tables/ddl_retry_poison"
+    create_sql = (
+        "CREATE TABLE ddl_retry_poison (id UInt64) "
+        "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY id"
+    )
+    ch1.query(
+        database="test_db",
+        sql=create_sql.format(zk=zookeeper_path, replica="r1"),
+    )
+    ch2.query(
+        database="test_db",
+        sql=create_sql.format(zk=zookeeper_path, replica="r2"),
+    )
+
+    seed_column = "seed_for_retry_poison"
+    poison_column = "poisoned_retry_column"
+    later_column = "after_poison_column"
+
+    ch1.query(
+        database="test_db",
+        sql=f"ALTER TABLE ddl_retry_poison ON CLUSTER 'cluster' ADD COLUMN {seed_column} UInt8",
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    seed_entry = get_latest_ddl_entry_with_query(zk, seed_column)
+    seed_path = f"/clickhouse/task_queue/ddl/{seed_entry}"
+    seed_data = zk.get(seed_path)[0]
+    shard_names = zk.get_children(f"{seed_path}/shards")
+    assert len(shard_names) == 1, shard_names
+
+    poison_path = None
+    stopped_nodes = []
+    try:
+        for node in [ch1, ch2]:
+            if node.stop_clickhouse():
+                stopped_nodes.append(node)
+
+        poison_path = zk.create(
+            "/clickhouse/task_queue/ddl/query-",
+            seed_data.replace(seed_column.encode(), poison_column.encode()),
+            sequence=True,
+        )
+        zk.ensure_path(f"{poison_path}/active")
+        zk.ensure_path(f"{poison_path}/finished")
+        shard_path = f"{poison_path}/shards/{shard_names[0]}"
+        zk.ensure_path(shard_path)
+        tries_to_execute_path = f"{shard_path}/tries_to_execute"
+        zk.create(tries_to_execute_path, b"4")
+
+        for node in [ch1, ch2]:
+            node.start_clickhouse()
+        stopped_nodes.clear()
+
+        wait_for_ddl_entry_failed_on_hosts(ch1, poison_path, expected_hosts=2)
+        assert zk.get(tries_to_execute_path)[0] == b"4"
+        assert zk.exists(poison_path) is not None
+
+        ch1.query(
+            f"ALTER TABLE test_db.ddl_retry_poison ON CLUSTER 'cluster' ADD COLUMN {later_column} UInt8",
+            settings={"distributed_ddl_task_timeout": 10},
+        )
+
+        for node in [ch1, ch2]:
+            node.query_with_retry(
+                f"""
+                SELECT count()
+                FROM system.columns
+                WHERE database = 'test_db'
+                  AND table = 'ddl_retry_poison'
+                  AND name = '{later_column}'
+                """,
+                check_callback=lambda result: int(result.strip()) == 1,
+            )
+    finally:
+        for node in stopped_nodes:
+            node.start_clickhouse()
+        if poison_path is not None and zk.exists(poison_path):
+            zk.delete(poison_path, recursive=True)
+        ch1.query(
+            database="test_db",
+            sql="DROP TABLE IF EXISTS ddl_retry_poison ON CLUSTER 'cluster' SYNC",
+        )

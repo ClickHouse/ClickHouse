@@ -894,6 +894,8 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     bool executed_by_other_leader = false;
 
     bool extra_attempt_for_replicated_database = false;
+    bool max_tries_exceeded = false;
+    const bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task) != nullptr;
 
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
@@ -933,11 +935,13 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (counter > MAX_TRIES_TO_EXECUTE)
             {
                 /// Replicated databases have their own retries, limiting retries here would break outer retries
-                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
                 if (is_replicated_database_task)
                     extra_attempt_for_replicated_database = true;
                 else
+                {
+                    max_tries_exceeded = true;
                     break;
+                }
             }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
@@ -998,7 +1002,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             if (!keep_original_error)
                 task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
-        return false;
+        return max_tries_exceeded;
     }
 
     if (executed_by_us)
