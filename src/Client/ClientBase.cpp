@@ -750,6 +750,9 @@ try
         select_into_file_and_stdout = false;
         String current_format = default_output_format;
         bool has_format_clause = false;
+        /// True when the output format was derived from an `INTO OUTFILE` file extension; like an explicit
+        /// format, it must not be overridden by the `default_format` setting fallback below.
+        bool outfile_format_from_extension = false;
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
@@ -826,7 +829,10 @@ try
             {
                 auto format_name = FormatFactory::instance().tryGetFormatFromFileName(out_file);
                 if (format_name)
+                {
                     current_format = *format_name;
+                    outfile_format_from_extension = true;
+                }
             }
         }
 
@@ -847,7 +853,8 @@ try
             /// `default_format` *setting* — e.g. the display default the local client now seeds as a
             /// setting. Without this guard, `clickhouse-local --vertical` is silently overridden by that
             /// setting and prints TSV instead of Vertical.
-            else if (is_default_format && !has_format_clause && !format_settings_ref[Setting::default_format].value.empty())
+            else if (is_default_format && !has_format_clause && !outfile_format_from_extension
+                && !format_settings_ref[Setting::default_format].value.empty())
                 current_format = format_settings_ref[Setting::default_format];
         }
 

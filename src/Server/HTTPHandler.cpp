@@ -418,16 +418,11 @@ void HTTPHandler::processQuery(
         auto qmark = path_only.find('?');
         if (qmark != String::npos)
             path_only = path_only.substr(0, qmark);
-        /// URL-decode the path.
-        try
-        {
-            Poco::URI uri_obj(raw_uri);
-            path_only = uri_obj.getPath();
-        }
-        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
-        {
-            /// Fall back to the already-stripped raw path.
-        }
+        /// Keep `path_only` percent-encoded here. `parseHTTPPath` splits on '/' and then percent-decodes
+        /// each component, so an encoded slash (`%2F`) stays as data inside one component instead of being
+        /// turned into a component boundary — which `Poco::URI::getPath` (returning the fully decoded path)
+        /// would do, splitting legal encoded data into extra path components. The query string, if any, was
+        /// already stripped above.
 
         /// If this handler is registered under a URL prefix, strip it so only the trailing portion
         /// is interpreted as `database/table.format` (or filters / hive partitions). Require a

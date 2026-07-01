@@ -6,6 +6,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Poco/String.h>
+#include <Poco/URI.h>
 
 #include <array>
 
@@ -33,28 +34,32 @@ String findFormatCaseInsensitive(const String & candidate)
     return {};
 }
 
-/// Split a path on '/' producing non-empty components.
+/// Split a *raw* (percent-encoded) path on '/' producing non-empty components, percent-decoding each
+/// component only after the split. Decoding after splitting keeps an encoded slash (`%2F`) as data inside
+/// a single component (e.g. a filter value like `a=foo%2Fbar`, or a back-quoted name `` `a%2Fb` ``),
+/// instead of turning it into a component boundary.
 Strings splitPathComponents(const String & path)
 {
     Strings result;
     String current;
+    auto flush = [&]()
+    {
+        if (!current.empty())
+        {
+            String decoded;
+            Poco::URI::decode(current, decoded);
+            result.push_back(decoded);
+            current.clear();
+        }
+    };
     for (char c : path)
     {
         if (c == '/')
-        {
-            if (!current.empty())
-            {
-                result.push_back(current);
-                current.clear();
-            }
-        }
+            flush();
         else
-        {
             current += c;
-        }
     }
-    if (!current.empty())
-        result.push_back(current);
+    flush();
     return result;
 }
 
