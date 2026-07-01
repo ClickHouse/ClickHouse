@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS lwd_test;
 
 SET enable_lightweight_update = 1;
