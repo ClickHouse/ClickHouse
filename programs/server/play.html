@@ -3490,9 +3490,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending)
 {
-    const paramValuesSnapshot = getParamValues();
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -3577,9 +3577,9 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed)
+async function postMulti(posted_request_num, parsed, params_restore_pending)
 {
-    const paramValuesSnapshot = getParamValues();
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -4544,6 +4544,13 @@ async function postOne()
     /// (WASM) load, during which a tab switch may bump `request_num`. Reading the global
     /// after the await would let this stale run execute/save in the wrong tab, so bail if
     /// it changed and pass the captured id (not the global) to the post functions.
+    ///
+    /// A tab activation / Back-Forward restore already in flight for this generation has not
+    /// yet written the destination tab's saved parameters to the `param_*` inputs (that write
+    /// happens only after `restoreFromHistory`'s tokenization await, which the `++request_num`
+    /// below aborts). Detect it before the bump so the run sources its parameters from the
+    /// destination tab's own saved snapshot instead of the previous tab's stale DOM inputs.
+    const params_restore_pending = params_restore_pending_token === request_num;
     const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
@@ -4566,16 +4573,16 @@ async function postOne()
         }
 
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected);
+            await postMulti(my_request_num, selected, params_restore_pending);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending);
         }
     } else {
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined);
+        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined, params_restore_pending);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -4586,6 +4593,10 @@ async function postOne()
 /// Run all queries from the textarea.
 async function postAll()
 {
+    /// See `postOne`: detect an in-flight tab activation / Back-Forward parameter restore for
+    /// this generation before `++request_num` aborts it, so the run reads the destination tab's
+    /// saved parameters rather than the previously active tab's stale DOM inputs.
+    const params_restore_pending = params_restore_pending_token === request_num;
     const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
@@ -4595,11 +4606,11 @@ async function postAll()
     if (my_request_num !== request_num) return;
 
     if (parsed.length > 1) {
-        await postMulti(my_request_num, parsed);
+        await postMulti(my_request_num, parsed, params_restore_pending);
     } else {
         const query = await getQueryUnderCursor();
         if (my_request_num !== request_num) return;
-        await postSingle(my_request_num, query);
+        await postSingle(my_request_num, query, undefined, params_restore_pending);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -5978,6 +5989,30 @@ function setParamValues(values)
             input.dispatchEvent(new Event('input'));
         }
     }
+}
+
+/// Resolve the parameter values a run must execute with, and keep the `param_*` inputs in sync.
+///
+/// Normally the live DOM inputs are authoritative. But when a tab activation / Back-Forward
+/// restore is still pending for this run's generation, the destination tab's saved parameters
+/// have not yet been written to the inputs — that write happens only after `restoreFromHistory`'s
+/// tokenization await, which `++request_num` in `postOne`/`postAll` has just aborted — so the
+/// inputs still hold the previously active tab's values. Sourcing them would execute this tab's
+/// query against the wrong bindings (a correctness bug, not just a stale UI). Take the values
+/// from the destination tab's own saved `params` instead (parameters are tab-owned), and write
+/// them back so the inputs reflect what actually ran.
+function resolveRunParams(params_restore_pending)
+{
+    if (!params_restore_pending) return getParamValues();
+    const tab = getActiveTab();
+    const saved = (tab && tab.params) || {};
+    const values = {};
+    for (const param of currentQueryParams)
+    {
+        values[param.name] = saved[param.name] !== undefined ? saved[param.name] : '';
+    }
+    setParamValues(values);
+    return values;
 }
 
 async function updateQueryParams()
