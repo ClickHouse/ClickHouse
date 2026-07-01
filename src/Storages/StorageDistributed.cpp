@@ -1898,6 +1898,15 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
         const auto & shards_addresses = cluster->getShardsAddresses();
 
         SipHash hash;
+        /// Fold this table's own UUID: the `hasUUID()` guard above requires it precisely so that
+        /// incarnations of the same `Distributed` name can be told apart, but the create-time
+        /// read-affecting arguments (the sharding key, the cluster/remote target) are fixed at creation
+        /// and cannot be folded as in-lifetime changes. A same-name `DROP` + `CREATE` in an `Atomic`
+        /// database gets a fresh UUID, so mixing the UUID in distinguishes `Distributed(..., x)` from a
+        /// re-created `Distributed(..., x + 1)` over the same remote tables (the routing differs under
+        /// `optimize_skip_unused_shards`) even though every other folded value stays the same. Matches the
+        /// underlying engines (`Memory`/`Log`/`MergeTree`/`URL`/object storage), which all fold their UUID.
+        hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
         /// Loop-free metadata version for this Distributed table's own column metadata (a reverted
         /// metadata-only `ALTER` would otherwise repeat the column string above). See
