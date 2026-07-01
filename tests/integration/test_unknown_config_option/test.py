@@ -266,6 +266,22 @@ node_graphite_invalid_rule_type = cluster_graphite_invalid_rule_type.add_instanc
 )
 caught_graphite_invalid_rule_type_exception = ""
 
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries a `<retention>` block
+# with a `<precision>` but no `<age>`. `appendGraphitePattern` materializes the block by reading both
+# `.age` and `.precision` with `getUInt`, so the missing `<age>` makes the parser throw. The validator
+# must mirror that retention validation (not merely accept a child named `retention`) and reject the
+# whole section as an unknown top-level key.
+cluster_graphite_retention_missing_age = ClickHouseCluster(
+    __file__, name="graphite_retention_missing_age"
+)
+node_graphite_retention_missing_age = (
+    cluster_graphite_retention_missing_age.add_instance(
+        "node_graphite_retention_missing_age",
+        main_configs=["configs/config.d/graphite_retention_missing_age.xml"],
+    )
+)
+caught_graphite_retention_missing_age_exception = ""
+
 # Negative case: a `<protocols>...<handlers>NAME</handlers>` reference whose handler prefix does
 # NOT exist. `createHTTPHandlerFactory` falls back to the default `http_handlers` when
 # `!config.has(NAME)` and never reads the named section, so the validator must NOT exempt the
@@ -564,6 +580,23 @@ def start_graphite_invalid_rule_type_cluster():
                 caught_graphite_invalid_rule_type_exception += "\n" + f.read()
     yield
     cluster_graphite_invalid_rule_type.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_retention_missing_age_cluster():
+    global caught_graphite_retention_missing_age_exception
+    try:
+        cluster_graphite_retention_missing_age.start()
+    except Exception as e:
+        caught_graphite_retention_missing_age_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_retention_missing_age.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_retention_missing_age_exception += "\n" + f.read()
+    yield
+    cluster_graphite_retention_missing_age.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -1036,6 +1069,25 @@ def test_graphite_invalid_rule_type_rejected(
     # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_invalid_rule_type_exception
     assert "graphite_invalid_rule_type" in caught_graphite_invalid_rule_type_exception
+
+
+def test_graphite_retention_missing_age_rejected(
+    start_graphite_retention_missing_age_cluster,
+):
+    # `<graphite_retention_missing_age>` carries a `<pattern>` whose `<retention>` block has a
+    # `<precision>` but no `<age>`. Every child name is a recognized rollup key, but
+    # `appendGraphitePattern` materializes the block by reading both `.age` and `.precision` with
+    # `getUInt`, so the missing `<age>` makes the parser throw. The validator must mirror that retention
+    # validation (not merely accept a child named `retention`) and reject the whole section. The node
+    # must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG"
+        in caught_graphite_retention_missing_age_exception
+    )
+    assert (
+        "graphite_retention_missing_age"
+        in caught_graphite_retention_missing_age_exception
+    )
 
 
 def test_protocols_missing_handler_prefix_not_exempted(start_protocols_missing_cluster):

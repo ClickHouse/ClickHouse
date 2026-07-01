@@ -2563,8 +2563,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// structurally *and* semantically valid. Mirror all of its config-level checks so a typo'd
     /// section that merely resembles a rollup rule is not exempted from the unknown-key check:
     ///  - every child is `regexp`, `function`, `rule_type` or a `retention*` block (anything else
-    ///    throws `UNKNOWN_ELEMENT_IN_CONFIG`). `<retention>` is read only as `.age`/`.precision`, so
-    ///    its grandchildren are not checked;
+    ///    throws `UNKNOWN_ELEMENT_IN_CONFIG`). A `<retention*>` block is materialized by reading
+    ///    `.age` and `.precision` with `getUInt`, so both must be present and parse as unsigned
+    ///    integers, otherwise the parser throws; only those two grandchildren are read;
     ///  - the rule carries at least one `function` or `retention*` child, otherwise the parser throws
     ///    `NO_ELEMENTS_IN_CONFIG` ("at least one of an aggregate function or retention rules is
     ///    mandatory");
@@ -2587,8 +2588,30 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             if (!ok)
                 return false;
 
-            if (rule_child == "function" || rule_child.starts_with("retention"))
+            if (rule_child == "function")
                 has_function_or_retention = true;
+
+            if (rule_child.starts_with("retention"))
+            {
+                /// `appendGraphitePattern` materializes a `retention*` block by reading `.age` and
+                /// `.precision` with `getUInt`. A block missing either child, or whose value is not
+                /// an unsigned integer, makes the parser throw, so it is not a valid rollup rule and
+                /// the section must not be exempted. Only `age`/`precision` are read (matching the
+                /// parser), so other grandchildren are ignored.
+                const String retention = rule_element + "." + rule_child;
+                if (!config.has(retention + ".age") || !config.has(retention + ".precision"))
+                    return false;
+                try
+                {
+                    config.getUInt(retention + ".age");
+                    config.getUInt(retention + ".precision");
+                }
+                catch (const Poco::Exception &)
+                {
+                    return false;
+                }
+                has_function_or_retention = true;
+            }
 
             if (rule_child == "rule_type")
             {
