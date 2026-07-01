@@ -95,6 +95,20 @@ public:
         return "(const String, const String, Any) -> Array";
     }
 
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());

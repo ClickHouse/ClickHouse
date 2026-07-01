@@ -12,6 +12,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -519,6 +520,34 @@ GTEST_TEST(FunctionSignature, BareParametricReturnReportsCleanlyOnTypesOnly)
         {
             EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_COLUMN) << sig << ": " << e.message();
         }
+    }
+}
+
+GTEST_TEST(FunctionSignature, BareContainerReturnHazardOnTypesOnly)
+{
+    /// Several functions carry a documentation-only signature whose return type is a *bare* container
+    /// type function — `-> Tuple` (`tuplePlus`, `tupleNegate`, `hilbertDecode` / `mortonDecode`, the
+    /// `L*Normalize` family) or `-> Array` (`dictGetKeys`, `nested`, the first `arrayReduceInRanges`).
+    /// The exact element / tuple type isn't expressible in the DSL, so those functions keep an
+    /// authoritative hand-written `getReturnTypeImpl` and route the types-only path to it as well. This
+    /// test documents why that routing is necessary: evaluating a bare container return through the DSL
+    /// on the types-only path is wrong. A bare `-> Tuple` silently yields the empty tuple `Tuple()`
+    /// instead of the real element-wise type…
+    EXPECT_EQ(
+        checkSignatureTypesOnly("(Tuple, Tuple) -> Tuple", {makeColumn("Tuple(UInt8, UInt8)"), makeColumn("Tuple(UInt8, UInt8)")}),
+        "Tuple()");
+
+    /// … and a bare `-> Array` raises an internal `LOGICAL_ERROR`, because the `Array` type function
+    /// needs exactly one element-type operand. The `getReturnTypeImpl(DataTypes)` overrides on those
+    /// functions never reach this DSL path, so neither hazard is observable through them.
+    try
+    {
+        checkSignatureTypesOnly("(Any) -> Array", {makeColumn("String")});
+        FAIL() << "expected a LOGICAL_ERROR for a bare `-> Array` return";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR) << e.message();
     }
 }
 
