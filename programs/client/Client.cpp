@@ -17,6 +17,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -61,6 +63,7 @@ namespace Setting
 {
 extern const SettingsDialect dialect;
 extern const SettingsBool use_client_time_zone;
+extern const SettingsTimezone session_timezone;
 }
 
 namespace ErrorCodes
@@ -649,6 +652,13 @@ void Client::connect()
                       << "Proceeding with local time zone." << std::endl
                       << std::endl;
         }
+    }
+    else if (!client_context->getSettingsRef().isChanged("session_timezone"))
+    {
+        /// The client parses DateTime string literals in its local time zone, but string literals interpreted
+        /// server-side (async INSERT, SELECT literals) use `session_timezone`. Propagate the local time zone as
+        /// `session_timezone` so both paths agree. An explicit `--session_timezone` from the user takes priority.
+        client_context->setSetting("session_timezone", DateLUT::instance().getTimeZone());
     }
 
     /// A custom prompt can be specified
