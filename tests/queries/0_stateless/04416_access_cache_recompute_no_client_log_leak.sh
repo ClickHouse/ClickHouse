@@ -7,16 +7,23 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The access-entity caches (QuotaCache, RoleCache, RowPolicyCache, SettingsProfilesCache)
 # recompute every enabled set on each access change, in a batch-finished callback that runs on
-# whichever client thread issued the DDL, and log the recompute size and duration. Those lines
-# are server-internal diagnostics emitted at TRACE (fast recompute) / DEBUG (slow, >= 1000 ms),
-# both below the default client level send_logs_level=warning, so at that default level they are
-# not forwarded onto the issuing client's stderr (which clickhouse-test treats as a failure).
-# Asserts the guaranteed contract, exercising all four caches at two client levels:
+# whichever client thread issued the DDL, and log the recompute size and duration. On the fixed
+# server those lines are server-internal diagnostics emitted at TRACE (fast recompute) / DEBUG
+# (slow, >= 1000 ms); on master (before this change) they are DEBUG (fast) / WARNING (slow), so a
+# slow recompute leaks onto the issuing client's stderr at the default send_logs_level=warning
+# (which clickhouse-test treats as a failure). Exercises all four caches at three client levels:
 #   trace   -> forwarded (1)   the recompute path actually runs and the lines exist
-#   warning -> not forwarded (0)   the contract: the default client level no longer leaks them
-# debug is intentionally not probed: the slow >= 1000 ms path is LOG_DEBUG by design and so is
-# forwarded to an explicit debug client, so a debug assertion would flip whenever a recompute
-# crosses the threshold under load -- the exact flakiness this change removes.
+#   debug   -> a fast (< 1000 ms) recompute line NOT forwarded (0)   the deterministic fix check
+#   warning -> not forwarded (0)   the user-facing contract: the default level no longer leaks
+#
+# The debug probe is what makes this a valid regression test (it fails on master, passes on the
+# fix), while staying free of the threshold flakiness that a naive debug assertion would have:
+#   * On master the fast path is LOG_DEBUG, so a debug client always receives those fast lines
+#     (duration < 1000 ms) -> the probe counts >= 1 and the test FAILS on master HEAD.
+#   * On the fixed server the fast path is LOG_TRACE (not forwarded to a debug client) and only
+#     the slow >= 1000 ms path is LOG_DEBUG. By counting only lines whose measured duration is
+#     < 1000 ms we ignore that slow path, so the probe is a deterministic 0 on the fix regardless
+#     of how slow a recompute gets under sanitizer/thread-fuzzer load.
 #
 # send_logs_level is connection-level (the recompute fires after the statement's per-query
 # settings are gone), so build a client per level by replacing the runner-injected value
@@ -29,6 +36,7 @@ make_client() {
     fi
 }
 CLIENT_TRACE=$(make_client trace)
+CLIENT_DEBUG=$(make_client debug)
 CLIENT_WARNING=$(make_client warning)
 
 USER="user_${CLICKHOUSE_DATABASE}"
@@ -61,11 +69,22 @@ run_ddl() {
         exit 1
     fi
 }
+# Count all recompute lines forwarded to this client.
 leaked() { echo "${LEAK_STDERR}" | grep -cE "${PATTERN}"; }
+# Count only the fast-path (< 1000 ms) recompute lines. Each line ends with "... in <N> ms"; keep
+# the ones with N < 1000 and drop the slow >= 1000 ms lines, which on the fix are the only ones a
+# debug client can receive. See the header comment for why this makes the debug probe deterministic.
+leaked_fast() {
+    echo "${LEAK_STDERR}" \
+        | grep -oE "(${PATTERN}).* in [0-9]+ ms" \
+        | sed -E 's/.* in ([0-9]+) ms/\1/' \
+        | awk '$1 < 1000' \
+        | wc -l
+}
 
 # Create all four entity kinds wired to a user, then drop them, at $1's client log level. Both the
 # add and the drop recompute the enabled sets and emit a log line, so each call exercises the path.
-# Echoes 1 if any recompute line was forwarded to this client, else 0.
+# Counts the forwarded lines with $2 (leaked / leaked_fast) and echoes 1 if any, else 0.
 exercise() {
     run_ddl "${1}" "
         CREATE ROLE ${ROLE};
@@ -80,15 +99,16 @@ exercise() {
         DROP ROLE ${ROLE};
         DROP SETTINGS PROFILE ${PROFILE};
     "
-    [ "$(leaked)" -gt 0 ] && echo 1 || echo 0
+    [ "$(${2})" -gt 0 ] && echo 1 || echo 0
 }
 
 drop_all
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${POLICY_TABLE} (x UInt8) ENGINE = Memory"
 
-exercise "${CLIENT_TRACE}"      # 1: recompute lines ARE forwarded at trace (path is exercised)
-exercise "${CLIENT_WARNING}"    # 0: the contract -- not forwarded at the default client level
+exercise "${CLIENT_TRACE}"   leaked        # 1: recompute lines ARE forwarded at trace (path is exercised)
+exercise "${CLIENT_DEBUG}"   leaked_fast   # 0 on the fix (fast path is TRACE); 1 on master (fast path is DEBUG)
+exercise "${CLIENT_WARNING}" leaked        # 0: the contract -- not forwarded at the default client level
 
 drop_all
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${POLICY_TABLE}"
