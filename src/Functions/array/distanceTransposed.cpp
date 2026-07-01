@@ -322,9 +322,7 @@ public:
         if (!ref_vec_type)
             return {};
 
-        const auto ref_vec_type_id = ref_vec_type->getNestedType()->getTypeId();
-        if (ref_vec_type_id != TypeIndex::Int8 && ref_vec_type_id != TypeIndex::BFloat16 && ref_vec_type_id != TypeIndex::Float32
-            && ref_vec_type_id != TypeIndex::Float64)
+        if (!DataTypeQBit::isSupportedElementType(ref_vec_type->getNestedType()))
             return {};
 
         auto is_uint_size = [require_const_sizes](const ColumnWithTypeAndName & arg)
