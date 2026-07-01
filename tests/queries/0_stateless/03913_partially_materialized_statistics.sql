@@ -34,7 +34,7 @@ SELECT count() FROM test_table;
 SELECT uniqExact(a), uniqExact(b), uniqExact(c) FROM test_table;
 
 -- Enable auto statistics
-ALTER TABLE test_table MODIFY SETTING auto_statistics_types = 'uniq,minmax';
+ALTER TABLE test_table MODIFY SETTING auto_statistics_types = 'uniq,basic';
 
 -- Insert second part with statistics
 INSERT INTO test_table SELECT number + 10000, toString(number % 7 + 10), number % 4 + 10 FROM numbers(10000);
@@ -63,7 +63,7 @@ ORDER BY name, column;
 SELECT count() FROM test_table;
 SELECT uniqExact(a), uniqExact(b), uniqExact(c) FROM test_table;
 
-ALTER TABLE test_table MODIFY SETTING auto_statistics_types = 'uniq,minmax,tdigest,countmin';
+ALTER TABLE test_table MODIFY SETTING auto_statistics_types = 'uniq,basic,tdigest,countmin';
 INSERT INTO test_table SELECT number + 20000, toString(number % 7 + 20), number % 4 + 20 FROM numbers(10000);
 
 SELECT 'after third insert, some statistics are partially materialized';

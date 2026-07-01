@@ -1222,10 +1222,16 @@ void MergeTreeData::checkProperties(
             validate_complex_projection(projection.name, {"_block_offset"});
     }
 
-    for (const auto & col : new_metadata.columns)
+    /// Statistics are validated only when the table is created or altered, not when an existing table is
+    /// loaded (ATTACH / server startup). This keeps tables that reference deprecated statistics types
+    /// (e.g. `minmax`) loadable, while rejecting fresh CREATE/ALTER statements that introduce them.
+    if (!attach)
     {
-        if (!col.statistics.empty())
-            MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
+        for (const auto & col : new_metadata.columns)
+        {
+            if (!col.statistics.empty())
+                MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type);
+        }
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);

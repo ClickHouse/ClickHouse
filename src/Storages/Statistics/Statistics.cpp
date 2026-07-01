@@ -642,6 +642,14 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
 {
     for (const auto & [type, desc] : stats.types_to_desc)
     {
+        /// The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
+        /// Creating it anew is rejected here. This check is skipped when loading existing tables (ATTACH / startup),
+        /// so old tables and parts that still reference `minmax` keep working.
+        if (type == StatisticsType::MinMax)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Statistics type 'minmax' is deprecated. Use 'basic' instead, which is a superset of 'minmax'.");
+
         auto it = validators.find(type);
         if (it == validators.end())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
