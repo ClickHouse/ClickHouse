@@ -4,20 +4,28 @@ import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-# The Hive cluster brings up a full Hadoop + Hive metastore + HiveServer2 JVM stack, which on a
-# loaded (cpus=3) CI runner can take longer than the default per-test timeout of 900s to become
-# reachable - the `started_cluster` fixture then exhausts the budget while polling the metastore in
-# `prepare_hive_data.sh` and the test fails before any assertion runs. Give the whole module a more
-# generous budget (matching other heavy external-service tests such as `test_storage_rabbitmq` and
-# `test_backup_restore_new`), so a slow-but-eventually-ready metastore no longer flakes the tests.
-pytestmark = pytest.mark.timeout(1800)
+# The Hive test cluster runs the `lgboustc/hive_test` image, which is amd64-only. On ARM runners it
+# can only start under (very slow) QEMU emulation, so the Hadoop + Hive metastore + HiveServer2 JVM
+# stack never becomes reachable within the test budget and the `started_cluster` fixture times out
+# regardless of how generous the timeout is. Skip on ARM, matching the other tests that depend on
+# amd64-only images (e.g. `test_mysql57_database_engine`).
+if is_arm():
+    pytestmark = pytest.mark.skip
+else:
+    # Even on amd64 the Hive cluster brings up a full Hadoop + Hive metastore + HiveServer2 JVM
+    # stack, which on a loaded (cpus=3) CI runner can take longer than the default per-test timeout
+    # of 900s to become reachable - the `started_cluster` fixture then exhausts the budget while
+    # polling the metastore in `prepare_hive_data.sh` and the test fails before any assertion runs.
+    # Give the whole module a more generous budget (matching other heavy external-service tests such
+    # as `test_storage_rabbitmq` and `test_backup_restore_new`).
+    pytestmark = pytest.mark.timeout(1800)
 
 
 @pytest.fixture(scope="module")
