@@ -148,6 +148,8 @@ When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
+When writing C++ code, always prefer ClickHouse types over their standard-library or fixed-width equivalents: use `UInt64` instead of `uint64_t`, `UInt8` instead of `std::byte` or `uint8_t`, `Int32` instead of `int32_t`, and so on. The one exception is strings: prefer `std::string` over `String`. Apply the same rule to header includes: include the ClickHouse header that provides these types (e.g. `<base/types.h>`) instead of the corresponding standard header (e.g. `<cstdint>`).
+
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
 Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
