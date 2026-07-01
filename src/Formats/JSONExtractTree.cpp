@@ -1267,7 +1267,10 @@ public:
         }
 
         auto & col_lc = assert_cast<ColumnLowCardinality &>(column);
-        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn()->cloneEmpty())->assumeMutable();
+        /// `cloneEmpty` after `removeNullable` yields a fresh uniquely-owned column. Cloning first and then
+        /// calling `removeNullable` would return the inner column still referenced by the freshly cloned
+        /// `Nullable` wrapper, so the following `assumeMutable` would trip `chassert(use_count() == 1)`.
+        auto tmp_nested = removeNullable(col_lc.getDictionary().getNestedColumn())->cloneEmpty();
         if (!nested->insertResultToColumn(*tmp_nested, element, insert_settings, format_settings, error))
             return false;
 
