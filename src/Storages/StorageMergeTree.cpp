@@ -1412,20 +1412,20 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             if (!select_result.has_value())
             {
-                /// Count merges in progress that touch this partition. We only wait for those: merges
-                /// in other partitions can't prevent selecting all parts of this one, and waiting for
-                /// them would needlessly serialize a parallel OPTIMIZE FINAL that assigns a merge per
-                /// partition (issue #46770).
-                size_t merging_parts_in_partition = 0;
-                for (const auto & merging_part : currently_merging_mutating_parts)
-                    if (merging_part->info.getPartitionId() == partition_id)
-                        ++merging_parts_in_partition;
-
-                /// If final - we will wait for currently processing merges in this partition to finish and continue.
-                if (final && merging_parts_in_partition != 0)
+                /// If final, wait for currently running merges to finish and retry. A merge frees
+                /// both its source parts (unblocking a part conflict in this partition) and its
+                /// reserved disk space (unblocking a shared-resource failure such as the free-space
+                /// check) - and with parallel OPTIMIZE FINAL a concurrently assigned merge for
+                /// another partition can be exactly what temporarily blocks this one - so we wait
+                /// while any merge is active. We only skip the wait when there is simply nothing to
+                /// merge in this partition (e.g. optimize_skip_merged_partitions): waiting there
+                /// would needlessly hold a slot while other partitions are still merging (#46770).
+                if (final
+                    && select_result.error().reason != SelectMergeFailure::Reason::NOTHING_TO_MERGE
+                    && !currently_merging_mutating_parts.empty())
                 {
                     LOG_DEBUG(log, "Waiting for currently running merges ({} parts are merging right now) to perform OPTIMIZE FINAL",
-                        merging_parts_in_partition);
+                        currently_merging_mutating_parts.size());
 
                     if (std::cv_status::timeout == currently_processing_in_background_condition.wait_for(lock, timeout))
                         return std::unexpected(SelectMergeFailure{
