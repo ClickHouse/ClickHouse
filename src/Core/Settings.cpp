@@ -3536,6 +3536,10 @@ Possible values:
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
+- parallel_full_sorting_merge
+
+ Same as `full_sorting_merge`, but the join is sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. It keeps the low, streaming memory usage of a merge join while using all threads. The result is not ordered.
+
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
