@@ -6179,7 +6179,23 @@ query_area.addEventListener('input', (e) =>
     /// Keep the active tab and its persisted copy in sync with the editor. The hue of
     /// the active tab follows the page background, so no per-tab recolor is needed here.
     const tab = getActiveTab();
-    if (tab) { tab.query = query_area.value; scheduleSave(); }
+    if (tab) {
+        tab.query = query_area.value;
+        /// Fold the edit into the current browser-history entry (and its URL) right away, not
+        /// only on a click-driven tab switch (`switchToTab`/`addTab`). Otherwise the entry keeps
+        /// the query last written by a run/switch, and browser Back/Forward away from this tab and
+        /// back — or closing it and pressing Back to recreate it — restores that stale text from
+        /// `history.state` over the newer unrun edit (both `window.onpopstate` and
+        /// `resolveTabForState` read `event.state.query`). Refreshing here keeps the entry the tab
+        /// would be restored from in sync with the latest keystroke. Only genuine keystrokes do it:
+        /// the synthetic 'input' events `restoreFromHistory`/bootstrap dispatch merely replay
+        /// already-recorded state (`isTrusted === false`, as `markBootstrapDirty` relies on) and
+        /// must not rewrite the entry. `refreshCurrentHistoryEntry` no-ops unless the current entry
+        /// already belongs to this tab, so it never spams new entries, and it omits `run=1` (an
+        /// unrun edit must never become auto-runnable on reload).
+        if (e.isTrusted) refreshCurrentHistoryEntry(tab);
+        scheduleSave();
+    }
 });
 
 function setColorTheme(new_theme, update_preference) {
