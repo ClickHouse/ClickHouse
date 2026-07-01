@@ -380,6 +380,16 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+
+    /// Force the next `applyFilters` to rebuild key/skip-index conditions, and drop the cached
+    /// analysis so `getAnalysisResult` reruns range selection against the rebuilt `indexes`.
+    /// Used by passes that add new filters after the initial PK analysis has already populated both.
+    void invalidateIndexes()
+    {
+        indexes.reset();
+        analyzed_result_ptr.reset();
+    }
+
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
 
     static void buildIndexes(

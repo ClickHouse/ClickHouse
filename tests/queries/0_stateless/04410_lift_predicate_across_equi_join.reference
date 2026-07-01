@@ -1,0 +1,13 @@
+inner eq	2
+left between	3
+non-key	0
+full join	0
+setting off	0
+multi-clause	2
+non-indexed target	0
+left, filter on rhs	0
+non-deterministic	0
+result match	0
+left correctness	0
+computed key	0
+computed key correctness	0

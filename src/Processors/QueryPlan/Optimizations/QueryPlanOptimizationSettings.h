@@ -51,6 +51,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool lift_predicate_across_join;
     bool convert_outer_join_to_inner_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;

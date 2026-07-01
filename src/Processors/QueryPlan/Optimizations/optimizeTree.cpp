@@ -266,6 +266,34 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
+            if (optimization_settings.lift_predicate_across_join)
+            {
+                if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
+                {
+                    join_runtime_filters_were_added = true;
+                    /// Re-run PK condition analysis on the JOIN's children RIGHT HERE — before
+                    /// `convertLogicalJoinToPhysical` reorganizes them. Invalidate
+                    /// `ReadFromMergeTree::indexes` first because the initial PK pass already
+                    /// populated it and `applyFilters` short-circuits when `indexes` is set
+                    /// (it also drops the cached `analyzed_result_ptr` so EXPLAIN/range
+                    /// selection rerun against the rebuilt `indexes`).
+                    /// Inner traversal needs its own stack: `traverseQueryPlan` starts with
+                    /// `stack.clear()`, which would corrupt the outer walk's stack.
+                    if (optimization_settings.query_plan_optimize_primary_key)
+                    {
+                        Stack inner_stack;
+                        for (auto * child : frame_node.children)
+                        {
+                            traverseQueryPlan(inner_stack, *child, [&](auto & fn)
+                            {
+                                if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
+                                    mt->invalidateIndexes();
+                            });
+                            traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
+                        }
+                    }
+                }
+            }
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
@@ -290,7 +318,7 @@ void optimizeTreeSecondPass(
             });
     }
 
-    /// Run after runtime filter push-down so that chains of joins are detected correctly.
+    /// Run after runtime filter push-down so that chains of joins are detected correctly
     if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
     {
         traverseQueryPlan(stack, root,
