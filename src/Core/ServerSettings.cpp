@@ -2710,11 +2710,16 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     /// section that *only* overrides column names (no patterns) is still a valid `GraphiteMergeTree`
     /// config (`selectPatternForPath` just yields no rollup rule), so it must be accepted too.
     ///
-    /// We therefore accept the section iff it is non-empty and every child is one of those
-    /// recognized keys. This must mirror the parser exactly: accepting a section just because *some*
-    /// child looks like a rollup rule would let a typo'd top-level section that merely happens to
-    /// contain a `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a
-    /// false negative for exactly the unknown top-level sections this check is meant to catch.
+    /// An *existing* section with zero children is a valid (degenerate) `GraphiteMergeTree` config
+    /// too: `setGraphitePatternsFromConfig` only throws `NO_ELEMENTS_IN_CONFIG` when the section is
+    /// *missing*, so a present-but-empty section (e.g. `<retention_cfg/>`) keeps the default column
+    /// names and an empty pattern list and starts fine. It must be exempted, not rejected.
+    ///
+    /// We therefore accept the section iff every child (if any) is one of those recognized keys.
+    /// This must mirror the parser exactly: accepting a section just because *some* child looks like
+    /// a rollup rule would let a typo'd top-level section that merely happens to contain a
+    /// `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a false
+    /// negative for exactly the unknown top-level sections this check is meant to catch.
     ///
     /// The check is also recursive into each rollup rule.
     /// A `<pattern>`/`<default>` rollup rule is accepted by `appendGraphitePattern` only when it is
@@ -2791,8 +2796,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::Util::AbstractConfiguration::Keys children;
         config.keys(section, children);
 
+        /// A present-but-empty section is a valid (degenerate) `GraphiteMergeTree` config:
+        /// `setGraphitePatternsFromConfig` accepts it, keeping the default column names and no
+        /// rollup rules. Rejecting it would make a previously valid config fail to start.
         if (children.empty())
-            return false;
+            return true;
 
         for (const auto & child : children)
         {

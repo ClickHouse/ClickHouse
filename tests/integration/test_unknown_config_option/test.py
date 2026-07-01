@@ -186,6 +186,16 @@ node_graphite_columns = cluster_graphite_columns.add_instance(
     main_configs=["configs/config.d/graphite_columns_only.xml"],
 )
 
+# Compatibility case: a present-but-empty `GraphiteMergeTree` rollup section (no patterns and no
+# column-name overrides). `setGraphitePatternsFromConfig` only throws when the section is *missing*;
+# an existing empty section is accepted, so the validator must exempt it too instead of rejecting it
+# as an unknown top-level key.
+cluster_graphite_empty = ClickHouseCluster(__file__, name="graphite_empty")
+node_graphite_empty = cluster_graphite_empty.add_instance(
+    "node_graphite_empty",
+    main_configs=["configs/config.d/graphite_empty_section.xml"],
+)
+
 # Negative case: a section shaped like a `GraphiteMergeTree` rollup (it carries a real `<pattern>`
 # rule) but that also contains a foreign child must be rejected. `setGraphitePatternsFromConfig`
 # throws `UNKNOWN_ELEMENT_IN_CONFIG` on any unrecognized child, so the validator must require EVERY
@@ -489,6 +499,13 @@ def start_graphite_columns_cluster():
     cluster_graphite_columns.start()
     yield
     cluster_graphite_columns.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_graphite_empty_cluster():
+    cluster_graphite_empty.start()
+    yield
+    cluster_graphite_empty.shutdown()
 
 
 @pytest.fixture(scope="module")
@@ -1058,6 +1075,14 @@ def test_graphite_columns_only_section_accepted(start_graphite_columns_cluster):
     # is a valid config accepted by `setGraphitePatternsFromConfig`. If the validator rejected
     # `<retention_columns_only>` for lacking a rollup rule, the node would have failed to start.
     assert node_graphite_columns.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_empty_section_accepted(start_graphite_empty_cluster):
+    # A present-but-empty `GraphiteMergeTree` rollup section (`<retention_empty/>`) is a valid config:
+    # `setGraphitePatternsFromConfig` only throws `NO_ELEMENTS_IN_CONFIG` when the section is missing,
+    # not when it is present and empty. If the validator rejected the empty section as an unknown
+    # top-level key, the node would have failed to start.
+    assert node_graphite_empty.query("SELECT 1").strip() == "1"
 
 
 def test_graphite_shaped_section_with_foreign_child_rejected(
