@@ -407,27 +407,13 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
     if (!budget || budget->writes_disabled.load(std::memory_order_relaxed))
         return;
 
-    /// The full set of columns the readers of this part will read: result columns
-    /// plus columns required for defaults, prewhere and mutation steps, and patch
-    /// parts. Estimating from the pool's result columns alone would let a query
-    /// that reads a small result column set but heavy prewhere/mutation columns
-    /// pass the gate while writing much more data than estimated.
-    auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
-
-    /// `getAllColumnNames` lists only the main and prewhere columns, but the
-    /// readers for patch parts (from lightweight updates) read `patch_columns`
-    /// too, and those reads are written to the cache through the same path.
-    /// Include them here, deduplicated against the columns already counted, so
-    /// their bytes contribute to the write-budget estimate; otherwise a query that
-    /// reads patch parts could pass the gate while caching more data than it
-    /// estimated.
-    {
-        NameSet seen(all_read_columns.begin(), all_read_columns.end());
-        for (const auto & step_columns : read_task_info.task_columns.patch_columns)
-            for (const auto & column : step_columns)
-                if (seen.insert(column.name).second)
-                    all_read_columns.push_back(column.name);
-    }
+    /// Columns read from the base part: result columns plus columns required for
+    /// defaults, prewhere and mutation steps. Estimating from the pool's result
+    /// columns alone would let a query that reads a small result column set but heavy
+    /// prewhere/mutation columns pass the gate while writing much more data than
+    /// estimated. Patch-part columns are read from separate parts and are accounted
+    /// for below.
+    const auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
 
     /// Don't apply the estimate gate when there are no columns (e.g. some
     /// projection paths build the column list later). getSizeOfColumns falls back
@@ -439,7 +425,39 @@ void MergeTreeReadPoolBase::accountColumnsCacheWriteEstimate(
     if (estimate_budget == 0)
         estimate_budget = owned_columns_cache->maxSizeInBytes() / 2;
 
-    const size_t part_estimated_bytes = estimateSelectedColumnsSize(part_with_ranges, all_read_columns, settings);
+    size_t part_estimated_bytes = estimateSelectedColumnsSize(part_with_ranges, all_read_columns, settings);
+
+    /// `getAllColumnNames` covers only the main and prewhere columns, which are read
+    /// from the base part sized above. Readers for patch parts (from lightweight
+    /// updates) read `patch_columns` from the patch parts and write them to the cache
+    /// through the same path. Those columns live in the patch parts, not the base
+    /// `part_with_ranges.data_part`, so sizing them against the base part would miss
+    /// their bytes: a lightweight update with a large updated column could pass the
+    /// gate on the base part's column size and then cache the much larger patch-part
+    /// column. Size each patch part's columns against the patch part itself and add
+    /// them to the estimate. The patch ranges selected for this task are not computed
+    /// yet at this point, so the full-part column size is used - a conservative
+    /// overestimate, which is the safe direction for a write-limiting budget.
+    for (size_t i = 0; i < read_task_info.patch_parts.size(); ++i)
+    {
+        Names patch_column_names;
+        if (i < read_task_info.task_columns.patch_columns.size())
+            patch_column_names = read_task_info.task_columns.patch_columns[i].getNames();
+        if (patch_column_names.empty())
+            continue;
+
+        const auto * patch_part_info
+            = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(read_task_info.patch_parts[i].part.get());
+        if (!patch_part_info)
+        {
+            /// Cannot size this patch part's columns. Fail closed: stop caching for
+            /// the rest of the query rather than under-counting the write budget.
+            budget->writes_disabled.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        part_estimated_bytes += getSizeOfColumns(*patch_part_info->getDataPart(), patch_column_names, settings);
+    }
 
     /// Accumulate into the query-wide total and compare against the budget, so
     /// the gate enforces a true per-query budget across all pools. Readers
