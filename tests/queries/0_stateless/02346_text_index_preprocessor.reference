@@ -175,3 +175,26 @@ Baz	3
 - Negative tests
 -- Index on whole map must fail
 -- The preprocessor expression must contain the index definition
+-- Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.
+2
+1
+1
+0
+0
+-- Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.
+1
+1
+0
+0
+0
+-- Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.
+1
+0
+1
+0
+1
+0
+-- hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).
+1
+1
+0
