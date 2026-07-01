@@ -169,6 +169,31 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     query.cluster_host_ids = !cluster_host_ids.empty() ? Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 
+std::map<String, String> BackupSettings::getSerializedSettings() const
+{
+    std::map<String, String> res;
+
+    /// Serialize via the setting field's own `toString` (the canonical representation, consistent with
+    /// `system.query_log.Settings` and `engine_settings`) rather than going through `FieldVisitorToString`.
+#define SERIALIZE_BACKUP_SETTING(TYPE, NAME) \
+    res[#NAME] = SettingField##TYPE{NAME}.toString();
+
+    LIST_OF_BACKUP_SETTINGS(SERIALIZE_BACKUP_SETTING)
+#undef SERIALIZE_BACKUP_SETTING
+
+    /// Settings handled specially in `fromBackupQuery` and not part of `LIST_OF_BACKUP_SETTINGS`.
+    res["compression_level"] = std::to_string(compression_level);
+    if (data_file_name_prefix_length)
+        res["data_file_name_prefix_length"] = std::to_string(*data_file_name_prefix_length);
+
+    /// Never expose the password; drop purely internal fields that are not user-facing settings
+    /// (`id` has its own column, the rest are internal plumbing for BACKUP ON CLUSTER).
+    for (const auto * key : {"password", "id", "internal", "host_id", "backup_uuid"})
+        res.erase(key);
+
+    return res;
+}
+
 std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & ast)
 {
     std::vector<Strings> res;

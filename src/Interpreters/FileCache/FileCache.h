@@ -265,10 +265,11 @@ public:
 
     const String & getName() const { return name; }
 
-    static void onSegmentEvicted(const FileSegment & segment);
-    static void onSegmentEvictedInTheBackground(const FileSegment & segment);
-
 private:
+    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     std::atomic<size_t> max_file_segment_size;
@@ -298,6 +299,8 @@ private:
     const double split_cache_ratio;
 
     const bool skip_cache_on_disk_failure;
+    std::atomic<bool> expose_eviction_metrics;
+    std::atomic<bool> expose_eviction_metrics_per_user;
 
     String name;
     LoggerPtr log;
