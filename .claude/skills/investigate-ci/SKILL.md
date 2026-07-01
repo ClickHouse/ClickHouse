@@ -100,6 +100,13 @@ can re-read or `grep`. If `node` is **absent**, skip the report fetch (and the s
 and rely on the issue body's failure output plus step 3 — do not treat a missing `node` as a
 fatal error.
 
+**The tool prints only the log *tail* (the last ~30 non-empty lines of each `result.info`), not the
+full output.** CI's matchers test `Failure reason` against the **whole** `result.info`, so a
+`Failure reason` located earlier than the tail will match in CI yet be **invisible** here — when
+mirroring CI's attribution (step 2a) or judging whether a reason string is present, do not read a
+"not in the visible output" as a definitive non-match; drill via the CIDB link or the full artifact
+(step 4) if it matters.
+
 - If `$0` is a PR URL with many reports and the noise is high, narrow with `--report <n>`
   after listing reports (run the tool with no `--failed` to see the index).
 - Record the PR number and the exact failed **test names** as they appear — the names must
@@ -250,12 +257,10 @@ Three complementary sources, cheapest first:
   gh issue view <issue-number> --repo ClickHouse/ClickHouse --json number,state,stateReason,closedByPullRequestsReferences,comments
   ```
 
-  For cross-referencing PRs that mention the issue but did not close it (a `Related #<issue>`), use
-  the timeline via `gh api`:
-
-  ```bash
-  gh api repos/ClickHouse/ClickHouse/issues/<issue-number>/timeline --jq '.[] | select(.event=="cross-referenced") | .source.issue.html_url'
-  ```
+  This surfaces PRs that closed the issue and any fix mentioned in comments. A PR that only
+  cross-references the issue without closing it (a `Related #<issue>`) is not returned here — the
+  investigate profile denies `gh api` (it can POST), so do not reach for the issue timeline API;
+  the by-test-name PR search below catches those.
 
 - **By test name:** search PRs (open **and** merged) whose title/body names the test or its
   fragment:
