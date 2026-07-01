@@ -141,16 +141,43 @@ gh issue view <NNNNN> --repo ClickHouse/ClickHouse \
 ```
 
 **How CI decides a failure is already tracked** (so you can answer "needs an issue?" the same way
-CI's matcher does — see `ci/praktika/issue.py`, `Issue._check_flaky_test_match`): CI builds a
-catalog from issues labeled **`testing`** (`IssueLabels.CI_ISSUE`) that are **open, or were closed
-within the last ~8 hours**. A failure matches a catalog issue when:
+CI's matcher does — see `ci/praktika/issue.py`, `Issue.check_result`): CI builds a catalog from
+issues labeled **`testing`** (`IssueLabels.CI_ISSUE`) that are **open, or were closed within the
+last ~8 hours**, and routes each by whether it also carries the **`infrastructure`** label:
 
-- the issue's `Test name:` body field is a **suffix** of the failing test's name
-  (`result.name.endswith(test_name)`; pytest parametrization/module rules apply), **and**
-- if the issue sets a `Failure reason:`, that exact text is a **substring** of the failure output.
+- **Flaky-test issues** (no `infrastructure` label) → `Issue._check_flaky_test_match`. Matches when
+  the issue's `Test name:` body field is a **suffix** of the failing test's name
+  (`result.name.endswith(test_name)`; pytest parametrization/module rules apply), **and** if the
+  issue sets a `Failure reason:`, that text is a **substring** of the failure output.
+- **Infrastructure issues** (`testing` **+** `infrastructure` label) → `Issue._check_infrastructure_match`.
+  These do **not** match by `Test name:`. They match a failure when **all** of the present fields
+  hold: `Failure reason:` is a substring of the output; every `Failure flags:` value (e.g.
+  `retry_ok`) is a label on the result; `Test pattern:` matches the test name; and `Job pattern:`
+  matches the **job** name. Note the pattern matching is **not** true SQL `LIKE`: the pattern is
+  split on `%`, empty fragments are dropped, and it matches if **any** remaining fragment is a plain
+  substring (so it is OR-across-fragments, order is not enforced, and a bare `%` — like an empty
+  field — is treated as no constraint). Examples:
+  [#87123](https://github.com/ClickHouse/ClickHouse/issues/87123) (`Job pattern: Unit%`),
+  [#91410](https://github.com/ClickHouse/ClickHouse/issues/91410),
+  [#92089](https://github.com/ClickHouse/ClickHouse/issues/92089) (`Job pattern: Stateless tests (amd_msan%`,
+  `Failure reason: DB::Exception: Timeout exceeded`).
 
 A matched failure is flagged with an `issue` label in the CI report — visible in the
 `fetch_ci_report.js` output — which is the fastest "already tracked" signal.
+
+**For an `INFRA/BUILD` or timeout/harness-level failure, also run the infrastructure path.** A
+test-name search alone will miss these, so a pre-existing, already-tracked infra failure would be
+mis-reported as `needs issue`. List the open infra issues and match by `Job pattern` / `Failure
+reason` against the failing job and its output:
+
+```bash
+gh issue list --repo ClickHouse/ClickHouse --state open --label testing --label infrastructure \
+  --limit 100 --json number,title,url,body
+```
+
+Compare each candidate's `Job pattern:`/`Test pattern:`/`Failure reason:`/`Failure flags:` fields
+to the failing job name and output the way `_check_infrastructure_match` does; a match is
+`tracked #N` exactly as CI would attribute it.
 
 **Always run the issue search for every failed name** — it is one cheap `gh issue list` and is the
 only way to mirror CI's attribution. Generic, harness-level names get tracked too: `Server died`,
@@ -179,9 +206,25 @@ Determine, per test:
   sense. Rely on the step-3 frequency for the verdict.
 - **No issue (fix instead)** — a **REAL** regression introduced by this PR. Do **not** flag it for
   a tracking issue: a `testing` issue would mask a real bug. The recommendation is to fix the code.
-- **Stale/closed match** — only a closed issue matches, and it was closed more than ~8 h ago. CI
-  no longer auto-matches it, so if the test is still flaky a fresh issue (or reopening) is needed;
-  note the old issue number.
+- **Stale/closed match (reopen candidate)** — only a **closed** issue matches, and it was closed
+  more than ~8 h ago, so CI's catalog no longer contains it and will **not** auto-match: the next
+  failing run gets treated as unknown and `check_ci.py` would file a **duplicate**. Before treating
+  it as *the* tracking issue, run two checks:
+  - **Is it actually the same failure?** A title/`Test name:` match is not proof. Read the issue
+    and confirm the **failure mode** matches — same error/exception text, same assertion or stack
+    site, same `STID`, same job/config scope. A broader issue (e.g. a generic `Server died`, or one
+    covering a whole job) or a different error under the same test name is **not** a match for the
+    specific failure you are exploring — treat that as `needs issue`, do **not** reopen the wrong or
+    broader issue.
+  - **Does it still fail after `closedAt`?** (step 3 already has the history; if not, run a dated
+    query bounded by `check_start_time > <closedAt>` on `master` / across PRs):
+    - **Still failing after `closedAt`** (and same failure mode) → the close was premature or the
+      fix regressed. Recommend **reopening #N** — preferred over a fresh issue, since it avoids a
+      duplicate and CI re-matches it once open again. This is the case the "already fixed → retry"
+      line below must **not** swallow.
+    - **No failures after `closedAt`** and the fix commit post-dates the failing run → genuinely
+      **already fixed**; recommend retry/rebase, not reopen.
+  Report it as `stale #N` with the recommendation (reopen vs retry vs needs-new) spelled out.
 
 Never label a cell with an asserted fact you did not verify (e.g. "(known)" implying a tracking
 issue exists). `generic failure / untracked` requires that you actually ran the search and it
@@ -189,8 +232,10 @@ returned no match — it is not a substitute for searching.
 
 Record the matching issue number, its state (open vs closed/`completed`), labels, and any root
 cause or fix PR mentioned. A closed `completed` issue whose fix post-dates the failing run points
-straight at "retry, already fixed". If the input was itself an issue (step 0) you already have it,
-but still scan for duplicate or related issues and read its comments.
+at "retry, already fixed" — **but only if the same failure has not recurred on `master` since the
+issue's `closedAt`** (see the stale/reopen check above); if it has, the fix regressed and the issue
+is a reopen candidate, not an "already fixed". If the input was itself an issue (step 0) you already
+have it, but still scan for duplicate or related issues and read its comments.
 
 #### 2b. Existing fix + its status
 
@@ -238,17 +283,38 @@ For each candidate fix PR, classify its **status** — this is what goes in the 
 - **None** — no fix PR found.
 
 **Deciding "already in this branch or not".** Compare the fix's merge against the report commit
-(`SHA` from step 1). If the fix's merge commit is in the local object store, ancestry is exact:
+(`SHA` from step 1). If the fix's merge commit is in the local object store, check ancestry:
 
 ```bash
 git cat-file -e <mergeCommit> && git merge-base --is-ancestor <mergeCommit> <report-sha> \
-  && echo "fix IS in the failing run" || echo "fix is NOT in the failing run (or commit absent locally)"
+  && echo "fix commit IS in the failing run" || echo "fix commit is NOT in the failing run history (or absent locally)"
 ```
 
-If the merge commit is absent locally (`git cat-file -e` fails), fall back to time order: a fix
-with `mergedAt` **after** the run's commit/`check_start_time` cannot be in the failing run →
-"merged, not in this branch → rebase/retry". Surface that you used the time-order fallback rather
-than exact ancestry.
+This check is **asymmetric — trust only the positive**:
+
+- **`is-ancestor` true** → the fix is definitely present. If the test still failed, the fix is
+  incomplete/unrelated → keep investigating; do **not** report "already fixed".
+- **`is-ancestor` false** → conclusive **only for a master PR report**, where the fix must be that
+  exact merge commit. For an S3 `REF`/master-CI report, a **release/backport branch**, or any
+  non-master base, the fix may already be present under a **different** commit (a cherry-pick), so a
+  false result does **not** prove absence. Do **not** emit `rebase/retry` or short-circuit on it.
+  First check whether an equivalent change is on the failing branch — e.g. search that branch's
+  history for the fix by subject or by the file/line it changed:
+
+  ```bash
+  git log --oneline <report-sha> --grep "<fix PR title or key phrase>"
+  git log --oneline <report-sha> -- <file the fix touched>   # look for a backport/cherry-pick
+  ```
+
+  Only conclude `merged #N — not in this branch → rebase/retry` when the base is `master` **and**
+  the merge commit is genuinely absent, or when a branch-history search also finds no equivalent
+  change. If you cannot resolve it (commit absent locally, base unknown), report
+  `merged #N — presence unverified` and keep the failure open for step 5 rather than declaring it
+  fixed — never turn an unverified guess into an "already fixed on master" recommendation.
+
+Time order is a weak last resort, not a substitute: a fix `mergedAt` **after** the run's
+commit/`check_start_time` cannot be in the run, but "before" does **not** prove presence (the branch
+may predate or not contain it). Use it only to rule *out*, and say you relied on it.
 
 ### 3. Flaky-vs-real: query master history
 
@@ -474,8 +540,10 @@ Print one verdict table, then a short narrative per real/uncertain failure:
 - **Verdict** ∈ {`FLAKY`, `REAL`, `UNCERTAIN`, `NEW-TEST`, `INFRA/BUILD`}.
 - **Issue** (from step 2a) ∈ {`tracked #N`, `needs issue`, `generic failure / untracked` (generic
   bucket or anonymized error class — searched, no `testing` issue matched, and not worth filing),
-  `fix instead` (REAL — don't mask), `stale #N` (closed >~8 h ago)}. The search runs for every
-  failure (generic buckets included — e.g. `Server died` is often `tracked`); never write a
+  `fix instead` (REAL — don't mask), `stale #N` (same-failure issue closed >~8 h ago → CI no longer
+  auto-matches; give the recommendation: reopen if it still fails after `closedAt`, retry if truly
+  fixed, or needs-new if the closed issue is broader/a different failure mode)}. The search runs for
+  every failure (generic buckets included — e.g. `Server died` is often `tracked`); never write a
   tracking claim like "(known)", and never use `untracked` as a stand-in for not searching.
 - **Fix** (from step 2b) ∈ {`none`, `WIP #N` (open; note draft), `merged #N — in branch` (fix was
   present yet test still failed → keep digging), `merged #N — rebase/retry` (landed after the run)}.
