@@ -214,7 +214,7 @@ QID_NESTED="04492-nested-${CLICKHOUSE_DATABASE}-$$"
 ${CLICKHOUSE_CLIENT} --query_id="${QID_NESTED}" -q "
     INSERT INTO dist_dst
     SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1
-    SELECT * FROM dist_src WHERE x IN (SELECT x FROM src SETTINGS http_allow_table_as_file = 1)"
+    SELECT * FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
