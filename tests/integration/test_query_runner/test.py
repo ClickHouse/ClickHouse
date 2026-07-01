@@ -136,6 +136,18 @@ def test_cluster_query_log():
     )
 
 
+def test_cluster_insert_requires_remote():
+    node_query_runner.query(runner_ddl("query String", "synchronous", "cluster"))
+    node_query_runner.query("CREATE USER no_remote_user")
+    node_query_runner.query("GRANT INSERT ON default.runner TO no_remote_user")
+    assert "ACCESS_DENIED" in node_query_runner.query_and_get_error(
+        "INSERT INTO runner VALUES ('SELECT 1')", user="no_remote_user"
+    )
+    node_query_runner.query("GRANT REMOTE ON *.* TO no_remote_user")
+    node_query_runner.query("INSERT INTO runner VALUES ('SELECT 1')", user="no_remote_user")
+    node_query_runner.query("DROP USER no_remote_user")
+
+
 def test_shutdown():
     # DETACH must unblock workers asleep on delay_microseconds, not wait out the delay.
     node_query_runner.query(runner_ddl("query String, delay_microseconds UInt64", "asynchronous", "local"))

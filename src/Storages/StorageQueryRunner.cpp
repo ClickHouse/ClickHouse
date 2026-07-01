@@ -811,7 +811,7 @@ SinkToStoragePtr StorageQueryRunner::write(const ASTPtr & /*query*/, const Stora
     std::shared_ptr<const QueryRunnerJobOrigin> origin;
     if (!metadata_snapshot->sql_security_type)
     {
-        /// The cluster mode runs the query on the remote entirely under the cluster credentials.
+        local_context->checkAccess(AccessType::REMOTE);
         origin = std::make_shared<const QueryRunnerJobOrigin>(QueryRunnerJobOrigin{
             .user_id = {},
             .roles = {},
