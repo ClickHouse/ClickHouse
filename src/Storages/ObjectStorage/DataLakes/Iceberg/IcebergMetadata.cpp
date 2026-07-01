@@ -1304,7 +1304,9 @@ void IcebergMetadata::drop(ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
+        /// Empty prefix: listFiles keys on `path / prefix`, so the prefix must be empty to enumerate
+        /// everything under the table path (passing table_path here too matches nothing).
+        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }

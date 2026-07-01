@@ -87,6 +87,11 @@ public:
 
     void drop() override;
 
+    /// drop() runs later in a background pool without the query context, so the value of the
+    /// iceberg_delete_data_on_drop session setting is captured here (the DROP path calls this
+    /// with the query context) and honored in drop().
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     bool supportsPartitionBy() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
@@ -226,6 +231,10 @@ protected:
     bool supports_prewhere = false;
     bool supports_tuple_elements = false;
     bool is_table_function = false;
+
+    /// Value of iceberg_delete_data_on_drop captured from the query context in
+    /// checkTableCanBeDropped, so the background drop() (which has no query context) can honor it.
+    mutable bool delete_data_on_drop = false;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
