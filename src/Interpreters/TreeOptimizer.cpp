@@ -45,6 +45,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_hyperscan;
+    extern const SettingsBool reject_expensive_hyperscan_regexps;
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
     extern const SettingsUInt64 max_hyperscan_regexp_length;
@@ -61,6 +62,7 @@ namespace Setting
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
     extern const SettingsBool optimize_or_like_chain;
+    extern const SettingsUInt64 optimize_or_like_chain_min_patterns;
 }
 
 namespace ErrorCodes
@@ -586,9 +588,20 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeOrLikeChain(ASTPtr & query)
+void optimizeOrLikeChain(ASTPtr & query, const Settings & settings, const NamesAndTypesList & source_columns, ContextPtr context)
 {
-    ConvertFunctionOrLikeVisitor::Data data = {};
+    ConvertFunctionOrLikeVisitor::Data data;
+    data.allow_hyperscan = settings[Setting::allow_hyperscan];
+    data.max_hyperscan_regexp_length = settings[Setting::max_hyperscan_regexp_length];
+    data.max_hyperscan_regexp_total_length = settings[Setting::max_hyperscan_regexp_total_length];
+    data.reject_expensive_hyperscan_regexps = settings[Setting::reject_expensive_hyperscan_regexps];
+    data.min_patterns_for_rewrite = settings[Setting::optimize_or_like_chain_min_patterns];
+    /// The `multiSearchAny*` / `multiMatchAny` rewrite targets accept only a `String` haystack; the
+    /// visitor uses these types to keep `FixedString`/`Enum` chains on the combined-`match` form,
+    /// which accepts them. Types are looked up by column name (the LHS of each LIKE branch).
+    for (const auto & column : source_columns)
+        data.source_column_types.emplace(column.name, column.type);
+    data.context = std::move(context);
     ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
@@ -722,10 +735,13 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
-        && settings[Setting::max_hyperscan_regexp_total_length] == 0)
+    if (settings[Setting::optimize_or_like_chain])
     {
-        optimizeOrLikeChain(query);
+        /// `allow_hyperscan` and `max_hyperscan_regexp_*` are no longer entry-point gates here:
+        /// the rewrite emits `multiMatchAny` only when those settings allow it and falls back to
+        /// `match` with a combined regexp otherwise (see `ConvertFunctionOrLikeVisitor.cpp`), so
+        /// the optimization can still kick in even when Hyperscan is disabled or capped.
+        optimizeOrLikeChain(query, settings, result.source_columns, context);
     }
 }
 
