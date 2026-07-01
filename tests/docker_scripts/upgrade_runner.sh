@@ -334,6 +334,7 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
 #       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
+#       - 01155_old_mutation_parts_to_do: `UPDATE m = m*toInt8(s) WHERE n=3` on String data ('fail')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
@@ -451,6 +452,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string \'b\' as UInt32" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
+           -e "Cannot parse string 'fail' as Int8" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
