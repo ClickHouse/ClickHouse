@@ -2416,8 +2416,9 @@ ClickHouse configuration for TLS certificate authentication method:
         <verificationMode>strict</verificationMode>
         <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
         <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
-        <caLocation>/etc/clickhouse-server/config.d/ca.crt</caLocation>
+        <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
       </ssl>
+    </hashicorp_vault>
 </clickhouse>
 ```
 
