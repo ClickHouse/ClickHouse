@@ -440,6 +440,14 @@ inline size_t decodeStandalone(const uint8_t * src, size_t src_len, uint8_t * ou
         decodeChunkByType(reader, type_byte, format_major, n, out + out_pos);
         out_pos += bytes;
     }
+    // The standalone stream ends at the termination byte, which the loop above consumed. Reject any
+    // trailing bytes so a body such as `[valid .pco][garbage]` fails closed instead of being silently
+    // accepted: the block wrapper only checks the produced byte count against the expected size, so it
+    // would otherwise not notice bytes appended after the terminator. `readAlignedBytes` leaves the
+    // reader byte-aligned, so `byteIdx()` is the exact number of consumed bytes. A canonical stream
+    // (the reference encoder writes the terminator last) consumes exactly `src_len` bytes.
+    if (reader.byteIdx() != src_len)
+        throw PcodecError("pcodec: trailing bytes after standalone stream termination");
     return out_pos;
 }
 

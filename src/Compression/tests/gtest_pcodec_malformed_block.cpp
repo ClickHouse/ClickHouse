@@ -98,6 +98,30 @@ TEST(CodecPcoMalformedBlock, RejectsMismatchedLeadingByteCount)
     }
 }
 
+TEST(CodecPcoMalformedBlock, RejectsTrailingBytesAfterStandaloneStream)
+{
+    auto codec = makePcoCodec(std::make_shared<DataTypeUInt32>());
+    const std::vector<UInt32> values{1, 2, 3, 100, 200, 65535, 0, 4294967295u};
+    const auto encoded = compressBytes(codec, reinterpret_cast<const char *>(values.data()), static_cast<UInt32>(values.size() * sizeof(UInt32)));
+
+    std::vector<char> decoded(values.size() * sizeof(UInt32));
+    /// The untampered block round-trips.
+    ASSERT_NO_THROW(codec->decompress(encoded.data(), static_cast<UInt32>(encoded.size()), decoded.data()));
+    ASSERT_EQ(std::memcmp(decoded.data(), values.data(), decoded.size()), 0);
+
+    /// The block body ends at the standalone stream's termination byte. Appending bytes after it makes
+    /// the body non-canonical (`[W][B][raw][valid .pco][garbage]`); the decoder must reject it instead
+    /// of stopping at the terminator and silently ignoring the trailing bytes — the wrapper's produced
+    /// byte count still equals the expected size, so that check alone does not notice them.
+    for (size_t extra : {size_t{1}, size_t{4}, size_t{17}})
+    {
+        auto bad = encoded;
+        bad.insert(bad.end(), extra, static_cast<char>(0xAB));
+        EXPECT_THROW(codec->decompress(bad.data(), static_cast<UInt32>(bad.size()), decoded.data()), Exception)
+            << extra << " trailing byte(s) after the standalone stream should be rejected";
+    }
+}
+
 TEST(CodecPcoMalformedBlock, RejectsPartialOnlyBlockMissingStandaloneStream)
 {
     auto codec = makePcoCodec(std::make_shared<DataTypeUInt64>());
