@@ -118,6 +118,19 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeStringBinary("", out);
         }
     }
+    else if (file_bucket_info)
+    {
+        /// Fail closed: a bucketed task carries `file_bucket_info` so the worker reads only its assigned
+        /// row-group buckets of the file. Downgrading it to a path-only `ObjectInfo` would make the worker
+        /// read the whole file for every bucket task, duplicating rows and over-counting instead of failing.
+        /// A worker that cannot carry `file_bucket_info` must not run such a task.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry `file_bucket_info`, which is required for parallel reads "
+            "of a single file split into row-group buckets (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    }
 
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_METADATA)
     {
