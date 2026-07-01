@@ -15,4 +15,6 @@ SELECT isNaN(sqr(nan));
 SELECT sqr(toNullable(toInt32(7))) = 49, toTypeName(sqr(toNullable(toInt32(7)))) = toTypeName(multiply(toNullable(toInt32(7)), toNullable(toInt32(7))));
 SELECT isNull(sqr(CAST(NULL, 'Nullable(Int32)')));
 
+SELECT toTypeName(sqr(toLowCardinality(number))) = toTypeName(multiply(toLowCardinality(number), toLowCardinality(number))) FROM numbers(1);
+
 SELECT sqr('abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
