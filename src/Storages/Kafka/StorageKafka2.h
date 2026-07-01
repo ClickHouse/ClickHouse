@@ -167,8 +167,8 @@ private:
     LoggerPtr log;
     const SettingsChanges settings_adjustments;
 
-    /// Partition affinity: when both are > 0, only partitions satisfying
-    /// partition_id % shard_count == partition_num are consumed by this shard.
+    /// Partition affinity: when both are > 0, only a deterministic subset of
+    /// partitions is consumed by this shard. See KeeperHandlingConsumer for the mapping algorithm.
     UInt64 partition_num = 0;
     UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).

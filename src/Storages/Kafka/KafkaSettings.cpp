@@ -57,8 +57,8 @@ namespace ErrorCodes
     DECLARE(Milliseconds, kafka_consumer_acquire_timeout_ms, 30000, "Timeout in milliseconds for acquiring a Kafka consumer during direct SELECT queries. When multiple concurrent direct SELECTs run on the same Kafka2 table, each query must wait for consumers to become available. A timeout is needed to break potential deadlocks when queries hold different subsets of consumers.", 0) \
     DECLARE(Bool, kafka_map_virtual_columns_on_write, false, "If enabled, columns with special names (`_key`, `_timestamp`, `_headers.name`, `_headers.value`) in the Kafka table are mapped to the corresponding Kafka message metadata on INSERT and are excluded from the message payload.", 0) \
     DECLARE(String, kafka_aws_region, "", "AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Required for PrivateLink or custom DNS.", 0) \
-    DECLARE(String, kafka_partition_shard_num, "", "The current shard number (0-based) for static partition-to-shard affinity. Partitions are assigned by partition_id % kafka_shard_count == kafka_partition_shard_num. Supports macro expansion (e.g. '{shard}'). Must be used together with kafka_shard_count.", 0) \
-    DECLARE(UInt64, kafka_shard_count, 0, "Total number of shards participating in consumption. Used together with kafka_partition_shard_num to assign partitions by partition_id % shard_count == shard_num.", 0) \
+    DECLARE(String, kafka_partition_shard_num, "", "The shard number of this instance for static partition-to-shard affinity. Supports both 0-based and 1-based numbering. Supports macro expansion (e.g. '{shard}'). Must be used together with kafka_shard_count.", 0) \
+    DECLARE(UInt64, kafka_shard_count, 0, "Total number of shards participating in consumption. Must be used together with kafka_partition_shard_num and be identical across all shards.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \

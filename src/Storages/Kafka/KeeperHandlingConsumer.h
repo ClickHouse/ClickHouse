@@ -154,7 +154,7 @@ private:
     const String replica_name;
     size_t idx;
 
-    /// Partition affinity filter (enabled when shard_count > 0)
+    /// Partition affinity settings (enabled when shard_count > 0)
     UInt64 partition_num = 0;
     UInt64 shard_count = 0;
 
