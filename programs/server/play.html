@@ -433,6 +433,14 @@
             font-weight: bold;
         }
 
+        /* Number of tables shown next to an opened database name. Kept non-bold even when the
+           database is the current one (which renders the name in bold). */
+        .database-table-count
+        {
+            font-weight: normal;
+            color: var(--misc-text-color);
+        }
+
         .table
         {
             background-repeat: no-repeat;
@@ -1375,6 +1383,13 @@ class QueryResultElement extends HTMLElement
                     vertical-align: top;
                 }
 
+                /* The selected cell receives keyboard focus; selection is shown by
+                   the .td-selected class, so suppress the default focus outline. */
+                td:focus
+                {
+                    outline: none;
+                }
+
                 /* Inner div limits cell height to 3 lines; expands on selection */
                 .cell-content
                 {
@@ -1724,12 +1739,35 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
     }
 
+    /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
+    /// the whole result element: the browser scrolls the focused element into view both on
+    /// `focus` and when the tab is re-focused (e.g. after opening a link in a new tab). The
+    /// result element spans the full width starting at the left edge, so focusing it would
+    /// scroll the horizontal position back to the start; focusing the cell keeps the current
+    /// scroll position because the cell is already in view. `preventScroll` avoids an extra
+    /// jump here since we scroll the cell into view explicitly with `block: 'nearest'`.
+    _selectCell(td)
+    {
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
+        this._current_selected_cell = td;
+        td.classList.add('td-selected');
+        td.parentElement.classList.add('tr-selected');
+        (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
+        td.tabIndex = -1;
+        td.focus({ preventScroll: true });
+    }
+
     clearSelection()
     {
         if (this._current_selected_cell)
         {
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
+            this._current_selected_cell.removeAttribute('tabindex');
         }
         this._current_selected_cell = null;
     }
@@ -1884,16 +1922,7 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                if (this._current_selected_cell)
-                {
-                    this._current_selected_cell.classList.remove('td-selected');
-                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
-                }
-                this._current_selected_cell = td;
-                td.classList.add('td-selected');
-                td.parentElement.classList.add('tr-selected');
-                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
-                this.focus();
+                this._selectCell(td);
             };
 
             tr.appendChild(td);
@@ -2258,12 +2287,8 @@ class QueryResultElement extends HTMLElement
 
         e.preventDefault();
 
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
-        this._current_selected_cell = new_cell;
+        cell.removeAttribute('tabindex');
+        this._selectCell(new_cell);
     }
 
     _loadJS(src, integrity)
@@ -2667,6 +2692,8 @@ async function loadDatabases(server_address, user, password) {
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
+                let count_elem = database_link.querySelector('.database-table-count');
+                if (count_elem) count_elem.remove();
             }
         });
     }
@@ -2807,6 +2834,16 @@ async function loadTables(server_address, user, password, database, container) {
     container.firstChild.classList.add('current');
     let tables_elem = container.querySelector('.tables');
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
+
+    /// Show the number of tables in parentheses next to the database name, e.g. `default (123)`.
+    let database_link = container.firstChild;
+    let count_elem = database_link.querySelector('.database-table-count');
+    if (!count_elem) {
+        count_elem = document.createElement('span');
+        count_elem.className = 'database-table-count';
+        database_link.appendChild(count_elem);
+    }
+    count_elem.textContent = ` (${json.data.length})`;
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
