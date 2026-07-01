@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <base/types.h>
+#include <optional>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/Exception.h>
@@ -105,6 +106,34 @@ static GroupPtr getInputGroupWithStats(Memo & memo, const GroupExpressionPtr & e
     return input_group;
 }
 
+struct PartialTopNInputInfo
+{
+    Float64 limit;       /// per-node top-N bound L
+    Float64 input_rows;  /// total rows feeding the partial sort, before trimming to L
+};
+
+/// If the given input of `expression` is a partial top-N group (built by TwoStageTopN), return the
+/// per-node limit L and the total input row count. A sorted gather over it transfers up to
+/// min(input_rows, L * node_count) rows: each of the N producer nodes emits at most L, but no more
+/// than the input holds.
+static std::optional<PartialTopNInputInfo> getPartialTopNInputInfo(Memo & memo, const GroupExpressionPtr & expression, size_t input_index)
+{
+    auto input_group = memo.getGroup(expression->inputs[input_index].group_id);
+    for (const auto & candidate : input_group->physical_expressions)
+    {
+        if (!dynamic_cast<const PartialTopNStrategy *>(candidate->strategy.get()))
+            continue;
+        const auto * sort = typeid_cast<const SortingStep *>(candidate->getQueryPlanStep());
+        if (!sort || candidate->inputs.empty())
+            return std::nullopt;
+        auto sort_input = memo.getGroup(candidate->inputs[0].group_id);
+        if (!sort_input->statistics.has_value())
+            return std::nullopt;
+        return PartialTopNInputInfo{Float64(sort->getLimit()), sort_input->statistics->estimated_row_count};
+    }
+    return std::nullopt;
+}
+
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
@@ -173,7 +202,17 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     }
     else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
     {
-        const Float64 rows = group->statistics->estimated_row_count;
+        Float64 rows = group->statistics->estimated_row_count;
+        /// A sorted gather over a partial top-N receives up to L rows from EACH producer node, so it
+        /// transfers min(input_rows, L * node_count) rows, not the group's trimmed L.
+        if (dynamic_cast<const GatherExchangeStep *>(expression_plan_step))
+        {
+            if (auto partial = getPartialTopNInputInfo(memo, expression, 0))
+            {
+                const Float64 producer_node_count = std::max<Float64>(1, Float64(expression->inputs[0].required_properties.distribution.node_count));
+                rows = std::min(partial->input_rows, partial->limit * producer_node_count);
+            }
+        }
         const auto bytes_per_row = group->statistics->estimated_bytes_per_row;
         /// Each row crosses the network once.
         total_cost.cost.network += rows * bytes_per_row;
@@ -189,6 +228,10 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<const SortingStep *>(expression_plan_step))
     {
         Float64 rows = group->statistics->estimated_row_count;
+        /// A partial top-N sort scans all of its input rows (keeping only the top L per node), so cost
+        /// its work on the input cardinality rather than the trimmed output L.
+        if (dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()))
+            rows = getInputGroupWithStats(memo, expression, 0)->statistics->estimated_row_count;
         total_cost.cost.work += rows * std::max(1.0, std::log2(rows)) / parallelism;
         /// N-way merge is single-threaded.
         total_cost.cost.sequential += rows / parallelism;
