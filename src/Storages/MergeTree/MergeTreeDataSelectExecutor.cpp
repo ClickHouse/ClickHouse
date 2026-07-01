@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -1370,6 +1371,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
@@ -1391,9 +1393,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
-        UInt64 condition_hash = dag->getHash();
+        /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+        /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+        size_t condition_hash = dag->getHash();
+
+        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
+        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
+        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
+        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
+        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
+        /// always misses.
+        if (apply_top_k_salt && top_k_filter_info)
+            boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1486,7 +1500,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs);
+                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1500,7 +1514,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output);
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
@@ -2114,10 +2128,44 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous. Something's broken.
+                            /// range doesn't seem to be continuous. Something's broken - most likely a
+                            /// function reported inaccurate monotonicity (see the issue below).
+                            ///
+                            /// Log every participating condition (the key condition as well as the optional
+                            /// _part_offset and total-offset conditions), the part and the offending mark ranges
+                            /// before throwing, so the occurrence (typically found by a stress test or the fuzzer)
+                            /// is actionable. check_in_range combines all useful conditions, so any of them could
+                            /// be the culprit - in particular, a bad _part_offset / total-offset condition can trip
+                            /// this branch while the primary key_condition is empty or unrelated.
+                            /// The thrown message is deliberately kept constant: CI derives the failure's name
+                            /// from the exception's format string, so the details go to the log instead of the
+                            /// message to keep failures grouped under a single stable name.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
+                            auto describe_condition = [](const KeyCondition & condition)
+                            {
+                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
+                            };
+
+                            String conditions_description = fmt::format(
+                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
+                            if (part_offset_condition_useful)
+                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
+                            if (total_offset_condition_useful)
+                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
+
+                            LOG_ERROR(
+                                log,
+                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                                "Participating conditions: {}",
+                                result_range.begin, result_range.end,
+                                result_exact_range.begin, result_exact_range.end,
+                                part_name,
+                                conditions_description);
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
 #endif
                         }

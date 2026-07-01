@@ -188,3 +188,4 @@
 04117_max_threads_min_free_memory_per_thread
 04242_file_log_delete_recreate
 04257_file_log_rename_and_recreate
+04402_float_parsing_corner_cases

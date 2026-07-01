@@ -423,6 +423,26 @@
             pointer-events: none;
         }
 
+        /* `.database button.database-refresh` (not just `.database-refresh`) so it
+           outranks the `.database button` rule that forces `display: block; width: 100%`,
+           which would otherwise stretch the button full width and push the icon to the left. */
+        .database button.database-refresh
+        {
+            /* Pinned to the top-right of the database row, in the same spot as the
+               loading hourglass (only one of them is shown at a time). */
+            position: absolute;
+            top: 0;
+            right: 0.25rem;
+            display: inline-block;
+            width: auto;
+            color: var(--misc-text-color);
+            line-height: 1;
+            &:hover {
+                text-decoration: none;
+                color: var(--text-color);
+            }
+        }
+
         .no-tables
         {
             color: var(--misc-text-color);
@@ -431,6 +451,14 @@
         .current
         {
             font-weight: bold;
+        }
+
+        /* Number of tables shown next to an opened database name. Kept non-bold even when the
+           database is the current one (which renders the name in bold). */
+        .database-table-count
+        {
+            font-weight: normal;
+            color: var(--misc-text-color);
         }
 
         .table
@@ -1078,7 +1106,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1373,6 +1401,13 @@ class QueryResultElement extends HTMLElement
                     border: 1px solid var(--border-color);
                     white-space: pre;
                     vertical-align: top;
+                }
+
+                /* The selected cell receives keyboard focus; selection is shown by
+                   the .td-selected class, so suppress the default focus outline. */
+                td:focus
+                {
+                    outline: none;
                 }
 
                 /* Inner div limits cell height to 3 lines; expands on selection */
@@ -1724,12 +1759,35 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
     }
 
+    /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
+    /// the whole result element: the browser scrolls the focused element into view both on
+    /// `focus` and when the tab is re-focused (e.g. after opening a link in a new tab). The
+    /// result element spans the full width starting at the left edge, so focusing it would
+    /// scroll the horizontal position back to the start; focusing the cell keeps the current
+    /// scroll position because the cell is already in view. `preventScroll` avoids an extra
+    /// jump here since we scroll the cell into view explicitly with `block: 'nearest'`.
+    _selectCell(td)
+    {
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
+        this._current_selected_cell = td;
+        td.classList.add('td-selected');
+        td.parentElement.classList.add('tr-selected');
+        (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
+        td.tabIndex = -1;
+        td.focus({ preventScroll: true });
+    }
+
     clearSelection()
     {
         if (this._current_selected_cell)
         {
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
+            this._current_selected_cell.removeAttribute('tabindex');
         }
         this._current_selected_cell = null;
     }
@@ -1884,16 +1942,7 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                if (this._current_selected_cell)
-                {
-                    this._current_selected_cell.classList.remove('td-selected');
-                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
-                }
-                this._current_selected_cell = td;
-                td.classList.add('td-selected');
-                td.parentElement.classList.add('tr-selected');
-                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
-                this.focus();
+                this._selectCell(td);
             };
 
             tr.appendChild(td);
@@ -2258,12 +2307,8 @@ class QueryResultElement extends HTMLElement
 
         e.preventDefault();
 
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
-        this._current_selected_cell = new_cell;
+        cell.removeAttribute('tabindex');
+        this._selectCell(new_cell);
     }
 
     _loadJS(src, integrity)
@@ -2654,19 +2699,68 @@ async function loadDatabases(server_address, user, password) {
         database.appendChild(tables);
         databases_elem.appendChild(database);
 
+        /// Refresh button shown to the right of the database name while it is open.
+        /// Clicking it reloads the list of tables without collapsing the database.
+        let refresh_button = document.createElement('button');
+        refresh_button.className = 'database-refresh';
+        refresh_button.type = 'button';
+        refresh_button.title = 'Refresh the list of tables';
+        refresh_button.textContent = '\u21BB';
+
+        /// A per-row generation counter, bumped on every refresh and on collapse. An in-flight
+        /// load captures the current value and, once its query returns, checks whether the row's
+        /// state changed in the meantime (it was collapsed, a newer refresh superseded it, or the
+        /// whole panel was closed) so it can bail out before mutating the DOM. This invariant is
+        /// local to one database row, unlike the global `load_tables_request_num` (which only
+        /// tracks the latest load across all rows and would wrongly cancel a concurrent open of a
+        /// different row).
+        let row_load_generation = 0;
+
+        /// Reload tables, showing the hourglass (and hiding the refresh button) while loading.
+        const refreshTables = () => {
+            const generation = ++row_load_generation;
+            /// A load stays relevant only while its generation is still the latest for this row
+            /// and the row is still attached to the document. Closing the whole database panel
+            /// (or reloading the database list) detaches the row without bumping the generation,
+            /// so the `isConnected` check is what makes such a stale load drop quietly instead of
+            /// dereferencing a now-detached parent when its query returns.
+            const is_current = () => generation == row_load_generation && database.isConnected;
+            refresh_button.style.visibility = 'hidden';
+            let hourglass = document.createElement('span');
+            hourglass.className = 'loading-hourglass';
+            hourglass.textContent = '\u29D7';
+            database_link.after(hourglass);
+            return loadTables(server_address, user, password, elem.database, database, is_current).then(ok => {
+                hourglass.remove();
+                /// Only restore the button while this load is still the current one for the row;
+                /// otherwise the row was collapsed (the button is detached) or a newer refresh owns it.
+                if (is_current()) refresh_button.style.visibility = '';
+                return ok;
+            });
+        };
+
+        refresh_button.addEventListener('click', e => {
+            e.stopPropagation();
+            if (database.dataset['opened']) refreshTables();
+        });
+
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                let hourglass = document.createElement('span');
-                hourglass.className = 'loading-hourglass';
-                hourglass.textContent = '\u29D7';
-                database_link.after(hourglass);
-                loadTables(server_address, user, password, elem.database, database).then(ok => {
-                    hourglass.remove();
-                    if (ok !== false) database.dataset['opened'] = 1;
+                refreshTables().then(ok => {
+                    if (ok !== false) {
+                        database.dataset['opened'] = 1;
+                        database_link.after(refresh_button);
+                    }
                 });
             } else {
+                /// Collapse: invalidate any in-flight refresh so its late result cannot
+                /// repopulate the table list of this now-closed row.
+                ++row_load_generation;
                 delete database.dataset['opened'];
+                refresh_button.remove();
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
+                let count_elem = database_link.querySelector('.database-table-count');
+                if (count_elem) count_elem.remove();
             }
         });
     }
@@ -2791,7 +2885,7 @@ function getTableIcon(engine)
 }
 
 let load_tables_request_num = 0;
-async function loadTables(server_address, user, password, database, container) {
+async function loadTables(server_address, user, password, database, container, is_current) {
     ++load_tables_request_num;
     const current_load_tables_request_num = load_tables_request_num;
 
@@ -2802,11 +2896,25 @@ async function loadTables(server_address, user, password, database, container) {
     if (!json) return false;
 
     if (current_load_tables_request_num != load_tables_request_num) return false;
+    /// The row this load targets may have been collapsed or superseded by a newer refresh while
+    /// the query was in flight; if so, bail out before touching the DOM so we never repopulate
+    /// the table list of a row that is no longer open.
+    if (is_current && !is_current()) return false;
 
     container.parentElement.querySelector('.current').classList.remove('current');
     container.firstChild.classList.add('current');
     let tables_elem = container.querySelector('.tables');
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
+
+    /// Show the number of tables in parentheses next to the database name, e.g. `default (123)`.
+    let database_link = container.firstChild;
+    let count_elem = database_link.querySelector('.database-table-count');
+    if (!count_elem) {
+        count_elem = document.createElement('span');
+        count_elem.className = 'database-table-count';
+        database_link.appendChild(count_elem);
+    }
+    count_elem.textContent = ` (${json.data.length})`;
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
@@ -4180,6 +4288,7 @@ function updateRunButtons(multi) {
         }
     }
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+    document.getElementById('hint-run-all').style.display = multi ? '' : 'none';
 }
 
 /// Update the backdrop div behind the textarea: paint per-query active backgrounds
