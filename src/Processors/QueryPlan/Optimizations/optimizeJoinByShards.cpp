@@ -474,23 +474,36 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
 /// The shard is selected by the hash of the join key's byte representation
 /// (`ScatterByPartitionTransform` -> `IColumn::computeHashInto`), while `FullSortingMergeJoin` matches keys
-/// with `compareAt`. For floating-point values the two disagree: `-0.0` and `+0.0` (and NaNs) compare equal
-/// for the merge but hash differently. Sharding by the hash would therefore scatter such equal keys into
-/// different shards, and the per-shard merge join would never see the match, returning fewer rows than the
-/// `full_sorting_merge` algorithm this one is documented to mirror. This detects a floating-point key type,
-/// including a float nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`.
+/// with `compareAt`. Some types make the two disagree: keys that `compareAt` treats as equal can hash
+/// differently, so hash sharding would scatter them into different shards and the per-shard merge join would
+/// never see the match, returning fewer rows than the `full_sorting_merge` algorithm this one is documented
+/// to mirror. Two known cases:
+///   - Floating-point: `-0.0` and `+0.0` (and NaNs) compare equal for the merge but their bit patterns hash
+///     differently.
+///   - `Object('json')` / `JSON`: `ColumnObject::compareAt` compares the logical path/value map, but the
+///     hash depends on the physical layout - whether a given path is stored as a typed/dynamic subcolumn or
+///     serialized into `shared_data`. That layout can differ between blocks (e.g. when the set of dynamic
+///     paths differs across parts), so two logically-equal objects can hash into different shards.
+/// This detects such a type at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/
+/// `Map` (`Dynamic` keys are already rejected earlier by `TableJoin::inferJoinKeyCommonType`).
 static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
 {
-    if (WhichDataType(type).isFloat())
+    auto breaks_sharding = [](const IDataType & t)
+    {
+        WhichDataType which(t);
+        return which.isFloat() || which.isObject();
+    };
+
+    if (breaks_sharding(type))
         return true;
 
-    bool has_float = false;
+    bool result = false;
     type.forEachChild([&](const IDataType & child)
     {
-        if (WhichDataType(child).isFloat())
-            has_float = true;
+        if (breaks_sharding(child))
+            result = true;
     });
-    return has_float;
+    return result;
 }
 
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
