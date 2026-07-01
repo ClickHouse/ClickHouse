@@ -357,6 +357,33 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_FALSE(exists("/T8/B"));
         ASSERT_FALSE(exists("/T8/A/C"));
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove Nonexistent Node Doesn't Update Parent");
+        create("/T9", zkutil::CreateMode::Persistent);
+        create("/T9/A", zkutil::CreateMode::Persistent);
+
+        DB::KeeperNodeStats stats;
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/T9", &stats, /*out_data=*/nullptr));
+        ASSERT_EQ(stats.getNumChildren(), 1);
+
+        auto responses = remove_recursive("/T9/nonexistent", 100);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+
+        /// The nonexistent node had no effect: its parent's num_children stays unchanged.
+        ASSERT_TRUE(storage.nodes_storage->getCommittedNodeSimple("/T9", &stats, /*out_data=*/nullptr));
+        ASSERT_EQ(stats.getNumChildren(), 1);
+        ASSERT_TRUE(exists("/T9"));
+        ASSERT_TRUE(exists("/T9/A"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Root Is Rejected");
+        auto responses = remove_recursive("/", 100);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZBADARGUMENTS);
+    }
 }
 
 namespace
