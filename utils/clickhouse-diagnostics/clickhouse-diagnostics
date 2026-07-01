@@ -472,6 +472,46 @@ FROM system.crash_log
 ORDER BY event_time DESC
 """
 
+SHOW_USER_PROCESSES = r"""SELECT
+    user,
+    memory_usage,
+    peak_memory_usage,
+    ProfileEvents
+FROM system.user_processes
+ORDER BY memory_usage DESC
+"""
+
+SELECT_DISKS = r"""SELECT
+    name,
+    path,
+    formatReadableSize(free_space) AS free_space_size,
+    formatReadableSize(total_space) AS total_space_size,
+    round(free_space / total_space, 3) AS ratio
+FROM system.disks
+ORDER BY ratio DESC
+"""
+
+SELECT_CPUS = r"""SELECT
+    metric,
+    value
+FROM system.asynchronous_metrics
+WHERE metric in ('OSSystemTimeNormalized','OSUserTimeNormalized')
+"""
+
+SELECT_MEMORY = r"""SELECT
+    metric,
+    formatReadableSize(value) AS memory_tracking
+FROM system.metrics
+WHERE metric = 'MemoryTracking'
+"""
+
+SELECT_CONNECTIONS = r"""SELECT
+    metric,
+    value
+FROM system.metrics
+WHERE metric IN ('TCPConnection', 'HTTPConnection')
+"""
+
 
 def retry(exception_types, max_attempts=5, max_interval=5):
     """
@@ -535,6 +575,9 @@ class ClickhouseClient:
 
         if format:
             query += f" FORMAT {format}"
+
+            if "Pretty" in format and version_ge(self.clickhouse_version, "24.3"):
+                query += f" SETTINGS output_format_pretty_row_numbers=0"
 
         if timeout is None:
             timeout = self._timeout
@@ -814,6 +857,45 @@ def main():
 
     add_query(
         diagnostics,
+        "OS CPU",
+        client=client,
+        query=SELECT_CPUS,
+        format="PrettyCompactNoEscapes",
+    )
+    add_query(
+        diagnostics,
+        "Memory Tracking",
+        client=client,
+        query=SELECT_MEMORY,
+        format="PrettyCompactNoEscapes",
+    )
+    add_query(
+        diagnostics,
+        "Connections",
+        client=client,
+        query=SELECT_CONNECTIONS,
+        format="PrettyCompactNoEscapes",
+    )
+
+    if version_ge(version, "23.5"):
+        add_query(
+            diagnostics,
+            "User processes",
+            client=client,
+            query=SHOW_USER_PROCESSES,
+            format="Vertical",
+        )
+
+    add_query(
+        diagnostics,
+        "Disks",
+        client=client,
+        query=SELECT_DISKS,
+        format="Vertical",
+    )
+
+    add_query(
+        diagnostics,
         "Database engines",
         client=client,
         query=SELECT_DATABASE_ENGINES,
@@ -981,7 +1063,7 @@ def parse_args():
         default="wiki",
     )
     parser.add_argument("--normalize-queries", action="store_true", default=False)
-    parser.add_argument("--host", dest="host", help="clickhouse host")
+    parser.add_argument("--host", dest="host", default="localhost", help="clickhouse host")
     parser.add_argument(
         "--port", dest="port", default=8123, help="clickhouse http port"
     )
