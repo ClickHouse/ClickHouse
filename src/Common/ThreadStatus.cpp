@@ -91,6 +91,11 @@ struct ThreadStack
     {
         auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
 
+        /// aligned_alloc() requires size to be a multiple of alignment, but MINSIGSTKSZ on
+        /// glibc >= 2.34 is a runtime sysconf(_SC_SIGSTKSZ) value that may not be page-aligned.
+        /// Not the case for official builds: they use the static MINSIGSTKSZ from the bundled sysroot.
+        size = ::Memory::alignUp(size, getPageSize());
+
         if constexpr (guardPagesEnabled())
             size += getPageSize();
 
