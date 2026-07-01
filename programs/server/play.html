@@ -303,6 +303,12 @@
         {
             grid-area: terminal-icon;
             margin-bottom: 0.25rem;
+            /* Rendered as an <a> so middle-click and Ctrl/Shift+click open the terminal in a
+               new browser tab natively. color: inherit keeps the currentColor strokes from
+               picking up the default link color, and display: block matches #databases-icon. */
+            text-decoration: none;
+            display: block;
+            color: inherit;
         }
 
         #terminal-icon.active svg
@@ -425,6 +431,14 @@
         .current
         {
             font-weight: bold;
+        }
+
+        /* Number of tables shown next to an opened database name. Kept non-bold even when the
+           database is the current one (which renders the name in bold). */
+        .database-table-count
+        {
+            font-weight: normal;
+            color: var(--misc-text-color);
         }
 
         .table
@@ -1048,9 +1062,9 @@
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
         <div id="databases"></div>
-        <div id="terminal-icon" class="menu-icon" title="Web Terminal (~)">
+        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        </div>
+        </a>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
             <a href="https://github.com/ClickHouse/ClickHouse/">
@@ -1072,7 +1086,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
+                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1367,6 +1381,13 @@ class QueryResultElement extends HTMLElement
                     border: 1px solid var(--border-color);
                     white-space: pre;
                     vertical-align: top;
+                }
+
+                /* The selected cell receives keyboard focus; selection is shown by
+                   the .td-selected class, so suppress the default focus outline. */
+                td:focus
+                {
+                    outline: none;
                 }
 
                 /* Inner div limits cell height to 3 lines; expands on selection */
@@ -1718,12 +1739,35 @@ class QueryResultElement extends HTMLElement
         this._current_selected_cell = null;
     }
 
+    /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
+    /// the whole result element: the browser scrolls the focused element into view both on
+    /// `focus` and when the tab is re-focused (e.g. after opening a link in a new tab). The
+    /// result element spans the full width starting at the left edge, so focusing it would
+    /// scroll the horizontal position back to the start; focusing the cell keeps the current
+    /// scroll position because the cell is already in view. `preventScroll` avoids an extra
+    /// jump here since we scroll the cell into view explicitly with `block: 'nearest'`.
+    _selectCell(td)
+    {
+        if (this._current_selected_cell)
+        {
+            this._current_selected_cell.classList.remove('td-selected');
+            this._current_selected_cell.parentElement.classList.remove('tr-selected');
+        }
+        this._current_selected_cell = td;
+        td.classList.add('td-selected');
+        td.parentElement.classList.add('tr-selected');
+        (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
+        td.tabIndex = -1;
+        td.focus({ preventScroll: true });
+    }
+
     clearSelection()
     {
         if (this._current_selected_cell)
         {
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
+            this._current_selected_cell.removeAttribute('tabindex');
         }
         this._current_selected_cell = null;
     }
@@ -1878,16 +1922,7 @@ class QueryResultElement extends HTMLElement
             const td = this._renderCell(column.name, row[column.name]);
 
             td.onclick = () => {
-                if (this._current_selected_cell)
-                {
-                    this._current_selected_cell.classList.remove('td-selected');
-                    this._current_selected_cell.parentElement.classList.remove('tr-selected');
-                }
-                this._current_selected_cell = td;
-                td.classList.add('td-selected');
-                td.parentElement.classList.add('tr-selected');
-                (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
-                this.focus();
+                this._selectCell(td);
             };
 
             tr.appendChild(td);
@@ -2252,12 +2287,8 @@ class QueryResultElement extends HTMLElement
 
         e.preventDefault();
 
-        cell.classList.remove('td-selected');
-        cell.parentElement.classList.remove('tr-selected');
-        new_cell.classList.add('td-selected');
-        new_cell.parentElement.classList.add('tr-selected');
-        (new_cell.querySelector('.cell-content') || new_cell).scrollIntoView({ block: 'nearest' });
-        this._current_selected_cell = new_cell;
+        cell.removeAttribute('tabindex');
+        this._selectCell(new_cell);
     }
 
     _loadJS(src, integrity)
@@ -2661,6 +2692,8 @@ async function loadDatabases(server_address, user, password) {
             } else {
                 delete database.dataset['opened'];
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
+                let count_elem = database_link.querySelector('.database-table-count');
+                if (count_elem) count_elem.remove();
             }
         });
     }
@@ -2801,6 +2834,16 @@ async function loadTables(server_address, user, password, database, container) {
     container.firstChild.classList.add('current');
     let tables_elem = container.querySelector('.tables');
     while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
+
+    /// Show the number of tables in parentheses next to the database name, e.g. `default (123)`.
+    let database_link = container.firstChild;
+    let count_elem = database_link.querySelector('.database-table-count');
+    if (!count_elem) {
+        count_elem = document.createElement('span');
+        count_elem.className = 'database-table-count';
+        database_link.appendChild(count_elem);
+    }
+    count_elem.textContent = ` (${json.data.length})`;
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
@@ -4174,6 +4217,7 @@ function updateRunButtons(multi) {
         }
     }
     runAllBtn.style.display = (multi && !selects_all) ? 'inline-block' : 'none';
+    document.getElementById('hint-run-all').style.display = multi ? '' : 'none';
 }
 
 /// Update the backdrop div behind the textarea: paint per-query active backgrounds
@@ -5377,10 +5421,36 @@ document.getElementById('download-button').addEventListener('click', async funct
         }
     }
 
+    /// Keep the icon's `href` pointing at the current `/webterminal` URL, so that a native
+    /// middle-click or Ctrl/Shift+click opens the right address even after the user edits the
+    /// server URL. The `href` is removed when the URL is currently unparsable: an empty `href`
+    /// would resolve to the current page, so a modifier/middle-click would open Play itself
+    /// instead of doing nothing.
+    ///
+    /// The non-empty Play username is carried over as a `user` query parameter so a new-tab
+    /// terminal connects as the same user instead of falling back to the server default user.
+    /// The password is intentionally omitted (it would leak in the URL); `webterminal.html`
+    /// prompts for it on the first authentication failure. This `user` parameter is added only
+    /// to the anchor `href` used for new-tab navigation, never to `getTerminalURL`: that one
+    /// also feeds the inline iframe `src`, where a `?user=` would set `userFromURL` and stop the
+    /// iframe from waiting for the credentials `play.html` sends via `postMessage`.
+    function updateTerminalHref() {
+        const base = getTerminalURL();
+        if (!base) { terminalIcon.removeAttribute('href'); return; }
+        try {
+            const url = new URL(base);
+            if (user_elem.value) url.searchParams.set('user', user_elem.value);
+            terminalIcon.setAttribute('href', url.href);
+        } catch (e) {
+            terminalIcon.setAttribute('href', base);
+        }
+    }
+
     /// Hide the terminal icon if /webterminal is not available (gated by allow_experimental_webterminal).
     terminalIcon.style.display = 'none';
     const terminalProbeURL = getTerminalURL();
     if (terminalProbeURL) {
+        updateTerminalHref();
         fetch(terminalProbeURL, {method: 'HEAD'}).then(function(resp) {
             if (resp.ok) terminalIcon.style.display = '';
         }).catch(function() {});
@@ -5459,7 +5529,20 @@ document.getElementById('download-button').addEventListener('click', async funct
         else activateTerminal();
     }
 
+    /// Ctrl/Cmd/Shift+click opens the terminal in a new browser tab; let the anchor's native
+    /// behaviour handle it (middle-click does not fire a `click` event and is handled natively too).
+    function wantsNewTab(e) {
+        return e.ctrlKey || e.metaKey || e.shiftKey;
+    }
+
+    /// Refresh the `href` before navigation so a new-tab open uses the current server URL.
+    /// `pointerdown` fires before both `click` and the middle-button `auxclick` navigation.
+    terminalIcon.addEventListener('pointerdown', updateTerminalHref);
+
     terminalIcon.addEventListener('click', function(e) {
+        /// For a modifier-click, fall through to the anchor's native "open in new tab".
+        if (wantsNewTab(e)) return;
+        /// A plain left click toggles the inline terminal panel instead of navigating.
         e.preventDefault();
         e.stopPropagation();
         toggleTerminal();

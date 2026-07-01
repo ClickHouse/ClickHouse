@@ -160,10 +160,12 @@ void listFilesWithRegexpMatchingImpl(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
+    std::unordered_set<std::string> & matched_paths,
     bool recursive,
     bool recursive_anywhere,
     size_t depth,
-    std::unordered_set<std::string> & active_dirs_on_stack)
+    std::unordered_set<std::string> & active_dirs_on_stack,
+    bool zero_level_reapplication = false)
 {
     if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
         throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
@@ -174,6 +176,19 @@ void listFilesWithRegexpMatchingImpl(
     /// because each recursion frame can be large. Probe the remaining stack periodically.
     if (depth % 16 == 0)
         checkStackSize();
+
+    /// Appends a matched path to the result and counts its bytes, deduplicating by its
+    /// normalized form. Adjacent globstars (e.g. `**/**/*.tsv`) can reach the same filesystem
+    /// entry through both the zero-level branch and the recursive descent, so without this
+    /// guard the query would return duplicate rows and double-count `total_bytes_to_read`.
+    auto add_matched_path = [&](const std::string & path, size_t bytes)
+    {
+        if (matched_paths.emplace(fs::path(path).lexically_normal().string()).second)
+        {
+            total_bytes_to_read += bytes;
+            result.push_back(path);
+        }
+    };
 
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
@@ -187,7 +202,14 @@ void listFilesWithRegexpMatchingImpl(
             (void)fs::canonical(path_for_ls + for_match);
             fs::path absolute_path = fs::absolute(path_for_ls + for_match);
             absolute_path = absolute_path.lexically_normal(); /// ensure that the resulting path is normalized (e.g., removes any redundant slashes or . and .. segments)
-            result.push_back(absolute_path.string());
+            /// This exact-match branch is reached for suffixes without globs, including the
+            /// zero-level `**/` case (e.g. `data/**/file.txt` matching `data/file.txt`). The file
+            /// is returned and read, so its bytes must be counted towards `total_bytes_to_read`
+            /// for progress reporting. `fs::file_size` errors for non-regular targets (e.g. a
+            /// directory); in that case keep the byte count at zero but still return the path.
+            std::error_code size_ec;
+            const size_t file_size = fs::file_size(absolute_path, size_ec);
+            add_matched_path(absolute_path.string(), size_ec ? 0 : file_size);
         }
         catch (const std::exception &) // NOLINT
         {
@@ -233,8 +255,13 @@ void listFilesWithRegexpMatchingImpl(
     /// Patterns without any `**` (purely finite globs) skip the guard entirely so that
     /// legitimate matches through ancestor symlinks like `file('root/*/*/*.txt')` with
     /// `root/a/back -> ..` continue to work.
+    ///
+    /// The zero-level `**/` re-application (see below) re-enters the SAME directory the
+    /// caller already put on the stack, so it must be exempt: the caller frame still holds
+    /// this canonical path in `active_dirs_on_stack` for the duration of the re-application,
+    /// which keeps protecting any genuine descent that loops back here.
     std::optional<std::string> active_dir_to_erase;
-    if (recursive_anywhere)
+    if (recursive_anywhere && !zero_level_reapplication)
     {
         std::error_code prefix_canon_ec;
         const auto prefix_canonical = fs::canonical(prefix_without_globs, prefix_canon_ec);
@@ -253,6 +280,16 @@ void listFilesWithRegexpMatchingImpl(
     });
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
+
+    /// `**/` matches zero or more directory components, so it must also match the current
+    /// directory (zero levels). Apply the remaining suffix to `prefix_without_globs` itself,
+    /// in addition to the recursive descent into subdirectories performed by the loop below.
+    /// The descent below covers one or more directory levels, so this call must not recurse
+    /// (`recursive` is `false`) to avoid producing the same results twice.
+    if (current_glob == "/**" && looking_for_directory)
+        listFilesWithRegexpMatchingImpl(prefix_without_globs + "/", suffix_with_globs.substr(next_slash_after_glob_pos),
+                                        total_bytes_to_read, result, matched_paths, false, recursive_anywhere, depth + 1,
+                                        active_dirs_on_stack, /*zero_level_reapplication=*/true);
 
     const fs::directory_iterator end;
     std::error_code ec;
@@ -283,27 +320,40 @@ void listFilesWithRegexpMatchingImpl(
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
             {
-                total_bytes_to_read += it->file_size(ec);
+                const size_t file_size = it->file_size(ec);
                 if (ec)
                 {
                     ec.clear();
                     continue;
                 }
 
-                result.push_back(it->path().string());
+                add_matched_path(it->path().string(), file_size);
             }
         }
         else if (is_directory)
         {
             if (recursive)
             {
+                /// When the current segment is the globstar `**` followed by a suffix (e.g.
+                /// `**/file.txt`), descend into subdirectories keeping the whole `**/...` pattern,
+                /// so the globstar keeps matching at every deeper level (any number of
+                /// directories). The zero-level branch above applies the post-`**` suffix at the
+                /// current level, so the combination matches zero, one, or more directory
+                /// components. Without this, a literal suffix (e.g. `pick.tsv`) would short-circuit
+                /// the recursion at the no-glob exact-match branch after a single level, and only a
+                /// glob suffix (e.g. `*.tsv`) would keep descending. For a trailing `**` (no
+                /// suffix), keep re-applying `current_glob` (`/**`) to list all files recursively,
+                /// as before.
+                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingImpl(fs::path(full_path).append(it->path().string()) / "",
-                                                looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                                                total_bytes_to_read, result, recursive, recursive_anywhere, depth + 1, active_dirs_on_stack);
+                                                descent_pattern,
+                                                total_bytes_to_read, result, matched_paths, recursive, recursive_anywhere, depth + 1, active_dirs_on_stack);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
                 listFilesWithRegexpMatchingImpl(fs::path(full_path) / "", suffix_with_globs.substr(next_slash_after_glob_pos),
-                                                total_bytes_to_read, result, false, recursive_anywhere, depth + 1, active_dirs_on_stack);
+                                                total_bytes_to_read, result, matched_paths, false, recursive_anywhere, depth + 1, active_dirs_on_stack);
         }
     }
 }
@@ -316,11 +366,20 @@ std::vector<std::string> listFilesWithRegexpMatching(
 
     Strings for_match_paths_expanded = expandSelectionGlob(for_match);
 
-    /// Tracks canonical paths currently on the recursion descent stack so symlink cycles are broken
-    /// without affecting sibling brace-expansion alternatives.
-    std::unordered_set<std::string> active_dirs_on_stack;
     for (const auto & for_match_expanded : for_match_paths_expanded)
     {
+        /// Tracks the normalized form of every matched path so that adjacent globstars such as
+        /// `**/**/*.tsv` do not emit the same filesystem entry more than once. The set is scoped
+        /// to a single expanded pattern on purpose: independent brace-expanded alternatives
+        /// (e.g. `{top,top}.tsv` or `{a*,*}`) keep their pre-existing behavior of reading the
+        /// same concrete file once per alternative, rather than being silently collapsed.
+        std::unordered_set<std::string> matched_paths;
+
+        /// Tracks canonical paths currently on the recursion descent stack so symlink cycles are
+        /// broken without affecting sibling brace-expansion alternatives. Scoped per expanded
+        /// pattern for the same reason as `matched_paths`.
+        std::unordered_set<std::string> active_dirs_on_stack;
+
         /// True when the expansion has a path component equal to `**`. Mirrors the
         /// per-segment test inside `listFilesWithRegexpMatchingImpl` (`current_glob == "/**"`):
         /// finite components like `a**` or `**.txt` must NOT count.
@@ -333,7 +392,7 @@ std::vector<std::string> listFilesWithRegexpMatching(
                 break;
             }
         }
-        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, false, recursive_anywhere, 0, active_dirs_on_stack);
+        listFilesWithRegexpMatchingImpl("/", for_match_expanded, total_bytes_to_read, result, matched_paths, false, recursive_anywhere, 0, active_dirs_on_stack);
     }
 
     return result;
