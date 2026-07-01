@@ -2176,8 +2176,7 @@ void ReadFromMergeTree::buildIndexes(
             skip_indexes.skip_index_for_top_k_filtering = index_helper;
             LOG_TRACE(getLogger("MergeTreeSkipIndexReader"), "Selected index {} on column {} for top-K optimization, k = {}, direction = {}, sort columns = {}",
                         index_helper->index.name, top_k_filter_info->column_name, top_k_filter_info->limit_n, top_k_filter_info->direction, top_k_filter_info->num_sort_columns);
-            if (settings[Setting::use_skip_indexes_on_data_read])
-                skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
+            skip_indexes.threshold_tracker = top_k_filter_info->threshold_tracker;
         }
     }
 
@@ -3539,6 +3538,63 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     return true;
 }
 
+bool ReadFromMergeTree::supportsTopKSkipIndexesOnDataRead() const
+{
+    if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
+        return false;
+
+    if (!indexes->skip_indexes.skip_index_for_top_k_filtering || !indexes->skip_indexes.threshold_tracker)
+        return false;
+
+    /// TODO: Revisit these gates for the TopK runtime path. They match
+    /// `supportsSkipIndexesOnDataRead`, but some of them may not be required
+    /// here, especially the vector index, JOIN, overflow-limit, and exact
+    /// FINAL checks.
+
+    /// Keep the existing data-read gate for vector indexes. The vector index
+    /// is expected to run first during analysis, with other indexes applied
+    /// afterwards.
+    const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+    {
+        return idx.index->isVectorSimilarityIndex();
+    });
+    if (has_vector_similarity_index)
+        return false;
+
+    const auto & settings = context->getSettingsRef();
+
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (query_info.query_tree)
+    {
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
+
+        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+            return false;
+    }
+
+    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        return false;
+
+    /// Settings `read_overflow_mode = 'throw'` with `max_rows_to_read` (and the symmetric
+    /// `read_overflow_mode_leaf` with `max_rows_to_read_leaf`) are evaluated early during execution,
+    /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
+    /// if the skip index is evaluated during data read (scan).
+    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+        return false;
+
+    /// Pending ALTER mutations (e.g. `MODIFY COLUMN`) can change the type of an indexed column,
+    /// making the existing on-disk index data incompatible with the current column type.
+    /// In the data-read phase the skip index is applied without the per-part `can_use_index` check
+    /// that `filterPartsByPrimaryKeyAndSkipIndexes` performs, so disable the feature entirely when
+    /// any data/alter mutations or patches are pending.
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+        return false;
+
+    return true;
+}
+
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
@@ -3767,7 +3823,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     ProfileEvents::increment(ProfileEvents::SelectedParts, result.selected_parts);
     ProfileEvents::increment(ProfileEvents::SelectedPartsTotal, result.total_parts);
     ProfileEvents::increment(ProfileEvents::SelectedMarksTotal, result.total_marks_pk);
-    if (!supportsSkipIndexesOnDataRead())
+    const bool use_skip_indexes_on_data_read = supportsSkipIndexesOnDataRead();
+    const bool use_top_k_skip_indexes_on_data_read = supportsTopKSkipIndexesOnDataRead();
+    const bool use_any_skip_indexes_on_data_read = use_skip_indexes_on_data_read || use_top_k_skip_indexes_on_data_read;
+    if (!use_any_skip_indexes_on_data_read)
     {
         ProfileEvents::increment(ProfileEvents::SelectedRanges, result.selected_ranges);
         ProfileEvents::increment(ProfileEvents::SelectedMarks, result.selected_marks);
@@ -3839,17 +3898,30 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeIndexBuildContextPtr index_build_context;
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
-    if (supportsSkipIndexesOnDataRead())
+    if (use_any_skip_indexes_on_data_read)
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
 
-        std::erase_if(
-            applicable_skip_indexes.useful_indices,
-            [](const auto & idx)
-            {
-                /// Vector similarity indexes are not applicable on data reads.
-                return idx.index->isVectorSimilarityIndex();
-            });
+        if (use_skip_indexes_on_data_read)
+        {
+            std::erase_if(
+                applicable_skip_indexes.useful_indices,
+                [](const auto & idx)
+                {
+                    /// Vector similarity indexes are not applicable on data reads.
+                    return idx.index->isVectorSimilarityIndex();
+                });
+        }
+        else
+        {
+            applicable_skip_indexes.useful_indices.clear();
+        }
+
+        if (!use_top_k_skip_indexes_on_data_read)
+        {
+            applicable_skip_indexes.skip_index_for_top_k_filtering = nullptr;
+            applicable_skip_indexes.threshold_tracker = nullptr;
+        }
 
         if (!applicable_skip_indexes.empty())
         {
