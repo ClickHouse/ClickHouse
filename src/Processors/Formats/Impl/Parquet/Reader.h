@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/HashTable/HashSet.h>
 #include <Core/BlockMissingValues.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -502,11 +501,6 @@ struct Reader
     /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
-    /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
-    /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
-    /// which case the dictionary can't be used for filtering).
-    std::optional<HashSet<UInt64>> hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const;
-
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
@@ -548,20 +542,9 @@ private:
     /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
     /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
     /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
-    struct DictionaryLookup : public KeyCondition::BloomFilter
-    {
-        Reader & reader;
-        ColumnChunk & column;
-        const PrimitiveColumnInfo & column_info;
-
-        bool computed = false;
-        std::optional<HashSet<UInt64>> value_hashes;
-
-        DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_)
-            : reader(reader_), column(column_), column_info(column_info_) {}
-
-        bool findAnyHash(const std::vector<uint64_t> & hashes) override;
-    };
+    /// Defined out of line in Reader.cpp so that its `HashSet` member does not pull the hash-table
+    /// headers (and their transitive includes) into every translation unit that includes Reader.h.
+    struct DictionaryLookup;
 
     void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;

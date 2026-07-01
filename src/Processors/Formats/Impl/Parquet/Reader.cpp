@@ -8,6 +8,7 @@
 #include <Columns/FilterDescription.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
@@ -965,7 +966,12 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     return has_dictionary_data_page;
 }
 
-std::optional<HashSet<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column, const PrimitiveColumnInfo & column_info) const
+/// Hash all values of an already-decoded dictionary the same way query constants are hashed for
+/// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
+/// which case the dictionary can't be used for filtering).
+static std::optional<HashSet<UInt64>> hashDictionaryValues(
+    const parq::FileMetaData & file_metadata, const ReadOptions & options,
+    Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info)
 {
     chassert(column.dictionary.isInitialized());
     size_t count = column.dictionary.count;
@@ -1023,11 +1029,26 @@ std::optional<HashSet<UInt64>> Reader::hashDictionaryValues(ColumnChunk & column
     return value_hashes;
 }
 
+struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
+{
+    Reader & reader;
+    ColumnChunk & column;
+    const PrimitiveColumnInfo & column_info;
+
+    bool computed = false;
+    std::optional<HashSet<UInt64>> value_hashes;
+
+    DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_)
+        : reader(reader_), column(column_), column_info(column_info_) {}
+
+    bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+};
+
 bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
 {
     if (!computed)
     {
-        value_hashes = reader.hashDictionaryValues(column, column_info);
+        value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info);
         computed = true;
     }
     /// If the dictionary values couldn't be hashed, we can't rule out a match.
