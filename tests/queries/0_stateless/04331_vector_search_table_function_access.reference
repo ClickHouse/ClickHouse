@@ -1,0 +1,8 @@
+-- no grants: denied
+ACCESS_DENIED
+-- only SELECT(id): still denied, the scorer reads vec through the index
+ACCESS_DENIED
+-- SELECT(id, vec): works; _score needs no source grant
+OK: 0	0 1	1
+-- selecting an ungranted source column is denied
+ACCESS_DENIED

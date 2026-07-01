@@ -47,6 +47,11 @@ void LazilyReadFromMergeTree::setLazyMaterializingRows(LazyMaterializingRowsPtr 
     lazy_materializing_rows = std::move(lazy_materializing_rows_);
 }
 
+void LazilyReadFromMergeTree::setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits_)
+{
+    storage_limits = std::move(storage_limits_);
+}
+
 void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (!lazy_materializing_rows)
@@ -66,6 +71,9 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
         lazy_materializing_rows,
         dataflow_cache_updater
     );
+
+    if (storage_limits)
+        source->setStorageLimits(storage_limits);
 
     processors.emplace_back(source);
     Pipe pipe(std::move(source));

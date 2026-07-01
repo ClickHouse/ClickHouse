@@ -1,0 +1,7 @@
+-- dimension mismatch: query vector longer than index
+-- dimension mismatch: query vector shorter than index
+-- NaN element rejected
+-- +Inf element rejected
+-- valid query succeeds
+0
+1

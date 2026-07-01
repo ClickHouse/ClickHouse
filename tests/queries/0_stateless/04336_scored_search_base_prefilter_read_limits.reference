@@ -1,0 +1,4 @@
+-- Generous limit: the query succeeds
+1
+3
+-- The prefilter scan of 8 rows trips a lower limit

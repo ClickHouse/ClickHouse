@@ -1,0 +1,4 @@
+-- a part without index files is rejected, not silently skipped
+-- after MATERIALIZE INDEX the query works
+0
+1

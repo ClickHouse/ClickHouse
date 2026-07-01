@@ -37,6 +37,9 @@ void registerTableFunctions()
     registerTableFunctionMergeTreeAnalyzeIndexes(factory);
     registerTableFunctionMergeTreeProjection(factory);
     registerTableFunctionMergeTreeTextIndex(factory);
+#if USE_USEARCH
+    registerTableFunctionVectorSearch(factory);
+#endif
     registerTableFunctionFuzzQuery(factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerTableFunctionFuzzJSON(factory);
@@ -78,7 +81,6 @@ void registerTableFunctions()
 #if USE_YTSAURUS
     registerTableFunctionYTsaurus(factory);
 #endif
-
 }
 
 }

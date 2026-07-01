@@ -72,6 +72,46 @@ public:
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
 
 
+/// Validate that a vector contains no `NaN`/`Inf` and (for `i8` quantization)
+/// has non-zero magnitude — both cause undefined behavior in USearch.
+template <typename T>
+void checkVectorIsSane(
+    const T * vector,
+    size_t dimension,
+    unum::usearch::scalar_kind_t scalar_kind,
+    int error_code,
+    std::string_view context)
+{
+    double magnitude_squared = 0.0;
+    for (size_t i = 0; i != dimension; ++i)
+    {
+        T casted = static_cast<T>(vector[i]);
+        if constexpr (std::is_same_v<T, BFloat16>)
+        {
+            if (!casted.isFinite())
+                throw Exception(error_code,
+                    "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
+        }
+        else
+        {
+            if (!std::isfinite(casted))
+                throw Exception(error_code,
+                    "Vector for vector similarity index ({}) must not contain non-finite values (NaN or Inf)", context);
+        }
+
+        if (scalar_kind == unum::usearch::scalar_kind_t::i8_k)
+        {
+            double v = static_cast<double>(vector[i]);
+            magnitude_squared += v * v;
+        }
+    }
+
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+        throw Exception(error_code,
+            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+}
+
+
 struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleVectorSimilarity(
@@ -184,6 +224,9 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
     bool isVectorSimilarityIndex() const override { return true; }
+
+    UInt64 getDimensions() const { return dimensions; }
+    unum::usearch::scalar_kind_t getScalarKind() const { return scalar_kind; }
 
 private:
     const UInt64 dimensions;

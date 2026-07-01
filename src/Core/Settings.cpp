@@ -8379,6 +8379,15 @@ Maximum number of HTTP requests that AI functions may dispatch per query. Set to
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
 If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
 )", EXPERIMENTAL) \
+    \
+    /* ####################################################### */ \
+    /* Search top-K table function settings */ \
+    DECLARE(Bool, allow_experimental_search_topk_table_functions, false, R"(
+Enables the experimental search top-K table functions (currently only `vectorSearch`).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, search_topk_prefilter_max_rows, 100'000'000, R"(
+Cap on the total number of rows held in the prefilter bitmaps of search top-K table functions. Exceeding it throws `LIMIT_EXCEEDED`.
+)", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \

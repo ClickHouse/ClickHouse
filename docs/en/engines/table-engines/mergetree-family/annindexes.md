@@ -613,6 +613,24 @@ Further example datasets that use approximate vector search:
 - [dbpedia](../../../getting-started/example-datasets/dbpedia-dataset)
 - [hackernews](../../../getting-started/example-datasets/hackernews-vector-search-dataset)
 
+### Table function surface {#table-function-surface}
+
+The [`vectorSearch`](../../../sql-reference/table-functions/vectorSearch.md) table function provides direct access to a `vector_similarity` index. It returns the K approximate nearest neighbors of a reference vector together with a `_score` virtual column carrying USearch's native distance for the index's metric, so `ORDER BY _score ASC` is the universal sort regardless of whether the index uses `L2Distance`, `cosineDistance`, or `dotProduct`. Unlike the `ORDER BY ... LIMIT` surface above, the table function always searches the index and never falls back to an exact search. See [`vectorSearch`](../../../sql-reference/table-functions/vectorSearch.md) for the full reference.
+
+The previous internal `mergeTreeHybridSearch` table function has been removed. Equivalent semantics are reached through a `WHERE` clause on `vectorSearch`:
+
+```sql
+SELECT id, _score
+FROM vectorSearch(default, docs, [/* reference_vector */]::Array(Float32), 10)
+WHERE hasAllTokens(body, ['error', 'timeout'])
+ORDER BY _score ASC
+SETTINGS allow_experimental_search_topk_table_functions = 1;
+```
+
+Use `hasAnyTokens` for the disjunctive variant. The `WHERE` clause composes with primary-key ranges, skipping indexes, and partition pruning, so the new form covers a strictly wider surface than the removed function.
+
+The legacy `SELECT [...] ORDER BY <DistanceFunction>(vectors, reference_vector) LIMIT N` SQL surface described in [Using a Vector Similarity Index](#using-a-vector-similarity-index) continues to work unchanged.
+
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](../../../sql-reference/data-types/float.md).

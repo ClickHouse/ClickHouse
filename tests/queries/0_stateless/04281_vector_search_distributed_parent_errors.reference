@@ -1,0 +1,4 @@
+-- vectorSearch on a MergeTree inner: OK
+0
+1
+-- vectorSearch on a Distributed parent: NOT_IMPLEMENTED

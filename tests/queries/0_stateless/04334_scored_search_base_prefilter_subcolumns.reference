@@ -1,0 +1,14 @@
+-- Array size subcolumn predicate
+3
+4
+5
+-- Tuple element predicate
+3
+4
+5
+-- Typed JSON path predicate
+3
+4
+5
+-- ScoredSearchPrefilterBitmapRows > 0
+1

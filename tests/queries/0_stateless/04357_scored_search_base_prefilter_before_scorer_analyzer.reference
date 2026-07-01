@@ -1,0 +1,10 @@
+-- prefilter applied before scorer: returns the three category = b rows
+3
+4
+5
+-- brute-force reference (rows that pass the filter, nearest first)
+5
+3
+4
+-- the predicate entered the prefilter: ScoredSearchPrefilterBitmapRows > 0
+1

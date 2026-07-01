@@ -8,6 +8,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -178,11 +179,21 @@ NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & co
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
 std::string_view findHivePartitioningInPath(const String & path);
 
-/// Filter data parts by part_name using a precomputed filter expression.
+/// Filter data parts by part name using a precomputed filter expression.
 /// Returns all parts if virtual_columns_filter is null.
+/// The column_name parameter specifies the name of the part name column in the filter expression.
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
-    const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter,
+    const String & column_name);
+
+/// Filter data parts ranges by part name using a precomputed filter expression.
+/// Returns all parts if virtual_columns_filter is null.
+/// The column_name parameter specifies the name of the part name column in the filter expression.
+RangesInDataParts filterDataPartsRangesWithExpression(
+    const RangesInDataParts & ranges_in_data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter,
+    const String & column_name);
 
 /// Filter out common virtual column names (marked with is_common) from the given list.
 Names filterVirtualColumns(

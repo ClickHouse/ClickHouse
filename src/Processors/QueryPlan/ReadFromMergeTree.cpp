@@ -933,73 +933,55 @@ Pipe ReadFromMergeTree::read(
     return pipe;
 }
 
-namespace
+PartRangesReadInfo::PartRangesReadInfo(
+    const RangesInDataParts & parts,
+    const Settings & settings,
+    const MergeTreeSettings & data_settings)
 {
+    /// Count marks for each part.
+    sum_marks_in_parts.resize(parts.size());
 
-struct PartRangesReadInfo
-{
-    std::vector<size_t> sum_marks_in_parts;
-
-    size_t sum_marks = 0;
-    size_t total_rows = 0;
-    size_t adaptive_parts = 0;
-    size_t index_granularity_bytes = 0;
-    size_t max_marks_to_use_cache = 0;
-    size_t min_marks_for_concurrent_read = 0;
-    bool use_uncompressed_cache = false;
-
-    PartRangesReadInfo(
-        const RangesInDataParts & parts,
-        const Settings & settings,
-        const MergeTreeSettings & data_settings)
+    for (size_t i = 0; i < parts.size(); ++i)
     {
-        /// Count marks for each part.
-        sum_marks_in_parts.resize(parts.size());
+        total_rows += parts[i].getRowsCount();
+        sum_marks_in_parts[i] = parts[i].getMarksCount();
+        sum_marks += sum_marks_in_parts[i];
 
-        for (size_t i = 0; i < parts.size(); ++i)
-        {
-            total_rows += parts[i].getRowsCount();
-            sum_marks_in_parts[i] = parts[i].getMarksCount();
-            sum_marks += sum_marks_in_parts[i];
-
-            if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
-                ++adaptive_parts;
-        }
-
-        if (adaptive_parts > parts.size() / 2)
-            index_granularity_bytes = data_settings[MergeTreeSetting::index_granularity_bytes];
-
-        max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
-            settings[Setting::merge_tree_max_rows_to_use_cache],
-            settings[Setting::merge_tree_max_bytes_to_use_cache],
-            data_settings[MergeTreeSetting::index_granularity],
-            index_granularity_bytes);
-
-        auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
-
-        size_t min_rows_for_concurrent_read = 0;
-        size_t min_bytes_for_concurrent_read = 0;
-        if (all_parts_on_remote_disk)
-        {
-            min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
-            min_bytes_for_concurrent_read = settings[Setting::merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem];
-        }
-        else
-        {
-            min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read];
-            min_bytes_for_concurrent_read = settings[Setting::merge_tree_min_bytes_for_concurrent_read];
-        }
-
-        min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
-            data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
-
-        use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
-        if (sum_marks > max_marks_to_use_cache)
-            use_uncompressed_cache = false;
+        if (parts[i].data_part->index_granularity_info.mark_type.adaptive)
+            ++adaptive_parts;
     }
-};
 
+    if (adaptive_parts > parts.size() / 2)
+        index_granularity_bytes = data_settings[MergeTreeSetting::index_granularity_bytes];
+
+    max_marks_to_use_cache = MergeTreeDataSelectExecutor::roundRowsOrBytesToMarks(
+        settings[Setting::merge_tree_max_rows_to_use_cache],
+        settings[Setting::merge_tree_max_bytes_to_use_cache],
+        data_settings[MergeTreeSetting::index_granularity],
+        index_granularity_bytes);
+
+    auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
+
+    size_t min_rows_for_concurrent_read = 0;
+    size_t min_bytes_for_concurrent_read = 0;
+    if (all_parts_on_remote_disk)
+    {
+        min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read_for_remote_filesystem];
+        min_bytes_for_concurrent_read = settings[Setting::merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem];
+    }
+    else
+    {
+        min_rows_for_concurrent_read = settings[Setting::merge_tree_min_rows_for_concurrent_read];
+        min_bytes_for_concurrent_read = settings[Setting::merge_tree_min_bytes_for_concurrent_read];
+    }
+
+    min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
+        min_rows_for_concurrent_read, min_bytes_for_concurrent_read,
+        data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
+
+    use_uncompressed_cache = settings[Setting::use_uncompressed_cache];
+    if (sum_marks > max_marks_to_use_cache)
+        use_uncompressed_cache = false;
 }
 
 Pipe ReadFromMergeTree::readByLayers(

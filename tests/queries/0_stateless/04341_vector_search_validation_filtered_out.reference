@@ -1,0 +1,9 @@
+-- all rows filtered out: dimension mismatch still rejected
+-- all rows filtered out: NaN element still rejected
+-- all rows filtered out: Inf element still rejected
+-- all rows filtered out: zero candidate list size still rejected
+-- all rows filtered out: valid query succeeds with empty result
+-- empty table: dimension mismatch still rejected
+-- empty table: NaN element still rejected
+-- empty table: zero candidate list size still rejected
+-- empty table: valid query succeeds with empty result
