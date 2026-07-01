@@ -31,6 +31,8 @@ public:
     explicit ReadBufferFromMemory(std::string_view str)
         : SeekableReadBuffer(const_cast<char *>(str.data()), str.size(), 0) {}
 
+    bool isMemoryBuffer() const override { return true; }
+
     off_t seek(off_t off, int whence) override
     {
         return seekImpl(off, whence);
