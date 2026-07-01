@@ -81,3 +81,12 @@ SELECT '-- a `= DEFAULT` reset on an arm merged into the trailing query-level SE
 SET max_rows_to_read = 5;
 (SELECT count() FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT) SETTINGS max_threads = 1, limit = 5;
 SET max_rows_to_read = DEFAULT;
+
+-- Repeated construction settings: `ParserSetQuery` appends one entry per occurrence, so the consumer must
+-- use the effective (last-wins) value and erase *every* occurrence, or a leftover re-caps the query.
+SELECT '-- repeated nested `limit`: last value wins and every occurrence is consumed (5, not 3)';
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 3, limit = 5);
+SELECT '-- repeated nested `select`: last value wins (projects `b`, not `a`)';
+SELECT b FROM (SELECT number AS a, number * 2 AS b FROM numbers(3) SETTINGS select = 'a', select = 'b') ORDER BY b;
+SELECT '-- repeated top-level `limit`: last value wins and no leftover re-caps the wrapped query (7 rows)';
+SELECT number FROM numbers(100) ORDER BY number SETTINGS limit = 3, limit = 5, limit = 7;

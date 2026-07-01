@@ -1361,12 +1361,29 @@ static bool isEmptySetQuery(const ASTSetQuery & set_query)
 /// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
 static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
 {
-    auto take_string = [&](const char * name, String & dst)
+    /// Take a construction setting's *effective* value and erase ALL its occurrences. `ParserSetQuery`
+    /// appends one entry per occurrence and normal setting application is last-wins, so read the last
+    /// match (to agree with the effective value) and remove every copy — `SettingsChanges::removeSetting`
+    /// erases only the first, and any leftover would be re-consumed by `wrapNestedConstructionSettings` /
+    /// re-applied by the analyzer and cap the derived subquery a second time.
+    auto take_all = [&](std::string_view name) -> std::optional<Field>
     {
-        if (const Field * f = set_query.changes.tryGet(name))
+        std::optional<Field> result;
+        std::erase_if(set_query.changes, [&](const SettingChange & change)
         {
-            dst = f->safeGet<String>();
-            set_query.changes.removeSetting(name);
+            if (change.name != name)
+                return false;
+            result = change.value;
+            return true;
+        });
+        return result;
+    };
+
+    auto take_string = [&](std::string_view name, String & dst)
+    {
+        if (auto value = take_all(name))
+        {
+            dst = value->safeGet<String>();
             out.present = true;
         }
     };
@@ -1388,23 +1405,20 @@ static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, Constr
     Float64 limit = 0;
     Float64 offset = 0;
     bool has_limit_offset = false;
-    if (const Field * f = set_query.changes.tryGet("limit"))
+    if (auto value = take_all("limit"))
     {
-        limit = fieldToLimitOffsetFloat(*f);
+        limit = fieldToLimitOffsetFloat(*value);
         has_limit_offset = true;
-        set_query.changes.removeSetting("limit");
     }
-    if (const Field * f = set_query.changes.tryGet("offset"))
+    if (auto value = take_all("offset"))
     {
-        offset = fieldToLimitOffsetFloat(*f);
+        offset = fieldToLimitOffsetFloat(*value);
         has_limit_offset = true;
-        set_query.changes.removeSetting("offset");
     }
-    if (const Field * f = set_query.changes.tryGet("page"))
+    if (auto value = take_all("page"))
     {
-        translatePageToLimitOffset(fieldToLimitOffsetFloat(*f), limit, offset);
+        translatePageToLimitOffset(fieldToLimitOffsetFloat(*value), limit, offset);
         has_limit_offset = true;
-        set_query.changes.removeSetting("page");
     }
     if (has_limit_offset)
     {
@@ -1830,13 +1844,15 @@ static void applyQueryConstructionSettings(
         auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
         if (!set_query)
             return;
-        set_query->changes.removeSetting("select");
-        set_query->changes.removeSetting("filter");
-        set_query->changes.removeSetting("order");
-        set_query->changes.removeSetting("sort");
-        set_query->changes.removeSetting("limit");
-        set_query->changes.removeSetting("offset");
-        set_query->changes.removeSetting("page");
+        /// Erase ALL occurrences of each construction setting (`ParserSetQuery` appends one entry per
+        /// occurrence, and `removeSetting` would drop only the first — a leftover would be re-consumed by
+        /// the later `wrapNestedConstructionSettings` pass and cap the wrapped query a second time).
+        std::erase_if(set_query->changes, [](const SettingChange & change)
+        {
+            return change.name == "select" || change.name == "filter" || change.name == "order"
+                || change.name == "sort" || change.name == "limit" || change.name == "offset"
+                || change.name == "page";
+        });
         if (isEmptySetQuery(*set_query))
             settings_ptr.reset();
     };
