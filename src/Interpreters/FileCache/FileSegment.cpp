@@ -591,7 +591,8 @@ bool FileSegment::reserve(
     size_t size_to_reserve,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
-    FileCacheReserveStat * reserve_stat)
+    FileCacheReserveStat * reserve_stat,
+    size_t reserve_hint)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -619,18 +620,41 @@ bool FileSegment::reserve(
         chassert(reserved_size >= current_downloaded_size);
     }
 
-    /**
-     * It is possible to have downloaded_size < reserved_size when reserve is called
-     * in case previous downloader did not fully download current file_segment
-     * and the caller is going to continue;
-     */
+    chassert(range().size() >= reserved_size);
 
-    size_t already_reserved_size = reserved_size - current_downloaded_size;
+    if (reserved_size > current_downloaded_size)
+    {
+        const size_t available_reserved = reserved_size - current_downloaded_size;
+        if (available_reserved >= size_to_reserve)
+            return true;
+        size_to_reserve -= available_reserved;
+    }
 
-    if (already_reserved_size >= size_to_reserve)
-        return true;
+    const size_t minimum_reserve_size = size_to_reserve;
 
-    size_to_reserve = size_to_reserve - already_reserved_size;
+    if (!is_unbound)
+    {
+        const auto reserve_granularity = cache->getReserveGranularity();
+        if (reserve_granularity && reserve_granularity > size_to_reserve)
+        {
+            size_to_reserve = reserved_size + reserve_granularity > range().size()
+                ? range().size() - reserved_size
+                : reserve_granularity;
+
+            /// `reserve_hint` is measured from the current download offset, so the read ends at
+            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
+            const size_t read_horizon = current_downloaded_size + reserve_hint;
+            if (reserve_hint
+                && read_horizon > reserved_size
+                && read_horizon < reserved_size + size_to_reserve)
+                size_to_reserve = read_horizon - reserved_size;
+        }
+    }
+
+    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
+    /// must never reserve less than the current write needs, otherwise the write would exceed the
+    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
+    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -752,6 +776,18 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(result_size <= range().size());
     chassert(result_size >= downloaded_size);
 
+    /// Return the reserve-ahead surplus (reserved but not downloaded, see `FileSegment::reserve`)
+    /// to the cache: the segment is complete, nothing will fill the rest, so the surplus must not
+    /// stay charged against the quota. Done before the `result_size == range().size()` early return
+    /// below, since with `reserve_granularity == boundary_alignment` a tiny read rounds up to the
+    /// whole range and would otherwise keep a full granule charged.
+    chassert(reserved_size >= downloaded_size);
+    if (reserved_size > downloaded_size)
+    {
+        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        reserved_size = downloaded_size.load();
+    }
+
     if (result_size == range().size())
     {
         /// Nothing to resize;
@@ -772,12 +808,6 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
 
     segment_range.right = segment_range.left + result_size - 1;
-
-    if (reserved_size > result_size)
-    {
-        queue_iterator->decrementSize(reserved_size - result_size);
-        reserved_size = result_size;
-    }
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
