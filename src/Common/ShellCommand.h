@@ -66,6 +66,8 @@ public:
 
         bool pipe_stdin_only = false;
 
+        size_t pipe_capacity = 0;
+
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
 
         /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
@@ -73,6 +75,11 @@ public:
         /// When false (the default) it reaps with plain `waitpid` and allocates
         /// nothing. Set for executable (non-pool) UDFs, which read the usage.
         bool collect_resource_usage = false;
+
+        /// When true, the child pid is tracked in the global `UDFProcessRegistry`
+        /// from spawn until reaped. Off by default; enabled only for executable
+        /// and executable_pool UDFs.
+        bool register_in_udf_process_registry = false;
     };
 
     pid_t getPid() const
@@ -144,6 +151,12 @@ private:
     bool child_resource_usage_captured = false;
     UInt64 child_user_time_us = 0;
     UInt64 child_system_time_us = 0;
+
+    /// Identifies which incarnation of the pid this wrapper owns, so reap removes
+    /// only its own entry and never one belonging to a later process that reused
+    /// the pid. Stamped by `UDFProcessRegistry::add` at spawn; 0 for non-UDF
+    /// commands, which never register.
+    UInt64 udf_registry_generation = 0;
 
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 

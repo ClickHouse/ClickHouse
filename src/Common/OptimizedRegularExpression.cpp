@@ -6,6 +6,7 @@
 #include <Common/OptimizedRegularExpression.h>
 
 #include <Common/StringSearcher.h>
+#include <Common/StringUtils.h>
 
 constexpr size_t MIN_LENGTH_FOR_STRSTR = 3;
 constexpr size_t MAX_SUBPATTERNS = 1024;
@@ -62,6 +63,77 @@ const char * skipNameCapturingGroup(const char * pos, size_t offset, const char 
         else
             return pos;
     }
+    return pos;
+}
+
+/// Skips an escape sequence unsupported by the trivial-substring analysis.
+/// Consumes arguments of hex, octal and Unicode property escapes, and the body of
+/// `\Q...\E` quoted literals, so they are not treated as regexp-meaningful literals.
+/// `pos` points at the character right after the backslash.
+const char * skipUnsupportedEscape(const char * pos, const char * end)
+{
+    if (pos == end)
+        return pos;
+
+    auto is_octal_digit = [](char c) { return c >= '0' && c <= '7'; };
+
+    if (*pos == 'x')
+    {
+        ++pos;
+        if (pos != end && *pos == '{')
+        {
+            while (pos != end && *pos != '}')
+                ++pos;
+            if (pos != end)
+                ++pos;
+        }
+        else
+        {
+            for (size_t i = 0; i < 2 && pos != end && isHexDigit(*pos); ++i)
+                ++pos;
+        }
+    }
+    else if (*pos == 'p' || *pos == 'P')
+    {
+        /// Unicode property: one-letter `\pL`/`\PN` or braced `\p{...}`/`\P{...}`.
+        ++pos;
+        if (pos != end && *pos == '{')
+        {
+            while (pos != end && *pos != '}')
+                ++pos;
+            if (pos != end)
+                ++pos;
+        }
+        else if (pos != end)
+        {
+            ++pos;
+        }
+    }
+    else if (*pos == 'Q')
+    {
+        /// `\Q...\E` quoted literal: consume through the closing `\E` so the body (which may
+        /// contain regexp punctuation) is not parsed as regexp syntax.
+        ++pos;
+        while (pos != end)
+        {
+            if (*pos == '\\' && pos + 1 != end && *(pos + 1) == 'E')
+            {
+                pos += 2;
+                break;
+            }
+            ++pos;
+        }
+    }
+    else if (is_octal_digit(*pos))
+    {
+        for (size_t i = 0; i < 3 && pos != end && is_octal_digit(*pos); ++i)
+            ++pos;
+    }
+    else
+    {
+        ++pos;
+    }
+
     return pos;
 }
 
@@ -194,10 +266,6 @@ const char * analyzeImpl(
     {
         switch (*pos)
         {
-            case '\0':
-                pos = end;
-                break;
-
             case '\\':
             {
                 ++pos;
@@ -223,12 +291,13 @@ const char * analyzeImpl(
                     case '/':
                         goto ordinary;
                     default:
-                        /// all other escape sequences are not supported
+                        /// Unsupported escape: consume it whole, including hex/octal argument
+                        /// bytes, so they are not taken as a required substring (issue #106382).
                         finish_non_trivial_char();
+                        pos = skipUnsupportedEscape(pos, end);
                         break;
                 }
 
-                ++pos;
                 break;
             }
 
@@ -375,6 +444,8 @@ const char * analyzeImpl(
             ordinary:   /// Normal, not escaped symbol.
             [[fallthrough]];
             default:
+                /// A NUL byte (`\0`) lands here too: the pattern is length-based (RE2 matches `\0`
+                /// literally), so it must be treated as an ordinary literal, not as end-of-pattern.
                 if (depth == 0 && !in_curly_braces && !in_square_braces)
                 {
                     /// record the first position of last string.
@@ -553,7 +624,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regex
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }
@@ -572,7 +643,7 @@ OptimizedRegularExpression::OptimizedRegularExpression(OptimizedRegularExpressio
             case_insensitive_substring_searcher = std::make_unique<ASCIICaseInsensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
         else
-            case_sensitive_substring_searcher = std::make_unique<ASCIICaseSensitiveStringSearcher>(
+            case_sensitive_substring_searcher = std::make_unique<CaseSensitiveStringSearcher>(
                 reinterpret_cast<UInt8 *>(required_substring.data()), required_substring.size());
     }
 }

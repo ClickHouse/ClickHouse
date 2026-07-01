@@ -128,7 +128,7 @@ DiskObjectStorage::DiskObjectStorage(
         .is_cached = object_storages->takePointingTo(cluster->getLocalLocation())->supportsCache(),
         .zookeeper_name = metadata_storage->getZooKeeperName(),
     };
-    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStorage().getAllEntitiesAndSubscribe(
+    resource_changes_subscription = Context::getGlobalContextInstance()->getWorkloadEntityStoragePtr()->getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
         {
             std::unique_lock lock{resource_mutex};
@@ -744,6 +744,7 @@ bool DiskObjectStorage::isSharedCompatible() const
         case MetadataStorageType::Plain:
         case MetadataStorageType::PlainRewritable:
         case MetadataStorageType::StaticWeb:
+        case MetadataStorageType::WebIndex:
             return true;
         default:
             return false;
