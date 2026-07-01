@@ -125,3 +125,14 @@ COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
 COLUMN id: N, column_name: k, result_type: Nullable(Int32), source_id: N
 COLUMN id: N, column_name: k, result_type: Nullable(Int32), source_id: N
 COLUMN id: N, column_name: k, result_type: Int32, source_id: N
+-- 106377 correlated tuple, ROLLUP ---
+(1,0)
+\N
+-- 106377 correlated tuple, CUBE ---
+(1,0)
+(1,1)
+\N
+-- type pin: correlated tuple result is Nullable(Tuple(...)) ---
+COLUMN id: N, column_name: number, result_type: Nullable(UInt64), source_id: N
+COLUMN id: N, column_name: number, result_type: Nullable(UInt64), source_id: N
+COLUMN id: N, column_name: number, result_type: UInt64, source_id: N

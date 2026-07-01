@@ -248,3 +248,27 @@ SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
 FROM (EXPLAIN QUERY TREE
     SELECT (SELECT skewSamp(a.k)) FROM (SELECT toInt32(3) AS k) AS a GROUP BY k WITH CUBE)
 WHERE explain ILIKE '%column_name: k,%result_type%';
+
+-- https://github.com/ClickHouse/ClickHouse/issues/106377
+-- The correlated subquery returns a tuple whose second element is the outer rollup key.
+-- The tuple function node kept the non-Nullable element type, so after decorrelation made the
+-- input Nullable the planner raised "Unexpected return type from tuple. Expected Tuple(UInt8,
+-- UInt64). Got Tuple(UInt8, Nullable(UInt64))" (and the same on EXPLAIN). The subquery column
+-- reference must pick up the outer key's Nullable type so the tuple resolves Nullable from the start.
+SELECT '-- 106377 correlated tuple, ROLLUP ---';
+SELECT (SELECT (1, number))
+FROM numbers(1)
+GROUP BY number WITH ROLLUP
+ORDER BY number NULLS LAST;
+
+SELECT '-- 106377 correlated tuple, CUBE ---';
+SELECT (SELECT (1, number))
+FROM numbers(2)
+GROUP BY number WITH CUBE
+ORDER BY number NULLS LAST;
+
+SELECT '-- type pin: correlated tuple result is Nullable(Tuple(...)) ---';
+SELECT replaceRegexpAll(trim(explain), 'id: [0-9]+', 'id: N') AS line
+FROM (EXPLAIN QUERY TREE
+    SELECT (SELECT (1, number)) FROM numbers(1) GROUP BY number WITH ROLLUP)
+WHERE explain ILIKE '%column_name: number,%result_type%';
