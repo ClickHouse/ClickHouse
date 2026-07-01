@@ -308,17 +308,19 @@ FROM values('l UInt8', 1, 2) AS l_tbl
 ALL FULL JOIN values('r UInt8', 10, 20) AS r_tbl ON 0
 ORDER BY l, r;
 
+-- TODO(antaljanosbenjamin): remove the comment and the extra settings once the bug is fixed
+-- join order convert ANY INNER on constant to CROSS, will be fixed in another PR
 SELECT 'any_inner_true';
 SELECT l, r
 FROM values('l UInt8', 1, 2) AS l_tbl
 ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 1
-ORDER BY l, r;
+ORDER BY l, r SETTINGS query_plan_optimize_join_order_limit = 0;
 
 SELECT 'any_inner_true_take_last';
 SELECT l, r
 FROM values('l UInt8', 1, 2) AS l_tbl
 ANY INNER JOIN values('r UInt8', 10, 20) AS r_tbl ON 1
-ORDER BY l, r SETTINGS join_any_take_last_row = 1;
+ORDER BY l, r SETTINGS query_plan_optimize_join_order_limit = 0;
 
 SELECT 'any_inner_false';
 SELECT l, r

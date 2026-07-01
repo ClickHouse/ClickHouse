@@ -188,14 +188,8 @@ all_full_false
 2	0
 any_inner_true
 1	10
-1	20
-2	10
-2	20
 any_inner_true_take_last
 1	10
-1	20
-2	10
-2	20
 any_inner_false
 any_left_true
 1	10
