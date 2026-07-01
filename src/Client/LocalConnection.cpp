@@ -38,6 +38,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsString database;
     extern const SettingsDialect dialect;
     extern const SettingsString input_format;
     extern const SettingsString format;
@@ -201,9 +202,15 @@ void LocalConnection::sendQuery(
     /// is rebuilt from the session on every query while the client-sent settings are not forwarded by
     /// `LocalConnection`. Without this, the `database` value inherited from the server's startup
     /// configuration (e.g. from `--database`) would be re-applied by `executeQuery` and override the
-    /// database just selected by a `USE` statement (which only updates `current_database` above). A
-    /// query's own `SETTINGS database = ...` is applied later and still takes precedence.
-    if (!current_database.empty())
+    /// database just selected by a `USE` statement (which only updates `current_database` above). But a
+    /// standalone `SET database = ...` changes the inherited session setting away from the connection cache
+    /// (which only tracks `USE`) while keeping ordinary-setting semantics, so preserve it: write the cache
+    /// back only when the session has not diverged the `database` setting from it. A query's own
+    /// `SETTINGS database = ...` is applied later and still takes precedence.
+    const auto & session_settings = query_context->getSettingsRef();
+    const bool session_diverged_database =
+        session_settings[Setting::database].changed && session_settings[Setting::database].value != current_database;
+    if (!current_database.empty() && !session_diverged_database)
         query_context->setSetting("database", current_database);
 
     query_context->addQueryParameters(query_parameters);
