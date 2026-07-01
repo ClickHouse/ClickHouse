@@ -61,20 +61,12 @@ void CascadesOptimizer::optimize()
     if (cluster_node_count == 0)
         cluster_node_count = std::max<size_t>(1, getDistributedWorkerCount(query_context));
 
+    /// If the cost-config override is set but invalid, let the error propagate instead of silently
+    /// using the defaults, so a query that set it does not get a different cost model than it asked for.
     CostConfig cost_config;
     constexpr auto cost_config_param_name = "_internal_cascades_cost_config";
     if (query_context->getQueryParameters().contains(cost_config_param_name))
-    {
-        try
-        {
-            cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
-        }
-        catch (const std::exception & e)
-        {
-            LOG_WARNING(&Poco::Logger::get("CascadesOptimizer"), "Failed to parse cost config: {} from parameter '{}'",
-                e.what(), query_context->getQueryParameters().at(cost_config_param_name));
-        }
-    }
+        cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
 
     OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
 

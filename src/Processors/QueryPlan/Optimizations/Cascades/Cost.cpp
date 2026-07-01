@@ -21,28 +21,59 @@
 #include <base/types.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/Exception.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 CostConfig parseCostConfig(const String & json_str)
 {
     CostConfig config;
-    Poco::JSON::Parser parser;
-    auto result = parser.parse(json_str);
-    const auto & object = result.extract<Poco::JSON::Object::Ptr>();
-    if (!object)
-        return config;
-    if (object->has("work_weight"))
-        config.work_weight = object->getValue<Float64>("work_weight");
-    else if (object->has("cpu_weight"))
-        config.work_weight = object->getValue<Float64>("cpu_weight");
-    if (object->has("network_weight"))
-        config.network_weight = object->getValue<Float64>("network_weight");
-    if (object->has("sequential_weight"))
-        config.sequential_weight = object->getValue<Float64>("sequential_weight");
-    if (object->has("exchange_fixed_overhead"))
-        config.exchange_fixed_overhead = object->getValue<Float64>("exchange_fixed_overhead");
+
+    /// Rewrap any JSON parse / type error as a clear BAD_ARGUMENTS so an invalid override fails with a
+    /// readable message instead of a leaked Poco exception.
+    try
+    {
+        Poco::JSON::Parser parser;
+        auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
+        if (!object)
+            throw Poco::Exception("value is not a JSON object");
+        if (object->has("work_weight"))
+            config.work_weight = object->getValue<Float64>("work_weight");
+        else if (object->has("cpu_weight"))
+            config.work_weight = object->getValue<Float64>("cpu_weight");
+        if (object->has("network_weight"))
+            config.network_weight = object->getValue<Float64>("network_weight");
+        if (object->has("sequential_weight"))
+            config.sequential_weight = object->getValue<Float64>("sequential_weight");
+        if (object->has("exchange_fixed_overhead"))
+            config.exchange_fixed_overhead = object->getValue<Float64>("exchange_fixed_overhead");
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Invalid Cascades cost config '{}': {}", json_str, e.displayText());
+    }
+
+    /// Weights and the fixed overhead must be finite and non-negative. Zero is allowed (it lets a test
+    /// ignore a dimension, e.g. `{"network_weight":0}`). A negative value is rejected: it would make
+    /// more work look cheaper and can produce negative costs, which the optimizer's pruning relies on
+    /// never happening.
+    auto require = [&](Float64 value, const char * name)
+    {
+        if (!std::isfinite(value) || value < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cascades cost config: '{}' must be a finite non-negative number, got {}", name, value);
+    };
+    require(config.work_weight, "work_weight");
+    require(config.network_weight, "network_weight");
+    require(config.sequential_weight, "sequential_weight");
+    require(config.exchange_fixed_overhead, "exchange_fixed_overhead");
     return config;
 }
 

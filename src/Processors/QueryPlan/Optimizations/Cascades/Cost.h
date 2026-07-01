@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Common/Logger.h>
 #include <base/types.h>
+#include <cmath>
 #include <limits>
 #include <memory>
 
@@ -48,6 +49,12 @@ struct Cost
 
     Float64 total(const CostConfig & config) const
     {
+        /// If any component is infinite the plan is impossible; return infinity directly. Multiplying
+        /// first would let a zero weight turn `inf * 0` into NaN, and a NaN cost compares as neither
+        /// better nor worse, so an impossible plan could be picked as best.
+        if (!std::isfinite(work) || !std::isfinite(network) || !std::isfinite(sequential))
+            return std::numeric_limits<Float64>::infinity();
+
         return work * config.work_weight
              + network * config.network_weight
              + sequential * config.sequential_weight;
