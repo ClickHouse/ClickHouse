@@ -148,8 +148,8 @@ public:
                     getName(),
                     num_captures);
 
-            const char * row_data;
-            size_t row_size;
+            const char * row_data = nullptr;
+            size_t row_size = 0;
             if (col_haystack_vector)
             {
                 const auto & offsets = col_haystack_vector->getOffsets();
@@ -247,7 +247,7 @@ private:
         for (size_t n = 0; n < occurrence; ++n)
         {
             matches.clear();
-            regexp.match(data + cur_offset, size - cur_offset, matches, capture_limit);
+            regexp.match(data, size, cur_offset, matches, capture_limit);
             if (matches.empty() || matches[0].offset == std::string::npos)
                 return 0;
 
@@ -257,13 +257,12 @@ private:
                 if (subexpression >= matches.size() || matches[subexpression].offset == std::string::npos)
                     return 0;
                 const auto & m = matches[subexpression];
-                const size_t abs_offset = cur_offset + m.offset;
-                return abs_offset + (return_after_match ? m.length : 0) + 1;
+                return m.offset + (return_after_match ? m.length : 0) + 1;
             }
 
             /// Step by 1 on zero-length matches to avoid an infinite loop.
             const size_t advance = whole.length == 0 ? 1 : whole.length;
-            cur_offset += whole.offset + advance;
+            cur_offset = whole.offset + advance;
             if (cur_offset > size)
                 return 0;
         }

@@ -21,6 +21,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
@@ -269,6 +270,14 @@ Int64 IColumn::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_d
 #endif
 }
 
+size_t IColumn::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t r) { return compareAt(r, begin, *this, nan_direction_hint) == 0; });
+}
+
 #if USE_EMBEDDED_COMPILER
 llvm::Value * IColumn::compileComparator(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
@@ -344,6 +353,11 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
     return isColumnNullable(column) || isColumnLowCardinalityNullable(column);
 }
 
+bool canContainNull(const IColumn & column)
+{
+    return isColumnNullableOrLowCardinalityNullable(column) || checkColumn<ColumnVariant>(column) || checkColumn<ColumnDynamic>(column);
+}
+
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
@@ -403,7 +417,7 @@ void compareColumnImpl(
     for (size_t row = 0; row < num_rows; ++row)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -434,7 +448,7 @@ void compareWithIndexImpl(
     for (auto row : *row_indexes)
     {
         int res = lhs.compareAt(row, rhs_row_num, rhs, nan_direction_hint);
-        assert(res == 1 || res == -1 || res == 0);
+        chassert(res == 1 || res == -1 || res == 0);
         compare_results[row] = static_cast<Int8>(res);
 
         if constexpr (reversed)
@@ -683,7 +697,7 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull
     const auto & self = static_cast<const Derived &>(*this);
     if (is_null)
     {
-        char * memory;
+        char * memory = nullptr;
         if (is_null[n])
         {
             memory = arena.allocContinue(1, begin);

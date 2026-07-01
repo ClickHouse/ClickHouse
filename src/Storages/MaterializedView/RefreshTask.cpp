@@ -43,6 +43,7 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
+    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -79,6 +80,28 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int TABLE_UUID_MISMATCH;
+}
+
+namespace
+{
+
+/// Build the dependency StorageIDs, resolving unqualified names against the view's database.
+/// An empty database would later throw from StorageID::getFullTableName() during scheduling.
+std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strategy, const String & default_database)
+{
+    std::vector<StorageID> deps;
+    if (!strategy.dependencies)
+        return deps;
+    for (auto && dependency : strategy.dependencies->children)
+    {
+        StorageID id = dependency->as<const ASTTableIdentifier &>();
+        if (id.database_name.empty() && !default_database.empty())
+            id.database_name = default_database;
+        deps.push_back(std::move(id));
+    }
+    return deps;
+}
+
 }
 
 RefreshTask::RefreshTask(
@@ -125,18 +148,31 @@ RefreshTask::RefreshTask(
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
         bool replica_path_existed = zookeeper->exists(replica_path);
 
+        /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
+        /// multi-read on the scheduling thread, where a throw aborts the whole server.
+        /// (It would be possible to avoid using these features, if needed.)
+        if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
+            !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+        {
+            /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
+            /// so enter a permanent non-resumable "coordination unavailable" state instead. We keep
+            /// `coordinated` true so the view never degrades into an uncoordinated local refresh
+            /// (that would corrupt the replicated target table); `unavailable` keeps it Disabled and
+            /// makes start()/finalizeRestoreFromBackup() refuse to resume it.
+            if (!attach && !is_restore_from_backup)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
+
+            LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
+            coordination.unavailable = true;
+            scheduling.stop_requested = true;
+            scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
+            return;
+        }
+
         /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
         /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
         if (!replica_path_existed)
         {
-            if (!attach && !is_restore_from_backup)
-            {
-                /// (It would be possible to avoid using these features, if needed.)
-                if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
-                    !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
-            }
-
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
@@ -192,10 +228,7 @@ OwnedRefreshTask RefreshTask::create(
     bool empty,
     bool is_restore_from_backup)
 {
-    std::vector<StorageID> deps;
-    if (strategy.dependencies)
-        for (auto && dependency : strategy.dependencies->children)
-            deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+    std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
 
@@ -206,8 +239,6 @@ OwnedRefreshTask RefreshTask::create(
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
     {
-        w->root_watch_active.store(false);
-        w->children_watch_active.store(false);
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
@@ -233,6 +264,11 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
+    if (coordination.unavailable)
+        /// Coordination is permanently unavailable (Keeper lacks required feature flags). Don't
+        /// resume: startReplicated() would access Keeper and start() would run an uncoordinated
+        /// local refresh. Leave the view Disabled.
+        return;
     if (coordination.coordinated)
         startReplicated();
     else
@@ -379,10 +415,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        std::vector<StorageID> deps;
-        if (new_strategy.dependencies)
-            for (auto && dependency : new_strategy.dependencies->children)
-                deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
+        std::vector<StorageID> deps = parseRefreshDependencies(
+            new_strategy, view ? view->getStorageID().database_name : String{});
 
         /// Update dependency graph.
         if (set_handle)
@@ -415,6 +449,11 @@ RefreshTask::Info RefreshTask::getInfo() const
 void RefreshTask::start()
 {
     std::lock_guard guard(mutex);
+    if (coordination.unavailable)
+        /// Coordination is permanently unavailable for this coordinated view. Refuse to resume:
+        /// running it now would be an uncoordinated local refresh that corrupts the replicated
+        /// target table. The view stays Disabled until the table is re-created on a capable Keeper.
+        return;
     if (!std::exchange(scheduling.stop_requested, false))
         return;
     scheduling.unexpected_error = std::nullopt;
@@ -661,6 +700,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
 
+    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
+    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
+    if (!view)
+        return;
+
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
     ///  * If some change is needed (e.g. write to zookeeper or start a refresh), make that change,
@@ -673,6 +717,15 @@ void RefreshTask::doScheduling(bool is_shutdown)
     try
     {
         setState(RefreshState::Scheduling, lock);
+
+        if (coordination.unavailable)
+        {
+            /// Coordination is permanently unavailable (Keeper lacks required feature flags, detected
+            /// on attach/restore). Never touch Keeper here: readZnodesIfNeeded would throw on the
+            /// scheduling thread and the catch-all below would abort the server. Stay Disabled.
+            setState(RefreshState::Disabled, lock);
+            return;
+        }
 
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
         if (coordination.coordinated)
@@ -1150,9 +1203,17 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
+        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
+        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
+        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
+        /// unlocking so they can't turn into a null deref while we are unlocked.
+        if (!view)
+            return;
         coordination.notified_dependents = info;
+        ContextPtr context = view->getContext();
+        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+        context->getRefreshSet().notifyDependents(view_storage_id);
         lock.lock();
     }
 }
@@ -1208,7 +1269,7 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms;
+    UInt64 delay_ms = 0;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1359,18 +1420,13 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
     if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
-    /// Set watches. (This is a lot of code, is there a better way?)
-    if (!coordination.watches->root_watch_active.load())
-    {
-        coordination.watches->root_watch_active.store(true);
-        zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
-    }
-    if (!coordination.watches->children_watch_active.load())
-    {
-        coordination.watches->children_watch_active.store(true);
-        zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
-    }
+    /// Do separate requests just to add watches.
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
+        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
+    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
 
+    /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
@@ -1683,7 +1739,7 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
             /// Unquoted int or quoted json string.
             Int64 int_val = 0;
             String string_val;
-            char c;
+            char c = 0;
             if (in.peek(c) && c != '"')
                 in >> int_val;
             else
@@ -1780,19 +1836,19 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_seconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_seconds(std::chrono::seconds(v));
         }
         else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::milliseconds(v);
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
         {
-            Int64 v;
+            Int64 v = 0;
             in >> v;
             out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
         }

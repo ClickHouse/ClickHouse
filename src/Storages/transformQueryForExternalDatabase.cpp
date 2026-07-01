@@ -92,7 +92,7 @@ struct ReplaceLiteralToExprVisitorData
             for (auto & argument : func.arguments->children)
             {
                 auto * literal_expr = typeid_cast<ASTLiteral *>(argument.get());
-                UInt64 value;
+                UInt64 value = 0;
                 if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
                 {
                     /// 1 -> 1=1, 0 -> 1=0.
@@ -414,7 +414,7 @@ String transformQueryForExternalDatabaseImpl(
     }
 
     auto * literal_expr = typeid_cast<ASTLiteral *>(original_where.get());
-    UInt64 value;
+    UInt64 value = 0;
     if (literal_expr && literal_expr->value.tryGet<UInt64>(value) && (value == 0 || value == 1))
     {
         /// WHERE 1 -> WHERE 1=1, WHERE 0 -> WHERE 1=0.
@@ -495,6 +495,39 @@ String transformQueryForExternalDatabase(
         table,
         context,
         limit);
+}
+
+void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::external_table_strict_query])
+        return;
+
+    /// Reconstruct the outer query the same way `transformQueryForExternalDatabase` does, and check whether it
+    /// carries a filter on the source. For a query-backed source the user's query is passed to the external
+    /// database verbatim, so such a filter could only be applied locally - which `external_table_strict_query`
+    /// forbids.
+    ASTPtr clone_query;
+    if (!query_info.syntax_analyzer_result)
+    {
+        /// The analyzer has not produced an AST yet; nothing to inspect if the query tree is unavailable.
+        if (!query_info.query_tree || !query_info.table_expression)
+            return;
+        clone_query = getASTForExternalDatabaseFromQueryTree(context, query_info.query_tree, query_info.table_expression);
+    }
+    else if (query_info.query)
+    {
+        clone_query = query_info.query->clone();
+    }
+    else
+        return;
+
+    const auto * select = clone_query->as<ASTSelectQuery>();
+    if (select && (select->where() || select->prewhere()))
+        throw Exception(
+            ErrorCodes::INCORRECT_QUERY,
+            "The query contains a filter that cannot be pushed down to the external database, because the data "
+            "source is a query passed to it as is (and external_table_strict_query=true). Move the filter inside "
+            "the passed query, or disable external_table_strict_query.");
 }
 
 }

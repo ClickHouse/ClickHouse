@@ -283,6 +283,20 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
     chassert(use_page_cache || !result.page_cache_cell);
 
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. The
+    /// `working_buffer` we hand back to the caller MUST be a sub-range of the
+    /// `Memory<>` we own (`memory.data()`, `memory.size()`), or, when the page
+    /// cache is in use, a sub-range of the cache cell that backs `result.buf`.
+    /// Anything else means an inner buffer (`ReadBufferFromS3`,
+    /// `ReadBufferFromRemoteFSGather`) returned a corrupt range.
+    chassert(result.offset <= result.size);
+    if (!use_page_cache)
+    {
+        chassert(result.size <= memory.size());
+        chassert(result.size == 0 || result.buf == memory.data());
+    }
+
     size_t bytes_read = result.size - result.offset;
     if (bytes_read)
     {
@@ -316,7 +330,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
 
-    size_t new_pos;
+    size_t new_pos = 0;
     if (whence == SEEK_SET)
     {
         chassert(offset >= 0);
@@ -460,6 +474,13 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
         return impl->readBigAt(to, n, range_begin, progress_callback);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() is not implemented for a given implementation");
+}
+
+std::optional<Field> AsynchronousBoundedReadBuffer::getMetadata(const String & name) const
+{
+    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(impl.get()))
+        return provider->getMetadata(name);
+    return std::nullopt;
 }
 
 }

@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/StringSearcher.h>
+#include <Common/StringUtils.h>
 #include <Core/ColumnNumbers.h>
 
 
@@ -139,11 +140,6 @@ struct HasTokenImpl
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
     }
 
-private:
-    static bool isTokenSeparator(UInt8 c)
-    {
-        return isASCII(c) && !isAlphaNumericASCII(c);
-    }
 };
 
 }

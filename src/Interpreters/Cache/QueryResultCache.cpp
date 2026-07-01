@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -95,9 +96,14 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
-                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
-                data.has_non_deterministic_functions = true;
-                return;
+                /// Driver-created executable functions are also persisted in the SQL-object storage,
+                /// but their determinism is described by the generated executable UDF configuration checked below.
+                if (!udf_sql->as<ASTCreateFunctionWithDriverQuery>())
+                {
+                    /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
+                    data.has_non_deterministic_functions = true;
+                    return;
+                }
             }
             if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {
@@ -190,7 +196,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 }
 
 /// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
@@ -198,7 +204,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 }
 
 /// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);

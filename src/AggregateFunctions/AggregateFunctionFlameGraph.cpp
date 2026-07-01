@@ -271,8 +271,8 @@ struct AggregateFunctionFlameGraphData
 {
     struct Entry
     {
-        AggregateFunctionFlameGraphTree::TreeNode * trace;
-        UInt64 size;
+        AggregateFunctionFlameGraphTree::TreeNode * trace{};
+        UInt64 size{};
         Entry * next = nullptr;
     };
 
@@ -632,7 +632,7 @@ public:
     {
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).merge(data(rhs), arena);
     }
@@ -699,6 +699,7 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
 }
 
+void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

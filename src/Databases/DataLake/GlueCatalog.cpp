@@ -109,6 +109,7 @@ GlueCatalog::GlueCatalog(
     creds_config.use_environment_credentials = true;
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
+    creds_config.external_id = settings.aws_external_id;
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -671,6 +672,16 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
 
     return true;
+}
+
+bool GlueCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const

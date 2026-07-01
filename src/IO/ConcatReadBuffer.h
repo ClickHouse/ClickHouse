@@ -21,7 +21,7 @@ public:
 
     explicit ConcatReadBuffer(Buffers && buffers_) : ReadBuffer(nullptr, 0), buffers(std::move(buffers_)), current(buffers.begin())
     {
-        assert(!buffers.empty());
+        chassert(!buffers.empty());
     }
 
     ConcatReadBuffer(std::unique_ptr<ReadBuffer> buf1, std::unique_ptr<ReadBuffer> buf2) : ConcatReadBuffer()
@@ -38,9 +38,23 @@ public:
 
     void appendBuffer(std::unique_ptr<ReadBuffer> buffer)
     {
-        assert(!count());
+        chassert(!count());
         buffers.push_back(std::move(buffer));
         current = buffers.begin();
+    }
+
+    bool poll(size_t timeout_microseconds) override
+    {
+        if (hasPendingData())
+            return true;
+
+        if (buffers.end() == current)
+            return true;
+
+        if (!working_buffer.empty())
+            (*current)->position() = position();
+
+        return (*current)->poll(timeout_microseconds);
     }
 
 protected:

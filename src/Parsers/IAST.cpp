@@ -3,6 +3,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -12,6 +13,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <algorithm>
 
@@ -128,6 +130,7 @@ size_t IAST::size() const
 
 size_t IAST::checkSize(size_t max_size) const
 {
+    checkStackSize();
     size_t res = 1;
     for (const auto & child : children)
         res += child->checkSize(max_size);
@@ -149,6 +152,7 @@ IASTHash IAST::getTreeHash(bool ignore_aliases) const
 
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
+    checkStackSize();
     updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(children.size());
     for (const auto & child : children)
@@ -254,6 +258,8 @@ String IAST::formatWithSecretsMultiLine() const
 
 bool IAST::childrenHaveSecretParts() const
 {
+    checkStackSize();
+
     for (const auto & child : children)
     {
         if (child->hasSecretParts())
@@ -264,6 +270,7 @@ bool IAST::childrenHaveSecretParts() const
 
 void IAST::cloneChildren()
 {
+    checkStackSize();
     for (auto & child : children)
         child = child->clone();
 }
@@ -345,6 +352,7 @@ void IAST::FormatSettings::checkIdentifier(const String & name) const
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
+    checkStackSize();
     String indent_str(indent, '-');
     ostr << indent_str << getID() << ", ";
     writePointerHex(this, ostr);
@@ -409,6 +417,29 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
         return false;
     }
 
+    /// Inside `CODEC` / `STATISTICS` / `BACKUP_NAME` argument lists `frame.allow_operators`
+    /// is forced to `false`, so a multi-argument `Function_tuple` falls back to its
+    /// function-call form `tuple(arg, arg, ...)` instead of the operator form
+    /// `(arg, arg, ...)`. The `RoundBracketsLayer::getResultImpl` single-element path
+    /// sets `parenthesized = true` on any node it unwraps from outer `(...)`, so a query
+    /// like `CODEC(not((tuple(1, 2))))` re-parses to `Function_tuple` with
+    /// `parenthesized = true`. Emitting those parens here would produce
+    /// `CODEC(not((tuple(1, 2))))` on first format but `CODEC(not(((tuple(1, 2)))))` on
+    /// re-format, because the re-parsed inner `Function_not` carries the outer paren on
+    /// itself and the re-parsed `Function_tuple` then adds another one — breaking the
+    /// format-parse-format round-trip with `Inconsistent AST formatting` (STID 1941-1bfa).
+    /// Suppress them here for consistency with the literal-tuple case above; the parser
+    /// canonicalises `(tuple(a, b))` and `tuple(a, b)` to the same value.
+    if (!frame.allow_operators)
+    {
+        if (const auto * func = dynamic_cast<const ASTFunction *>(&node);
+            func && func->name == "tuple"
+                && func->arguments && func->arguments->children.size() > 1)
+        {
+            return false;
+        }
+    }
+
     /// `ASTSubquery` without an alias always emits its own enclosing `(SELECT ...)` parens.
     /// Adding the `parenthesized` flag's parens on top would produce `((SELECT ...))`,
     /// which the parser collapses back to a non-parenthesized subquery, breaking the
@@ -416,6 +447,18 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
     /// is the canonical form (the alias-deferral branch above explicitly skips `ASTSubquery` so
     /// the outer parens are emitted here instead), so we only suppress when the alias is empty.
     if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
+        return false;
+
+    /// In function-call form (`allow_operators = false`, set by `EXPLAIN SYNTAX`), an operator
+    /// AST is rendered as `funcname(arg1, arg2, ...)` — the function call's own `(...)` parens
+    /// already group the expression. Emitting the `parenthesized` flag's outer parens on top
+    /// produces redundant grouping like `(multiply(a, b))` at the top level of e.g. a `GROUP BY`
+    /// item or a subquery argument. This mirrors the per-argument suppression done inside
+    /// `ASTFunction::formatImplWithoutAlias` (where each function-call argument carries
+    /// `wrapped_in_parens = true`), extending it to the call sites where the `ASTFunction` is not
+    /// itself a function-call argument. The normal formatting path (`allow_operators = true`)
+    /// is unchanged so non-`EXPLAIN SYNTAX` callers still round-trip the user's parens.
+    if (!frame.allow_operators && dynamic_cast<const ASTFunction *>(&node))
         return false;
 
     frame.need_parens = false;
@@ -438,6 +481,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    checkStackSize();
     const bool parens = decideParensEmission(*this, frame);
     if (parens)
         ostr.write('(');
@@ -448,6 +492,7 @@ void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatSta
 
 void IAST::format(FormattingBuffer out) const
 {
+    checkStackSize();
     const bool parens = decideParensEmission(*this, out.frame);
     if (parens)
         out.ostr.write('(');

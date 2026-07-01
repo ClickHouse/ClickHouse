@@ -1,21 +1,14 @@
-import io
 import json
 import logging
 import random
-import string
 import time
-import uuid
 from datetime import datetime
-from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
-    run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
     put_azure_file_content,
@@ -406,6 +399,77 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("move_to", ["same_bucket", "another_bucket"])
+@pytest.mark.parametrize("preserve_move_path", [True, False])
+def test_move_after_processing_preserve_path(started_cluster, engine_name, move_to, preserve_move_path):
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_after_processing_preserve_{engine_name}_{token}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    file_name = "a.csv"
+    processed_prefix = "sink"
+    processed_bucket = "sink-bucket" if move_to == "another_bucket" else None
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    generate_random_files(
+        started_cluster,
+        files_path,
+        count=1,
+        row_num=1,
+        storage="s3" if engine_name == "S3Queue" else "azure",
+        files=[(f"{files_path}/{file_name}", 0)],
+    )
+
+    if move_to == "another_bucket":
+        if engine_name == "S3Queue":
+            recreate_minio_bucket(started_cluster, processed_bucket)
+        else:
+            recreate_azurite_container(started_cluster, processed_bucket)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        move_to_bucket=processed_bucket,
+        preserve_move_path=preserve_move_path,
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_count = 1
+    for _ in range(1000):
+        count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        if count == expected_count:
+            break
+        time.sleep(0.1)
+
+    assert int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
+
+    # With preserve_move_path=true, the moved object must live at exactly
+    # `<processed_prefix>/<files_path>/<file_name>`.
+    expected_key = f"{processed_prefix}/{files_path}/{file_name}" if preserve_move_path else f"{processed_prefix}/{file_name}"
+
+    if engine_name == "S3Queue":
+        src_bucket = started_cluster.minio_bucket
+        count_objects = count_minio_objects
+    else:
+        src_bucket = started_cluster.azurite_container
+        count_objects = count_azurite_blobs
+
+    dst_bucket = processed_bucket if move_to == "another_bucket" else src_bucket
+
+    assert count_objects(started_cluster, dst_bucket, expected_key) == 1
+    assert count_objects(started_cluster, dst_bucket, processed_prefix) == 1
+    assert count_objects(started_cluster, src_bucket, files_path) == 0
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
 def test_auxiliary_zookeeper_keeper_path(started_cluster, engine_name):
     node = started_cluster.instances["instance"]
     table_name = f"aux_keeper_{engine_name.lower()}_{generate_random_string()}"
@@ -741,6 +805,63 @@ def test_streaming_to_view(started_cluster, mode):
 
 
 @pytest.mark.parametrize("mode", AVAILABLE_MODES)
+def test_streaming_query_id_propagation(started_cluster, mode):
+    node = started_cluster.instances["instance"]
+    table_name = f"streaming_query_id_{mode}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    total_values = generate_random_files(started_cluster, files_path, 5)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        mode,
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    expected_values = set([tuple(i) for i in total_values])
+    for _ in range(20):
+        selected_values = {
+            tuple(map(int, l.split()))
+            for l in node.query(
+                f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY all"
+            ).splitlines()
+        }
+        if selected_values == expected_values:
+            break
+        time.sleep(1)
+    assert selected_values == expected_values
+
+    node.query("SYSTEM FLUSH LOGS")
+
+    # The streaming task runs in the BackgroundSchedulePool, which assigns a
+    # query_id of the form `BgSchPool::<uuid>` to the task thread. This id is
+    # propagated to the insert into dependent tables, so the parts written for
+    # the destination table must carry it in system.part_log. Before the
+    # propagation the query_id of these parts was empty.
+    query_ids = (
+        node.query(
+            f"""
+            SELECT DISTINCT query_id FROM system.part_log
+            WHERE database = 'default' AND table = '{dst_table_name}'
+                AND event_type = 'NewPart'
+            """
+        )
+        .strip()
+        .splitlines()
+    )
+
+    assert len(query_ids) > 0
+    for query_id in query_ids:
+        assert query_id.startswith("BgSchPool::"), query_id
+
+
+@pytest.mark.parametrize("mode", AVAILABLE_MODES)
 def test_streaming_to_many_views(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"streaming_to_many_views_{mode}"
@@ -875,7 +996,7 @@ def test_streaming_to_many_views(started_cluster, mode):
 
 def test_multiple_tables_meta_mismatch(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = f"multiple_tables_meta_mismatch"
+    table_name = "multiple_tables_meta_mismatch"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
@@ -983,7 +1104,7 @@ def test_virtual_columns(started_cluster):
         node,
         table_name,
         dst_table_name,
-        virtual_columns="_path String, _file String, _size UInt64, _time DateTime",
+        virtual_columns="_path String, _file String, _size UInt64, _time DateTime, _etag String",
     )
     expected_values = set([tuple(i) for i in total_values])
     for i in range(20):
@@ -998,15 +1119,17 @@ def test_virtual_columns(started_cluster):
         time.sleep(1)
     assert selected_values == expected_values
     virtual_values = node.query(
-        f"SELECT count(), _path, _file, _size, _time FROM {dst_table_name} GROUP BY _path, _file, _size, _time"
+        f"SELECT count(), _path, _file, _size, _time, _etag FROM {dst_table_name} GROUP BY _path, _file, _size, _time, _etag"
     ).splitlines()
     assert len(virtual_values) > 0
-    (_, res_path, res_file, res_size, res_time) = virtual_values[0].split("\t")
+    (_, res_path, res_file, res_size, res_time, res_etag) = virtual_values[0].split("\t")
     finish_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     assert f"{files_path}/{res_file}" == res_path
     assert int(res_size) > 0
     assert start_time <= res_time
     assert res_time <= finish_time
+    # _etag must be populated (issue #108605: it was declared but never filled, always empty)
+    assert res_etag != ""
 
 
 def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster):
