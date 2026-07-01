@@ -23,6 +23,7 @@
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 
 #include <memory>
@@ -75,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_streams_per_hierarchical_merge;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsUInt64 prefer_external_sort_block_bytes;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -100,6 +102,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_streams_per_hierarchical_merge;
 }
 
 namespace ErrorCodes
@@ -156,6 +159,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
+    max_streams_per_hierarchical_merge = settings[Setting::max_streams_per_hierarchical_merge];
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -180,6 +184,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    max_streams_per_hierarchical_merge = settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -197,6 +202,7 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
+    settings[QueryPlanSerializationSetting::max_streams_per_hierarchical_merge] = max_streams_per_hierarchical_merge;
 }
 
 static ITransformingStep::Traits getTraits(size_t limit)
@@ -240,14 +246,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
 }
 
@@ -401,6 +407,98 @@ void SortingStep::finishSorting(
         });
 }
 
+void SortingStep::addHierarchicalMergingSorted(
+    QueryPipelineBuilder & pipeline,
+    const SortDescription & sort_desc,
+    size_t max_streams_per_layer,
+    size_t max_block_size,
+    UInt64 limit,
+    bool always_read_till_end,
+    bool use_average_block_sizes,
+    bool apply_virtual_row_conversions)
+{
+    size_t num_streams = pipeline.getNumStreams();
+
+    if (num_streams <= 1)
+        return;
+
+    /// Need at least 2 streams per layer to make progress, otherwise infinite loop.
+    if (max_streams_per_layer == 1)
+        max_streams_per_layer = 2;
+
+    auto shared_header = pipeline.getSharedHeader();
+    auto make_merger = [&shared_header, &sort_desc, max_block_size, limit, always_read_till_end, use_average_block_sizes, apply_virtual_row_conversions]
+        (size_t input_streams) -> std::shared_ptr<MergingSortedTransform>
+    {
+        return std::make_shared<MergingSortedTransform>(
+            shared_header,
+            input_streams,
+            sort_desc,
+            max_block_size,
+            /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns=*/std::nullopt,
+            SortingQueueStrategy::Batch,
+            limit,
+            always_read_till_end,
+            /*out_row_sources_buf=*/nullptr,
+            /*filter_column_name=*/std::nullopt,
+            use_average_block_sizes,
+            apply_virtual_row_conversions);
+    };
+
+    /// Disabled or streams count is within threshold — use single-node merging.
+    if (max_streams_per_layer == 0 || num_streams <= max_streams_per_layer)
+    {
+        pipeline.addTransform(make_merger(num_streams));
+        return;
+    }
+
+    LOG_TRACE(
+        getLogger("SortingStep"),
+        "Using hierarchical merge: {} input streams, max {} streams per layer",
+        num_streams, max_streams_per_layer);
+
+    /// Build hierarchical merge tree bottom-up.
+    while (pipeline.getNumStreams() > 1)
+    {
+        size_t streams_in_layer = pipeline.getNumStreams();
+        size_t groups = (streams_in_layer + max_streams_per_layer - 1) / max_streams_per_layer;
+
+        /// Last layer — single group merges all remaining streams.
+        if (groups == 1)
+        {
+            pipeline.addTransform(make_merger(streams_in_layer));
+            break;
+        }
+
+        /// Intermediate layer — create multiple mergers.
+        size_t streams_per_group = max_streams_per_layer;
+        size_t last_group_streams = streams_in_layer - (groups - 1) * streams_per_group;
+
+        pipeline.transform([&](OutputPortRawPtrs ports) -> Processors
+        {
+            Processors processors;
+
+            size_t port_idx = 0;
+            for (size_t group = 0; group < groups; ++group)
+            {
+                size_t current_group_streams = (group == groups - 1) ? last_group_streams : streams_per_group;
+
+                auto merger = make_merger(current_group_streams);
+
+                auto & inputs = merger->getInputs();
+                auto input_it = inputs.begin();
+                for (size_t i = 0; i < current_group_streams; ++i, ++port_idx, ++input_it)
+                    connect(*ports[port_idx], *input_it);
+
+                processors.push_back(std::move(merger));
+            }
+
+            return processors;
+        });
+    }
+}
+
 void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescription & result_sort_desc, const UInt64 limit_)
 {
     /// If there are several streams, then we merge them into one
@@ -418,22 +516,15 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
             });
         }
 
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
-            pipeline.getNumStreams(),
+        addHierarchicalMergingSorted(
+            pipeline,
             result_sort_desc,
+            sort_settings.max_streams_per_hierarchical_merge,
             sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns*/std::nullopt,
-            SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end,
-            /*out_row_sources_buf=*/ nullptr,
-            /*filter_column_name=*/ std::nullopt,
-            /*use_average_block_sizes=*/ false,
+            /*use_average_block_sizes=*/false,
             apply_virtual_row_conversions);
-
-        pipeline.addTransform(std::move(transform));
     }
     else if (apply_virtual_row_conversions)
     {
@@ -536,18 +627,15 @@ void SortingStep::fullSort(
     /// If there are several streams, then we merge them into one
     if (pipeline.getNumStreams() > 1 && (partition_by_description.empty() || pipeline.getNumThreads() == 1))
     {
-        auto transform = std::make_shared<MergingSortedTransform>(
-            pipeline.getSharedHeader(),
-            pipeline.getNumStreams(),
+        addHierarchicalMergingSorted(
+            pipeline,
             result_sort_desc,
+            sort_settings.max_streams_per_hierarchical_merge,
             sort_settings.max_block_size,
-            /*max_block_size_bytes=*/0,
-            /*max_dynamic_subcolumns*/std::nullopt,
-            SortingQueueStrategy::Batch,
             limit_,
-            always_read_till_end);
-
-        pipeline.addTransform(std::move(transform));
+            always_read_till_end,
+            /*use_average_block_sizes=*/false,
+            /*apply_virtual_row_conversions=*/true);
     }
     else if (apply_virtual_row_conversions)
     {

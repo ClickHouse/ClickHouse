@@ -44,6 +44,7 @@ public:
         size_t read_in_order_use_buffering = 0;
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
+        size_t max_streams_per_hierarchical_merge = 16;
         String temporary_files_codec = {};
 
         explicit Settings(const DB::Settings & settings);
@@ -76,7 +77,7 @@ public:
         const SharedHeader & input_header,
         SortDescription prefix_description_,
         SortDescription result_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_);
 
     /// MergingSorted
@@ -147,6 +148,16 @@ private:
         const Settings & sort_settings,
         const SortDescription & result_sort_desc,
         UInt64 limit_, TopKThresholdTrackerPtr threshold_tracker);
+
+    static void addHierarchicalMergingSorted(
+        QueryPipelineBuilder & pipeline,
+        const SortDescription & sort_desc,
+        size_t max_streams_per_layer,
+        size_t max_block_size,
+        UInt64 limit,
+        bool always_read_till_end,
+        bool use_average_block_sizes = false,
+        bool apply_virtual_row_conversions = false);
 
     void mergingSorted(
         QueryPipelineBuilder & pipeline,

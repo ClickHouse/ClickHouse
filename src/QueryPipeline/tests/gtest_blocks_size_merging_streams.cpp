@@ -170,3 +170,94 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 
     EXPECT_EQ(block1.rows() + block2.rows() + block3.rows(), 1000 + 1500 + 1400);
 }
+
+
+/// Test that a two-layer hierarchical merge (6 streams, max 3 per layer) produces
+/// correctly sorted output identical to a single-node merge.
+TEST(MergingSortedTest, HierarchicalMerge)
+{
+    constexpr size_t NUM_STREAMS = 6;
+    constexpr size_t MAX_PER_LAYER = 3;
+    constexpr size_t ROWS_PER_STREAM = 100;
+
+    std::vector<std::string> key_columns{"K1"};
+    auto sort_description = getSortDescription(key_columns);
+
+    /// Build sorted input streams. Stream i contains values: i, i+NUM_STREAMS, i+2*NUM_STREAMS, ...
+    auto make_pipe = [&]()
+    {
+        Pipes pipes;
+        for (size_t s = 0; s < NUM_STREAMS; ++s)
+        {
+            BlocksList blocks;
+            auto column = ColumnUInt64::create(ROWS_PER_STREAM, 0);
+            for (size_t j = 0; j < ROWS_PER_STREAM; ++j)
+                column->getElement(j) = s + j * NUM_STREAMS;
+            ColumnsWithTypeAndName cols;
+            cols.emplace_back(std::move(column), std::make_shared<DataTypeUInt64>(), key_columns[0]);
+            blocks.push_back(Block(cols));
+            pipes.emplace_back(std::make_shared<BlocksListSource>(std::move(blocks)));
+        }
+        return Pipe::unitePipes(std::move(pipes));
+    };
+
+    auto make_merger = [&](SharedHeader header, size_t inputs) -> std::shared_ptr<MergingSortedTransform>
+    {
+        return std::make_shared<MergingSortedTransform>(
+            header, inputs, sort_description,
+            /*max_block_size_rows=*/8192, /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns=*/std::nullopt, SortingQueueStrategy::Batch);
+    };
+
+    auto pull_all = [](QueryPipeline & pipeline) -> std::vector<UInt64>
+    {
+        PullingPipelineExecutor executor(pipeline);
+        std::vector<UInt64> result;
+        Block block;
+        while (executor.pull(block))
+        {
+            const auto & col = assert_cast<const ColumnUInt64 &>(*block.getByPosition(0).column);
+            for (size_t i = 0; i < col.size(); ++i)
+                result.push_back(col.getElement(i));
+        }
+        return result;
+    };
+
+    /// --- Reference: single-node merge ---
+    auto pipe1 = make_pipe();
+    auto header = pipe1.getSharedHeader();
+    pipe1.addTransform(make_merger(header, NUM_STREAMS));
+    QueryPipeline pipeline1(std::move(pipe1));
+    auto single_result = pull_all(pipeline1);
+    ASSERT_EQ(single_result.size(), NUM_STREAMS * ROWS_PER_STREAM);
+
+    /// --- Hierarchical merge: layer 1 has 2 groups of 3, layer 2 merges 2 ---
+    auto pipe2 = make_pipe();
+    size_t groups = (NUM_STREAMS + MAX_PER_LAYER - 1) / MAX_PER_LAYER;
+
+    pipe2.transform([&](OutputPortRawPtrs ports) -> Processors
+    {
+        Processors processors;
+        size_t port_idx = 0;
+        for (size_t g = 0; g < groups; ++g)
+        {
+            size_t count = (g == groups - 1) ? (NUM_STREAMS - g * MAX_PER_LAYER) : MAX_PER_LAYER;
+            auto merger = make_merger(header, count);
+            auto & inputs = merger->getInputs();
+            auto it = inputs.begin();
+            for (size_t i = 0; i < count; ++i, ++port_idx, ++it)
+                connect(*ports[port_idx], *it);
+            processors.push_back(std::move(merger));
+        }
+        return processors;
+    });
+
+    /// Layer 2: merge the 2 group outputs.
+    pipe2.addTransform(make_merger(header, groups));
+
+    QueryPipeline pipeline2(std::move(pipe2));
+    auto hierarchical_result = pull_all(pipeline2);
+
+    ASSERT_EQ(hierarchical_result.size(), single_result.size());
+    EXPECT_EQ(hierarchical_result, single_result);
+}
