@@ -4914,6 +4914,10 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         flags |= 8;
     if (query_info.prewhere_info != nullptr)
         flags |= 16;
+    /// Parallel replicas reading: the replica rebuilds the read in parallel-reading mode and resolves the
+    /// coordinator callbacks + its replica number from its own context, so neither is serialized here.
+    if (is_parallel_reading_from_replicas)
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
@@ -4979,6 +4983,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const bool has_sample_offset_ratio = flags & 4;
     const bool has_row_level_filter = flags & 8;
     const bool has_prewhere_info = flags & 16;
+    const bool enable_parallel_reading = flags & 32;
 
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
@@ -5037,7 +5042,14 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         query_info,
         ctx.context,
         max_block_size,
-        num_streams);
+        num_streams,
+        /*max_block_numbers_to_read*/ nullptr,
+        /*merge_tree_select_result_ptr*/ nullptr,
+        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
+        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
+        /// from client_info. Passing no extension keeps those resolved from the context.
+        enable_parallel_reading,
+        /*extension*/ nullptr);
 
     if (distributed_read_bucket_count)
     {

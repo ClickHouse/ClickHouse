@@ -127,6 +127,9 @@ void executeQueryWithParallelReplicas(
     std::shared_ptr<const StorageLimitsList> storage_limits,
     QueryPlanStepPtr read_from_merge_tree);
 
+/// inject parallel replicas split step into plan
+void applyParallelReplicasSplit(QueryPlan & query_plan, ContextPtr context);
+
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,
     const StorageID & storage_id,

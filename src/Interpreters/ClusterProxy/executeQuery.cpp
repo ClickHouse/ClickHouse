@@ -20,6 +20,9 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -75,6 +78,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
+    extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -818,6 +822,39 @@ void executeQueryWithParallelReplicas(
 
         query_plan.addStep(std::move(read_from_remote));
     }
+}
+
+void applyParallelReplicasSplit(QueryPlan & query_plan, ContextPtr context)
+{
+    if (!query_plan.isInitialized())
+        return;
+
+    if (!canUseParallelReplicasOnInitiator(context))
+        return;
+
+    /// Applicability is decided on the plan: we need exactly one reading step we can distribute, and it
+    /// must be a MergeTree read that is not already reading from replicas.
+    const bool allow_view = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
+    auto reading_nodes = findReadingSteps(query_plan.getRootNode(), allow_view);
+    if (reading_nodes.size() != 1)
+        return;
+
+    /// FIXME: consider all nodes
+    auto * read_node = reading_nodes.front();
+    auto * read_step = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+    if (!read_step)
+        return;
+
+    if (read_step->isQueryWithFinal())
+        return;
+
+    QueryPlan logical_read_plan;
+    logical_read_plan.addStep(std::move(read_node->step));
+    QueryPlanStepPtr split_step
+        = std::make_unique<DB::ParallelReplicasSplitStep>(logical_read_plan.getRootNode()->step->getOutputHeader(), context);
+    logical_read_plan.addStep(std::move(split_step));
+
+    query_plan.replaceNodeWithPlan(read_node, std::move(logical_read_plan));
 }
 
 void executeQueryWithParallelReplicas(
