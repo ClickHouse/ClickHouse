@@ -76,6 +76,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
@@ -121,6 +122,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int INCORRECT_DATA;
 }
 
 namespace Setting
@@ -612,6 +614,119 @@ void IcebergMetadata::mutate(
         write_format,
         format_settings,
         catalog);
+}
+
+void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICatalog> catalog, const StorageID & storage_id)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg truncate is experimental. "
+            "To allow its usage, enable setting allow_insert_into_iceberg");
+
+    auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(context);
+    auto metadata_object = getMetadataJSONObject(
+        actual_table_state_snapshot.metadata_file_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        context,
+        log,
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid);
+
+    // Use -1 as the Iceberg spec sentinel for "no parent snapshot"
+    // (distinct from snapshot ID 0 which is a valid snapshot).
+    Int64 parent_snapshot_id = actual_table_state_snapshot.snapshot_id.value_or(-1);
+
+    FileNamesGenerator filename_generator(
+        persistent_components.path_resolver.getTableLocation(),
+        (catalog != nullptr && catalog->isTransactional()),
+        persistent_components.metadata_compression_method,
+        write_format);
+
+    Int32 new_metadata_version = actual_table_state_snapshot.metadata_version + 1;
+    filename_generator.setVersion(new_metadata_version);
+
+    auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+    auto storage_metadata_name = persistent_components.path_resolver.resolve(metadata_info.path);
+
+    auto result = MetadataGenerator(metadata_object).generateNextMetadata(
+        filename_generator, metadata_info.path, parent_snapshot_id,
+        /* added_files */ 0, /* added_records */ 0, /* added_files_size */ 0,
+        /* num_partitions */ 0, /* added_delete_files */ 0, /* num_deleted_rows */ 0,
+        std::nullopt, std::nullopt, /*is_truncate=*/true);
+
+    auto storage_manifest_list_name = persistent_components.path_resolver.resolve(result.manifest_list_path);
+
+    bool metadata_written = false;
+
+    auto cleanup = [&](bool metadata_was_written)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(storage_manifest_list_name));
+            // Only remove metadata file if this session actually wrote it.
+            // On version conflict, writeMetadataFileAndVersionHint returns false
+            // without writing — storage_metadata_name belongs to another concurrent writer.
+            if (metadata_was_written)
+                object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+            if (persistent_components.metadata_cache)
+            {
+                persistent_components.metadata_cache->remove(persistent_components.table_path);
+                if (persistent_components.table_uuid)
+                    persistent_components.metadata_cache->remove(*persistent_components.table_uuid);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Iceberg truncate cleanup failed"); // Ok to swallow — best-effort cleanup
+        }
+    };
+
+    try
+    {
+        auto write_settings = context->getWriteSettings();
+        auto buf = object_storage->writeObject(
+            StoredObject(storage_manifest_list_name),
+            WriteMode::Rewrite, std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+
+        generateManifestList(
+            persistent_components.path_resolver, metadata_object, object_storage, context,
+            {}, result.snapshot, {}, *buf, Iceberg::FileContentType::DATA, /*use_previous_snapshots=*/false);
+        buf->finalize();
+
+        String metadata_content = dumpMetadataObjectToString(metadata_object);
+        auto hint_path = filename_generator.generateVersionHint();
+        if (!writeMetadataFileAndVersionHint(
+                persistent_components.path_resolver,
+                metadata_info,
+                metadata_content,
+                hint_path,
+                object_storage,
+                context,
+                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Failed to commit Iceberg truncate metadata: version conflict");
+
+        metadata_written = true;
+
+        if (catalog)
+        {
+            // Transactional catalogs require a fully-qualified blob URI so the catalog
+            // can resolve the metadata location independently of local path configuration.
+            auto catalog_filename = persistent_components.path_resolver.resolveForCatalog(metadata_info.path);
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            if (!catalog->updateMetadata(namespace_name, table_name, catalog_filename, result.snapshot))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Failed to commit Iceberg truncate update to catalog.");
+        }
+    }
+    catch (...)
+    {
+        cleanup(metadata_written);
+        throw;
+    }
 }
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
