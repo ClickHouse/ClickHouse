@@ -49,3 +49,5 @@ Tabs also integrate with the browser's History API and the URL:
 ### Limitations {#limitations}
 
 Switching tabs while a query is running discards the running state of that query.
+
+Only small results are snapshotted for restore. A large result (above the snapshot size limit) or an image result is not persisted: after a tab switch or reload the tab keeps its query but not the rendered result, and re-running the query reproduces it. This applies both to single-query results and to the combined output of a "Run all" (multi-query) run.

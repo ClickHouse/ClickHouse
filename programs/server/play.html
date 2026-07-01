@@ -3613,7 +3613,9 @@ async function postMulti(posted_request_num, parsed)
     }
 
     /// Execute groups sequentially; within a parallelizable group, execute all queries concurrently.
+    /// Keep each statement's result so a small run can be snapshotted for restore (see below).
     let had_error = false;
+    const collected = new Array(parsed.length).fill(null);
     for (const group of groups) {
         if (posted_request_num != request_num) return;
         if (had_error) break;
@@ -3629,6 +3631,7 @@ async function postMulti(posted_request_num, parsed)
 
         for (const { index, result } of results) {
             if (result.cancelled) return;
+            collected[index] = result;
             if (result.is_error || !result.response_ok) {
                 had_error = true;
             }
@@ -3659,17 +3662,143 @@ async function postMulti(posted_request_num, parsed)
 
     if (posted_request_num != request_num) return;
 
+    /// Snapshot the per-statement results so switching tabs / reloading restores the whole
+    /// "Run all" output (not just the queries), the same way a single query's result is kept.
+    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above
+    /// it we store no data (`multi: null`) and the run is query-only (re-running reproduces it).
+    /// Images stream as a blob (their `reply` stays empty) and cannot be re-rendered from text,
+    /// so they are stored with `data: null` and restore as empty, exactly like a single image.
+    let multi = collected.map((r, i) => ({
+        query: parsed[i].query,
+        format: r ? r.format : null,
+        ok: r ? !!r.response_ok : false,
+        data: (r && !r.is_image) ? r.reply : null,
+    }));
+    let multi_size = 0;
+    for (const s of multi) multi_size += s.data ? s.data.length : 0;
+    if (multi_size > 100000) multi = null;
+
     /// Save all queries to browser history, using the full textarea content.
-    /// Multi-query results are not serialized (data is null); a refresh restores the
-    /// queries and re-running reproduces the results.
     saveHistory({
         query: query_area.value,
         format: null,
         ok: !had_error,
         data: null,
+        multi: multi,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
     }, parsed[0].query);
+}
+
+/// Render one saved multi-query statement snapshot into `el`, mirroring the live per-statement
+/// rendering in `postImpl` (table / chart / EXPLAIN graph / raw / error), minus the streaming.
+/// `token` guards the awaited chart/graph loaders: a superseding activation bails before touching
+/// the DOM, and a loader failure (e.g. a blocked CDN) is shown as an error for that statement
+/// rather than throwing out of the whole restore.
+async function renderSnapshotIntoElement(el, snap, token) {
+    el.queryText = snap.query;
+    if (!snap.data) return;
+    const format = snap.format;
+
+    if (!snap.ok) {
+        let has_exception = false;
+        for (const line of snap.data.split('\n')) {
+            if (line.startsWith(`{"exception":`)) {
+                el.update(JSON.parse(line));
+                has_exception = true;
+                break;
+            }
+        }
+        if (!has_exception) el.renderError(snap.data);
+        return;
+    }
+
+    let is_table = false;
+    if (format == default_format) {
+        is_table = true;
+        let fragment = document.createDocumentFragment();
+        for (const line of snap.data.split('\n')) {
+            if (line.length == 0) continue;
+            if (!el.update(JSON.parse(line), fragment)) { break; }
+        }
+        el.flushFragment(fragment);
+    } else if (format == 'JSONCompactColumns') {
+        if (token !== request_num) return;
+        try {
+            await el.renderChart(JSON.parse(snap.data), () => token === request_num);
+        } catch (e) {
+            if (token !== request_num) return;
+            console.log(e);
+            el.renderError(e.toString());
+            return;
+        }
+        if (token !== request_num) return;
+    } else {
+        el.updateRaw(snap.data);
+    }
+
+    if (el.isExplainGraph) {
+        try {
+            await el.renderGraph(() => token === request_num);
+        } catch (e) {
+            if (token !== request_num) return;
+            console.log(e);
+            el.renderError(e.toString());
+            return;
+        }
+        if (token !== request_num) return;
+    } else {
+        if (el._extremes['min'] && el._extremes['max']) el.renderExtremes();
+        if (is_table) el.renderTotals();
+        if (is_table) el.transposeIfNeeded();
+    }
+}
+
+/// Re-render a saved multi-query ("Run all") result snapshot, rebuilding the multi-query
+/// container the same way `postMulti` lays it out: one result element per statement, the single
+/// result element and logo hidden, and aggregated progress text. Called from `restoreFromHistory`
+/// for a tab whose result carries a `multi` array (small runs; large ones are query-only).
+async function restoreMultiQuery(snapshot, token) {
+    resultEl.style.display = 'none';
+    logoEl.style.display = 'none';
+
+    if (!multiQueryContainer) {
+        multiQueryContainer = document.createElement('div');
+        multiQueryContainer.id = 'multi-query-results';
+        resultEl.parentElement.insertBefore(multiQueryContainer, resultEl);
+    }
+    multiQueryContainer.innerHTML = '';
+    multiQueryContainer.style.display = 'block';
+
+    const elements = [];
+    for (let i = 0; i < snapshot.multi.length; ++i) {
+        const el = document.createElement('query-result');
+        multiQueryContainer.appendChild(el);
+        elements.push(el);
+    }
+
+    for (let i = 0; i < snapshot.multi.length; ++i) {
+        await renderSnapshotIntoElement(elements[i], snapshot.multi[i], token);
+        if (token !== request_num) return;
+    }
+
+    /// The logo returns only for a fully successful run, matching the live `postMulti` path.
+    if (!snapshot.multi.some(s => !s.ok)) logoEl.style.display = 'block';
+
+    let total_rows = 0;
+    let max_elapsed_ns = 0;
+    let any_incomplete = false;
+    for (const el of elements) {
+        total_rows += el.rowCount;
+        max_elapsed_ns = Math.max(max_elapsed_ns, el.elapsedNs);
+        if (el.incompleteResult) any_incomplete = true;
+    }
+
+    progressEl.finish();
+    elapsed_ns = snapshot.elapsed_ns || max_elapsed_ns;
+    progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
+    progressEl.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(snapshot.multi[0].query));
 }
 
 /// `token` ties this render to one activation/history navigation (the value of
@@ -3711,6 +3840,13 @@ async function restoreFromHistory(state, token) {
     setParamValues(restored_params);
     const active_tab_for_params = getActiveTab();
     if (active_tab_for_params) active_tab_for_params.params = restored_params;
+
+    /// A snapshotted multi-query ("Run all") result is restored into the multi-query
+    /// container, rebuilding one result element per statement, rather than into `resultEl`.
+    if (result.multi && result.multi.length) {
+        await restoreMultiQuery(result, token);
+        return;
+    }
 
     if (!result.data) return;
 
@@ -4230,6 +4366,9 @@ function saveHistory(stateData, titleForDoc) {
         format: stateData.format,
         ok: stateData.ok,
         data: stateData.data,
+        /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
+        /// runs and for multi-query runs too large to snapshot (see `postMulti`).
+        multi: stateData.multi ?? null,
         elapsed_ns: stateData.elapsed_ns,
     };
     writeHistoryEntry(tab, titleForDoc);
