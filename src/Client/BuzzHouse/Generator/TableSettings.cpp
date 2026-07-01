@@ -64,6 +64,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_remote_fs_zero_copy_replication", trueOrFalseSetting},
     {"allow_summing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_suspicious_indices", trueOrFalseSetting},
+    {"allow_tuple_element_aggregation", trueOrFalseSetting},
     {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
     {"alter_column_secondary_index_mode",
      CHSetting(
@@ -226,6 +227,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          {"'basic'", "'with_buckets'", "'advanced'"},
          false)},
     {"marks_compress_block_size", highRangeNonZeroSetting},
+    {"materialize_projections_on_insert", trueOrFalseSetting},
+    {"materialize_projections_on_merge", trueOrFalseSetting},
     {"materialize_skip_indexes_on_merge", trueOrFalseSetting},
     {"materialize_statistics_on_merge", trueOrFalseSetting},
     {"materialize_ttl_recalculate_only", trueOrFalseSetting},
