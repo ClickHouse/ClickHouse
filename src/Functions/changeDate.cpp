@@ -136,9 +136,20 @@ public:
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Int64 time = date_lut.toNumYYYYMMDDhhmmss(date_time_col_data[i] / deg);
+                /// Split into whole seconds and a non-negative fraction, rounding the whole-seconds part
+                /// toward negative infinity. Plain '/' and '%' truncate toward zero, which for pre-epoch
+                /// sub-second values would attribute the last fractional second to the next calendar boundary
+                /// (for example, '1969-12-31 23:59:59.500' would decompose as '1970-01-01 00:00:00' minus
+                /// 500 ms), shifting the untouched calendar fields of the result.
+                Int64 whole_seconds = date_time_col_data[i] / deg;
                 Int64 fraction = date_time_col_data[i] % deg;
+                if (fraction < 0)
+                {
+                    fraction += deg;
+                    --whole_seconds;
+                }
 
+                Int64 time = date_lut.toNumYYYYMMDDhhmmss(whole_seconds);
                 result_col_data[i] = getChangedDate(time, value_col_data[i], result_type, date_lut, scale, fraction);
             }
         }

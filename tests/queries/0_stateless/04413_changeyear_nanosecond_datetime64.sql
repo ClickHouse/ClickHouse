@@ -56,3 +56,19 @@ SELECT '-- Component change moving a representable scale=9 value past the bounda
 SELECT changeMonth(toDateTime64('2262-01-01 00:00:00.000000000', 9), 12);
 SELECT changeDay(toDateTime64('2262-04-01 00:00:00.000000000', 9), 30);
 SELECT changeDay(toDateTime64('2262-04-01 00:00:00.000000000', 9), 10);
+
+SELECT '-- Pre-epoch sub-second values: the whole-second part must round toward negative infinity, not truncate toward zero';
+SELECT changeYear(toDateTime64('1969-12-31 23:59:59.500', 3, 'UTC'), 1969);
+SELECT changeYear(toDateTime64('1969-12-31 23:59:59.500', 3, 'UTC'), 1965);
+SELECT changeMonth(toDateTime64('1969-06-30 23:59:59.500', 3, 'UTC'), 3);
+SELECT changeDay(toDateTime64('1969-12-31 23:59:59.500', 3, 'UTC'), 15);
+SELECT changeHour(toDateTime64('1969-12-31 23:59:59.500', 3, 'UTC'), 10);
+SELECT changeMinute(toDateTime64('1969-12-31 23:59:59.500', 3, 'UTC'), 45);
+SELECT changeSecond(toDateTime64('1969-06-15 12:30:45.500', 3, 'UTC'), 30);
+
+SELECT '-- Pre-epoch sub-second values at scale=9';
+SELECT changeYear(toDateTime64('1969-12-31 23:59:59.999999999', 9, 'UTC'), 1969);
+SELECT changeSecond(toDateTime64('1969-12-31 23:59:59.999999999', 9, 'UTC'), 0);
+
+SELECT '-- Pre-epoch value exactly on a whole second is unaffected';
+SELECT changeYear(toDateTime64('1969-12-31 23:59:59.000', 3, 'UTC'), 1968);

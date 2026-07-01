@@ -39,3 +39,16 @@
 2262-04-11 23:47:16.854775807
 2262-04-11 23:47:16.854775807
 2262-04-10 00:00:00.000000000
+-- Pre-epoch sub-second values: the whole-second part must round toward negative infinity, not truncate toward zero
+1969-12-31 23:59:59.500
+1965-12-31 23:59:59.500
+1969-03-30 23:59:59.500
+1969-12-15 23:59:59.500
+1969-12-31 10:59:59.500
+1969-12-31 23:45:59.500
+1969-06-15 12:30:30.500
+-- Pre-epoch sub-second values at scale=9
+1969-12-31 23:59:59.999999999
+1969-12-31 23:59:00.999999999
+-- Pre-epoch value exactly on a whole second is unaffected
+1968-12-31 23:59:59.000
