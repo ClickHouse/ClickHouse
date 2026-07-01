@@ -14,7 +14,7 @@
 # No `set -e`: the test exit code must be captured and the teardown must always
 # run before exiting with it.
 
-for i in $(seq 2 16); do
+for i in $(seq 2 21); do
     ifconfig lo0 | grep -qF "127.0.0.$i " || sudo ifconfig lo0 alias 127.0.0.$i up || exit 1
 done
 
@@ -22,7 +22,7 @@ done
 python3 ./ci/jobs/fast_test.py "$@"
 rc=$?
 
-for i in $(seq 2 16); do
+for i in $(seq 2 21); do
     if ifconfig lo0 | grep -qF "127.0.0.$i "; then
         sudo ifconfig lo0 -alias 127.0.0.$i || rc=1
     fi

@@ -148,18 +148,31 @@ RefreshTask::RefreshTask(
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
         bool replica_path_existed = zookeeper->exists(replica_path);
 
+        /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
+        /// multi-read on the scheduling thread, where a throw aborts the whole server.
+        /// (It would be possible to avoid using these features, if needed.)
+        if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
+            !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+        {
+            /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
+            /// so enter a permanent non-resumable "coordination unavailable" state instead. We keep
+            /// `coordinated` true so the view never degrades into an uncoordinated local refresh
+            /// (that would corrupt the replicated target table); `unavailable` keeps it Disabled and
+            /// makes start()/finalizeRestoreFromBackup() refuse to resume it.
+            if (!attach && !is_restore_from_backup)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
+
+            LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
+            coordination.unavailable = true;
+            scheduling.stop_requested = true;
+            scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
+            return;
+        }
+
         /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
         /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
         if (!replica_path_existed)
         {
-            if (!attach && !is_restore_from_backup)
-            {
-                /// (It would be possible to avoid using these features, if needed.)
-                if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
-                    !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
-            }
-
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
@@ -251,6 +264,11 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
+    if (coordination.unavailable)
+        /// Coordination is permanently unavailable (Keeper lacks required feature flags). Don't
+        /// resume: startReplicated() would access Keeper and start() would run an uncoordinated
+        /// local refresh. Leave the view Disabled.
+        return;
     if (coordination.coordinated)
         startReplicated();
     else
@@ -431,6 +449,11 @@ RefreshTask::Info RefreshTask::getInfo() const
 void RefreshTask::start()
 {
     std::lock_guard guard(mutex);
+    if (coordination.unavailable)
+        /// Coordination is permanently unavailable for this coordinated view. Refuse to resume:
+        /// running it now would be an uncoordinated local refresh that corrupts the replicated
+        /// target table. The view stays Disabled until the table is re-created on a capable Keeper.
+        return;
     if (!std::exchange(scheduling.stop_requested, false))
         return;
     scheduling.unexpected_error = std::nullopt;
@@ -677,6 +700,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
 
+    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
+    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
+    if (!view)
+        return;
+
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
     ///  * If some change is needed (e.g. write to zookeeper or start a refresh), make that change,
@@ -689,6 +717,15 @@ void RefreshTask::doScheduling(bool is_shutdown)
     try
     {
         setState(RefreshState::Scheduling, lock);
+
+        if (coordination.unavailable)
+        {
+            /// Coordination is permanently unavailable (Keeper lacks required feature flags, detected
+            /// on attach/restore). Never touch Keeper here: readZnodesIfNeeded would throw on the
+            /// scheduling thread and the catch-all below would abort the server. Stay Disabled.
+            setState(RefreshState::Disabled, lock);
+            return;
+        }
 
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
         if (coordination.coordinated)
@@ -1166,9 +1203,17 @@ void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
     auto info = getInfoForDependentViewsLocked(lock);
     if (info != coordination.notified_dependents)
     {
+        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
+        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
+        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
+        /// unlocking so they can't turn into a null deref while we are unlocked.
+        if (!view)
+            return;
         coordination.notified_dependents = info;
+        ContextPtr context = view->getContext();
+        StorageID view_storage_id = view->getStorageID();
         lock.unlock();
-        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+        context->getRefreshSet().notifyDependents(view_storage_id);
         lock.lock();
     }
 }

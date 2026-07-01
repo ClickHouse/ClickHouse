@@ -14,11 +14,13 @@ LEFT_SERVER_PORT=9001
 LEFT_SERVER_KEEPER_PORT=9181
 LEFT_SERVER_KEEPER_RAFT_PORT=9234
 LEFT_SERVER_INTERSERVER_PORT=9009
+LEFT_SERVER_HTTP_PORT=8123
 # patched version
 RIGHT_SERVER_PORT=19001
 RIGHT_SERVER_KEEPER_PORT=19181
 RIGHT_SERVER_KEEPER_RAFT_PORT=19234
 RIGHT_SERVER_INTERSERVER_PORT=19009
+RIGHT_SERVER_HTTP_PORT=18123
 
 # abort_conf   -- abort if some options is not recognized
 # abort        -- abort if something is not right in the env (i.e. per-cpu arenas does not work)
@@ -26,6 +28,19 @@ RIGHT_SERVER_INTERSERVER_PORT=19009
 #                 that returns different number of CPUs for some of the following
 #                 _SC_NPROCESSORS_ONLN/_SC_NPROCESSORS_CONF/sched_getaffinity
 export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
+
+# jemalloc allocation sampling rate (lg2 of the average byte interval between
+# samples) for the per-query profiler used in the dedicated profile runs.
+# Lower than the 512 KiB (19) default: we profile single queries in isolation,
+# so we need a denser profile to get useful JemallocSample flamegraphs.
+# Must match CHServer.JEMALLOC_PROFILER_SAMPLING_RATE in performance_tests.py.
+JEMALLOC_PROFILER_SAMPLING_RATE=16
+
+# Disable cgroup memory correction for report-building clickhouse-local so each
+# process is tracked against its own RSS, not the shared job cgroup (avoids Code 241).
+# Passed after `--` so it word-splits into server settings. Keep in sync with
+# REPORT_LOCAL_SERVER_SETTINGS in performance_tests.py.
+CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
 
 function wait_for_server # port, pid
 {
@@ -134,10 +149,35 @@ function configure
     fi
 }
 
+# addressToLine resolves a frame to "file:line" only where DWARF covers
+# ClickHouse code. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS): the symbol
+# table remains (addressToSymbol works) but there is no line info, so the patched
+# (right) binary symbolizes differently from the reference (left, master) build
+# and flamegraph tooling cannot match the frames. A ".debug_info" section is not
+# a reliable signal (Rust crates emit one even under -g0), so probe how many
+# system.stack_trace frames resolve to a line on each binary and strip the
+# reference only when the patched binary resolves far fewer. Merge-to-master
+# resolves comparably on both and is left untouched.
+function match_reference_debug_info
+{
+    local left right left_lines right_lines
+    left=$(readlink -f left/clickhouse-server)
+    right=$(readlink -f right/clickhouse-server)
+    # Running clickhouse also decompresses the self-extracting binary in place.
+    local probe="select countIf(addressToLine(arrayJoin(trace)) like '%:%') from system.stack_trace"
+    left_lines=$("$left" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    right_lines=$("$right" local --allow_introspection_functions=1 --query "$probe" 2>/dev/null ||:)
+    if [ "$(( ${right_lines:-0} * 4 ))" -lt "${left_lines:-0}" ]; then
+        strip --strip-debug "$left"
+    fi
+}
+
 function restart
 {
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
+
+    match_reference_debug_info
 
     set -m # Spawn servers in their own process groups
 
@@ -150,11 +190,16 @@ function restart
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
+        # The perf-comparison config removes <http_port>; re-enable it on the
+        # command line (a documented config override) with a distinct port per
+        # server, so that shell-script tests can talk to the server over HTTP.
+        --http_port $LEFT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path left/coordination
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
@@ -170,11 +215,13 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
+        --http_port $RIGHT_SERVER_HTTP_PORT
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
+        --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
     right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
@@ -345,6 +392,11 @@ function run_tests
             argv=(
                 --host localhost localhost
                 --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
+                # Binary paths and HTTP ports are used by shell-script tests
+                # (<query type="shell">), e.g. clickhouse-local startup and HTTP
+                # reads. They are parallel to --host/--port (left, then right).
+                --binary left/clickhouse right/clickhouse
+                --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT"
                 --runs "$CHPC_RUNS"
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
@@ -486,7 +538,12 @@ create table query_run_metric_arrays engine File(TSV, 'analyze/query-run-metric-
         with (select groupUniqArrayArray(mapKeys(ProfileEvents)) from query_logs) as all_names
             select arrayReduce('sumMapState', [(all_names, arrayMap(x->0::Nullable(Float64), all_names))])
         ) as all_metrics
-    select test, query_index, version, query_id,
+    -- Take version/query_id from query_runs, the preserved side of the RIGHT JOIN.
+    -- For SQL queries the query_log always matches, so this is the same value;
+    -- but shell-script queries (<query type="shell">) have no query_log row, and
+    -- the unqualified columns would otherwise default to query_logs' 0/'' and
+    -- collapse both servers' runs onto version 0.
+    select test, query_index, query_runs.version version, query_runs.query_id query_id,
         (finalizeAggregation(
             arrayReduce('sumMapMergeState',
                 [
@@ -549,7 +606,7 @@ create table query_run_metrics_for_stats engine File(
 create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
     as select metric_names from query_run_metric_arrays limit 1
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with
@@ -568,6 +625,7 @@ do
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
+            -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
             >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
@@ -621,7 +679,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     left array join metric_name, left, right, diff, stat_threshold
     order by test, query_index, metric_name
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
 }
 
 # Analyze results
@@ -951,7 +1009,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
             and query_display_names.query_index = report_thresholds.query_index
             and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
-" 2> >(tee -a report/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2)
 
 # Prepare source data for metrics and flamegraphs for queries that were profiled
 # by perf.py.
@@ -1012,14 +1070,30 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
 create view trace_log as select *
     from file('$version-trace-log.tsv', TSVWithNamesAndTypes);
 
-create view addresses_src as select addr,
-        -- Some functions change name between builds, e.g. '__clone' or 'clone' or
-        -- even '__GI__clone@@GLIBC_2.32'. This breaks differential flame graphs, so
-        -- filter them out here.
-        [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
-            -- this line is a subscript operator of the above array
-            [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
-    from file('$version-addresses.tsv', TSVWithNamesAndTypes);
+create view addresses_src as
+    -- Keep only the demangled symbol, dropping the 'file:line#'/'clickhouse#'
+    -- prefix. PR builds use -g0 (DISABLE_ALL_DEBUG_SYMBOLS), so addressToLine has
+    -- no DWARF and the prefix degrades to the binary basename ('clickhouse#...'),
+    -- while master keeps 'file:line#'. A symbol-only name is identical on both,
+    -- so per-side and differential flamegraphs stay comparable. A name has at most
+    -- one '#' (demangled C++ symbols contain none). The clone.S filter runs first
+    -- because it matches on the file part: the symbol itself ('__clone'/'clone')
+    -- varies between builds, while dozens of unrelated symbols contain 'clone'.
+    --
+    -- Also drop the '.llvm.<hash>' suffix LLVM appends to internalized local
+    -- symbols under LTO: the hash differs between builds, so it would split the
+    -- same function into two frames.
+    select addr, replaceRegexpOne(splitByChar('#', name)[-1], '[.]llvm[.][0-9]+', '') name
+    from (
+        select addr,
+            -- Some functions change name between builds, e.g. '__clone' or 'clone'
+            -- or even '__GI__clone@@GLIBC_2.32'. This breaks differential flame
+            -- graphs, so filter them out here.
+            [name, 'clone.S (filtered by script)', 'pthread_cond_timedwait (filtered by script)']
+                -- this line is a subscript operator of the above array
+                [1 + multiSearchFirstIndex(name, ['clone.S', 'pthread_cond_timedwait'])] name
+        from file('$version-addresses.tsv', TSVWithNamesAndTypes)
+    );
 
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
@@ -1049,15 +1123,30 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
             ),
             ';'
         ) readable_trace,
-        count() c
+        -- Allocation samples are weighted by bytes; CPU/Real samples by count.
+        multiIf(trace_type in ('MemorySample', 'JemallocSample'), toUInt64(sum(size)), count()) c
     from trace_log
     join unstable_query_runs using query_id
+    -- Drop deallocation samples: their stack is the free site, not the
+    -- allocation site, so they cannot be folded with the matching allocation.
+    where size >= 0
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
-" 2> >(tee -a report/errors.log 1>&2) &
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2) &
 done
 wait
+
+# Allocation profiles (MemorySample/JemallocSample) fold byte totals rather
+# than sample counts, so flamegraph.pl must label and color them as memory.
+function flamegraph_opts # trace_type
+{
+    case "$1" in
+        MemorySample | JemallocSample)
+            echo "--countname=bytes --color=mem"
+            ;;
+    esac
+}
 
 # Create per-query flamegraphs
 touch report/query-files.txt
@@ -1067,7 +1156,13 @@ do
     for query in $(cut -d'	' -f1-4 "report/stacks.$version.tsv" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/	]/_/g')
-        echo "$query_file" >> report/query-files.txt
+        trace_type=$(echo "$query" | cut -d'	' -f3)
+        printf '%s\t%s\n' "$query_file" "$trace_type" >> report/query-files.txt
+
+        # Allocation traces (MemorySample/JemallocSample) are sparse, so a query
+        # may have samples on only one side. difffolded.pl below still needs both
+        # inputs, so make the missing side an empty folded file.
+        touch "report/tmp/$query_file.stacks.left.tsv" "report/tmp/$query_file.stacks.right.tsv"
 
         # Build separate .svg flamegraph for each query.
         # -F is somewhat unsafe because it might match not the beginning of the
@@ -1076,19 +1171,21 @@ do
             | cut -f 5- \
             | sed 's/\t/ /g' \
             | tee "report/tmp/$query_file.stacks.$version.tsv" \
-            | flamegraph.pl --hash > "$query_file.$version.svg" &
+            | flamegraph.pl --hash $(flamegraph_opts "$trace_type") > "$query_file.$version.svg" &
     done
 done
 wait
 unset IFS
 
-# Create differential flamegraphs.
-while IFS= read -r query_file
+# Create differential flamegraphs. Frames are symbol-only (addresses_src strips
+# the file:line/clickhouse prefix), so the two sides line up despite the PR side
+# lacking DWARF.
+while IFS=$'\t' read -r query_file trace_type
 do
     difffolded.pl "report/tmp/$query_file.stacks.left.tsv" \
             "report/tmp/$query_file.stacks.right.tsv" \
         | tee "report/tmp/$query_file.stacks.diff.tsv" \
-        | flamegraph.pl > "$query_file.diff.svg" &
+        | flamegraph.pl $(flamegraph_opts "$trace_type") > "$query_file.diff.svg" &
 done < report/query-files.txt
 wait
 
@@ -1120,6 +1217,18 @@ do
             || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
+done
+
+# Shell-script queries (<query type="shell">) report a failure on a server by
+# emitting a `run-error` line to stdout (the per-test *-err.log is not always
+# available at report time). Fold those into run-errors.tsv as well, in the
+# 'test<tab>error' shape the Run Errors table and CIDB expect, so a shell test
+# that failed on one server is reported instead of silently disappearing.
+for test_file in *-raw.tsv
+do
+    test_name=$(basename "$test_file" "-raw.tsv")
+    sed -n "s/^run-error\t\([0-9]*\)\t\([0-9]*\)\t/$test_name\tquery \1 server \2: /p" \
+        < "$test_file" >> run-errors.tsv ||:
 done
 }
 
@@ -1157,7 +1266,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv')
     )
     order by diff desc
     ;
-" 2> >(tee -a metrics/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a metrics/errors.log 1>&2)
 
 IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
@@ -1237,7 +1346,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    "
+    " -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.

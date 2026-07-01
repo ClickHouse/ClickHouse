@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -40,6 +41,7 @@ public:
 
     String operator() (const Array & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '[';
@@ -56,6 +58,7 @@ public:
 
     String operator() (const Map & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '{';
@@ -82,6 +85,7 @@ public:
 
     String operator() (const Tuple & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '(';

@@ -2,6 +2,7 @@
 -- optimization applies on a MergeTree sorting-key prefix.
 -- Otherwise the prewhere filter rejects all rows past the threshold in sorted
 -- order, preventing early LIMIT cancellation and causing a full table scan.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_topk_rio;
 

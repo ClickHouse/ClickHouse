@@ -1,12 +1,17 @@
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/EventFD.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <base/defines.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
+
+#if defined(OS_LINUX)
+#include <sys/eventfd.h>
+#else
+#include <fcntl.h>
+#endif
 
 namespace DB
 {
@@ -20,9 +25,29 @@ namespace ErrorCodes
 
 EventFD::EventFD()
 {
+#if defined(OS_LINUX)
     fd = eventfd(0 /* initval */, 0 /* flags */);
     if (fd == -1)
         throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create eventfd");
+#else
+    /// macOS has no eventfd; emulate it with a self-pipe (see EventFD.h). `fd` is the blocking
+    /// read end (so read() waits for a write()), `write_fd` is the non-blocking write end (so
+    /// write() can report a full pipe via EAGAIN).
+    int pipe_fd[2];
+    if (-1 == pipe(pipe_fd))
+        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot create pipe for eventfd emulation");
+
+    int flags = fcntl(pipe_fd[1], F_GETFL, 0);
+    if (-1 == flags || -1 == fcntl(pipe_fd[1], F_SETFL, flags | O_NONBLOCK))
+    {
+        [[maybe_unused]] int e0 = close(pipe_fd[0]);
+        [[maybe_unused]] int e1 = close(pipe_fd[1]);
+        throw ErrnoException(ErrorCodes::CANNOT_PIPE, "Cannot make eventfd emulation pipe non-blocking");
+    }
+
+    fd = pipe_fd[0];
+    write_fd = pipe_fd[1];
+#endif
 }
 
 uint64_t EventFD::read() const
@@ -42,7 +67,13 @@ uint64_t EventFD::read() const
 
 bool EventFD::write(uint64_t increase) const
 {
-    while (-1 == ::write(fd, &increase, sizeof(increase)))
+#if defined(OS_LINUX)
+    const int write_to = fd;
+#else
+    const int write_to = write_fd;
+#endif
+
+    while (-1 == ::write(write_to, &increase, sizeof(increase)))
     {
         if (errno == EAGAIN)
             return false;
@@ -61,6 +92,13 @@ EventFD::~EventFD()
         [[maybe_unused]] int err = close(fd);
         chassert(!err || errno == EINTR);
     }
+#if defined(OS_DARWIN)
+    if (write_fd != -1)
+    {
+        [[maybe_unused]] int err = close(write_fd);
+        chassert(!err || errno == EINTR);
+    }
+#endif
 }
 
 }

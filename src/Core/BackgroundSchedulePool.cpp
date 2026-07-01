@@ -238,7 +238,21 @@ bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     /// running_tasks, delayed_tasks). This prevents getTasks() from missing the task
     /// during the transition.
     if (!executing)
-        pool_ptr->scheduleTask(*this);
+    {
+        try
+        {
+            pool_ptr->scheduleTask(*this);
+        }
+        catch (...)
+        {
+            /// scheduleTask rolls back its own enqueue state on the failure path; reset `scheduled`
+            /// so the caller can retry once the underlying issue is resolved. Otherwise a follow-up
+            /// schedule call would short-circuit on the early `if (scheduled) return true;` above
+            /// and never re-enqueue the task.
+            scheduled = false;
+            throw;
+        }
+    }
 
     if (delayed)
         pool_ptr->cancelDelayedTask(*this, schedule_mutex_lock);
@@ -264,26 +278,33 @@ Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback(
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t initial_size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
-    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
+    return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, initial_size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
+    /// The metric reports the configured cap (so `system.server_settings` displays
+    /// `background_*_schedule_pool_size` consistently with the user-facing setting),
+    /// not the number of currently spawned workers — that is tracked separately by `threads.size()`.
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
     , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
 {
-    LOG_INFO(logger, "Create BackgroundSchedulePool with {} threads", size_);
-
-    threads.resize(size_);
+    const size_t initial_size = std::min(size_, initial_size_);
+    LOG_INFO(logger, "Create BackgroundSchedulePool with {} initial threads (grows lazily up to {})", initial_size, size_);
 
     try
     {
-        for (auto & thread : threads)
-            thread = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
+        {
+            std::lock_guard tasks_lock(tasks_mutex);
+            max_size = size_;
+            threads.reserve(size_);
+            for (size_t i = 0; i < initial_size; ++i)
+                spawnThreadLocked();
+        }
 
         delayed_thread = std::make_unique<ThreadFromGlobalPoolNoTracingContextPropagation>([this] { delayExecutionThreadFunction(); });
     }
@@ -292,7 +313,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel
         LOG_FATAL(
             logger,
             "Couldn't get {} threads from global thread pool: {}",
-            size_,
+            initial_size,
             getCurrentExceptionCode() == ErrorCodes::CANNOT_SCHEDULE_TASK
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
@@ -302,25 +323,78 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel
 }
 
 
+void BackgroundSchedulePool::spawnThreadLocked()
+{
+    /// `emplace_back` may reallocate `threads`. If that reallocation throws (e.g. out of memory)
+    /// after the joinable `ThreadFromGlobalPoolNoTracingContextPropagation` temporary has been
+    /// constructed — and so the worker thread already started — unwinding destroys that still
+    /// joinable temporary, which calls `std::abort`. This would turn a recoverable allocation
+    /// failure (e.g. during the best-effort cap increase in `increaseThreadsCount`) into a server
+    /// crash. Reserve capacity up front so the `emplace_back` below cannot reallocate while a
+    /// joinable temporary is alive; a throwing `reserve` here runs before any thread is started and
+    /// propagates safely (the move constructor used during reallocation is `noexcept`).
+    if (threads.size() == threads.capacity())
+        threads.reserve(threads.size() < max_size ? max_size : threads.size() + 1);
+
+    threads.emplace_back(ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); }));
+}
+
+
+bool BackgroundSchedulePool::runnableTasksExceedLocked(size_t threshold) const
+{
+    size_t count = 0;
+    for (UInt64 task_type : runnable_task_types)
+    {
+        const auto & group = task_groups.at(task_type);
+        /// Invariant: a group present in runnable_task_types has headroom to run at least one
+        /// more task (it is removed from the list once num_running reaches the per-type cap).
+        chassert(group.num_running < max_parallel_tasks_per_type);
+        count += std::min(group.tasks.size(), max_parallel_tasks_per_type - group.num_running);
+        if (count > threshold)
+            return true;
+    }
+    return false;
+}
+
+
 void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 {
+    std::lock_guard tasks_lock(tasks_mutex);
+
     if (shutdown)
         throw Exception(ErrorCodes::ABORTED, "Pool already destroyed");
 
-    const size_t old_threads_count = threads.size();
-
-    if (new_threads_count < old_threads_count)
+    if (new_threads_count < max_size)
     {
         LOG_WARNING(logger,
-            "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
+            "Tried to raise the schedule pool cap but the new cap ({}) is not greater than the current one ({})", new_threads_count, max_size);
         return;
     }
 
-    threads.resize(new_threads_count);
-    for (size_t i = old_threads_count; i < new_threads_count; ++i)
-        threads[i] = ThreadFromGlobalPoolNoTracingContextPropagation([this] { threadFunction(); });
-
+    max_size = new_threads_count;
     size_metric.changeTo(new_threads_count);
+
+    /// Consume already-queued demand with the freshly-raised cap. A saturated pool has no parked
+    /// workers to wake and may receive no further scheduleTask call for a while, so without spawning
+    /// here it would keep executing at the old concurrency until some unrelated future task happens
+    /// to trigger lazy growth. Each newly-spawned worker becomes idle and immediately picks up a
+    /// runnable task (runnable_task_types is non-empty), so we account for it via `spawned`.
+    try
+    {
+        size_t spawned = 0;
+        while (threads.size() < max_size && runnableTasksExceedLocked(idle_threads + spawned))
+        {
+            spawnThreadLocked();
+            ++spawned;
+        }
+    }
+    catch (...)
+    {
+        /// Spawning is best-effort here: if the global thread pool is momentarily exhausted, leave
+        /// the cap raised and let lazy growth in scheduleTask retry later rather than failing the
+        /// config reload.
+        tryLogCurrentException(logger, "Failed to eagerly spawn schedule pool workers after raising the cap");
+    }
 }
 
 
@@ -330,10 +404,14 @@ void BackgroundSchedulePool::join()
     {
         shutdown = true;
 
-        /// Unlock threads
+        Threads threads_to_join;
+
+        /// Unlock threads and steal them out for joining without holding tasks_mutex
+        /// (workers re-acquire tasks_mutex on wake-up to observe shutdown and exit).
         {
             std::lock_guard tasks_lock(tasks_mutex);
             tasks_cond_var.notify_all();
+            threads_to_join = std::move(threads);
         }
         {
             std::lock_guard tasks_lock(delayed_tasks_mutex);
@@ -346,9 +424,8 @@ void BackgroundSchedulePool::join()
             LOG_TRACE(logger, "Waiting for threads to finish.");
             delayed_thread->join();
             delayed_thread.reset();
-            for (auto & thread : threads)
+            for (auto & thread : threads_to_join)
                 thread.join();
-            threads.clear();
             LOG_TRACE(logger, "Threads finished in {}ms.", watch.elapsedMilliseconds());
         }
     }
@@ -362,6 +439,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 {
     chassert(shutdown == true, "BackgroundSchedulePool::join() has not been called");
     chassert(static_cast<bool>(delayed_thread) == false, "BackgroundSchedulePool::delayed_thread has not been joined");
+    std::lock_guard tasks_lock(tasks_mutex);
     chassert(threads.empty(), "BackgroundSchedulePool::threads have not been joined");
 }
 
@@ -402,6 +480,50 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
             runnable_task_types.push_back(task_type);
         }
         running_tasks.erase(task_ptr);
+
+        /// Grow the pool lazily: if there are more runnable tasks than parked workers available to
+        /// pick them up, and we have headroom, spawn an extra worker. Demand is the number of tasks
+        /// that could run right now — counted per group and bounded by `max_parallel_tasks_per_type`
+        /// — not the number of distinct runnable task *types*: a single group (e.g. the same periodic
+        /// task across many replicated tables, or many Kafka/ObjectStorageQueue consumers) can run up
+        /// to `max_parallel_tasks_per_type` tasks at once, so type count would leave such a burst
+        /// stuck at `initial_size`. We compare against `idle_threads` (not `idle_threads == 0`) and,
+        /// crucially, each `scheduleTask` enqueues exactly one task and spawns at most one worker, so
+        /// parked workers woken by a prior `notify_one` — already "claimed" by previously-enqueued
+        /// tasks though they have not yet decremented `idle_threads` — never cause over-spawning.
+        if (runnableTasksExceedLocked(idle_threads) && threads.size() < max_size && !shutdown)
+        {
+            try
+            {
+                spawnThreadLocked();
+                return; /// The new worker will pick up the task; no need to notify an existing one.
+            }
+            catch (...)
+            {
+                /// If there are existing workers, fall through to `notify_one` — one of them will
+                /// pick up the task once it finishes its current work. But if the pool is still
+                /// empty (`background_schedule_pool_initial_size = 0` and the very first spawn
+                /// just failed), there is nobody to notify and the queued task would be orphaned.
+                /// Fail closed in that case so the caller learns about the failure rather than
+                /// silently dropping the work. Roll back the enqueue we did above so the caller's
+                /// retry — after `scheduleImpl` resets `scheduled` to false — actually re-enqueues
+                /// the task instead of finding a stale entry already in `task_groups`.
+                if (threads.empty())
+                {
+                    chassert(!group.tasks.empty() && group.tasks.back() == task_ptr);
+                    group.tasks.pop_back();
+                    if (group.tasks.empty() && group.runnable_list_pos)
+                    {
+                        chassert(*group.runnable_list_pos == runnable_task_types.size() - 1);
+                        runnable_task_types.pop_back();
+                        group.runnable_list_pos.reset();
+                    }
+                    throw;
+                }
+                tryLogCurrentException(logger, "Failed to spawn an additional schedule pool worker");
+                /// Fall through to notify_one — an existing worker will eventually take the task.
+            }
+        }
     }
 
     tasks_cond_var.notify_one();
@@ -452,12 +574,14 @@ void BackgroundSchedulePool::threadFunction()
         {
             UniqueLock tasks_lock(tasks_mutex);
 
+            ++idle_threads;
             /// TSA_NO_THREAD_SAFETY_ANALYSIS because it doesn't understand within the lambda that the
             /// tasks_lock has already locked tasks_mutex.
             tasks_cond_var.wait(tasks_lock.getUnderlyingLock(), [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
             {
                 return shutdown || !runnable_task_types.empty();
             });
+            --idle_threads;
             if (shutdown)
                 break;
 
@@ -559,7 +683,25 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         }
 
         if (found)
-            task->schedule();
+        {
+            try
+            {
+                task->schedule();
+            }
+            catch (...)
+            {
+                /// scheduleTask fails closed (rethrows) when it cannot spawn the very first worker —
+                /// this happens only with `background_schedule_pool_initial_size = 0` and an exhausted
+                /// global thread pool. Letting the exception escape would terminate this delayed thread,
+                /// after which no future scheduleAfter task in this pool could ever be woken. Keep the
+                /// thread alive and retry the task with a small backoff instead. The task is still
+                /// present in `delayed_tasks` (scheduleImpl rolls back before removing it), so we
+                /// re-stamp it rather than leaving a past-due entry that would busy-loop.
+                tryLogCurrentException(logger, "Failed to schedule a delayed task; will retry");
+                static constexpr size_t delayed_task_retry_ms = 100;
+                task->scheduleAfter(delayed_task_retry_ms);
+            }
+        }
     }
 }
 

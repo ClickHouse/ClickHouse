@@ -359,7 +359,23 @@ void TimeSeriesSink::TargetPipeline::push(Block block) const
     executor->push(std::move(block));
 }
 
-TimeSeriesSink::TargetPipeline::~TargetPipeline() = default;
+TimeSeriesSink::TargetPipeline::~TargetPipeline()
+{
+    /// On cancellation without an exception (e.g. `timeout_overflow_mode='break'`) neither
+    /// `onFinish` nor `onException` runs, leaving the executor started but unfinished.
+    /// Cancel it so `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds.
+    if (executor)
+    {
+        try
+        {
+            executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("TimeSeriesSink");
+        }
+    }
+}
 
 
 ColumnPtr TimeSeriesSink::calculateId(const Block & tags_block) const

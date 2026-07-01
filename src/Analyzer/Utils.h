@@ -11,6 +11,8 @@
 
 #include <Columns/IColumn_fwd.h>
 
+#include <Common/VectorWithMemoryTracking.h>
+
 namespace DB
 {
 
@@ -24,7 +26,7 @@ using TableNodePtr = std::shared_ptr<TableNode>;
 struct IdentifierResolveScope;
 
 struct NameAndTypePair;
-using NamesAndTypes = std::vector<NameAndTypePair>;
+using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
