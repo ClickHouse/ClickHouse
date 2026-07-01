@@ -68,6 +68,7 @@
 #include <Storages/StorageFile.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -2189,10 +2190,15 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    /// Source parts of the merges scheduled so far. Captured before the loop so the part_log wait
-    /// and the final clearScheduledParts() are scoped to exactly these parts, even if a concurrent
-    /// SCHEDULE MERGE adds more meanwhile.
-    const NameSet scheduled_part_names = ManualMergeSelector::getScheduledPartNames(table_id);
+    /// Source parts of the merges scheduled so far. Captured before the loop so every wait clause
+    /// (coverage, merge list, fetch) and the final clearScheduledParts() are scoped to exactly these
+    /// parts, even if a concurrent SCHEDULE MERGE adds more meanwhile. Both the infos (for the
+    /// coverage predicate) and their names (for the merge list / fetch checks) come from the same
+    /// snapshot, so the three clauses can never disagree about which parts are being synced.
+    const std::vector<MergeTreePartInfo> scheduled_part_infos = ManualMergeSelector::getScheduledPartInfos(table_id);
+    NameSet scheduled_part_names;
+    for (const auto & part_info : scheduled_part_infos)
+        scheduled_part_names.insert(part_info.getPartNameV1());
     auto & merge_list = getContext()->getMergeList();
 
     /// On a replicated table a scheduled merge can be satisfied by fetching the merged part instead
@@ -2226,7 +2232,7 @@ void InterpreterSystemQuery::syncMerges()
         /// fetch path has no merge list entry, so we also wait for any in-flight fetch whose result
         /// part covers a scheduled source part (the fetch keeps it in currently_fetching_parts until
         /// after its DOWNLOAD_PART part_log write).
-        if (ManualMergeSelector::isAllScheduledPartsCovered(table_id, active_set)
+        if (ManualMergeSelector::isAllScheduledPartsCovered(scheduled_part_infos, active_set)
             && !merge_list.hasUnfinishedMergeOfSourceParts(table_id, scheduled_part_names)
             && !(replicated_merge_tree && replicated_merge_tree->hasInFlightFetchCoveringParts(scheduled_part_names)))
         {
