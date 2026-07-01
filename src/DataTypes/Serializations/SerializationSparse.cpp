@@ -192,7 +192,6 @@ size_t readOrGetCachedSparseOffsets(
     size_t num_read_offsets = 0;
     if (cached_element)
     {
-        /// Reuse cached offsets info
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
         num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
@@ -212,6 +211,8 @@ size_t readOrGetCachedSparseOffsets(
             cache,
             settings.path,
             std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column, old_size, read_rows, skipped_values_rows));
+
+
         num_read_offsets = offsets_column->size() - old_size;
     }
 
