@@ -1609,39 +1609,61 @@ ReturnType readDateTimeTextFallback(
     /// if negative, it is a timestamp with no ambiguity
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
-        /// A bare 4-digit integer is ambiguous with a year; continue as a date only if the next character
-        /// can delimit one, otherwise reject it (as the optimistic path does) without consuming more input.
+        /// We have read 4 digits (s[0..3]) and the next character is not a digit. This is either the
+        /// delimiter of a YYYY-MM-DD date (e.g. `2025.08.31`) or the fractional dot of a unix timestamp
+        /// (e.g. `1234.5`). Probe the remaining date bytes one at a time, stopping at the first byte that
+        /// cannot belong to a date, so a timestamp never consumes input past its value (a fixed-size read
+        /// would eat into the next column or row).
         const char date_delimiter = *buf.position();
-        if (date_delimiter != '-' && date_delimiter != '/' && date_delimiter != '.'
-            && !(allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters)))
+        char * const probe_start = buf.position();
+        bool can_rollback = true;
+        bool is_date = date_delimiter == '-' || date_delimiter == '/' || date_delimiter == '.'
+            || (allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters));
+
+        for (size_t pos = 4; is_date && pos < date_broken_down_length; ++pos)
         {
+            if (!buf.hasPendingData())
+                can_rollback = false;
+            if (buf.eof())
+            {
+                is_date = false;
+                break;
+            }
+            const char c = *buf.position();
+            if ((pos == 4 || pos == 7) ? (c != date_delimiter) : !isNumericASCII(c))
+            {
+                is_date = false;
+                break;
+            }
+            s[pos] = c;
+            ++buf.position();
+        }
+
+        if (!is_date)
+        {
+            /// Not a date: return the 4-digit whole part and give the probed bytes back, so a DateTime64
+            /// fractional part (e.g. `.5`) is read by the caller. A bare 4-digit integer, a non-'.' partial
+            /// date, or a value split across a buffer refill (cannot roll back) is rejected instead.
+            if (date_delimiter == '.' && can_rollback)
+            {
+                buf.position() = probe_start;
+                datetime = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
+                return ReturnType(true);
+            }
+
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
         }
 
-        const auto already_read_length = s_pos - s;
-        const size_t remaining_date_size = date_broken_down_length - already_read_length;
-
-        size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
-            else
-                return false;
-        }
-
         if constexpr (!throw_exception)
         {
-            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                return false;
-
-            if (s[4] != s[7] || !isSymbolIn(s[4], allowed_date_delimiters))
+            if (!isSymbolIn(date_delimiter, allowed_date_delimiters))
                 return false;
         }
+
+        size_t size = 0;
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
         UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
