@@ -1,0 +1,30 @@
+DateTime64(9):
+1969-12-31 23:59:59.500000000
+1970-01-01 00:00:00.000000000
+2022-01-22 12:34:56.789012345
+DateTime64(3):
+2022-01-22 12:34:56.789
+DateTime:
+2022-01-22 12:34:56
+Nullable(DateTime64):
+1970-01-01 00:00:00.000000000
+\N
+Nullable(DateTime):
+1970-01-01 00:00:00
+\N
+Max nanos (DateTime64):
+1970-01-01 00:00:00.999999999
+Out of range (DateTime64):
+Could not convert value '10000000000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Out of range (DateTime):
+Could not convert value '4294967296' from type google.protobuf.Timestamp to type DateTime while reading field 'ts' for inserting into column 'ts'
+Invalid nanos = 1000000000 (DateTime64):
+Could not convert value '1000000000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Invalid nanos = -1 (DateTime):
+Could not convert value '-1' from type google.protobuf.Timestamp to type DateTime while reading field 'ts' for inserting into column 'ts'
+Seconds before 1900 (DateTime64):
+Could not convert value '-5364662400' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Seconds after 2299 (DateTime64):
+Could not convert value '10413792000' from type google.protobuf.Timestamp to type DateTime64 while reading field 'ts' for inserting into column 'ts'
+Split Timestamp message (DateTime64):
+1970-01-01 00:00:01.500000000
