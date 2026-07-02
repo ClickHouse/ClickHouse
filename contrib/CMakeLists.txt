@@ -81,6 +81,7 @@ add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide-cmake)
 add_contrib (libmetrohash)
 add_contrib (lz4-cmake lz4)
+add_contrib (libdeflate-cmake libdeflate)
 add_contrib (murmurhash)
 add_contrib (replxx-cmake replxx)
 add_contrib (libpng-cmake libpng) # requires: zlib
