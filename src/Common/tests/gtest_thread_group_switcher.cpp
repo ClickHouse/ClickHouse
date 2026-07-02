@@ -1,3 +1,5 @@
+#include <functional>
+#include <future>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -8,6 +10,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -52,7 +55,10 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
                 << "Post-attach failure from detached state must leave the thread detached";
         }
 
-        /// --- Starting attached to G0: every failed switch must restore G0. ---
+        /// --- Starting attached to G0 and named: every failed allow_existing_group switch must
+        /// restore both G0 and the original name (post_attach_failure throws after setThreadName
+        /// has already renamed the thread, so the catch block must put the name back too). ---
+        setThreadName(ThreadName::TCP_HANDLER);
         CurrentThread::attachToGroupIfDetached(G0);
 
         FailPointInjection::enableFailPoint(FailPoints::attach_to_group_failure);
@@ -61,6 +67,8 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Failed allow_existing_group attach must restore the original group";
         }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+            << "Failed allow_existing_group attach must restore the original name";
 
         FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
         {
@@ -68,6 +76,112 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
             EXPECT_EQ(getCurrentThreadGroup(), G0)
                 << "Post-attach failure must detach the target group and restore the original";
         }
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+            << "Post-attach failure must restore the original name after setThreadName renamed the thread";
+
+        /// --- Same post-attach failure, but the borrowed thread starts UNKNOWN (initially unnamed).
+        /// UNKNOWN is a valid previous name, not a "nothing to restore" sentinel, so the catch must
+        /// still put it back rather than leave the thread renamed to MERGE_MUTATE. ---
+        setThreadName(ThreadName::UNKNOWN); /// writes "Unknown" to the OS name; getThreadName() now reports UNKNOWN
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
+        {
+            ThreadGroupSwitcher switcher(G1, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+            EXPECT_EQ(getCurrentThreadGroup(), G0)
+                << "Post-attach failure must restore the original group for an initially-unnamed borrowed thread";
+        }
+        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
+            << "Post-attach failure must restore an UNKNOWN previous name; the restore is gated by a bool, not by the name value";
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+/// A CallbackRunnerTask whose pool throws from scheduleOrThrowOnError() (e.g. shutting down) is
+/// destroyed during unwinding ON THE SCHEDULING THREAD -- which usually already owns its own query
+/// thread group. ~CallbackRunnerTask() runs a ThreadGroupSwitcher to release the callback under the
+/// task's group; it must NOT abort with "Thread is already attached to a group", and must leave the
+/// scheduling thread attached to its original group AND wearing its original name afterwards.
+/// Reproduces the arm_tsan stress abort (STID 4298-42a4): DROP TABLE ->
+/// MergeTreeDeduplicationLog::shutdown -> WriteBufferFromS3 -> TaskTracker::add ->
+/// scheduleOrThrowOnError throws -> ~CallbackRunnerTask on the query thread.
+TEST(ThreadGroupSwitcher, CallbackRunnerTaskDestroyedOnGroupOwningThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto query_group = std::make_shared<ThreadGroup>(context, 0); /// the scheduling thread's own group
+        auto task_group = std::make_shared<ThreadGroup>(context, 0);  /// the group the task would run under
+
+        /// The scheduling thread is attached to its query group and named like the real query thread
+        /// (e.g. a TCPHandler running DROP TABLE), so we can check the name is restored, not just the group.
+        setThreadName(ThreadName::TCP_HANDLER);
+        CurrentThread::attachToGroupIfDetached(query_group);
+        ASSERT_EQ(getThreadName(), ThreadName::TCP_HANDLER);
+
+        std::future<void> future;
+        {
+            /// Build the task that threadPoolCallbackRunnerUnsafe would have scheduled, then let it be
+            /// destroyed here (never run) -- the same shared_ptr destruction that happens when
+            /// scheduleOrThrowOnError() throws and unwinding drops the not-yet-queued task. Use a real
+            /// (non-UNKNOWN) async-pool name so ~CallbackRunnerTask actually renames this thread; with
+            /// ThreadName::UNKNOWN the rename is a no-op and the name-restore path is not exercised.
+            detail::CallbackRunnerTask<void, std::function<void()>> task(
+                task_group, ThreadName::S3_COPY_POOL, std::function<void()>([]{}));
+            future = task.promise.get_future();
+        } /// ~CallbackRunnerTask() runs here, on a thread that already owns query_group.
+
+        /// Must not have aborted, and the scheduling thread must still own its original group AND name --
+        /// the switcher renamed it to the async-pool name while borrowing and must put both back.
+        EXPECT_EQ(getCurrentThreadGroup(), query_group)
+            << "~CallbackRunnerTask on a group-owning thread must restore that thread's group";
+        EXPECT_EQ(getThreadName(), ThreadName::TCP_HANDLER)
+            << "~CallbackRunnerTask must restore the borrowed thread's original name, not leave it as the async-pool name";
+
+        /// The dropped task satisfies its promise with a normal, catchable exception.
+        EXPECT_THROW(future.get(), DB::Exception);
+
+        CurrentThread::detachFromGroupIfNotDetached();
+    });
+    t.join();
+}
+
+/// Same destructor borrow path, but the scheduling thread is attached to a group while UNNAMED
+/// (getThreadName() == UNKNOWN). UNKNOWN is a legitimate previous name, not a "nothing to restore"
+/// sentinel: the switcher still renames the borrowed thread to the async-pool name, so the
+/// destructor must put the name back to UNKNOWN. Guarding the restore by the name value (!= UNKNOWN)
+/// would skip it here and leak the pool name onto an initially-unnamed thread.
+TEST(ThreadGroupSwitcher, CallbackRunnerTaskRestoresUnknownNameOnGroupOwningThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto query_group = std::make_shared<ThreadGroup>(context, 0);
+        auto task_group = std::make_shared<ThreadGroup>(context, 0);
+
+        /// Force an observable UNKNOWN name: setThreadName(UNKNOWN) writes "Unknown" to the OS name,
+        /// so getThreadName() parses back to UNKNOWN (a bare call on a fresh thread would be a no-op
+        /// and could inherit an unrelated OS name).
+        setThreadName(ThreadName::UNKNOWN);
+        CurrentThread::attachToGroupIfDetached(query_group);
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+
+        std::future<void> future;
+        {
+            detail::CallbackRunnerTask<void, std::function<void()>> task(
+                task_group, ThreadName::S3_COPY_POOL, std::function<void()>([]{}));
+            future = task.promise.get_future();
+        } /// ~CallbackRunnerTask() borrows this UNKNOWN-named thread, renames it to S3_COPY_POOL.
+
+        EXPECT_EQ(getCurrentThreadGroup(), query_group)
+            << "~CallbackRunnerTask on a group-owning thread must restore that thread's group";
+        EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
+            << "~CallbackRunnerTask must restore an UNKNOWN previous name, not leave it as the async-pool name";
+
+        EXPECT_THROW(future.get(), DB::Exception);
+
         CurrentThread::detachFromGroupIfNotDetached();
     });
     t.join();

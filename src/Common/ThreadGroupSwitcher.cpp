@@ -47,7 +47,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             else if (!allow_existing_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
             else
+            {
+                /// Borrowing a thread that already owns a group. setThreadName(thread_name) below renames
+                /// it; remember the current name (even UNKNOWN) so the destructor restores it together
+                /// with the group. The bool, not the value, decides whether to restore.
+                prev_thread_name = getThreadName();
+                should_restore_prev_thread_name = true;
                 CurrentThread::detachFromGroupIfNotDetached();
+            }
         }
 
         if (!prev_thread)
@@ -77,9 +84,14 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             /// leaving the thread on the target group. Detach it first.
             if (CurrentThread::getGroup() == thread_group)
                 CurrentThread::detachFromGroupIfNotDetached();
-            /// Restore the previous group for allow_existing_group=true callers.
+            /// Restore the previous group and name for allow_existing_group=true callers. setThreadName
+            /// may already have renamed the borrowed thread before the failure; restore the original name
+            /// too (only when we captured one on the borrow path). The destructor early-returns on this
+            /// path (both groups are nulled below), so the restore must happen here.
             if (prev_thread_group && !CurrentThread::getGroup())
                 CurrentThread::attachToGroup(prev_thread_group);
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
         }
         catch (...)
         {
@@ -111,6 +123,11 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
+            /// Restore the borrowed thread's original name, undone by setThreadName(thread_name) in the
+            /// ctor. Otherwise a borrowed query thread (e.g. TCPHandler) is left wearing the async-pool
+            /// name, making later logs, traces, /proc names and jemalloc thread-profile attribution wrong.
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
         }
     }
     catch (...)
