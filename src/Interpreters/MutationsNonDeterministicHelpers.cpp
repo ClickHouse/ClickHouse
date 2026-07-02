@@ -62,7 +62,10 @@ public:
                 /// NOTE It may be an aggregate function, so get(...) may throw.
                 /// However, an aggregate function can be used only in subquery and we do not go into subquery.
                 const auto func = FunctionFactory::instance().get(function->name, data.context);
-                if (!func->isDeterministic())
+                /// Determinism can depend on the argument count (e.g. `year()` is non-deterministic
+                /// while `year(date)` delegates to `toYear` and is deterministic), so pass it in.
+                const size_t number_of_arguments = function->arguments ? function->arguments->children.size() : 0;
+                if (!func->isDeterministic(number_of_arguments))
                     data.result.nondeterministic_function_name = func->getName();
             }
         }
@@ -104,8 +107,11 @@ public:
 
         /// It makes sense to execute functions which are deterministic
         /// in scope of query because they are usually constant expressions.
+        /// Determinism can depend on the argument count (e.g. `year()` is non-deterministic and gets
+        /// folded to a literal on the initiator, while `year(date)` is deterministic), so pass it in.
         auto builder = FunctionFactory::instance().get(function.name, data.context);
-        if (builder->isDeterministic() || !builder->isDeterministicInScopeOfQuery())
+        const size_t number_of_arguments = function.arguments ? function.arguments->children.size() : 0;
+        if (builder->isDeterministic(number_of_arguments) || !builder->isDeterministicInScopeOfQuery())
             return;
 
         Field field;

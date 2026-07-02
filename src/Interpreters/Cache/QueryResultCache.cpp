@@ -89,7 +89,10 @@ struct HasNonDeterministicFunctionsMatcher
         {
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
-                if (!func->isDeterministic())
+                /// Determinism can depend on the argument count (e.g. `year()` is non-deterministic
+                /// while `year(date)` delegates to `toYear` and is deterministic), so pass it in.
+                const size_t number_of_arguments = function->arguments ? function->arguments->children.size() : 0;
+                if (!func->isDeterministic(number_of_arguments))
                     data.has_non_deterministic_functions = true;
                 return;
             }

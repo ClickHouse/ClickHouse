@@ -1,0 +1,13 @@
+-- query result cache: year(<date>) is cacheable like toYear(<date>)
+1
+1
+-- both are stored in the query cache (one entry each)
+2
+-- niladic year() is non-deterministic and is rejected from the query cache
+-- nothing was cached for niladic year()
+0
+-- Replicated mutations: ALTER ... WHERE year(<date>) is accepted like toYear(<date>)
+-- both year(<date>) and toYear(<date>) DELETE mutations were accepted and completed
+(DELETE WHERE toYear(ts) = 2024)	1
+(DELETE WHERE year(ts) = 2022)	1
+-- niladic year() stays rejected in a Replicated mutation

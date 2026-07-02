@@ -384,6 +384,11 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+    /// Determinism keyed by the number of arguments, for functions whose determinism depends on the
+    /// argument count (e.g. `year()` is non-deterministic, `year(date)` is deterministic). Pre-build
+    /// checks that inspect the unresolved AST by function name (query result cache, mutation checks)
+    /// call this with the AST argument count. The default ignores the count and matches isDeterministic().
+    virtual bool isDeterministic(size_t /*number_of_arguments*/) const { return isDeterministic(); }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
