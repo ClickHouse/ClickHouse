@@ -549,9 +549,11 @@ void Reader::prepareBloomFilterCondition()
             /// for nothing. The dictionary filter is exact and reads no extra data per value, so that
             /// rationale does not apply: capping here would silently disable dictionary pruning for
             /// `IN` lists with more than `bloom_filter_max_set_size` elements, which is exactly the
-            /// workload this feature targets. So keep the cap only for columns that can use nothing but
-            /// the bloom filter.
-            if (!dict_filter_eligible_columns[column_idx] && column->size() > options.bloom_filter_max_set_size)
+            /// workload this feature targets. So for a column that can use nothing but the bloom filter
+            /// we keep the cap (skip entirely); for a dictionary-eligible column we still hash the large
+            /// set so the dictionary filter can use it, but must not let the bloom filter probe it.
+            bool exceeds_bloom_filter_cap = column->size() > options.bloom_filter_max_set_size;
+            if (exceeds_bloom_filter_cap && !dict_filter_eligible_columns[column_idx])
                 return std::nullopt;
             const auto & [primitive_idx, descriptor] = *pair;
             auto hashes = parquetTryHashColumn(column.get(), &descriptor);
@@ -560,7 +562,15 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
-            column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
+            if (exceeds_bloom_filter_cap)
+                /// Hashes are still needed for exact dictionary pruning (they are handed to the
+                /// dictionary filter via the query-condition RPN, not via `bloom_filter_hashes`), but
+                /// the probabilistic bloom filter must not read a block per value on row groups that
+                /// fall back to it - so disable it for this column and do not register the hashes for
+                /// bloom-filter prefetching.
+                column_info.bloom_filter_set_too_large = true;
+            else
+                column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
             any_column_uses_bf = true;
             return hashes;
         };
@@ -611,9 +621,14 @@ void Reader::initializePrefetches()
             /// is disabled. So we must re-check the setting here, otherwise a row group that is not
             /// dictionary-filter eligible but has a bloom filter would use it despite the user
             /// disabling `input_format_parquet_bloom_filter_push_down`.
+            /// `bloom_filter_set_too_large` means the query constants for this column exceed
+            /// `bloom_filter_max_set_size` and were hashed only for the exact dictionary filter; a
+            /// bloom filter over that many values would read a block per value for little benefit, so
+            /// we keep it disabled on row groups (like this one) that fall back to it.
             if (!column.use_dictionary_filter &&
                 options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
+                !primitive_columns[column_idx].bloom_filter_set_too_large &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
                 /// Have to guess the header size upper bound.
