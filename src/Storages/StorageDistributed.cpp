@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -29,6 +30,7 @@
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
+#include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
@@ -70,6 +72,7 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -111,9 +114,11 @@
 #include <IO/ConnectionTimeouts.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <memory>
 #include <filesystem>
+#include <unordered_set>
 
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
@@ -1755,6 +1760,197 @@ size_t StorageDistributed::getShardCount() const
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : getContext()->getCluster(cluster_name);
+}
+
+static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
+    const Cluster & cluster,
+    const Cluster::ShardInfo & shard_info,
+    const StorageID & table_id,
+    const IStorage * owner,
+    ContextPtr context)
+{
+    if (shard_info.isLocal())
+    {
+        auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+        if (!storage)
+            return {};
+        /// The local shard can resolve back to the owning `Distributed` table itself (a self-referential
+        /// `Distributed` table). The constructor rejects this only on `CREATE`, not when loading existing
+        /// metadata (e.g. on `ATTACH` or server start), so such a table can exist. Recursing would call
+        /// back into `StorageDistributed::getModificationHash`, which has no depth guard, so fail closed
+        /// on self-reference.
+        if (storage.get() == owner)
+            return {};
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+        auto table_hash = storage->getModificationHash(snapshot, context);
+        if (!table_hash)
+            return {};
+        /// Fold the child table's UUID so that a dropped/recreated same-name child is distinguished even
+        /// for engines whose own hash does not fold it: URL and object-storage hashes are derived only
+        /// from the resource (its `ETag`), so without the UUID a `Distributed` over such a child could not
+        /// tell a re-incarnation that happens to report the same resource hash from the original table.
+        SipHash with_identity;
+        with_identity.update(storage->getStorageID().uuid);
+        with_identity.update(*table_hash);
+        return with_identity.get128();
+    }
+
+    /// Ask the shard for the modification hash and the UUID of the underlying table through system.tables.
+    /// The UUID is folded for the same reason as on the local path above.
+    const String query = "SELECT modification_hash, toString(uuid) AS uuid FROM system.tables WHERE database = "
+        + quoteString(table_id.database_name) + " AND name = " + quoteString(table_id.table_name);
+
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
+
+    /// Advance the distributed depth carried to the next server. The remote probe re-enters
+    /// `system.tables` -> `StorageDistributed::getModificationHash` on a fresh thread on the shard, where
+    /// the thread-local cycle guard above cannot see this thread's set, so a cross-server wrapper cycle
+    /// (`A.d1` -> `B.d2` -> `A.d1`) would otherwise recurse unbounded. `updateSettingsForCluster` does not
+    /// bump the depth (unlike `ClusterProxy::executeQuery`), so bump it here; `getModificationHash` fails
+    /// closed once the depth reaches its limit.
+    new_context->increaseDistributedDepth();
+
+    auto hash_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
+    auto uuid_type = std::make_shared<DataTypeString>();
+    auto sample_block = std::make_shared<const Block>(Block{
+        {hash_type->createColumn(), hash_type, "modification_hash"},
+        {uuid_type->createColumn(), uuid_type, "uuid"}});
+
+    RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+    executor.setPoolMode(PoolMode::GET_ONE);
+
+    std::optional<UInt128> result;
+    for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
+    {
+        const auto & hash_column = current.getByName("modification_hash").column;
+        const auto & uuid_column = current.getByName("uuid").column;
+        for (size_t i = 0; i < hash_column->size(); ++i)
+        {
+            Field value = (*hash_column)[i];
+            if (value.isNull())
+            {
+                executor.finish();
+                return {}; /// The shard cannot tell whether its table changed.
+            }
+            SipHash with_identity;
+            with_identity.update((*uuid_column)[i].safeGet<String>());
+            with_identity.update(value.safeGet<UInt128>());
+            result = with_identity.get128();
+        }
+    }
+    executor.finish();
+
+    return result; /// nullopt if the table was not found on the shard.
+}
+
+std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Heavy path: ask every shard for the modification hash of the underlying table and combine the
+    /// answers. Only used when explicitly requested.
+
+    /// The local-shard path recurses into the underlying table's `getModificationHash` in-process, so
+    /// wrapper tables can form a cycle and overflow the stack - e.g. two `Distributed` tables (or a
+    /// `Distributed` and a `Merge`) pointing at each other. The direct self-reference is also handled in
+    /// `getModificationHashOfRemoteTableInShard`, but this guards indirect cycles too: track the tables
+    /// currently being hashed on this thread and fail closed (return nullopt) on re-entry.
+    static thread_local std::unordered_set<const IStorage *> tables_being_hashed;
+    if (!tables_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ tables_being_hashed.erase(this); });
+
+    /// The thread-local set above only catches same-server, same-thread cycles. A cross-server cycle
+    /// recurses through the remote `system.tables` probe, which lands on a fresh thread on the next server
+    /// with an empty set, so we bound it by the distributed depth instead: each remote probe advances
+    /// `ClientInfo::distributed_depth` (see `getModificationHashOfRemoteTableInShard`), and here we fail
+    /// closed (return nullopt) once it reaches the limit. The limit is `max_distributed_depth` when set,
+    /// like ordinary distributed reads, and also a hard cap (generous relative to the default depth of 5,
+    /// but bounded) so the probe still terminates when the user disabled the depth limit
+    /// (`max_distributed_depth = 0`) or set it very high. No real wrapper chain nests this deep.
+    const auto & settings = query_context->getSettingsRef();
+    static constexpr UInt64 max_modification_hash_probe_depth = 16;
+    const UInt64 distributed_depth = query_context->getClientInfo().distributed_depth;
+    if (distributed_depth >= max_modification_hash_probe_depth
+        || (settings[Setting::max_distributed_depth] && distributed_depth >= settings[Setting::max_distributed_depth]))
+        return {};
+
+    /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
+    if (remote_table_function_ptr)
+        return {};
+
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// this `Distributed` table: a DROP + CREATE with the same name can change the sharding key (which is
+    /// query-visible under `optimize_skip_unused_shards`) or the cluster/remote target while combining to
+    /// the same hash, since the sharding key is fixed at creation and cannot be folded as an in-lifetime
+    /// change. Fail closed, matching the underlying engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    try
+    {
+        auto cluster = getCluster();
+        if (!cluster)
+            return {};
+
+        const StorageID remote_table_id{remote_database, remote_table};
+
+        const auto & shards_info = cluster->getShardsInfo();
+        const auto & shards_addresses = cluster->getShardsAddresses();
+
+        SipHash hash;
+        /// Fold this table's own UUID: the `hasUUID()` guard above requires it precisely so that
+        /// incarnations of the same `Distributed` name can be told apart, but the create-time
+        /// read-affecting arguments (the sharding key, the cluster/remote target) are fixed at creation
+        /// and cannot be folded as in-lifetime changes. A same-name `DROP` + `CREATE` in an `Atomic`
+        /// database gets a fresh UUID, so mixing the UUID in distinguishes `Distributed(..., x)` from a
+        /// re-created `Distributed(..., x + 1)` over the same remote tables (the routing differs under
+        /// `optimize_skip_unused_shards`) even though every other folded value stays the same. Matches the
+        /// underlying engines (`Memory`/`Log`/`MergeTree`/`URL`/object storage), which all fold their UUID.
+        hash.update(getStorageID().uuid);
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this Distributed table's own column metadata (a reverted
+        /// metadata-only `ALTER` would otherwise repeat the column string above). See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        hash.update(remote_database);
+        hash.update(remote_table);
+        hash.update(shards_info.size());
+
+        /// Combine the per-shard hashes in stable cluster order (the order of `getShardsInfo`, which is the
+        /// configured shard order), and fold each shard's identity together with its hash. We must NOT sort
+        /// or otherwise discard the placement: sorting makes shard placement invisible, so exchanging the
+        /// data between two shards would leave the combined hash unchanged even though a query whose result
+        /// depends on placement (`optimize_skip_unused_shards`, reading `_shard_num`, ...) now reads a
+        /// different shard. Folding `shard_num` (and the probed replica's address) per shard keeps the
+        /// combined value sensitive to which shard produced which hash.
+        for (size_t i = 0; i < shards_info.size(); ++i)
+        {
+            const auto & shard_info = shards_info[i];
+
+            /// We probe a single replica per shard (`GET_ONE`). With more than one replica, a different
+            /// query may read from another replica, which - during replication lag - can hold different
+            /// data than the one we probed. We cannot guarantee consistency in that case, so fail closed.
+            if (shard_info.getAllNodeCount() > 1)
+                return {};
+
+            auto shard_hash = getModificationHashOfRemoteTableInShard(*cluster, shard_info, remote_table_id, this, query_context);
+            if (!shard_hash)
+                return {}; /// A shard cannot tell whether it changed - assume the worst for the whole table.
+
+            /// Shard identity: its configured number and the address(es) of the probed replica.
+            hash.update(shard_info.shard_num);
+            if (i < shards_addresses.size())
+                for (const auto & address : shards_addresses[i])
+                    hash.update(address.readableString());
+            hash.update(*shard_hash);
+        }
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not reach a shard, so we conservatively assume the data may have changed.
+        return {};
+    }
 }
 
 ClusterPtr StorageDistributed::getOptimizedCluster(

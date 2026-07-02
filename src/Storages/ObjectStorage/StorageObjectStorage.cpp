@@ -1,8 +1,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <algorithm>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
 #include <Core/LogsLevel.h>
@@ -12,6 +15,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -477,6 +481,122 @@ std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context)
 
     is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
+}
+
+std::optional<UInt128> StorageObjectStorage::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table whose object `ETag`s repeat under a DROP + CREATE with a different read-affecting
+    /// configuration. The UUID (folded into the hash below) is the per-incarnation identity that tells them
+    /// apart, so without one there is nothing to fold - fail closed, matching `MergeTree`/`Memory`/`Log` and `URL`.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// Heavy path: list the objects behind the table and hash their ETags, sizes and modification times.
+    /// Not supported for data lakes (the set of objects is derived from external metadata) and for the
+    /// non-initiator side of cluster functions.
+    if (distributed_processing || configuration->isDataLakeConfiguration())
+        return {};
+
+    /// The object set to hash. Prefer the set the query's read actually consumed (pinned in the query
+    /// context by the reading side); fall back to a fresh listing otherwise (the pre-read check, and
+    /// non-query callers such as `system.tables`). Hashing the consumed set at finalization closes a
+    /// listing `A -> B -> A` race where a re-listing would reproduce the pre-read hash even though the
+    /// cached result was built from a different object set. See `QueryConsumedObjectSets`.
+    std::vector<QueryConsumedObjectSets::Object> objects;
+    bool used_consumed_set = false;
+    if (auto consumed_object_sets = query_context->getQueryConsumedObjectSets())
+    {
+        if (auto consumed = consumed_object_sets->get(getStorageID().uuid))
+        {
+            objects = std::move(*consumed);
+            used_consumed_set = true;
+        }
+    }
+
+    if (!used_consumed_set)
+    {
+        try
+        {
+            is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context)
+                              : configuration->update(object_storage, query_context);
+
+            auto query_settings = configuration->getQuerySettings(query_context);
+            query_settings.throw_on_zero_files_match = false;
+            query_settings.ignore_non_existent_file = true;
+
+            auto file_iterator = StorageObjectStorageSource::createFileIterator(
+                configuration,
+                query_settings,
+                object_storage,
+                /*storage_metadata=*/ nullptr,
+                /*distributed_processing=*/ false,
+                query_context,
+                /*predicate=*/ nullptr,
+                /*filter_actions_dag=*/ nullptr,
+                /*virtual_columns=*/ {},
+                /*hive_columns=*/ {},
+                /*read_keys=*/ nullptr,
+                /*file_progress_callback=*/ {});
+            file_iterator->setEmitProfileEvents(false);
+
+            while (auto object_info = file_iterator->next(0))
+            {
+                auto metadata = object_info->getObjectMetadata();
+                if (!metadata)
+                    metadata = object_storage->tryGetObjectMetadata(object_info->getPath(), /*with_tags=*/ false);
+
+                QueryConsumedObjectSets::Object object;
+                object.path = object_info->getPath();
+                if (metadata)
+                {
+                    object.etag = metadata->etag;
+                    object.size = metadata->size_bytes;
+                    object.last_modified = metadata->last_modified.epochTime();
+                    object.has_metadata = true;
+                }
+                objects.push_back(std::move(object));
+            }
+        }
+        catch (...)
+        {
+            /// Ok to ignore: we could not list the objects, so we conservatively assume the data may have changed.
+            return {};
+        }
+    }
+
+    /// Hash in a deterministic (path-sorted) order so that the listing and the consumed set - which may
+    /// enumerate the same objects in a different order - produce the same value for the same object set.
+    std::sort(objects.begin(), objects.end(), [](const auto & lhs, const auto & rhs) { return lhs.path < rhs.path; });
+
+    SipHash hash;
+    /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an
+    /// `Atomic` database gets a fresh UUID) that would otherwise share the same object `ETag`s and columns
+    /// under a different read-affecting configuration.
+    hash.update(getStorageID().uuid);
+    /// Loop-free metadata version: the column string below folds by value, so a metadata-only `ALTER` that
+    /// is reverted (e.g. an alias/default expression `A -> B -> A`) does not move it and the object `ETag`s
+    /// stay the same, yet the middle state B was query-visible. Folding the per-lifetime metadata version
+    /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+    for (const auto & object : objects)
+    {
+        /// Require a strong provider version (ETag). Size and modification time are weak validators
+        /// (e.g. HDFS does not expose an ETag, and a same-size rewrite within the same second would be
+        /// missed), so fail closed rather than risk a stale result. `has_metadata` is false when the
+        /// object could not be probed at all (assume the data may have changed).
+        if (!object.has_metadata || object.etag.empty() || object.etag.starts_with("W/"))
+            return {};
+
+        hash.update(object.path);
+        hash.update(object.etag);
+        hash.update(object.size);
+        hash.update(object.last_modified);
+    }
+
+    return hash.get128();
 }
 
 void StorageObjectStorage::read(

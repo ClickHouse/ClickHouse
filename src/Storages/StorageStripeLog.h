@@ -67,6 +67,8 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     static VirtualColumnsDescription createVirtuals();
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -123,6 +125,11 @@ private:
 
     std::atomic<UInt64> total_rows = 0;
     std::atomic<UInt64> total_bytes = 0;
+
+    /// Monotonically increasing version, bumped on every data change (insert, truncate, restore). Used by
+    /// getModificationHash so that TRUNCATE followed by reinserting different rows with the same row/byte
+    /// counts still produces a different hash.
+    std::atomic<UInt64> data_version = 0;
 
     const size_t max_compress_block_size;
 

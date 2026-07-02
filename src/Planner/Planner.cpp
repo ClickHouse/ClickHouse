@@ -49,6 +49,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 
@@ -116,6 +117,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool query_cache_use_only_when_data_was_not_changed;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -2151,10 +2153,34 @@ void Planner::buildPlanForQueryNode()
     if (local_can_use_cache)
         settings_copy = settings;
 
+    /// When the query cache is restricted to consistent results, fold the combined modification hash of the
+    /// referenced tables into the (subquery) cache key. If consistency cannot be guaranteed, the subquery is
+    /// not cached.
+    std::optional<UInt128> referenced_tables_modification_hash;
+    if (should_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed])
+    {
+        referenced_tables_modification_hash = computeQueryReferencedTablesModificationHash(ast, query_context);
+        if (!referenced_tables_modification_hash)
+            should_cache = false;
+    }
+
+    /// Object-storage tables list their objects independently of the read, so the finalization
+    /// consistency check below could re-list a different object set than the read actually consumed (a
+    /// listing `A -> B -> A` race). This Planner-level subquery cache can reach the consistency check
+    /// without the `executeQuery` level having created the capture - e.g. an explicit per-subquery
+    /// `use_query_cache = 1` opt-in while the outer query does not use the (consistent) cache, so
+    /// `can_use_query_result_cache` is false there and no capture is allocated. Create it on the query
+    /// context here too (reusing an existing one so the read path and both finalization checks share a
+    /// single capture), so `StorageObjectStorage::getModificationHash` hashes the consumed set instead of
+    /// re-listing. See `QueryConsumedObjectSets`.
+    if (should_cache && referenced_tables_modification_hash.has_value()
+        && query_context->hasQueryContext() && !query_context->getQueryConsumedObjectSets())
+        query_context->getQueryContext()->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
+
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
     {
-        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
+        QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true, referenced_tables_modification_hash);
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
@@ -2676,6 +2702,7 @@ void Planner::buildPlanForQueryNode()
     /// When should_cache is true but the outer query didn't set use_query_cache (explicit subquery opt-in),
     /// skip the context flag check in checkCanWriteQueryResultCache while still respecting safety checks.
     bool skip_context_check = should_cache && !can_use_query_result_cache;
+
     if (should_cache && checkCanWriteQueryResultCache(ast, query_context, skip_context_check))
     {
         auto created_at = std::chrono::system_clock::now();
@@ -2687,7 +2714,8 @@ void Planner::buildPlanForQueryNode()
             settings[Setting::query_cache_share_between_users],
             created_at, expires_at,
             settings[Setting::query_cache_compress_entries],
-            /* is_subquery = */ true);
+            /* is_subquery = */ true,
+            referenced_tables_modification_hash);
 
         const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
@@ -2705,6 +2733,16 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::max_block_size],
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
+
+            /// Drop the entry at finalization if a referenced table changed during execution (see the
+            /// executeQuery-level cache for details).
+            if (settings[Setting::query_cache_use_only_when_data_was_not_changed])
+                query_result_cache_writer->setConsistencyValidator(
+                    [ast, query_context, expected = referenced_tables_modification_hash]()
+                    {
+                        auto current = computeQueryReferencedTablesModificationHash(ast, query_context);
+                        return current.has_value() && current == expected;
+                    });
 
             auto stream_into_query_result_cache_step = std::make_unique<StreamInQueryResultCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_result_cache_writer);
             query_plan.addStep(std::move(stream_into_query_result_cache_step));

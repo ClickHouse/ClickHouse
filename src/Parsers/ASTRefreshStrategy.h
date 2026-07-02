@@ -25,6 +25,9 @@ public:
     ASTTimeInterval * spread = nullptr;
     RefreshScheduleKind schedule_kind{RefreshScheduleKind::UNKNOWN};
     bool append = false;
+    /// `REFRESH ... IF CHANGED`: skip a scheduled refresh if none of the tables the view reads from
+    /// changed since the last refresh.
+    bool if_changed = false;
 
     String getID(char) const override { return "Refresh strategy definition"; }
 

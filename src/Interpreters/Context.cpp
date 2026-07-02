@@ -77,6 +77,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
@@ -7229,6 +7230,20 @@ QueryMetadataCachePtr Context::getQueryMetadataCache() const
 void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
     query_metadata_cache = query_metadata_cache_;
+}
+
+QueryConsumedObjectSetsPtr Context::getQueryConsumedObjectSets() const
+{
+    /// May be called outside of a query (e.g. a `system.tables` scan or a background refresh); return
+    /// null there so the caller falls back to listing rather than asserting.
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_consumed_object_sets;
+}
+
+void Context::setQueryConsumedObjectSets(const QueryConsumedObjectSetsPtr & query_consumed_object_sets_)
+{
+    query_consumed_object_sets = query_consumed_object_sets_;
 }
 
 bool Context::hasQueryParameters() const

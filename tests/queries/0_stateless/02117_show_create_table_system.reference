@@ -1236,6 +1236,7 @@ CREATE TABLE system.tables
     `target_database` String,
     `target_table` String,
     `definer` String,
+    `modification_hash` Nullable(UInt128),
     `table` String ALIAS name
 )
 ENGINE = SystemTables

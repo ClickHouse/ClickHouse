@@ -659,6 +659,10 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Hash of the block number ranges of the data parts and the table structure version.
+    /// Changes whenever data is inserted, merged, mutated, or the structure is altered.
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -2020,6 +2024,18 @@ private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
+
+    /// Monotonically increases on every change to the membership of the active-part set (insert, merge,
+    /// mutation, drop, detach, attach) within a server lifetime. It is folded into `getModificationHash`
+    /// to make that hash loop-free: the part-info + checksum set alone repeats under an `A -> B -> A`
+    /// transition (e.g. `INSERT` then `DROP PART` returns the active set to an identical value), which
+    /// would let the `query_cache_use_only_when_data_was_not_changed` and `REFRESH ... IF CHANGED`
+    /// pre/post equality checks store a result built from the transient state `B` under state `A`'s key.
+    /// Because the counter advances on both the insert and the drop, any such round trip yields a
+    /// different hash. It resets to 0 on restart, which is the safe direction: the query cache and the
+    /// remembered refresh source hash are both in-memory and reset too, so a reuse can only be missed,
+    /// never wrongly served.
+    std::atomic<UInt64> active_parts_set_version = 0;
 
     mutable std::atomic<size_t> total_outdated_parts_count = 0;
     std::atomic<size_t> total_uncompressed_bytes_in_patches = 0;

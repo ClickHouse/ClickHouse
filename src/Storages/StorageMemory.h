@@ -38,7 +38,7 @@ public:
 
     String getName() const override { return "Memory"; }
 
-    size_t getSize() const { return data.get()->size(); }
+    size_t getSize() const { return data.get()->blocks.size(); }
 
     /// Snapshot for StorageMemory contains current set of blocks
     /// at the moment of the start of query.
@@ -46,6 +46,7 @@ public:
     {
         std::shared_ptr<const Blocks> blocks;
         size_t rows_approx = 0;
+        UInt64 data_version = 0;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -88,6 +89,8 @@ public:
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
+
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const override;
 
     /** Delays initialization of StorageMemory::read() until the first read is actually happen.
       * Usually, fore code like this:
@@ -140,8 +143,19 @@ private:
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
     /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
+    ///
+    /// The blocks are bundled with a monotonically increasing `version` and published as a single
+    /// unit, so that `getStorageSnapshot` observes a consistent (blocks, version) pair from one
+    /// atomic `data.get()` without holding `mutex` (locking it there deadlocks the mutation read
+    /// path, which itself calls `getStorageSnapshot`). The version lets `getModificationHash`
+    /// distinguish different data sets that happen to have the same size or reuse the same address.
+    struct VersionedBlocks
+    {
+        Blocks blocks;
+        UInt64 version = 0;
+    };
 
-    MultiVersion<Blocks> data;
+    MultiVersion<VersionedBlocks> data;
 
     mutable std::mutex mutex;
 
@@ -150,6 +164,11 @@ private:
 
     std::atomic<size_t> total_size_bytes = 0;
     std::atomic<size_t> total_size_rows = 0;
+
+    /// Atomically publishes `new_blocks` as the next version of `data`. Callers must hold whatever lock
+    /// serializes writers (`mutex` for inserts and settings ALTER, the table-exclusive lock for
+    /// drop/truncate/mutate/restore), so that the version is assigned monotonically without races.
+    void setDataBlocks(Blocks new_blocks);
 
     std::unique_ptr<MemorySettings> memory_settings;
 

@@ -40,6 +40,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/SipHash.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -1551,6 +1552,83 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .create(credentials);
 
     return buf->tryGetLastModificationTime();
+}
+
+std::optional<UInt128> IStorageURLBase::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr context) const
+{
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can point at the same URL with the same strong `ETag` but a
+    /// different read-affecting configuration (format, format settings) and produce the same hash. The UUID
+    /// (folded into the hash below) is the per-incarnation identity that tells them apart, so without one
+    /// there is nothing to fold - fail closed, matching `MergeTree`/`Memory`/`Log`.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    const auto & settings = context->getSettingsRef();
+
+    /// The read path (`ReadFromURL::createIterator`) expands glob patterns
+    /// (`{a,b}`) and `|`-separated failover options into several concrete URLs
+    /// and reads those, while a failover table (`StorageURLWithFailover`) keeps
+    /// an empty `uri` and reads from `uri_options`. This probe only covers the
+    /// single, unexpanded `uri`. Probing the literal pattern string could miss
+    /// changes in the query-visible data: a server may return a stable strong
+    /// `ETag` for the literal `/{a,b}.csv` resource while `/a.csv` or `/b.csv`
+    /// change. We do not probe the exact URL set the read path uses, so we
+    /// cannot guarantee change detection here. Fail closed (return nullopt) so
+    /// the consistent query cache and `REFRESH ... IF CHANGED` never reuse stale
+    /// results for such tables.
+    if (uri.empty() || urlWithGlobs(uri))
+        return {};
+
+    Poco::URI request_uri(uri);
+    Poco::Net::HTTPBasicCredentials credentials;
+    StorageURLSource::setCredentials(credentials, request_uri);
+
+    ReadWriteBufferFromHTTP::HTTPFileInfo file_info;
+    try
+    {
+        auto buf = BuilderRWBufferFromHTTP(request_uri)
+                       .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                       .withSettings(context->getReadSettings())
+                       .withTimeouts(getHTTPTimeouts(context))
+                       .withHostFilter(&context->getRemoteHostFilter())
+                       .withBufSize(settings[Setting::max_read_buffer_size])
+                       .withRedirects(settings[Setting::max_http_get_redirects])
+                       .withHeaders(headers)
+                       .create(credentials);
+
+        file_info = buf->getFileInfo();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not reach the server, so we conservatively assume the data may have changed.
+        return {};
+    }
+
+    /// A strong validator is required: size and modification time are weak (a server can rewrite
+    /// same-size content within the same second), so we only trust a non-weak `ETag`. Without it we
+    /// cannot guarantee detection of changes, so fail closed (return nullopt). A weak ETag (prefixed
+    /// with `W/`) is also insufficient.
+    if (file_info.etag.empty() || file_info.etag.starts_with("W/"))
+        return {};
+
+    SipHash hash;
+    /// Table identity distinguishes different incarnations of a same-named table (a DROP + CREATE in an
+    /// `Atomic` database gets a fresh UUID) that would otherwise share the same resource `ETag` and columns
+    /// under a different read-affecting configuration.
+    hash.update(getStorageID().uuid);
+    /// Loop-free metadata version: the column string below folds by value, so a metadata-only `ALTER` that
+    /// is reverted (e.g. an alias/default expression `A -> B -> A`) does not move it and the strong `ETag`
+    /// stays the same, yet the middle state B was query-visible. Folding the per-lifetime metadata version
+    /// keeps such a round trip from reproducing an earlier hash. See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    hash.update(uri);
+    hash.update(file_info.etag);
+    /// Mix in size and modification time as well - they only strengthen the strong ETag.
+    hash.update(file_info.file_size.value_or(0));
+    hash.update(file_info.last_modified.value_or(0));
+    return hash.get128();
 }
 
 StorageURL::StorageURL(

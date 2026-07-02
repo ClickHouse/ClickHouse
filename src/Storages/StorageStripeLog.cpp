@@ -4,6 +4,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 
@@ -275,6 +276,7 @@ public:
         storage.saveFileSizes(lock);
 
         storage.updateTotalRows(lock);
+        ++storage.data_version;
 
         done = true;
 
@@ -492,6 +494,7 @@ void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     num_indices_saved = 0;
     total_rows = 0;
     total_bytes = 0;
+    ++data_version;
     getContext()->clearMMappedFileCache();
 }
 
@@ -591,6 +594,47 @@ std::optional<UInt64> StorageStripeLog::totalRows(ContextPtr) const
 std::optional<UInt64> StorageStripeLog::totalBytes(ContextPtr) const
 {
     return total_bytes;
+}
+
+std::optional<UInt128> StorageStripeLog::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr) const
+{
+    /// The hash relies on the table UUID to distinguish incarnations of a same-named table together with
+    /// the monotonic `data_version`. Without a UUID (e.g. a table in an `Ordinary` database) DROP + CREATE
+    /// restarts `data_version` from the same value, so a recreated table holding different data could
+    /// produce the same hash. There is no per-incarnation identity to fold in, so fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    /// Sample under the read lock so the hash observes the same committed state a normal read would.
+    /// An in-progress INSERT/TRUNCATE/restore holds `rwlock` exclusively and may have already changed the
+    /// files without yet publishing the new `data_version`/totals; sampling without the lock could read
+    /// the pre-write state while a read starting at the same moment would see post-write data, letting
+    /// `query_cache_use_only_when_data_was_not_changed` serve a stale result.
+    ///
+    /// The lock must be non-blocking: `getModificationHash` is called while scanning `system.tables`,
+    /// which can happen while this very table is being written - e.g. `CREATE ... ENGINE = Log AS SELECT
+    /// * FROM system.tables` holds the write lock during its INSERT and `system.tables` then computes the
+    /// new table's hash. A blocking lock would self-deadlock there. So if a write currently holds the
+    /// lock, fail closed (return nullopt): a write is in progress, so we conservatively treat the data as
+    /// changed rather than risk a stale-but-consistent sample.
+    ReadLock lock{rwlock, std::try_to_lock};
+    if (!lock)
+        return {};
+
+    SipHash hash;
+    /// The table UUID distinguishes different incarnations of a table with the same name. The monotonic
+    /// `data_version` (bumped on every insert, truncate and restore) guarantees the hash changes whenever
+    /// the data changes, even for TRUNCATE followed by reinserting different rows with the same row/byte
+    /// counts. The version resets to 0 on restart, which only causes a harmless cache miss.
+    hash.update(getStorageID().uuid);
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+    /// Loop-free metadata version: the column string above repeats under a reverted metadata-only `ALTER`
+    /// and `data_version` does not move (no data changed). See `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+    hash.update(data_version.load(std::memory_order_relaxed));
+    hash.update(total_rows.load(std::memory_order_relaxed));
+    hash.update(total_bytes.load(std::memory_order_relaxed));
+    return hash.get128();
 }
 
 
@@ -726,6 +770,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
         saveIndices(lock);
         saveFileSizes(lock);
         updateTotalRows(lock);
+        ++data_version;
     }
     catch (...)
     {

@@ -50,6 +50,9 @@ void ASTRefreshStrategy::formatImpl(
         }
     }
 
+    if (if_changed)
+        ostr << " IF CHANGED";
+
     if (spread)
     {
         ostr << " RANDOMIZE FOR ";

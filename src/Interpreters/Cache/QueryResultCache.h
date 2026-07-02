@@ -9,8 +9,10 @@
 #include <Processors/Sources/SourceFromChunks.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/IAST_fwd.h>
+#include <Core/Types.h>
 #include <base/UUID.h>
 
+#include <functional>
 #include <optional>
 
 namespace DB
@@ -25,6 +27,13 @@ struct Settings;
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_context_check = false);
+
+/// Computes a single value that combines the modification hashes of all tables referenced by the query.
+/// It is folded into the query cache key when `query_cache_use_only_when_data_was_not_changed` is enabled,
+/// so that a cached result is only reused while the data behind the query is unchanged.
+/// Returns nullopt if consistency cannot be guaranteed (the query uses a table function, references a table
+/// that cannot be resolved, or a referenced table cannot report whether its data changed).
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context);
 
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
@@ -101,6 +110,8 @@ public:
         const bool is_subquery;
 
         /// Ctor to construct a Key for writing into query result cache.
+        /// `referenced_tables_modification_hash` is folded into the key when the query cache is restricted to
+        /// consistent results (setting `query_cache_use_only_when_data_was_not_changed`); see calculateASTHash().
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
@@ -111,7 +122,8 @@ public:
             std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed,
-            bool is_subquery_);
+            bool is_subquery_,
+            std::optional<UInt128> referenced_tables_modification_hash_ = {});
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
@@ -119,7 +131,8 @@ public:
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
-            bool is_subquery_);
+            bool is_subquery_,
+            std::optional<UInt128> referenced_tables_modification_hash_ = {});
 
         bool operator==(const Key & other) const;
     };
@@ -218,6 +231,12 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Optional check evaluated at finalizeWrite() time (after the query pipeline has finished reading the
+    /// source tables). If it returns false, the entry is not stored. Used by
+    /// `query_cache_use_only_when_data_was_not_changed` to drop the entry if a referenced table changed
+    /// during execution, so the cached result always matches the data state encoded in its key.
+    void setConsistencyValidator(std::function<bool()> validator) { consistency_validator = std::move(validator); }
+
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
@@ -234,6 +253,7 @@ private:
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     std::atomic<bool> was_finalized = false;
+    std::function<bool()> consistency_validator;
     LoggerPtr logger = getLogger("QueryResultCache");
 
     QueryResultCacheWriter(

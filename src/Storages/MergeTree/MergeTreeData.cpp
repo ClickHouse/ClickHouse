@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
@@ -10661,6 +10662,13 @@ void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t part
     total_active_size_bytes.fetch_add(bytes);
     total_active_size_rows.fetch_add(rows);
     total_active_size_parts.fetch_add(parts);
+
+    /// A change to the membership of the active-part set advances the loop-free version folded into
+    /// `getModificationHash` (see the field declaration). Size-only updates (`parts == 0`, e.g. an
+    /// in-place byte/row adjustment) must not bump it, otherwise every such update would needlessly
+    /// invalidate the query cache for the table.
+    if (parts != 0)
+        active_parts_set_version.fetch_add(1);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)
@@ -11141,6 +11149,130 @@ StorageSnapshotPtr
 MergeTreeData::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return createStorageSnapshot(metadata_snapshot, query_context, true);
+}
+
+std::optional<UInt128> MergeTreeData::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr /*context*/) const
+{
+    /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of
+    /// a same-named table: a DROP + CREATE can keep identical parts and checksums while changing
+    /// query-visible semantics (e.g. switching the engine to `ReplacingMergeTree` or changing its
+    /// version column), and block numbers also restart. The part checksums alone do not capture that, so
+    /// fail closed.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    SipHash hash;
+
+    /// Table identity: the UUID distinguishes different incarnations of a table with the same name.
+    /// Block numbers restart from scratch after DROP + CREATE, so without this a recreated table could
+    /// produce the same hash for different data.
+    hash.update(getStorageID().uuid);
+
+    /// Structure version: column definitions (names, types, and DEFAULT/MATERIALIZED/ALIAS expressions)
+    /// affect query results without creating a mutation, e.g. ADD COLUMN with a DEFAULT or changing an
+    /// ALIAS expression.
+    hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+
+    /// Key metadata is not part of the column list but can change query-visible results without
+    /// rewriting any parts, so fold each key's expression:
+    ///   - the sorting key is the deduplication/aggregation key of the ReplacingMergeTree /
+    ///     SummingMergeTree / CollapsingMergeTree / ... family, so `ALTER ... MODIFY ORDER BY` changes
+    ///     `FINAL` (and implicit-final) results;
+    ///   - the sampling key changes which rows a `SAMPLE` query returns;
+    ///   - the partition and primary keys are folded for completeness (at worst an unrelated metadata
+    ///     `ALTER` causes a harmless extra cache miss).
+    /// Secondary indices, projections and table settings only affect performance, not the result of a
+    /// query over the same parts, so they are intentionally not folded.
+    const auto & table_metadata = *storage_snapshot->metadata;
+    for (const auto & key_ast : {table_metadata.getPartitionKeyAST(), table_metadata.getSortingKeyAST(),
+                                 table_metadata.getPrimaryKeyAST(), table_metadata.getSamplingKeyAST()})
+    {
+        if (key_ast)
+            hash.update(key_ast->formatWithSecretsOneLine());
+    }
+
+    /// Loop-free version. The active-part set hashed below repeats under an `A -> B -> A` transition: a
+    /// table at parts `{p1}` that accepts an insert (`{p1, p2}`) and then `DROP PART`s `p2` returns to an
+    /// identical `{p1}` with the same part info and checksums. Folding a per-lifetime counter that advances
+    /// on every active-part-set change (the insert and the drop each bump it) makes such a round trip
+    /// produce a different hash, so the query-cache / `REFRESH ... IF CHANGED` pre/post equality checks
+    /// cannot mistake "changed and changed back" for "never changed" and store a result that was actually
+    /// read from the transient state `B`. Sampled live here, which is exactly what those checks need (they
+    /// hash before and after the read): equal hashes then mean no active-part-set change happened in
+    /// between. See `active_parts_set_version`.
+    hash.update(active_parts_set_version.load());
+
+    /// Same loop-free guard for metadata: the column/key strings folded above repeat under a metadata
+    /// `A -> B -> A` transition (e.g. `ALTER ... MODIFY COLUMN ... ALIAS ...` then back), and the
+    /// active-part counter would not move because no part changes. The metadata version advances on every
+    /// metadata application, so the round trip yields a different hash. See
+    /// `IStorage::getMetadataVersionForModificationHash`.
+    hash.update(getMetadataVersionForModificationHash());
+
+    /// Data version: the set of active data parts. Each part is uniquely identified within a table
+    /// incarnation by its (partition_id, min_block, max_block, level, mutation), which changes on every
+    /// insert, merge (level/blocks change) and mutation (mutation version changes). For engines that
+    /// rewrite data on merges (Replacing, Collapsing, ...) this is exactly the "block ranges of data parts".
+    auto add_part = [&](const IMergeTreeDataPart & part)
+    {
+        const auto & info = part.info;
+        hash.update(info.getPartitionId());
+        hash.update(info.min_block);
+        hash.update(info.max_block);
+        hash.update(info.level);
+        hash.update(info.mutation);
+
+        /// Fold the part's content checksum. The part-info tuple alone can repeat for different contents
+        /// within a single table incarnation: e.g. `DETACH PART '201901_2_2_0'` then `ATTACH PART
+        /// '201901_2_2_0' FROM '<dir>'` (or `FETCH PART`) brings back the same (partition_id, min_block,
+        /// max_block, level, mutation) with different data. The total checksum is computed in memory from
+        /// the part's file checksums (no I/O), so different contents yield a different hash.
+        const auto checksum = part.checksums.getTotalChecksumUInt128();
+        hash.update(checksum.low64);
+        hash.update(checksum.high64);
+    };
+
+    const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get());
+
+    /// On-the-fly mutations (unmaterialized ALTER UPDATE/DELETE applied during reads when
+    /// `apply_mutations_on_fly` is set) change query-visible rows without changing the active parts that
+    /// are hashed below. We cannot represent them cheaply here, so fail closed (return nullopt) while any
+    /// such mutation is pending. Once it materializes into parts, the part info (mutation version) reflects
+    /// it and the hash works again.
+    if (snapshot_data && snapshot_data->mutations_snapshot)
+    {
+        const auto & mutations = *snapshot_data->mutations_snapshot;
+        if (mutations.hasDataMutations() || mutations.hasAlterMutations() || mutations.hasMetadataMutations())
+            return {};
+    }
+    else
+    {
+        const auto counters = getMutationCounters();
+        if (counters.num_data > 0 || counters.num_alter > 0 || counters.num_metadata > 0)
+            return {};
+    }
+
+    /// Prefer the parts captured by the snapshot, so the result describes exactly the data that the
+    /// snapshot refers to. Fall back to the current set of active parts for snapshots taken without data.
+    if (snapshot_data && snapshot_data->parts)
+    {
+        for (const auto & part : *snapshot_data->parts)
+            add_part(*part.data_part);
+    }
+    else
+    {
+        for (const auto & part : getDataPartsVectorForInternalUsage())
+            add_part(*part);
+    }
+
+    /// Active patch parts (created by lightweight updates/deletes) are applied during reads when
+    /// `apply_patch_parts` is enabled, so they change query-visible rows and must be part of the hash.
+    /// They live in a separate part kind, so the regular-parts query above does not see them.
+    hash.update("patch");
+    for (const auto & part : getPatchPartsVectorForInternalUsage())
+        add_part(*part);
+
+    return hash.get128();
 }
 
 void MergeTreeData::incrementInsertedPartsProfileEvent(MergeTreeDataPartType type)

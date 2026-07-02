@@ -16,6 +16,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -193,6 +194,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool use_query_cache;
+    extern const SettingsBool query_cache_use_only_when_data_was_not_changed;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool implicit_select;
@@ -1727,15 +1729,36 @@ static BlockIO executeQueryImpl(
         if (can_use_query_result_cache)
             settings_copy = settings;
 
+        /// When the query cache is restricted to consistent results (`query_cache_use_only_when_data_was_not_changed`),
+        /// compute the combined modification hash of the referenced tables. It is folded into the cache key so that an
+        /// entry is reused only while the data behind the query is unchanged. If consistency cannot be guaranteed (the
+        /// query uses a table function, references a table that cannot be resolved, or a referenced table cannot report
+        /// whether it changed), the cache is bypassed entirely for this query.
+        const bool query_cache_only_when_data_unchanged
+            = can_use_query_result_cache && settings[Setting::query_cache_use_only_when_data_was_not_changed];
+        std::optional<UInt128> referenced_tables_modification_hash;
+        if (query_cache_only_when_data_unchanged)
+            referenced_tables_modification_hash = computeQueryReferencedTablesModificationHash(out_ast, context);
+        const bool can_use_consistent_query_result_cache
+            = !query_cache_only_when_data_unchanged || referenced_tables_modification_hash.has_value();
+
+        /// Object-storage tables list their objects independently of the read, so the finalization
+        /// consistency check could re-list the same object set even though the read consumed a different
+        /// one (a listing `A -> B -> A` race). Give the query a place to record the object set it actually
+        /// consumed; `StorageObjectStorage::getModificationHash` then hashes that captured set at
+        /// finalization instead of re-listing. Only needed when the consistency check is active.
+        if (query_cache_only_when_data_unchanged && referenced_tables_modification_hash.has_value())
+            context->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
+
         if (!async_insert)
         {
             /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
             /// then set a pipeline with a source populated by the query result cache.
             auto get_result_from_query_result_cache = [&]()
             {
-                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
+                if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache] && can_use_consistent_query_result_cache)
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false, referenced_tables_modification_hash);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
 
                     if (reader.hasCacheEntryForKey())
@@ -1846,7 +1869,7 @@ static BlockIO executeQueryImpl(
                     res = interpreter->execute();
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (checkCanWriteQueryResultCache(out_ast, context))
+                    if (checkCanWriteQueryResultCache(out_ast, context) && can_use_consistent_query_result_cache)
                     {
                             auto created_at = std::chrono::system_clock::now();
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
@@ -1858,7 +1881,8 @@ static BlockIO executeQueryImpl(
                                 settings[Setting::query_cache_share_between_users],
                                 created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries],
-                                /* is_subquery = */ false);
+                                /* is_subquery = */ false,
+                                referenced_tables_modification_hash);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
@@ -1876,6 +1900,18 @@ static BlockIO executeQueryImpl(
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
                                      settings[Setting::query_cache_max_entries]));
+                                /// Drop the entry at finalization (after the pipeline finished reading) if a
+                                /// referenced table changed during execution, so the cached result always
+                                /// matches the data state in its key (covers engines whose read is not tied
+                                /// to a fixed snapshot, e.g. URL / object storage).
+                                if (query_cache_only_when_data_unchanged)
+                                    query_result_cache_writer->setConsistencyValidator(
+                                        [out_ast, context, expected = referenced_tables_modification_hash]()
+                                        {
+                                            auto current = computeQueryReferencedTablesModificationHash(out_ast, context);
+                                            return current.has_value() && current == expected;
+                                        });
+
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

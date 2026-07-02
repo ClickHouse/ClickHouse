@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -112,6 +113,8 @@ RefreshTask::RefreshTask(
     , refresh_append(strategy.append)
 {
     createLogger(view->getStorageID());
+
+    refresh_if_changed = strategy.if_changed;
 
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::RefreshTask");
     if (strategy.settings != nullptr)
@@ -415,6 +418,12 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
+        refresh_if_changed = new_strategy.if_changed;
+        /// The remembered source hash refers to the previous refresh's query. After changing the refresh
+        /// params (including toggling IF CHANGED, or changing the query via separate ALTER) it may no longer
+        /// correspond to the target's current contents, so forget it and let the next refresh recompute.
+        last_refresh_source_hash.reset();
+        ++refresh_params_version;
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -990,12 +999,18 @@ void RefreshTask::executeRefresh()
         log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
 
     std::vector<StorageID> deps = set_handle.getDependencies();
+    bool out_of_schedule = execution.out_of_schedule;
+    bool if_changed = refresh_if_changed;
+    std::optional<UInt128> previous_source_hash = last_refresh_source_hash;
+    UInt64 params_version_at_start = refresh_params_version;
 
     lock.unlock();
+    bool unchanged = false;
+    std::optional<UInt128> source_hash;
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, if_changed, out_of_schedule, previous_source_hash, unchanged, source_hash);
     }
     catch (...)
     {
@@ -1012,10 +1027,19 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
-    if (new_table_uuid.has_value())
+    /// `unchanged` is the `REFRESH ... IF CHANGED` skip: the source data did not change, so we treat
+    /// the timeslot as completed (advancing the schedule and resetting retries) but do NOT touch the
+    /// last-success state - the view's data is unchanged, so dependent views must not be triggered.
+    if (new_table_uuid.has_value() || unchanged)
     {
         znode.last_attempt_succeeded = true;
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+        znode.previous_attempt_error = "";
+        znode.attempt_number = 0;
+        znode.randomize();
+    }
+    if (new_table_uuid.has_value())
+    {
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
@@ -1025,9 +1049,12 @@ void RefreshTask::executeRefresh()
             /// Must monotonically increase, dependencies rely on it.
             znode.last_success_end_time += std::chrono::nanoseconds(1);
         znode.last_success_dependencies = std::move(execution.dependencies);
-        znode.previous_attempt_error = "";
-        znode.attempt_number = 0;
-        znode.randomize();
+
+        /// Remember the source state this refresh was built from, for the next IF CHANGED check - but only
+        /// if no ALTER MODIFY REFRESH raced with this refresh. If the params changed while we were running,
+        /// this target may have been built from the old query/flag, so leave the hash cleared by the ALTER.
+        if (refresh_params_version == params_version_at_start)
+            last_refresh_source_hash = source_hash;
     }
     execution.znode = znode;
 
@@ -1037,7 +1064,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, bool if_changed, bool out_of_schedule, const std::optional<UInt128> & previous_source_hash, bool & out_unchanged, std::optional<UInt128> & out_source_hash)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1062,6 +1089,32 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         refresh_context = view->createRefreshContext(log_comment);
 
         syncDependenciesForRefresh(deps, refresh_context);
+
+        /// `REFRESH ... IF CHANGED`: if none of the tables the view reads from changed since the last
+        /// refresh that rebuilt the view, skip this refresh entirely. An explicit `SYSTEM REFRESH VIEW`
+        /// (out_of_schedule) always rebuilds, ignoring this check.
+        if (if_changed)
+        {
+            auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+            if (auto select_ast = view_metadata->select.select_query)
+                out_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+            /// An explicit `SYSTEM REFRESH VIEW` (out_of_schedule) always rebuilds, but we still recompute
+            /// the source hash above so that subsequent scheduled refreshes can be skipped.
+            if (!out_of_schedule && out_source_hash.has_value() && previous_source_hash.has_value()
+                && *out_source_hash == *previous_source_hash)
+            {
+                LOG_DEBUG(getLogger(), "Skipping refresh because none of the source tables changed (REFRESH ... IF CHANGED)");
+                out_unchanged = true;
+                return std::nullopt;
+            }
+
+            /// Proceeding to rebuild: record the object-storage object set the read below actually
+            /// consumes, so the post-read source hash reflects exactly what was read rather than a fresh
+            /// listing that could differ under a concurrent change (closes a listing `A -> B -> A` race
+            /// for object-storage sources). See `QueryConsumedObjectSets`.
+            refresh_context->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
+        }
 
         if (!refresh_append)
         {
@@ -1143,6 +1196,30 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
                 /// `executor` must be destroyed before `pipeline`!
+            }
+
+            /// Recompute the source hash now that the refresh query has finished reading the source, and only
+            /// remember it for the next IF CHANGED comparison if it is unchanged across the whole read.
+            ///
+            /// `out_source_hash` currently holds the pre-read value (sampled above, before the INSERT SELECT).
+            /// If a source insert commits after the read finished but before this recompute, the new table was
+            /// built from the old source state while the hash would already reflect the new one; storing that
+            /// would make the next scheduled IF CHANGED refresh wrongly skip, leaving the view stale. So we
+            /// keep the hash only when the pre-read and post-read values are both present and equal (the source
+            /// was stable across the read); otherwise we clear it, forcing the next refresh to run.
+            if (if_changed)
+            {
+                const std::optional<UInt128> pre_read_source_hash = out_source_hash;
+                std::optional<UInt128> post_read_source_hash;
+                auto view_metadata = view->getInMemoryMetadataPtr(refresh_context, false);
+                if (auto select_ast = view_metadata->select.select_query)
+                    post_read_source_hash = computeQueryReferencedTablesModificationHash(select_ast, refresh_context);
+
+                if (pre_read_source_hash.has_value() && post_read_source_hash.has_value()
+                    && *pre_read_source_hash == *post_read_source_hash)
+                    out_source_hash = post_read_source_hash;
+                else
+                    out_source_hash = std::nullopt;
             }
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);

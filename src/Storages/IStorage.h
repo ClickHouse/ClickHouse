@@ -2,6 +2,7 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/Types.h>
 #include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/CancellationCode.h>
@@ -20,6 +21,7 @@
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <atomic>
 #include <expected>
 #include <optional>
 #include <list>
@@ -220,7 +222,21 @@ public:
     void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
+        /// Advance the process-lifetime metadata version (see `getMetadataVersionForModificationHash`).
+        /// This is the single point through which table metadata is applied (initial load and every
+        /// metadata-changing ALTER), so engines that fold their column/key metadata into
+        /// `getModificationHash` can fold this version to make a metadata `A -> B -> A` round trip
+        /// produce a different hash instead of repeating the earlier one.
+        metadata_version_for_modification_hash.fetch_add(1, std::memory_order_relaxed);
     }
+
+    /// A process-lifetime counter that advances on every `setInMemoryMetadata` (the universal metadata
+    /// setter). It is only meaningful relative to itself within one server lifetime (it resets to 0 on
+    /// restart, the safe direction for the in-memory consumers). Folded into `getModificationHash` by
+    /// engines whose hash includes the current column/key metadata, so that reverting a metadata-only
+    /// `ALTER` (e.g. an alias/default expression) does not reproduce an earlier hash. See the
+    /// `getModificationHash` contract.
+    UInt64 getMetadataVersionForModificationHash() const { return metadata_version_for_modification_hash.load(std::memory_order_relaxed); }
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
@@ -285,6 +301,10 @@ private:
 
     /// Multiversion storage metadata. Allows to read/write storage metadata without locks.
     MultiVersionStorageMetadataPtr metadata;
+
+    /// Process-lifetime counter advanced on every `setInMemoryMetadata`; see
+    /// `getMetadataVersionForModificationHash`.
+    std::atomic<UInt64> metadata_version_for_modification_hash = 0;
 
 protected:
     RWLockImpl::LockHolder tryLockTimed(
@@ -704,6 +724,37 @@ public:
     ///
     /// Does not take underlying Storage (if any) into account
     virtual std::optional<UInt64> totalBytesUncompressed(const Settings &) const { return {}; }
+
+    /// Returns a value that changes whenever the data behind the table changes. There are no other
+    /// guarantees: it is not a hash of the data, so two tables with identical data may have different
+    /// values, and the value may also change without the data changing. Conceptually it is similar to an
+    /// HTTP ETag.
+    ///
+    /// It tracks the table's regular columns, data and structure. It does not cover query-visible virtual
+    /// columns that expose placement or external metadata - for example `_disk_name` (a MergeTree part's
+    /// disk), or `_tags` / `_headers` for object storage and URL - so a change affecting only such a virtual
+    /// column (moving a part between disks, or changes to object tags or HTTP response headers) may not be
+    /// detected.
+    ///
+    /// For engines that can provide it the value is loop-free (no-ABA): it never returns to an earlier
+    /// value across a change-and-change-back (an A -> B -> A transition). The consistency consumers below
+    /// rely on this. Engines that cannot guarantee it must return nullopt (fail closed) - the exception is
+    /// URL and object storage, which trust the resource's strong ETag and are therefore best-effort: an
+    /// external A -> B -> A rewrite back to byte-identical content can in principle repeat the value.
+    ///
+    /// The way it is calculated is implementation-specific. For example, tables of the MergeTree family
+    /// return a hash of the block number ranges of their data parts, the table structure and a per-lifetime
+    /// version that advances on every data or metadata change.
+    ///
+    /// The storage snapshot is taken into account, so the result describes the state of the data
+    /// that the snapshot refers to (important when one subquery uses a snapshot and another does not).
+    ///
+    /// Returns nullopt if the storage cannot tell whether its data has changed - in that case the
+    /// caller must assume the worst (that the data could have changed).
+    ///
+    /// Used to detect when tables behind a query have changed, e.g. for query cache consistency
+    /// and for `REFRESH ... IF CHANGED` of refreshable materialized views.
+    virtual std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const { return {}; }
 
     /// Number of rows INSERTed since server start.
     ///

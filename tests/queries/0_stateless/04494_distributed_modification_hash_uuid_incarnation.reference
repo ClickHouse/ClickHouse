@@ -1,0 +1,3 @@
+hash not null	1
+identical recreate hash differs	1
+sharding key change hash differs	1

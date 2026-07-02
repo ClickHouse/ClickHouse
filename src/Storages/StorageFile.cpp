@@ -2450,6 +2450,15 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
+std::optional<UInt128> StorageFile::getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr) const
+{
+    /// Fail closed: the only cheap signals for a local file are its size and modification time, which are
+    /// weak validators (a same-size rewrite that preserves or restores the mtime would not change them).
+    /// They cannot satisfy the "modification_hash changes whenever the data changes" contract, so we do not
+    /// participate in the consistency features rather than risk serving stale results.
+    return {};
+}
+
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
