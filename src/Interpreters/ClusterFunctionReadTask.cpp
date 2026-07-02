@@ -24,6 +24,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
@@ -45,6 +46,19 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
+
+    /// Capture the coordinator's split-time metadata (see `etag` in the header). Only for the bucket-split
+    /// path with ETag validation on; every other path leaves it empty (worker fetches its own), as before.
+    if (object->file_bucket_info && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    {
+        if (auto object_metadata = object->getObjectMetadata())
+        {
+            etag = object_metadata->etag;
+            size_bytes = object_metadata->size_bytes;
+            is_size_known = object_metadata->is_size_known;
+            last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+        }
+    }
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -76,6 +90,18 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     object->relative_path_with_metadata.read_source_index = read_source_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
+
+    /// Rebuild the propagated split-time metadata (see `etag` in the header) so the worker's ranged GETs
+    /// validate against it. Only when an ETag was captured; otherwise leave it empty (worker fetches its own).
+    if (!etag.empty())
+    {
+        ObjectMetadata object_metadata;
+        object_metadata.etag = etag;
+        object_metadata.size_bytes = size_bytes;
+        object_metadata.is_size_known = is_size_known;
+        object_metadata.last_modified = Poco::Timestamp(static_cast<Poco::Timestamp::TimeVal>(last_modified_epoch_us));
+        object->setObjectMetadata(object_metadata);
+    }
 
     return object;
 }
@@ -151,6 +177,14 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             protocol_version,
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        writeStringBinary(etag, out);
+        writeVarUInt(size_bytes, out);
+        writeVarUInt(is_size_known ? UInt64(1) : UInt64(0), out);
+        writeVarUInt(last_modified_epoch_us, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -204,6 +238,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
     }
+
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
     {
         bool has_read_source_index = false;
@@ -214,6 +249,16 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             readVarUInt(value, in);
             read_source_index = value;
         }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        readStringBinary(etag, in);
+        readVarUInt(size_bytes, in);
+        UInt64 is_size_known_flag = 0;
+        readVarUInt(is_size_known_flag, in);
+        is_size_known = is_size_known_flag != 0;
+        readVarUInt(last_modified_epoch_us, in);
     }
 }
 

@@ -93,6 +93,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+    /// Test-only: pause a bucket-split worker just before its read (see `04418`) to overwrite between split and read.
+    extern const char object_storage_source_pause_before_read[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -784,25 +790,77 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info || object_info->getPath().empty())
             return {};
-        if (!object_info->getObjectMetadata())
+
+        /// Test-only pause point (see the failpoint declaration) so a test can overwrite between split and read.
+        if (object_info->file_bucket_info)
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_read);
+
         {
-            bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+            const bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+            const auto propagated_metadata = object_info->getObjectMetadata();
+
+            /// Build the metadata-fetch key from the object's `RelativePathWithMetadata` so that a web
+            /// URL shard's `read_source_index` is honored when fetching (see the `getObjectMetadata`
+            /// overloads). All fetches below go through `metadata_object`.
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
-                if (!metadata)
-                    return {};
+            /// Only a bucket-split worker task carries the coordinator's propagated split-time metadata
+            /// (marked by `file_bucket_info`, see `ClusterFunctionReadTaskResponse`); limit the special
+            /// handling below to that case so ordinary listing/key-iteration reads keep their existing
+            /// no-extra-fetch behavior.
+            const bool is_propagated_split_metadata = object_info->file_bucket_info && propagated_metadata.has_value();
 
-                object_info->setObjectMetadata(metadata.value());
-            }
-            else
+            if (is_propagated_split_metadata)
             {
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+                /// Honor the propagated metadata - pinning this ranged read to the coordinator's
+                /// generation via `If-Match` - only where it actually helps and is safe:
+                ///   - only S3 enforces `StoredObject::etag` on the GET (other backends ignore it);
+                ///   - only when `_tags` was not requested (the propagated metadata carries no tags);
+                ///   - not in ignore-missing mode (`s3_ignore_file_doesnt_exist`), which must probe the
+                ///     object so a concurrently-deleted one is gracefully skipped instead of throwing.
+                /// Otherwise fetch: for S3 keep the pinned ETag/size/timestamp and take only the freshly
+                /// listed tags so the pin is preserved; for any other backend fetch fresh as before.
+                const bool is_s3 = object_storage->getType() == ObjectStorageType::S3;
+                const bool honor = is_s3 && !with_tags && !query_settings.ignore_non_existent_file;
+                if (!honor)
+                {
+                    std::optional<ObjectMetadata> fetched;
+                    if (query_settings.ignore_non_existent_file)
+                    {
+                        fetched = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
+                        if (!fetched)
+                            return {};
+                    }
+                    else
+                        fetched = object_storage->getObjectMetadata(metadata_object, with_tags);
+
+                    if (is_s3)
+                    {
+                        ObjectMetadata pinned = *propagated_metadata;
+                        pinned.tags = std::move(fetched->tags);
+                        object_info->setObjectMetadata(pinned);
+                    }
+                    else
+                        object_info->setObjectMetadata(*fetched);
+                }
             }
+            else if (!propagated_metadata)
+            {
+                if (query_settings.ignore_non_existent_file)
+                {
+                    auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
+                    if (!metadata)
+                        return {};
+
+                    object_info->setObjectMetadata(metadata.value());
+                }
+                else
+                    object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+            }
+            /// Otherwise `propagated_metadata` is present but this is not a bucket-split task (ordinary
+            /// listing / key-iteration metadata): keep it as-is, no extra fetch.
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
