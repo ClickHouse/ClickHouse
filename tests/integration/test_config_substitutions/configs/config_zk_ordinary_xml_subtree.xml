@@ -2,6 +2,11 @@
     <!-- from_zk on an ordinary (non-<include>) element: the ZooKeeper node holds a value that
          begins with '<', so it is parsed as an XML fragment and its subtree is spliced in as child
          elements. This is how a subtree is substituted into an ordinary container element such as
-         <merge_tree>, <profiles> or <http_handlers>, not only into a structural <include>. -->
-    <merge_tree from_zk="/merge_tree_xml_subtree" />
+         <merge_tree>, <profiles> or <http_handlers>, not only into a structural <include>.
+         replace="replace" is required here because the integration-test framework injects a common
+         instance config (helpers/0_common_instance_config.xml) that already defines <merge_tree>
+         with children, so after config merging this element has content; to splice a from_zk subtree
+         into an element that already has content, "replace" must be set (otherwise the substitution
+         is rejected with "Element <merge_tree> has value and does not have 'replace' attribute"). -->
+    <merge_tree replace="replace" from_zk="/merge_tree_xml_subtree" />
 </clickhouse>

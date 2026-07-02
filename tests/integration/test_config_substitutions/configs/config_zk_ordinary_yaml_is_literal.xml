@@ -4,6 +4,13 @@
          YAML subtree autodetection is applied only to a structural <include from_zk=...>, because an
          ordinary element may just as well be a leaf holding a scalar whose exact bytes must be
          preserved. So the setting inside the YAML must NOT be applied. To splice a subtree into an
-         ordinary element, an XML fragment (a value beginning with '<') must be used instead. -->
-    <merge_tree from_zk="/merge_tree_yaml_subtree" />
+         ordinary element, an XML fragment (a value beginning with '<') must be used instead.
+         replace="replace" is required here because the integration-test framework injects a common
+         instance config (helpers/0_common_instance_config.xml) that already defines <merge_tree>
+         with children, so after config merging this element has content; to substitute a from_zk
+         value into an element that already has content, "replace" must be set (otherwise the
+         substitution is rejected with "Element <merge_tree> has value and does not have 'replace'
+         attribute"). The literal value replaces the merged content and, being kept as literal text,
+         is not applied as a setting. -->
+    <merge_tree replace="replace" from_zk="/merge_tree_yaml_subtree" />
 </clickhouse>

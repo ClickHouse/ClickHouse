@@ -123,6 +123,9 @@ node16 = cluster.add_instance(
 # from_zk subtree substitution into an ordinary (non-<include>) element such as <merge_tree>:
 # a value beginning with '<' is an XML fragment, so its subtree is spliced in as child elements.
 # This confirms subtree substitution works on any element, not only a structural <include>.
+# The config uses replace="replace" because the common instance config injected into every node
+# (helpers/0_common_instance_config.xml) already defines <merge_tree>, so after merging the element
+# has content and a from_zk subtree can only be spliced into it with "replace".
 node17 = cluster.add_instance(
     "node17",
     main_configs=["configs/config_zk_ordinary_xml_subtree.xml"],
@@ -131,6 +134,9 @@ node17 = cluster.add_instance(
 # from_zk on an ordinary (non-<include>) element such as <merge_tree> with a YAML (non-'<') value:
 # it must be kept as literal text, not autodetected as YAML, so the setting inside is NOT applied.
 # YAML subtree autodetection is applied only to a structural <include from_zk=...>.
+# The config uses replace="replace" for the same reason as node17: the common instance config
+# already defines <merge_tree>, so the merged element has content that a from_zk value can only be
+# substituted into with "replace".
 node18 = cluster.add_instance(
     "node18",
     main_configs=["configs/config_zk_ordinary_yaml_is_literal.xml"],
