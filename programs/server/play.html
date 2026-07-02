@@ -3880,8 +3880,11 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             }
 
             /// If the error message points at a position in the query (e.g. a syntax error),
-            /// highlight that position in the editor.
-            highlightQueryError(reply, query, queryStart);
+            /// highlight that position in the editor -- unless the user has returned to the editor
+            /// since this run started, in which case this response is stale and must not repaint.
+            if (editorInteractionGen === runEditorInteraction) {
+                highlightQueryError(reply, query, queryStart);
+            }
 
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
         } else if (content_type.startsWith('image/')) {
@@ -4392,6 +4395,11 @@ function beginFlight() {
     closeCompletions();
     /// Drop any previous syntax-error highlight; a fresh error (if any) will be set on failure.
     clearQueryError();
+    /// Snapshot the editor-interaction generation. A late error response is only allowed to paint
+    /// a highlight if the user has not returned to the editor since this run started. The keystroke
+    /// or click that triggered the run has already bumped the generation (the textarea's own
+    /// handlers run before the document-level run trigger), so it is included in this snapshot.
+    runEditorInteraction = editorInteractionGen;
 }
 
 function endFlight() {
@@ -5118,12 +5126,29 @@ let currentBackdropText = '';
 /// painted with a red background in the backdrop until the user returns focus to the editor.
 let queryErrorPos = -1;
 
+/// Monotonic counter bumped whenever the user returns to the editor (refocus, typing, caret
+/// movement, or a click inside it). `beginFlight` snapshots it into `runEditorInteraction` at run
+/// start; if it advances before the error response arrives, `postImpl` suppresses the (now stale)
+/// syntax-error highlight. Without this, a late error response could repaint the marker after the
+/// user has already resumed editing, because the clear handlers only remove an already-visible
+/// marker and would not fire again on their own.
+let editorInteractionGen = 0;
+let runEditorInteraction = 0;
+
 /// Clear the syntax-error highlight and repaint. Called when the user returns to the editor
 /// (focus, typing, cursor movement) or when a new query run starts.
 function clearQueryError() {
     if (queryErrorPos < 0) return;
     queryErrorPos = -1;
     renderQueryBackdrop();
+}
+
+/// Record that the user has interacted with the editor and clear any visible highlight. Bound to
+/// the same focus/keydown/pointerdown/input events; the generation bump is what lets a late error
+/// response know the user has already returned to editing (see `editorInteractionGen`).
+function onReturnToEditor() {
+    ++editorInteractionGen;
+    clearQueryError();
 }
 
 /// Convert a 0-based UTF-8 byte offset into a JS (UTF-16) string index. ClickHouse reports the
@@ -5318,11 +5343,12 @@ query_area.addEventListener('blur', renderQueryBackdrop);
 query_area.addEventListener('blur', closeCompletions);
 
 /// Clear the syntax-error highlight as soon as the user returns to the editor: refocusing it,
-/// typing, moving the cursor with the keyboard, or clicking inside it.
-query_area.addEventListener('focus', clearQueryError);
-query_area.addEventListener('keydown', clearQueryError);
-query_area.addEventListener('pointerdown', clearQueryError);
-query_area.addEventListener('input', clearQueryError);
+/// typing, moving the cursor with the keyboard, or clicking inside it. `onReturnToEditor` also
+/// bumps the interaction generation so a late error response will not repaint a stale highlight.
+query_area.addEventListener('focus', onReturnToEditor);
+query_area.addEventListener('keydown', onReturnToEditor);
+query_area.addEventListener('pointerdown', onReturnToEditor);
+query_area.addEventListener('input', onReturnToEditor);
 
 /// Keep backdrop scroll in sync with textarea.
 query_area.addEventListener('scroll', () => {
