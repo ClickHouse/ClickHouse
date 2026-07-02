@@ -165,7 +165,7 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
             {
                 auto value = shared_variant.getDataAt(offsets[i]);
                 ReadBufferFromMemory buf(value);
-                auto type = decodeDataType(buf);
+                auto type = decodeDataType(buf, 0);
                 auto type_name = type->getName();
                 auto it = shared_variant_to_index.find(type_name);
                 /// Check if we didn't create column for this variant yet.

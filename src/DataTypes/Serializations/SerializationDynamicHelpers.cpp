@@ -50,7 +50,7 @@ ColumnPtr createIndexes(
         {
             auto value = shared_variant_column.getDataAt(offsets[i]);
             ReadBufferFromMemory buf(value);
-            auto type = decodeDataType(buf);
+            auto type = decodeDataType(buf, 0);
             data.push_back(static_cast<IndexesColumn::ValueType>(shared_variant_type_to_index.at(type->getName())));
         }
         else
@@ -93,7 +93,7 @@ FlattenedDynamicColumn flattenDynamicColumn(const ColumnDynamic & dynamic_column
     {
         auto value = shared_variant_column.getDataAt(i);
         ReadBufferFromMemory buf(value);
-        auto type = decodeDataType(buf);
+        auto type = decodeDataType(buf, 0);
         auto type_name = type->getName();
         auto it = shared_variant_type_to_index.find(type_name);
         /// If we see this type for the first time, add it to the list and create a column for it.

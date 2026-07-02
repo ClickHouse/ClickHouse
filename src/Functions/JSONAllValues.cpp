@@ -217,7 +217,7 @@ private:
         }
         else
         {
-            auto type = decodeDataType(buf);
+            auto type = decodeDataType(buf, 0);
             auto type_name = type->getName();
             const auto & serialization = get_serialization_from_cache(type_name, *type);
             const auto & temp_column = get_column_from_cache(type_name, *type);

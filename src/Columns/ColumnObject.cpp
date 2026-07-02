@@ -27,7 +27,15 @@ namespace
 
 const FormatSettings & getFormatSettings()
 {
-    static thread_local const FormatSettings settings;
+    static thread_local const FormatSettings settings = []
+    {
+        FormatSettings s;
+        /// This FormatSettings is used only for internal (de)serialization of already-stored Dynamic/JSON
+        /// data, which must always succeed. Do not apply the binary type-complexity guard here: it protects
+        /// against malicious *input*, not in-memory data we produced ourselves.
+        s.binary.max_binary_type_complexity = 0;
+        return s;
+    }();
     return settings;
 }
 
@@ -337,7 +345,7 @@ void ColumnObject::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t 
 
             auto value_data = shared_values->getDataAt(i);
             ReadBufferFromMemory buf(value_data);
-            auto decoded_type = decodeDataType(buf);
+            auto decoded_type = decodeDataType(buf, 0);
 
             if (isNothing(decoded_type))
             {
@@ -2349,7 +2357,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
             {
                 auto value = shared_data_values->getDataAt(j);
                 ReadBufferFromMemory buf(value);
-                auto type_from_shared_data = decodeDataType(buf);
+                auto type_from_shared_data = decodeDataType(buf, 0);
                 if (!isNothing(type_from_shared_data))
                 {
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);

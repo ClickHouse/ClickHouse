@@ -36,7 +36,7 @@ static void check(const DataTypePtr & type)
     WriteBufferFromOwnString ostr;
     encodeDataType(type, ostr);
     ReadBufferFromString istr(ostr.str());
-    DataTypePtr decoded_type = decodeDataType(istr);
+    DataTypePtr decoded_type = decodeDataType(istr, 0);
     ASSERT_TRUE(istr.eof());
     ASSERT_EQ(type->getName(), decoded_type->getName());
     ASSERT_TRUE(type->equals(*decoded_type));

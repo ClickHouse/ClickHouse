@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
+#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnDynamic.h>
@@ -358,7 +359,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             {
                 if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
                 {
-                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream));
+                    structure_state->flattened_data_types.push_back(decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity));
                 }
                 else
                 {
@@ -384,7 +385,11 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             if ((settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format) || structure_state->structure_version.value == SerializationVersion::V3)
             {
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
-                    variants.push_back(decodeDataType(*structure_stream));
+                    /// V3 without format_settings is reached when reading already-stored parts, which must
+                    /// always decode: use 0 (unlimited) there. Native input carries format_settings and enforces the limit.
+                    variants.push_back(settings.format_settings
+                        ? decodeDataType(*structure_stream, settings.format_settings->binary.max_binary_type_complexity)
+                        : decodeDataType(*structure_stream, 0));
             }
             else
             {
@@ -561,13 +566,19 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
             const auto & offsets = variant_column->getOffsets();
             const auto shared_variant_discr = variant_column->localDiscriminatorByGlobal(column_dynamic.getSharedVariantDiscriminator());
             size_t end = limit == 0 || offset + limit > local_discriminators.size() ? local_discriminators.size() : offset + limit;
+            /// Shared-variant payloads can come from client Native input (their type bytes are not decoded when
+            /// read), so enforce the type-complexity guard here. Resolve the limit once from the query context
+            /// (a client query) before the loop; leave it unlimited for context-less internal use.
+            size_t max_type_complexity = 0;
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                max_type_complexity = getBinaryTypeDecodingComplexityLimit(query_context);
             for (size_t i = offset; i != end; ++i)
             {
                 if (local_discriminators[i] == shared_variant_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
                     ReadBufferFromMemory buf(value);
-                    auto type = decodeDataType(buf);
+                    auto type = decodeDataType(buf, max_type_complexity);
                     auto type_name = type->getName();
                     if (auto it = dynamic_state->statistics.shared_variants_statistics.find(type_name); it != dynamic_state->statistics.shared_variants_statistics.end())
                         ++it->second;
@@ -665,7 +676,7 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto field_type = decodeDataType(istr);
+    auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
         field = Null();
@@ -726,7 +737,12 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ReadBufferFromMemory value_buf(value);
-        auto type = decodeDataType(value_buf);
+        /// Shared-variant payloads can originate from client Native input; enforce the guard via the query
+        /// context when present (unlimited for context-less internal use).
+        size_t max_type_complexity = 0;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            max_type_complexity = getBinaryTypeDecodingComplexityLimit(query_context);
+        auto type = decodeDataType(value_buf, max_type_complexity);
         auto type_name = type->getName();
         auto serialization = getDataTypesCache().getSerialization(type_name);
         auto tmp_column = type->createColumn();
@@ -782,7 +798,7 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto variant_type = decodeDataType(istr);
+    auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {
         dynamic_column.insertDefault();
@@ -897,7 +913,12 @@ static void serializeTextImpl(
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ReadBufferFromMemory buf(value);
-        auto variant_type = decodeDataType(buf);
+        /// Shared-variant payloads can originate from client Native input; enforce the guard via the query
+        /// context when present (unlimited for context-less internal use).
+        size_t max_type_complexity = 0;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            max_type_complexity = getBinaryTypeDecodingComplexityLimit(query_context);
+        auto variant_type = decodeDataType(buf, max_type_complexity);
         auto tmp_variant_column = variant_type->createColumn();
         auto variant_serialization = variant_type->getDefaultSerialization();
         variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});

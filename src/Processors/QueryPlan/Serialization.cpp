@@ -39,7 +39,7 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
-static Block deserializeHeader(ReadBuffer & in)
+static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_columns = 0;
     readVarUInt(num_columns, in);
@@ -49,7 +49,7 @@ static Block deserializeHeader(ReadBuffer & in)
     for (auto & column : columns)
     {
         readStringBinary(column.name, in);
-        column.type = decodeDataType(in);
+        column.type = decodeDataType(in, max_type_complexity);
     }
 
     /// Fill columns in header. Some steps expect them to be not empty.
@@ -212,7 +212,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        auto output_header  = std::make_shared<const Block>(deserializeHeader(in));
+        auto output_header  = std::make_shared<const Block>(deserializeHeader(in, getBinaryTypeDecodingComplexityLimit(context)));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);

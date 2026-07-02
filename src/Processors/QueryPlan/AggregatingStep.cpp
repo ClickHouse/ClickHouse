@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1045,7 +1046,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     }
 
     AggregateDescriptions aggregates;
-    deserializeAggregateDescriptions(aggregates, ctx.in);
+    deserializeAggregateDescriptions(aggregates, ctx.in, getBinaryTypeDecodingComplexityLimit(ctx.context));
 
     UInt64 stats_key = 0;
     if (has_stats_key)

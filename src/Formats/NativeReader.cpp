@@ -194,7 +194,7 @@ Block NativeReader::read()
         String type_name;
         if (format_settings && format_settings->native.decode_types_in_binary_format)
         {
-            column.type = decodeDataType(istr);
+            column.type = decodeDataType(istr, format_settings->binary.max_binary_type_complexity);
             type_name = column.type->getName();
         }
         else

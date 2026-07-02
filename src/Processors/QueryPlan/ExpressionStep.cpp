@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -125,7 +126,7 @@ void ExpressionStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 {
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, getBinaryTypeDecodingComplexityLimit(ctx.context));
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 

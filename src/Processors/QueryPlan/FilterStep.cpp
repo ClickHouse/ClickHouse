@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 
 #include <algorithm>
 #include <ranges>
@@ -292,7 +293,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, getBinaryTypeDecodingComplexityLimit(ctx.context));
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
