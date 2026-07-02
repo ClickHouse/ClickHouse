@@ -28,7 +28,6 @@
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/DOM/DOMParser.h>
 #include <Poco/SAX/SAXParser.h>
 
 #include <filesystem>
