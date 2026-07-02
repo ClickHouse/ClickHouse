@@ -1,0 +1,12 @@
+default CSV output quotes date and time types
+"2024-01-15","2024-01-16","2024-01-17 08:30:00","2024-01-18 09:45:01.123","12:30:00","12:30:00.456",42,"value"
+disabled date/time CSV quoting keeps strings quoted
+2024-01-15,2024-01-16,2024-01-17 08:30:00,2024-01-18 09:45:01.123,12:30:00,12:30:00.456,42,"value"
+nullable values with disabled date/time CSV quoting
+2024-01-15,2024-01-17 08:30:00,"value"
+\N,\N,\N
+low cardinality date with disabled date/time CSV quoting
+2024-01-15
+CSVWithNames with disabled date/time CSV quoting
+"d","s"
+2024-01-15,"value"

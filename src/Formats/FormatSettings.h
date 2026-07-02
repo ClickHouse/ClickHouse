@@ -232,6 +232,7 @@ struct FormatSettings
         bool empty_as_default = false;
         bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
+        bool quote_date_time_types = true;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
         bool arrays_as_nested_csv = false;
