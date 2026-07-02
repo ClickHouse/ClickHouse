@@ -362,30 +362,9 @@ hello
 The built-in Web UI (`play.html`) automatically detects `{name:Type}` parameter placeholders in the query and displays labeled input fields for each parameter. The parameter values are included in the HTTP request and also persisted in the page URL for bookmarking and sharing.
 </details>
 
-<details>
-<summary>Example with the SETTINGS clause and SET queries</summary>
-
-Query parameters can also be used as setting values, both in the `SETTINGS` clause of a regular query (such as `SELECT` or `INSERT`) and in standalone `SET` queries:
-
-```sql
-SET param_threads = 4;
-
-SELECT * FROM numbers(10) SETTINGS max_threads = {threads:UInt64};
-
-SET max_threads = {threads:UInt64};
-```
-
-This works wherever setting values are written through the standard `SETTINGS` syntax: standalone `SET` queries and the `SETTINGS` clause of a query, including `SELECT`, `INSERT`, and the engine/storage `SETTINGS` of `CREATE TABLE`.
-
-For `BACKUP` / `RESTORE`, a query parameter can be used as a setting value only when the `SETTINGS` clause contains exclusively core query settings (such as `max_threads`). It cannot be combined with backup/restore-specific settings (such as `async` or `base_backup`) in the same clause: those settings are parsed by a separate name-value path that does not understand the `{name:Type}` placeholder, so a mixed clause is rejected at parse time with a `SYNTAX_ERROR`.
-
-The other exception is the separate name-value syntax used by `CREATE NAMED COLLECTION` and dictionary `SETTINGS`, where a query parameter as a setting value is rejected at parse time with a `SYNTAX_ERROR`.
-</details>
-
 :::note
 Query parameters are not general text substitutions which can be used in arbitrary places in arbitrary SQL queries.
-They are primarily designed to work in `SELECT` statements in place of identifiers or literals, and as setting values
-in the query `SETTINGS` clause and in standalone `SET` queries.
+They are primarily designed to work in `SELECT` statements in place of identifiers or literals.
 :::
 
 ## Functions {#functions}
