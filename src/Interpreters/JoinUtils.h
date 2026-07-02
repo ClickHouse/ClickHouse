@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Hash.h>
@@ -90,6 +91,37 @@ ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
 
 ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
+
+/// Extend the JOIN-key null map so any row whose float key holds a `NaN` is treated as `NULL`.
+/// Per `IEEE 754` (and SQL `JOIN ON` semantics) `NaN != NaN`, but the hash table compares float
+/// keys bitwise via `bitEquals`, so two `NaN`s with identical bit patterns wrongly match. Folding
+/// `NaN` rows into the null map makes both build and probe sides skip them, consistent with how
+/// `NULL` keys never join.
+///
+/// `key_columns` are the raw key columns AFTER `extractNestedColumnsAndNullMap` peeled off any
+/// outer `Nullable`. If `null_map_holder` is empty and at least one float column has a `NaN`,
+/// a fresh `ColumnUInt8` is allocated and assigned. `null_map` is updated to point into the
+/// (possibly new) holder. Non-float columns are skipped.
+void extendJoinKeyNullMapWithFloatNaNs(
+    const ColumnRawPtrs & key_columns,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map);
+
+/// Quick type-only walk: does `column` (post `extractNestedColumnsAndNullMap` peeling) carry
+/// any float payload at all? Recurses into `Nullable`, `LowCardinality` and `Tuple`. Used to
+/// avoid scanning purely integer/string/date keys for `NaN`.
+bool joinKeyContainsFloatPayload(const IColumn & column);
+
+/// OR-mark every row whose float payload is `NaN` into `mutable_null_map`. The mask must
+/// already be sized to `column.size()`. Recurses into `Nullable`, `LowCardinality`,
+/// `Tuple` and `ColumnConst` so `tuple(NaN)`, `Nullable(Float)`,
+/// `Tuple(LowCardinality(Nullable(Float)))` and a constant `NaN` probe key are all covered.
+/// A `Tuple` row is marked if ANY float element is `NaN` (matches scalar tuple equality
+/// semantics: `(a, b) = (c, d)` iff `a = c AND b = d`, so any `NaN` element breaks
+/// equality). Already-NULL rows of a `Nullable` are left alone, so a `Nullable(Float)` with
+/// arbitrary trash payload bytes for NULL rows does not produce false positives. Returns
+/// whether any new `NaN` was found.
+bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map);
 
 /// Throw an exception if join condition column is not UIint8
 void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,

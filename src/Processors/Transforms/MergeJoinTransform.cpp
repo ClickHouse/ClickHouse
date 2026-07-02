@@ -10,6 +10,7 @@
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
@@ -17,6 +18,7 @@
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/Chunk.h>
 #include <Processors/Port.h>
@@ -334,6 +336,43 @@ FullMergeJoinCursor::FullMergeJoinCursor(std::vector<size_t> key_indices_, bool 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty sort description for FullMergeJoinCursor");
 }
 
+namespace
+{
+
+/// If `column` carries a float payload anywhere (top-level, inside `Nullable`,
+/// `LowCardinality`, `Tuple`, or a `ColumnConst` of one of those) and at least one row has
+/// `NaN`, return a fresh `NullMap` with the `NaN` rows marked, OR-folded over the existing
+/// `existing_null_map` (may be `nullptr`). Otherwise return `existing_null_map` unchanged.
+/// The result keeps `MergeJoin` from matching `NaN` keys against each other (issue #106531).
+/// `NaN` detection / unwrap is delegated to the shared `JoinCommon` recursion.
+ColumnPtr foldFloatNaNsIntoNullMap(const ColumnPtr & existing_null_map, const IColumn & column)
+{
+    /// Type-only fast path: most full-sorting-merge join keys are integer / string / date
+    /// and never carry a `NaN`. Skip the per-row allocation in that case.
+    if (!JoinCommon::joinKeyContainsFloatPayload(column))
+        return existing_null_map;
+
+    const size_t size = column.size();
+
+    auto result = ColumnUInt8::create(size, static_cast<UInt8>(0));
+    auto & result_data = result->getData();
+
+    if (existing_null_map)
+    {
+        const auto & existing_data = assert_cast<const ColumnUInt8 &>(*existing_null_map).getData();
+        chassert(existing_data.size() == size);
+        for (size_t i = 0; i < size; ++i)
+            result_data[i] = existing_data[i];
+    }
+
+    if (!JoinCommon::markFloatNaNRowsAsNull(column, result_data))
+        return existing_null_map; /// no NaN found - keep the original, possibly empty, holder
+
+    return result;
+}
+
+}
+
 const Chunk & FullMergeJoinCursor::getCurrent() const
 {
     return current_chunk;
@@ -368,6 +407,10 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
             null_map = column_nullable->getNullMapColumnPtr();
             column = column_nullable->getNestedColumnPtr();
         }
+        /// Treat float `NaN` keys as NULL: per IEEE 754 / SQL semantics `NaN != NaN`, but
+        /// `nullableCompareAt` falls through to `compareAt`/`FloatCompareHelper::equals`
+        /// which returns 0 for two `NaN`s. Issue #106531.
+        null_map = foldFloatNaNsIntoNullMap(null_map, *column);
         null_maps.push_back(std::move(null_map));
         sort_columns.push_back(std::move(column));
     }

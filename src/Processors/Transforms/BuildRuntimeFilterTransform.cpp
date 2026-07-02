@@ -2,6 +2,7 @@
 #include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/JoinUtils.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 
@@ -90,6 +91,40 @@ IProcessor::Status BuildRuntimeFilterTransform::prepare()
     return status;
 }
 
+namespace
+{
+
+/// JOIN ON treats `NaN` as never-matching (issue #106531). If a `NaN` row were inserted into
+/// the runtime filter, the bloom or exact-match check would match it bitwise on the probe side
+/// and either (a) wrongly let an INNER probe through, or (b) wrongly exclude a probe `NaN` from
+/// an ANTI/LEFT result. Drop every row whose float payload is `NaN` before insertion, reusing
+/// the shared `JoinCommon` recursion (which unwraps `Nullable` / `LowCardinality` / `Tuple` /
+/// `ColumnConst` / `ColumnSparse` and detects `NaN` via `ColumnVector::getNanMask`).
+ColumnPtr filterOutNaNs(const ColumnPtr & column)
+{
+    const size_t size = column->size();
+    if (size == 0)
+        return nullptr;
+
+    /// Type-only fast path: most runtime-filter keys are integer / string / date and never
+    /// carry a `NaN`. Skip the per-row allocation in that case.
+    if (!JoinCommon::joinKeyContainsFloatPayload(*column))
+        return nullptr;
+
+    IColumn::Filter nan_mask(size, 0);
+    if (!JoinCommon::markFloatNaNRowsAsNull(*column, nan_mask))
+        return nullptr; /// no NaN found - keep the original column unfiltered
+
+    /// Convert drop-mask to keep-mask in place and filter the original column. We filter
+    /// the wrapped column (as opposed to its float payload) so the result preserves the
+    /// `Nullable`/`LowCardinality`/`Tuple` shape `Set::insertFromColumns` expects.
+    for (size_t i = 0; i < size; ++i)
+        nan_mask[i] = !nan_mask[i];
+    return column->filter(nan_mask, /* result_size_hint = */ -1);
+}
+
+}
+
 void BuildRuntimeFilterTransform::transform(Chunk & chunk)
 {
     ColumnPtr filter_column = chunk.getColumns()[filter_column_position];
@@ -101,6 +136,11 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
             filter_column->size(),
             false);
     }
+
+    /// Strip `NaN` rows from float keys so they are never registered in the runtime filter.
+    /// Issue #106531.
+    if (auto without_nans = filterOutNaNs(filter_column))
+        filter_column = std::move(without_nans);
 
     built_filter->insert(filter_column);
 }

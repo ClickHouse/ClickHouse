@@ -1,7 +1,9 @@
 #include <Interpreters/DirectJoin.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -157,6 +159,44 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     NullMap null_map;
     IColumn::Offsets offsets;
     Chunk joined_chunk = storage->getByKeys({key_col}, attribute_names, null_map, offsets);
+
+    /// Force float `NaN` probe keys to the not-found path so `JOIN ON` honours `NaN != NaN`.
+    /// Only the generic `IKeyValueEntity` backends need this: they serialize the probe key
+    /// bitwise and return a 1:1 result with empty `offsets`, whereas `DirectJoinMergeTreeEntity`
+    /// already masks `NaN` and returns non-empty `offsets` (hence the `offsets.empty()` gate).
+    /// Done before structure conversion so the downstream offsets / anti-inversion / filtering
+    /// produces the same shape as a genuinely not-found key. `markFloatNaNRowsAsNull` recurses
+    /// into `Nullable` / `LowCardinality` / `Tuple` like the hash path.
+    if (offsets.empty() && JoinCommon::joinKeyContainsFloatPayload(*key_col.column))
+    {
+        const size_t num_rows = key_col.column->size();
+        PaddedPODArray<UInt8> nan_mask;
+        nan_mask.resize_fill(num_rows, 0);
+        if (JoinCommon::markFloatNaNRowsAsNull(*key_col.column, nan_mask))
+        {
+            /// Remap `NaN` rows to a default sentinel appended at the end of each result column.
+            auto selector = ColumnUInt64::create();
+            auto & selector_data = selector->getData();
+            selector_data.resize(num_rows);
+            for (size_t i = 0; i < num_rows; ++i)
+            {
+                if (nan_mask[i])
+                {
+                    selector_data[i] = num_rows;
+                    null_map[i] = 0;
+                }
+                else
+                    selector_data[i] = i;
+            }
+            MutableColumns chunk_columns = joined_chunk.mutateColumns();
+            for (auto & col : chunk_columns)
+            {
+                col->insertDefault();
+                col = IColumn::mutate(col->index(*selector, 0));
+            }
+            joined_chunk.setColumns(std::move(chunk_columns), num_rows);
+        }
+    }
 
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);

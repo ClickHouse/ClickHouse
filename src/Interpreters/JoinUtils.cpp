@@ -4,6 +4,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -410,6 +412,215 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
     }
 
     return key_columns;
+}
+
+namespace
+{
+
+/// Leaf: if `column` is a float `ColumnVector`, OR its `NaN` rows into `mutable_null_map`,
+/// skipping rows where `is_null[i] != 0`. Returns whether any `NaN` was found. `NaN` detection
+/// itself lives in `ColumnVector<T>::getNanMask`; here we only respect the outer null map.
+/// Returns false for non-float columns.
+bool markFloatColumnNaNs(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null)
+{
+    const size_t size = mutable_null_map.size();
+    PaddedPODArray<UInt8> nan_mask(size, 0);
+
+    if (const auto * f32 = typeid_cast<const ColumnFloat32 *>(&column))
+        f32->getNanMask(nan_mask);
+    else if (const auto * f64 = typeid_cast<const ColumnFloat64 *>(&column))
+        f64->getNanMask(nan_mask);
+    else if (const auto * bf16 = typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        bf16->getNanMask(nan_mask);
+    else
+        return false;
+
+    bool found = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (nan_mask[i] && (!is_null || is_null[i] == 0))
+        {
+            mutable_null_map[i] = 1;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool markFloatNaNRowsAsNullImpl(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null);
+
+bool markFloatNaNRowsAsNullImpl(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map, const UInt8 * is_null)
+{
+    if (typeid_cast<const ColumnFloat32 *>(&column)
+        || typeid_cast<const ColumnFloat64 *>(&column)
+        || typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        return markFloatColumnNaNs(column, mutable_null_map, is_null);
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+    {
+        /// Respect the inner `Nullable` null map: a `ColumnNullable` is allowed to carry
+        /// arbitrary trash bytes in its nested column for rows where the null map says NULL.
+        /// If that trash happens to be a `NaN` bit pattern, marking the row in the join's
+        /// null map would turn a legitimate null-safe match (e.g. `tuple(NULL) = tuple(NULL)`)
+        /// into a non-match. So we OR the inner null map onto whatever `is_null` was passed
+        /// and only flag rows whose float payload is `NaN` AND whose outer/inner null map
+        /// says non-null.
+        const auto & nested_null_map = nullable->getNullMapData();
+        const size_t size = nested_null_map.size();
+
+        if (!is_null)
+            return markFloatNaNRowsAsNullImpl(nullable->getNestedColumn(), mutable_null_map, nested_null_map.data());
+
+        /// Compose: row is null if `is_null[i] != 0` OR `nested_null_map[i] != 0`.
+        PaddedPODArray<UInt8> composed(size);
+        for (size_t i = 0; i < size; ++i)
+            composed[i] = (is_null[i] | nested_null_map[i]) ? 1u : 0u;
+        return markFloatNaNRowsAsNullImpl(nullable->getNestedColumn(), mutable_null_map, composed.data());
+    }
+
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+    {
+        /// `LowCardinality` is recursively removed during key materialization, so this branch
+        /// is defence-in-depth for the rare path where it survives (e.g. tuple element).
+        ColumnPtr full = lc->convertToFullColumnIfLowCardinality();
+        return markFloatNaNRowsAsNullImpl(*full, mutable_null_map, is_null);
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        /// Recurse into every element. Tuple equality is element-wise: `(a, b) = (c, d)` iff
+        /// `a = c AND b = d`. With `NaN != NaN`, any `NaN` element breaks equality, so the
+        /// whole tuple row is treated as never-matching.
+        bool found = false;
+        const size_t tuple_size = tuple->tupleSize();
+        for (size_t i = 0; i < tuple_size; ++i)
+            found |= markFloatNaNRowsAsNullImpl(tuple->getColumn(i), mutable_null_map, is_null);
+        return found;
+    }
+
+    if (column.isSparse())
+    {
+        /// `ColumnSparse` carries the non-default values in a packed inner column with its own
+        /// row offsets, so the leaf float branch's `data.size() == mutable_null_map.size()`
+        /// invariant does not hold against the sparse representation. Materialise once and
+        /// recurse on the dense form. Direct joins and runtime-filter builds can see sparse
+        /// columns directly; `HashJoin` and `full_sorting_merge` already materialise upstream.
+        ColumnPtr full = column.convertToFullColumnIfSparse();
+        return markFloatNaNRowsAsNullImpl(*full, mutable_null_map, is_null);
+    }
+
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
+    {
+        /// Direct joins pass the original probe key column without first calling
+        /// `convertToFullColumnIfConst`, so a constant `NaN` (e.g. `ON nan = rd.k`) reaches
+        /// this helper as a `ColumnConst(ColumnFloat*(NaN), N)`. The data column has size 1,
+        /// so we cannot recurse with the full-size `mutable_null_map`: the leaf's
+        /// `data.size() == mutable_null_map.size()` `chassert` would trip in debug/ASan.
+        /// Evaluate the scalar into a one-row mask, then spread across rows not excluded by
+        /// `is_null`.
+        PaddedPODArray<UInt8> scalar_mask(1, 0);
+        if (!markFloatNaNRowsAsNullImpl(col_const->getDataColumn(), scalar_mask, /* is_null = */ nullptr) || !scalar_mask[0])
+            return false;
+
+        const size_t size = mutable_null_map.size();
+        if (is_null)
+        {
+            for (size_t i = 0; i < size; ++i)
+                if (is_null[i] == 0)
+                    mutable_null_map[i] = 1;
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+                mutable_null_map[i] = 1;
+        }
+        return true;
+    }
+
+    /// Any other column type (integers, strings, dates, ...) cannot carry a float `NaN`.
+    return false;
+}
+
+}
+
+bool joinKeyContainsFloatPayload(const IColumn & column)
+{
+    if (typeid_cast<const ColumnFloat32 *>(&column)
+        || typeid_cast<const ColumnFloat64 *>(&column)
+        || typeid_cast<const ColumnVector<BFloat16> *>(&column))
+        return true;
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
+        return joinKeyContainsFloatPayload(nullable->getNestedColumn());
+
+    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
+        return joinKeyContainsFloatPayload(*lc->getDictionary().getNestedColumn());
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+    {
+        const size_t tuple_size = tuple->tupleSize();
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (joinKeyContainsFloatPayload(tuple->getColumn(i)))
+                return true;
+        return false;
+    }
+
+    if (const auto * col_const = typeid_cast<const ColumnConst *>(&column))
+        return joinKeyContainsFloatPayload(col_const->getDataColumn());
+
+    if (column.isSparse())
+    {
+        ColumnPtr full = column.convertToFullColumnIfSparse();
+        return joinKeyContainsFloatPayload(*full);
+    }
+
+    return false;
+}
+
+bool markFloatNaNRowsAsNull(const IColumn & column, PaddedPODArray<UInt8> & mutable_null_map)
+{
+    return markFloatNaNRowsAsNullImpl(column, mutable_null_map, /* is_null = */ nullptr);
+}
+
+void extendJoinKeyNullMapWithFloatNaNs(
+    const ColumnRawPtrs & key_columns,
+    ColumnPtr & null_map_holder,
+    ConstNullMapPtr & null_map)
+{
+    /// Allocate a fresh null map lazily: only when at least one key column carries float
+    /// payload. The recursion walks `Nullable`, `LowCardinality` and `Tuple` wrappers so
+    /// `tuple(NaN)`, `Nullable(Float)` and `Tuple(LowCardinality(Nullable(Float)))` are all
+    /// covered.
+    auto ensure_mutable_null_map = [&](size_t size) -> PaddedPODArray<UInt8> *
+    {
+        if (!null_map_holder)
+            null_map_holder = ColumnUInt8::create(size, static_cast<UInt8>(0));
+
+        MutableColumnPtr mutable_holder = IColumn::mutate(std::move(null_map_holder));
+        auto * data_ref = &assert_cast<ColumnUInt8 &>(*mutable_holder).getData();
+        null_map_holder = std::move(mutable_holder);
+        return data_ref;
+    };
+
+    bool any_changes = false;
+    for (const auto * column : key_columns)
+    {
+        if (!joinKeyContainsFloatPayload(*column))
+            continue;
+
+        const size_t size = column->size();
+        auto * mutable_null_map = ensure_mutable_null_map(size);
+
+        any_changes |= markFloatNaNRowsAsNull(*column, *mutable_null_map);
+    }
+
+    if (any_changes)
+        null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
+    /// If we allocated a fresh holder above but found no `NaN` and the original `null_map`
+    /// was empty, leave `null_map` as it was (`nullptr`) - HashJoin treats a `nullptr`
+    /// `null_map` as "no rows are NULL" which is faster than a zero-bitmap.
+    else if (null_map_holder && !null_map)
+        null_map_holder = nullptr;
 }
 
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
