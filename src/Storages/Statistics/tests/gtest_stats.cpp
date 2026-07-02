@@ -6,7 +6,12 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -20,6 +25,11 @@
 #include <Parsers/ExpressionListParsers.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 TEST(Statistics, TDigestLessThan)
 {
@@ -400,3 +410,186 @@ TEST(Statistics, LikeSelectivity)
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
 }
+
+/// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared
+/// on one column type, then the block column reaching `build` has a different type (a pending MODIFY
+/// COLUMN mutation, or an asymmetric merge where `structureEquals` only compares statistics types and
+/// misses a type-only change). Feeding the mismatched column to the collector previously mis-cast
+/// inside the aggregate function and aborted: `Bad cast ... ColumnNullable` for `uniq` on a Nullable
+/// type (3524-3a4b), and `Bad cast ColumnDecimal<Decimal256> to ColumnVector<long>` for `uniq` whose
+/// `<long>` (Int64) specialization was fed a Decimal256 block during mutation statistics rebuild
+/// (2404-35eb). The central `ColumnsStatistics::build` / `buildIfExists` now detects the mismatch via
+/// `column_type->equals(stats_data_type)` and throws a diagnostic LOGICAL_ERROR naming the column, the
+/// expected type and the actual type, instead of silently adapting the column. The `equals` check
+/// covers both the nullability dimension and the value-type dimension, and protects all statistics
+/// types, not just `uniq`.
+TEST(Statistics, BuildTypeMismatchThrows)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_stats = [](const String & column_name, const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        ColumnsStatistics result;
+        result.emplace(column_name, MergeTreeStatisticsFactory::instance().get(desc));
+        return result;
+    };
+
+    auto int_block = [](const String & column_name)
+    {
+        MutableColumnPtr col = DataTypeInt32().createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            col->insert(i);
+        return Block{ColumnWithTypeAndName(std::move(col), std::make_shared<DataTypeInt32>(), column_name)};
+    };
+
+    /// A Decimal256 block, to reproduce STID 2404-35eb: an `Int64`-declared `uniq` collector
+    /// (`AggregateFunctionUniq<long>`, column type `ColumnVector<long>`) fed a `ColumnDecimal<Decimal256>`.
+    auto decimal256_type = std::make_shared<DataTypeDecimal256>(20, 0);
+    auto decimal256_block = [&](const String & column_name)
+    {
+        MutableColumnPtr col = decimal256_type->createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            col->insert(DecimalField<Decimal256>(Decimal256(static_cast<Int256>(i)), 0));
+        return Block{ColumnWithTypeAndName(std::move(col), decimal256_type, column_name)};
+    };
+
+    /// In debug and sanitizer builds constructing a LOGICAL_ERROR aborts the process (it is treated
+    /// as a failed assertion), so the throw cannot be caught here. Assert the throw only in release
+    /// builds; the positive-path checks below run everywhere. This mirrors gtest_memory_resize.cpp.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    /// Statistics declared Nullable(Int32); block column is plain Int32 -> mismatch -> throws.
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.build(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// Same mismatch via `buildIfExists` (the mutation-rebuild entry point).
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.buildIfExists(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// STID 2404-35eb (value-type dimension): statistics declared Int64; block column is Decimal256.
+    /// The `uniq` collector built for Int64 is `AggregateFunctionUniq<long>`, whose column type is
+    /// `ColumnVector<long>`; feeding a `ColumnDecimal<Decimal256>` previously aborted with
+    /// `Bad cast ... ColumnDecimal<Decimal256> to ColumnVector<long>` inside `addBatchSinglePlaceNotNull`.
+    /// `equals` rejects the type difference, so the guard throws the diagnostic before the cast.
+    {
+        auto int64_type = std::make_shared<DataTypeInt64>();
+        auto stats = make_stats("a", int64_type);
+        try
+        {
+            stats.buildIfExists(decimal256_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on Int64/Decimal256 value-type mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// And via `build` (the merge / full-recalc entry point) for the same value-type mismatch.
+    {
+        auto int64_type = std::make_shared<DataTypeInt64>();
+        auto stats = make_stats("a", int64_type);
+        try
+        {
+            stats.build(decimal256_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on Int64/Decimal256 value-type mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+#endif
+
+    /// Matching Decimal256 type builds normally (positive path, runs in all build types):
+    /// a `uniq` collector declared on Decimal256 is `AggregateFunctionUniq<Decimal256>` and its column
+    /// type matches, so no cast error and the cardinality is computed.
+    {
+        auto stats = make_stats("a", decimal256_type);
+        EXPECT_NO_THROW(stats.build(decimal256_block("a")));
+        EXPECT_EQ(stats.at("a")->estimateCardinality(), 100u);
+    }
+
+    /// Matching type still builds normally (100 distinct values).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = make_stats("a", plain_type);
+        EXPECT_NO_THROW(stats.build(int_block("a")));
+        EXPECT_EQ(stats.at("a")->estimateCardinality(), 100u);
+    }
+
+    /// `buildIfExists` ignores columns absent from the block (no throw).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = make_stats("missing", plain_type);
+        EXPECT_NO_THROW(stats.buildIfExists(int_block("a")));
+    }
+}
+
+/// The build-time guard above only fires when statistics are rebuilt from a block. The merge path in
+/// MergeTask takes a different route: when `ColumnStatistics::structureEquals` returns true it merges an
+/// already-loaded part statistic into the result collector instead of rebuilding it, so the mismatched
+/// loaded statistic never reaches the build guard. `structureEquals` must therefore also reject a
+/// different declared type, so a nullability-only change forces a rebuild rather than merging
+/// incompatible aggregate-state layouts.
+TEST(Statistics, StructureEqualsConsidersDataType)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_stat = [](const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        return MergeTreeStatisticsFactory::instance().get(desc);
+    };
+
+    auto plain_type = std::make_shared<DataTypeInt32>();
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+
+    /// Same kinds and same declared type -> equal structure (the common case keeps merging, no rebuild).
+    EXPECT_TRUE(make_stat(plain_type)->structureEquals(*make_stat(plain_type)));
+    EXPECT_TRUE(make_stat(nullable_type)->structureEquals(*make_stat(nullable_type)));
+
+    /// Same kinds but different declared type (nullability flip) -> not equal, both directions.
+    EXPECT_FALSE(make_stat(plain_type)->structureEquals(*make_stat(nullable_type)));
+    EXPECT_FALSE(make_stat(nullable_type)->structureEquals(*make_stat(plain_type)));
+
+    /// Custom-named types must be told apart by name, not by equals(): Bool is stored as UInt8 and shares
+    /// its typeid, so Bool->equals(UInt8) is true even though the serialized statistics layouts differ.
+    /// Comparing getName() keeps Bool and UInt8 distinct so a Bool<->UInt8 change forces a rebuild.
+    auto bool_type = DataTypeFactory::instance().get("Bool");
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    EXPECT_TRUE(make_stat(bool_type)->structureEquals(*make_stat(bool_type)));
+    EXPECT_FALSE(make_stat(bool_type)->structureEquals(*make_stat(uint8_type)));
+    EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
+}
+
