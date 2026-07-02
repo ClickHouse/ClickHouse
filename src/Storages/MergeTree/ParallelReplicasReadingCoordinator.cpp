@@ -109,6 +109,30 @@ struct Part
     // and modify through iterator
     mutable std::set<size_t> replicas;
 
+    /// Total mark count of the underlying part on the first announcing replica's local disk
+    /// (snapshotted from `description.total_marks_in_part` at first insertion). This describes
+    /// the part itself, NOT the analyzed `description.ranges`, so it is invariant across
+    /// replicas that share the same underlying data and unaffected by per-replica PK or
+    /// skip-index analysis. `description.ranges` cannot be used for cross-replica divergence
+    /// checks because it (a) reflects only the analyzed subset, which legitimately differs
+    /// between replicas, and (b) is consumed in place by `handleRequest` as ranges are
+    /// dispatched. A value of `0` means the first replica spoke an older protocol that did not
+    /// carry the field; the coordinator skips divergence validation in that case to preserve
+    /// mixed-version compatibility.
+    size_t initial_total_marks_in_part = 0;
+
+    /// Content fingerprint of the underlying part on the first announcing replica's local disk
+    /// (snapshotted from `description.part_checksum_*` at first insertion). The two halves
+    /// together hold the `getTotalChecksumUInt128` of the part's `checksums.txt`, which is
+    /// computed over file contents and is therefore identical across replicas that share the
+    /// same on-disk data. Two replicas that hold genuinely different parts which happen to share
+    /// a name produce different fingerprints, so the coordinator can reject that case even when
+    /// `total_marks_in_part` happens to coincide. A value of `(0, 0)` means the field was unset
+    /// (older protocol replica or part with no loaded checksums); the coordinator skips
+    /// fingerprint validation and falls back to `initial_total_marks_in_part` in that case.
+    UInt64 initial_part_checksum_low64 = 0;
+    UInt64 initial_part_checksum_high64 = 0;
+
     bool operator<(const Part & rhs) const { return description.info < rhs.description.info; }
 };
 }
@@ -133,6 +157,116 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int ALL_CONNECTION_TRIES_FAILED;
+}
+
+namespace
+{
+
+/// Returns true when an announcement describes the same underlying part as the first replica's
+/// initial snapshot.
+///
+/// Identity check, in priority order:
+///
+///   1. **Content fingerprint** — `(part_checksum_low64, part_checksum_high64)`, which is the
+///      `getTotalChecksumUInt128` of the part's `checksums.txt`. The fingerprint is computed
+///      over the part's file contents and is therefore the strongest available cross-replica
+///      identity. Two replicas that hold the same on-disk part agree on the fingerprint; two
+///      replicas that hold genuinely different parts produce different fingerprints even when
+///      `total_marks_in_part` happens to coincide (for example, two non-replicated `MergeTree`
+///      instances that each created a part named `all_1_1_0` from independent local inserts).
+///      When both sides carry a non-zero fingerprint, mismatch means divergent underlying data.
+///
+///   2. **Total mark count** — fallback used when either side's fingerprint is unset (older
+///      protocol replica that predates `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PART_FINGERPRINT`,
+///      coordinator-internal queue entry, or part whose checksums were not loaded). Catches the
+///      common AST-fuzzer shape where mark counts diverge.
+///
+/// We deliberately do NOT compare `description.rows`, `description.ranges`, `getLastMark`, or
+/// any other analyzed-view field because:
+///
+///   * Per-replica PK and skip-index analysis can legitimately select different mark subsets
+///     from the same underlying part (for example, when local statistics differ); two such
+///     announcements describe the same data even though their analyzed views diverge.
+///
+///   * `description.ranges` is consumed in place by `handleRequest` as ranges are dispatched
+///     (`pop_front`, `pop_back`, `range.begin += taken`), so it shrinks below its original
+///     layout between announcements.
+///
+/// A mismatch in fingerprint (or in mark count, when fingerprint is unset) signals that the
+/// replicas hold genuinely different underlying parts. Merging them would later let the
+/// coordinator dispatch a range from the first replica's snapshot to a replica whose underlying
+/// data does not contain it, hitting `MergeTreeIndexGranularityConstant::getMarkRows` or
+/// returning incorrect results.
+bool sameLocalLayout(const Part & known, const RangesInDataPartDescription & announced)
+{
+    const bool known_has_fingerprint
+        = known.initial_part_checksum_low64 != 0 || known.initial_part_checksum_high64 != 0;
+    const bool announced_has_fingerprint
+        = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
+
+    if (known_has_fingerprint && announced_has_fingerprint)
+    {
+        return known.initial_part_checksum_low64 == announced.part_checksum_low64
+            && known.initial_part_checksum_high64 == announced.part_checksum_high64;
+    }
+
+    /// Fingerprint is unset on at least one side. Fall back to the cheaper mark-count check, which
+    /// still catches divergent underlying parts whose mark counts disagree. Skip the check when
+    /// either side's mark count is unset (older protocol or coordinator-internal queue entry).
+    if (known.initial_total_marks_in_part == 0 || announced.total_marks_in_part == 0)
+        return true;
+    return known.initial_total_marks_in_part == announced.total_marks_in_part;
+}
+
+[[noreturn]] void throwDivergentLocalPart(
+    size_t replica_num,
+    const RangesInDataPartDescription & announced,
+    const Part & known)
+{
+    const bool known_has_fingerprint
+        = known.initial_part_checksum_low64 != 0 || known.initial_part_checksum_high64 != 0;
+    const bool announced_has_fingerprint
+        = announced.part_checksum_low64 != 0 || announced.part_checksum_high64 != 0;
+
+    if (known_has_fingerprint && announced_has_fingerprint)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Replica {} announced part {} with content fingerprint {:016x}{:016x}, but an earlier "
+            "replica announced a same-named part with fingerprint {:016x}{:016x}. Parallel replicas "
+            "requires consistent data across cluster members. Use ReplicatedMergeTree or disable "
+            "parallel_replicas_for_non_replicated_merge_tree.",
+            replica_num,
+            announced.info.getPartNameV1(),
+            announced.part_checksum_high64,
+            announced.part_checksum_low64,
+            known.initial_part_checksum_high64,
+            known.initial_part_checksum_low64);
+    }
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Replica {} announced part {} with {} marks in the underlying part, but an earlier "
+        "replica announced a same-named part with {} marks. Parallel replicas requires "
+        "consistent data across cluster members. Use ReplicatedMergeTree or disable "
+        "parallel_replicas_for_non_replicated_merge_tree.",
+        replica_num,
+        announced.info.getPartNameV1(),
+        announced.total_marks_in_part,
+        known.initial_total_marks_in_part);
+}
+
+/// Snapshots the immutable underlying-part fields from an announced part. Call this exactly once
+/// per part, at the time of first insertion into `all_parts_to_read`, so the snapshot reflects
+/// the announcing replica's view of the on-disk part (before any range dispatch consumes
+/// `description.ranges`).
+void captureInitialLayout(Part & p)
+{
+    p.initial_total_marks_in_part = p.description.total_marks_in_part;
+    p.initial_part_checksum_low64 = p.description.part_checksum_low64;
+    p.initial_part_checksum_high64 = p.description.part_checksum_high64;
+}
+
 }
 
 class ParallelReplicasReadingCoordinator::ImplInterface
@@ -308,6 +442,13 @@ private:
     /// Parts view from the first announcement we received
     std::vector<Part> all_parts_to_read;
 
+    /// Index into `all_parts_to_read` keyed by `getPartOrProjectionName()`. Built once at snapshot
+    /// initialization (after `all_parts_to_read` is sorted into its final order) and read-only
+    /// afterward; `all_parts_to_read` is not mutated past initialization in this coordinator. Lets
+    /// the post-snapshot divergence-validation path look up the matching `Part` in O(1) instead of
+    /// scanning `all_parts_to_read` linearly per announced part.
+    std::unordered_map<std::string, size_t> part_index_by_name;
+
     std::unordered_map<std::string, std::unordered_set<size_t>> part_visibility; /// part_name -> set of replicas announced that part
 
     /// We order parts from biggest (= oldest) to newest and steal from newest. Because we assume
@@ -407,9 +548,30 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
         part_visibility[part.getPartOrProjectionName()].insert(announcement.replica_num);
     }
 
-    /// If state is already initialized - just register availabitily info and leave
+    /// Reject same-named parts whose underlying total mark count differs from the snapshot taken
+    /// at first announcement. We compare `Part::initial_total_marks_in_part` (sourced from the
+    /// part's `index_granularity` and therefore invariant across replicas with the same on-disk
+    /// data) rather than analyzed-view fields like `description.rows` or `description.ranges`,
+    /// because per-replica PK and skip-index analysis legitimately produces different analyzed
+    /// views from the same underlying part. See `sameLocalLayout` for the full rationale.
+    ///
+    /// `part_index_by_name` was built once at snapshot initialization, so lookups are O(1) per
+    /// announced part. This avoids the O(parts^2) linear scan that would otherwise dominate
+    /// startup latency on large scans with many parts and many replicas.
     if (state_initialized)
+    {
+        for (const auto & part : announcement.description)
+        {
+            const auto known_idx_it = part_index_by_name.find(part.getPartOrProjectionName());
+            if (known_idx_it == part_index_by_name.end())
+                continue;
+
+            const Part & known = all_parts_to_read[known_idx_it->second];
+            if (!sameLocalLayout(known, part))
+                throwDivergentLocalPart(announcement.replica_num, part, known);
+        }
         return;
+    }
 
     {
         /// To speedup search for adjacent parts
@@ -423,12 +585,21 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting parts found in announcement");
 
             known_parts.emplace(Part{.description = part, .replicas = {}});
-            all_parts_to_read.push_back(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+            Part stored{.description = std::move(part), .replicas = {announcement.replica_num}};
+            captureInitialLayout(stored);
+            all_parts_to_read.push_back(std::move(stored));
         }
     }
 
     std::ranges::sort(
         all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
+
+    /// `all_parts_to_read` is final from this point on (no `push_back`, no `erase`, no reorder).
+    /// Build the lookup index so post-snapshot announcements can validate divergence in O(1).
+    part_index_by_name.reserve(all_parts_to_read.size());
+    for (size_t i = 0; i < all_parts_to_read.size(); ++i)
+        part_index_by_name.emplace(all_parts_to_read[i].description.getPartOrProjectionName(), i);
+
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
@@ -974,6 +1145,14 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         /// We have the same part - add the info about presence on the corresponding replica to it
         if (the_same_it != all_parts_to_read.end())
         {
+            /// Same part name but a different underlying total mark count means replicas have
+            /// divergent local data; merging here would later hand out non-existing marks to the
+            /// replica whose local mark space is smaller. We compare the snapshot of the
+            /// announcing replica's `data_part->index_granularity` mark count (invariant across
+            /// replicas with the same on-disk data), not analyzed-view fields.
+            if (!sameLocalLayout(*the_same_it, part))
+                throwDivergentLocalPart(announcement.replica_num, part, *the_same_it);
+
             the_same_it->replicas.insert(announcement.replica_num);
             continue;
         }
@@ -1006,7 +1185,9 @@ void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 
         new_rows_to_read += part.rows;
 
-        auto [inserted_it, _] = all_parts_to_read.emplace(Part{.description = std::move(part), .replicas = {announcement.replica_num}});
+        Part stored{.description = std::move(part), .replicas = {announcement.replica_num}};
+        captureInitialLayout(stored);
+        auto [inserted_it, _] = all_parts_to_read.emplace(std::move(stored));
         auto & ranges = inserted_it->description.ranges;
         std::sort(ranges.begin(), ranges.end());
     }

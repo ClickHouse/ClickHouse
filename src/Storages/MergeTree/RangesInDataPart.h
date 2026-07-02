@@ -31,6 +31,29 @@ struct RangesInDataPartDescription
     /// The initiator computes this per part after PK analysis and propagates back to replicas in read request responses.
     size_t min_marks_per_task = 0;
 
+    /// Total mark count of the underlying part on disk (NOT of the analyzed `ranges` above).
+    /// Populated from `data_part->index_granularity->getMarksCountWithoutFinal` in
+    /// `RangesInDataPart::getDescription`. Used by `ParallelReplicasReadingCoordinator` as a cheap
+    /// sanity check (mark count mismatch implies divergent underlying parts), but mark count alone
+    /// is not a part identity. A value of `0` means the field was not populated (older replica
+    /// protocol or coordinator-internal queue entry).
+    size_t total_marks_in_part = 0;
+
+    /// Content fingerprint of the underlying part: the two halves of
+    /// `data_part->checksums.getTotalChecksumUInt128`. Two replicas that hold the SAME on-disk
+    /// part must produce the same fingerprint (the checksum is computed over the part's file
+    /// contents and is independent of per-replica PK or skip-index analysis). Two replicas that
+    /// hold genuinely different parts that happen to share a name (for example, two non-replicated
+    /// `MergeTree` instances each created from independent local inserts that produced parts
+    /// named `all_1_1_0`) will produce different fingerprints, even when their `total_marks_in_part`
+    /// happen to coincide. The coordinator uses the fingerprint to reject the latter case while
+    /// still accepting the former. A value of `(0, 0)` means the field was not populated (older
+    /// replica protocol, coordinator-internal queue entry, or a part whose checksums were not
+    /// loaded); the coordinator skips fingerprint validation and falls back to `total_marks_in_part`
+    /// in that case.
+    UInt64 part_checksum_low64 = 0;
+    UInt64 part_checksum_high64 = 0;
+
     void serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const;
     String describe() const;
     void deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version);
