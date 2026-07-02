@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,6 +19,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
@@ -97,7 +99,13 @@ ActionsDAG createActionsDAGForPreprocessor(
     if (expression_ast == nullptr)
         return ActionsDAG();
 
-    auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns);
+    auto context = Context::getGlobalContextInstance();
+    auto actions_dag = analyzeExpressionToActionsDAG(expression_ast, source_columns, context);
+
+    auto expression_name = expression_ast->getColumnName();
+    actions_dag.project({{expression_name, expression_name}});
+    actions_dag.removeUnusedActions();
+
     validateTransformActionsDAG(actions_dag, "preprocessor", source_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();

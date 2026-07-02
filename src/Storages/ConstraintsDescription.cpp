@@ -1,15 +1,17 @@
 #include <Storages/ConstraintsDescription.h>
 
 #include <Interpreters/ComparisonGraph.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/misc.h>
+#include <Planner/AnalyzeExpression.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Core/Defines.h>
@@ -25,8 +27,57 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
+
+/// Recursively detect a subquery that would be executed during `CHECK` constraint
+/// validation on every insert.  Such subqueries are dangerous because they run
+/// arbitrary work for each inserted block, so both bare subqueries (`CHECK (SELECT 1)`)
+/// and scalar subqueries nested under functions (`CHECK equals((SELECT 1), 1)`) are
+/// rejected.  The single allowed exception is a direct subquery on the set side of an
+/// `IN`-family operator (`x IN (SELECT ...)`): it becomes a "not-ready set" built lazily
+/// at insert time (see `getExpressions`), which matches the legacy behaviour.  A subquery
+/// hidden inside the set side (`x IN (1, (SELECT 1))`) is not a not-ready set and is
+/// rejected like any other nested scalar subquery.
+bool containsForbiddenSubquery(const ASTPtr & ast)
+{
+    if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (const auto * func = ast->as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name) && func->arguments)
+    {
+        const auto & arguments = func->arguments->children;
+        if (!arguments.empty())
+        {
+            /// Validate every argument except the set side (the last one).
+            for (size_t i = 0; i + 1 < arguments.size(); ++i)
+                if (containsForbiddenSubquery(arguments[i]))
+                    return true;
+
+            /// The set side is allowed to be a direct subquery (`x IN (SELECT ...)`),
+            /// which becomes a not-ready set built lazily at insert time.  Any other
+            /// shape must still be validated: a scalar subquery nested in a tuple or
+            /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
+            const auto & set_side = arguments.back();
+            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side))
+                return true;
+        }
+        return false;
+    }
+
+    for (const auto & child : ast->children)
+        if (containsForbiddenSubquery(child))
+            return true;
+
+    return false;
+}
+
+}
+
 
 String ConstraintsDescription::toString() const
 {
@@ -143,10 +194,18 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
-            // TreeRewriter::analyze has query as non-const argument so to avoid accidental query changes we clone it
             ASTPtr expr = constraint_ptr->expr->clone();
-            auto syntax_result = TreeRewriter(context).analyze(expr, source_columns_);
-            res.push_back(ExpressionAnalyzer(constraint_ptr->expr->clone(), syntax_result, context).getActions(false, true, CompileExpressions::yes));
+            if (containsForbiddenSubquery(expr))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
+            /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
+            /// compiled while the INSERT pipeline is being constructed (in the
+            /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
+            /// Executing the subquery now would emit a stray `Progress` packet to the client.
+            /// `CheckConstraintsTransform::onConsume` builds the sets at the right time via
+            /// `VirtualColumnUtils::buildSetsForDAG`, matching the legacy behavior.
+            res.push_back(analyzeExpressionToActions(
+                expr, source_columns_, context, /* add_aliases */ false, CompileExpressions::yes, /* build_subquery_sets */ false));
         }
     }
     return res;

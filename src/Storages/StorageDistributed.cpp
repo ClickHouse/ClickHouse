@@ -72,6 +72,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -270,6 +271,12 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
 
 ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, ContextPtr context, const NamesAndTypesList & columns, bool project)
 {
+    /// Sharding key expressions go through the legacy `TreeRewriter` + `ExpressionAnalyzer`
+    /// path because `buildShardingKeyExpression` is invoked from `StorageDistributed`'s
+    /// constructor (table initialization).  The Analyzer helper `analyzeExpressionToActions`
+    /// eagerly executes subquery sets via `buildSetInplace`, which would run subqueries
+    /// during table init / DDL analysis instead of staying lazy — breaking startup if the
+    /// subquery source is unavailable.
     ASTPtr query = sharding_key;
     auto syntax_result = TreeRewriter(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
