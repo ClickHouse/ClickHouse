@@ -30,6 +30,49 @@ constexpr char postprocessor_lambda_arg[] = "__text_index_lambda_arg";
 /// Lambda argument used when tokenizing each element of an Array column in the row-level fallback.
 constexpr char postprocessor_element_arg[] = "__text_index_element";
 
+bool isEmptyStringLiteral(const ASTPtr & ast)
+{
+    const auto * literal = ast->as<ASTLiteral>();
+    return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+}
+
+bool isTokenIdentifier(const ASTPtr & ast, std::string_view token_name)
+{
+    const auto * identifier = ast->as<ASTIdentifier>();
+    return identifier && identifier->name() == token_name;
+}
+
+/// Returns true when the expression maps every token either to itself (the bare token identifier) or to the
+/// empty string - i.e. a pure filter that only drops tokens and never changes their bytes. Recognizes the
+/// `if`/`multiIf` shapes that stop-word and token-length filters compile to; the branch *conditions* are not
+/// inspected (they are evaluated by the real ActionsDAG over the distinct tokens), only the result branches.
+/// Conservative: anything not matching falls back to the general per-occurrence postprocessor path.
+bool isFilterOnlyExpression(const ASTPtr & ast, std::string_view token_name)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return false;
+
+    const auto & args = function->arguments->children;
+    auto is_keep_or_drop = [&](const ASTPtr & branch)
+    { return isEmptyStringLiteral(branch) || isTokenIdentifier(branch, token_name); };
+
+    /// if(cond, then, else): both result branches must be the token or empty.
+    if (function->name == "if" && args.size() == 3)
+        return is_keep_or_drop(args[1]) && is_keep_or_drop(args[2]);
+
+    /// multiIf(cond1, val1, cond2, val2, ..., default): all value branches and the default must be token or empty.
+    if (function->name == "multiIf" && args.size() >= 3 && args.size() % 2 == 1)
+    {
+        for (size_t i = 1; i + 1 < args.size(); i += 2)
+            if (!is_keep_or_drop(args[i]))
+                return false;
+        return is_keep_or_drop(args.back());
+    }
+
+    return false;
+}
+
 }
 
 MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
@@ -61,6 +104,10 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expressi
             outputs.front()->result_type->getName());
 
     actions.emplace(std::move(actions_dag));
+
+    /// Recognize pure filters (output is the token unchanged or empty) so the build path can apply the
+    /// postprocessor to distinct tokens after a plain streaming build instead of to every occurrence.
+    is_filter_only = isFilterOnlyExpression(transformed_ast, postprocessor_token_name);
 }
 
 VectorWithMemoryTracking<String> MergeTreeIndexTextPostprocessor::processTokens(VectorWithMemoryTracking<String> tokens) const

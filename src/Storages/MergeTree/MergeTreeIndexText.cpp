@@ -1591,7 +1591,10 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_tokens.push_back(SortedToken{key, &mapped, nullptr});
+        std::string_view token = key;
+        if (!dropped_tokens.empty() && dropped_tokens.contains(token))
+            return;
+        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
@@ -1627,11 +1630,36 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     tokens_map = {};
     posting_lists.clear();
     arena = std::make_unique<Arena>();
+    dropped_tokens.clear();
 
     if (params.positions)
         position_map = std::make_unique<TokenToPositionListMap>();
     else
         position_map.reset();
+}
+
+void MergeTreeIndexTextGranuleBuilder::filterTokens(const MergeTreeIndexTextPostprocessor & postprocessor)
+{
+    if (tokens_map.empty())
+        return;
+
+    std::vector<std::string_view> distinct_tokens;
+    distinct_tokens.reserve(tokens_map.size());
+    auto tokens_column = ColumnString::create();
+    tokens_column->reserve(tokens_map.size());
+    tokens_map.forEachValue([&](const auto & key, auto &)
+    {
+        std::string_view token = key;
+        distinct_tokens.push_back(token);
+        tokens_column->insertData(token.data(), token.size());
+    });
+
+    ColumnPtr transformed = postprocessor.processTokensBatch(tokens_column.get());
+
+    dropped_tokens.clear();
+    for (size_t i = 0; i < distinct_tokens.size(); ++i)
+        if (transformed->getDataAt(i).empty())
+            dropped_tokens.insert(distinct_tokens[i]);
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
@@ -1648,10 +1676,15 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
+    use_filter_fast_path = postprocessor->hasActions() && postprocessor->isFilterOnly() && !params.positions;
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
 {
+    /// Filter-only postprocessor fast path.
+    if (use_filter_fast_path)
+        granule_builder.filterTokens(*postprocessor);
+
     auto granule = granule_builder.build();
     granule_builder.reset();
     return granule;
@@ -1680,7 +1713,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions())
+    if (postprocessor->hasActions() && !use_filter_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
