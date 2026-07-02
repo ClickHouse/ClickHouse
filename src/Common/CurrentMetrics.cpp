@@ -281,6 +281,9 @@
     M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
     M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
+    M(OptimizeFinalThreads, "Number of threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsActive, "Number of active threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
+    M(OptimizeFinalThreadsScheduled, "Number of queued or active jobs in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \

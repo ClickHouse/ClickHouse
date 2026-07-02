@@ -169,6 +169,45 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
+template <class Queue>
+size_t MergeTreeBackgroundExecutor<Queue>::tryReserveTaskSlots(size_t desired)
+{
+    if (desired == 0)
+        return 0;
+
+    /// Same lock as trySchedule, so the check-and-increment of the task metric is atomic with
+    /// scheduling and the metric never exceeds max_tasks_count (CompactionStatistics treats that
+    /// as a logical error).
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+
+    if (shutdown)
+        return 0;
+
+    auto & value = CurrentMetrics::values[metric];
+    const Int64 current = value.load();
+
+    /// Bound the reservation by the number of worker threads, not the (larger) task-slot count.
+    /// Reserved slots are consumed by merges that run synchronously on dedicated threads and cannot
+    /// be postponed the way scheduled executor tasks can, so with a concurrency ratio > 1 reserving
+    /// up to the task-slot count could run several times more merge threads than the pool has
+    /// workers, exceeding the operator's configured merge parallelism.
+    const Int64 limit = std::min(static_cast<Int64>(max_tasks_count.load()), static_cast<Int64>(threads_count));
+    if (current >= limit)
+        return 0;
+
+    const size_t granted = std::min(desired, static_cast<size_t>(limit - current));
+    value.fetch_add(static_cast<Int64>(granted));
+    return granted;
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::releaseTaskSlots(size_t count) noexcept
+{
+    /// Decrement without the lock, mirroring how TaskRuntimeData releases its slot on destruction.
+    if (count)
+        CurrentMetrics::values[metric].fetch_sub(static_cast<Int64>(count));
+}
+
 static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
