@@ -9,6 +9,7 @@
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -45,6 +46,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace FailPoints
@@ -549,6 +551,12 @@ FileSegment::State FileSegment::wait(size_t offset)
 
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
+
+        /// Don't (re-)enter the wait if our query was already cancelled: the wait only wakes on
+        /// download completion, so a stalled/dead downloader would otherwise pin us until timeout.
+        /// The caller re-enters wait() each loop, so a cancel during the wait is caught next round.
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while waiting for file segment {} download", range().toString());
 
         [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
         {
