@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <memory>
 #include <unordered_set>
 #include <string>
 #include <string_view>
@@ -13,7 +14,7 @@ namespace DB
 
 /// Compact enum storage with efficient lookups.
 /// - Strings stored in values vector (sorted by value for compatibility)
-/// - Name-to-value: binary search on sorted name index (O(log N))
+/// - Name-to-value: hash map (O(1)), used by String-to-Enum casts
 /// - Value-to-name: direct array lookup (O(1)) for small ranges, binary search for large ranges
 template <typename T>
 class EnumValues : public IHints<>
@@ -34,8 +35,11 @@ private:
     /// Original values sorted by numeric value (for getValues() compatibility)
     Values values;
 
-    /// Index into values, sorted by name (for binary search on names)
-    std::vector<uint16_t> name_sorted_index;
+    /// Exact name-to-value hash lookup used by String-to-Enum casts.
+    /// Keys are string_views into `values` names, whose storage is stable after construction.
+    /// Held by pointer (pimpl) to keep the heavy HashMap header out of this widely included file.
+    class NameToValueMap;
+    std::unique_ptr<NameToValueMap> name_to_value_map;
 
     /// Value-to-name lookup strategy.
     /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
@@ -67,7 +71,7 @@ public:
 
     /// Approximate number of heap-allocated bytes owned by this object:
     /// the `values` vector (including each name's string capacity) plus the
-    /// `name_sorted_index` and `value_to_index` lookup vectors.
+    /// `name_to_value_map` and `value_to_index` lookup structures.
     size_t allocatedBytes() const;
 
     /// Check if value exists in enum

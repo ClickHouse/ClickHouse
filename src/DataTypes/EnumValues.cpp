@@ -1,11 +1,11 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
+#include <Common/HashTable/HashMap.h>
 #include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <algorithm>
-#include <numeric>
 
 
 namespace DB
@@ -19,8 +19,12 @@ namespace ErrorCodes
 }
 
 template <typename T>
+class EnumValues<T>::NameToValueMap : public HashMap<std::string_view, T, StringViewHash> {};
+
+template <typename T>
 EnumValues<T>::EnumValues(const Values & values_, ValidationMode validation_mode)
     : values(values_)
+    , name_to_value_map(std::make_unique<NameToValueMap>())
 {
     if (values.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
@@ -47,26 +51,15 @@ void EnumValues<T>::buildLookupStructures(ValidationMode validation_mode)
 {
     const size_t n = values.size();
 
-    /// Build name-sorted index for binary search on names
-    name_sorted_index.resize(n);
-    std::iota(name_sorted_index.begin(), name_sorted_index.end(), static_cast<uint16_t>(0));
-
-    ::sort(name_sorted_index.begin(), name_sorted_index.end(), [this](uint16_t a, uint16_t b)
+    /// Build O(1) exact name-to-value lookup (used by String-to-Enum casts) and check for duplicate names.
+    /// Keys are string_views into `values` names, which are stable for this object's lifetime.
+    name_to_value_map->reserve(n);
+    for (const auto & name_and_value : values)
     {
-        return values[a].first < values[b].first;
-    });
-
-    /// Check for duplicate names
-    for (size_t i = 1; i < n; ++i)
-    {
-        if (values[name_sorted_index[i - 1]].first == values[name_sorted_index[i]].first)
-        {
-            const auto & dup_name = values[name_sorted_index[i]].first;
+        const auto inserted = name_to_value_map->insert({std::string_view{name_and_value.first}, name_and_value.second});
+        if (!inserted.second)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Duplicate names in enum: '{}' = {} and {}",
-                    dup_name,
-                    toString(values[name_sorted_index[i - 1]].second),
-                    toString(values[name_sorted_index[i]].second));
-        }
+                    name_and_value.first, toString(name_and_value.second), toString(inserted.first->getMapped()));
     }
 
     /// `ADD ENUM VALUES` may temporarily rewrite a leading implicit prefix to `1..N`. These numbers are
@@ -184,13 +177,9 @@ T EnumValues<T>::getValue(std::string_view field_name) const
 template <typename T>
 bool EnumValues<T>::findValueByName(std::string_view field_name, T & result) const
 {
-    /// Binary search on name-sorted index
-    auto it = std::lower_bound(name_sorted_index.begin(), name_sorted_index.end(), field_name,
-        [this](uint16_t idx, std::string_view name) { return values[idx].first < name; });
-
-    if (it != name_sorted_index.end() && values[*it].first == field_name)
+    if (auto it = name_to_value_map->find(field_name); it != name_to_value_map->end())
     {
-        result = values[*it].second;
+        result = it->getMapped();
         return true;
     }
 
@@ -216,7 +205,9 @@ size_t EnumValues<T>::allocatedBytes() const
     size_t bytes = values.capacity() * sizeof(typename Values::value_type);
     for (const auto & [name, _] : values)
         bytes += name.capacity();
-    bytes += name_sorted_index.capacity() * sizeof(typename decltype(name_sorted_index)::value_type);
+    /// Hash-table buffer; the name strings themselves are accounted above (keys point into `values`).
+    if (name_to_value_map)
+        bytes += name_to_value_map->getBufferSizeInBytes();
     bytes += value_to_index.capacity() * sizeof(typename decltype(value_to_index)::value_type);
     return bytes;
 }
