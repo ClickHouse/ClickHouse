@@ -258,3 +258,63 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
     DROP TABLE {table_name};
     """
     )
+
+
+def test_batch_set_processing_failure_does_not_crash(started_cluster):
+    """Regression for the out-of-bounds crash in FileIterator::next: when the keeper
+    multi that sets a batch as processing fails (file_metadatas cleared) AND the batch
+    contains a non-processable file, the compaction loop used to subscript the now-empty
+    file_metadatas and abort the server."""
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_batch_set_processing_failure_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # Several files so the unordered hash-ring batch path runs with a surviving file
+    # after one is forced non-processable by the failpoint.
+    files_to_generate = 10
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "enable_hash_ring_filtering": 1,
+            "s3queue_processing_threads_num": 4,
+            "s3queue_loading_retries": 100,
+        },
+    )
+
+    node.query(
+        "SYSTEM ENABLE FAILPOINT object_storage_queue_fail_batch_set_processing"
+    )
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+        # The failpoint fires once; with the fix the iterator keeps going and all files
+        # are eventually processed. Without the fix the server aborts on the first batch.
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+
+        # The server must still be alive and responsive.
+        assert node.query("SELECT 1").strip() == "1"
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT object_storage_queue_fail_batch_set_processing"
+        )
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
