@@ -1,6 +1,7 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupFileInfo.h>
+#include <Backups/BackupMetadataHandler.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
@@ -29,8 +30,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMParser.h>
 #include <Poco/SAX/SAXParser.h>
-#include <Poco/SAX/DefaultHandler.h>
-#include <Poco/SAX/Attributes.h>
 
 #include <filesystem>
 
@@ -138,108 +137,6 @@ namespace
                 field_name,
                 quoteString(file_name));
     }
-
-    /// Streaming SAX handler that reads the `.backup` metadata document without materializing a DOM tree.
-    ///
-    /// The document has a fixed, shallow shape:
-    ///     <config>
-    ///         <version/><timestamp/><uuid/> ... other header elements ...
-    ///         <contents>
-    ///             <file><name/><size/> ... </file>
-    ///             ...
-    ///         </contents>
-    ///     </config>
-    ///
-    /// All header elements precede `<contents>`, so `on_header` is fired once `<contents>` opens - before any
-    /// `<file>` is seen. Each `<file>` fires `on_file` as soon as it closes, so files are processed one at a time
-    /// instead of being retained in a DOM tree. Callbacks may throw; the exception is captured and rethrown by the
-    /// caller after parsing finishes, because exceptions must not propagate through the underlying expat callbacks.
-    class BackupMetadataHandler : public Poco::XML::DefaultHandler
-    {
-    public:
-        using Fields = std::map<String, String>;
-
-        /// Fired once, when `<contents>` starts, with all top-level header elements collected.
-        std::function<void(const Fields &)> on_header;
-        /// Fired once per `<file>`, when it closes, with the file's leaf elements.
-        std::function<void(const Fields &)> on_file;
-
-        std::exception_ptr saved_exception;
-
-        void startElement(const Poco::XML::XMLString &, const Poco::XML::XMLString & local_name, const Poco::XML::XMLString & qname, const Poco::XML::Attributes &) override
-        {
-            if (saved_exception)
-                return;
-            try
-            {
-                current_text.clear();
-                const String & name = qname.empty() ? local_name : qname;
-                if (name == "contents")
-                {
-                    if (on_header)
-                        on_header(header_fields);
-                }
-                else if (name == "file")
-                    file_fields.clear();
-                path.push_back(name);
-            }
-            catch (...)
-            {
-                saved_exception = std::current_exception();
-            }
-        }
-
-        void endElement(const Poco::XML::XMLString &, const Poco::XML::XMLString & local_name, const Poco::XML::XMLString & qname) override
-        {
-            if (saved_exception)
-                return;
-            try
-            {
-                const String & name = qname.empty() ? local_name : qname;
-                const size_t depth = path.size();
-                if (name == "file")
-                {
-                    if (on_file)
-                        on_file(file_fields);
-                }
-                else if (name == "contents")
-                {
-                    /// Nothing to collect; header was already applied when it opened.
-                }
-                else if (depth == 2)  /// header leaf: <config>/<name>
-                    header_fields[name] = current_text;
-                else if (depth == 4)  /// file leaf: <config>/<contents>/<file>/<name>
-                    file_fields[name] = current_text;
-                current_text.clear();
-                if (!path.empty())
-                    path.pop_back();
-            }
-            catch (...)
-            {
-                saved_exception = std::current_exception();
-            }
-        }
-
-        void characters(const Poco::XML::XMLChar ch[], int start, int length) override
-        {
-            if (saved_exception)
-                return;
-            try
-            {
-                current_text.append(ch + start, static_cast<size_t>(length));
-            }
-            catch (...)
-            {
-                saved_exception = std::current_exception();
-            }
-        }
-
-    private:
-        std::vector<String> path;
-        String current_text;
-        Fields header_fields;
-        Fields file_fields;
-    };
 }
 
 
