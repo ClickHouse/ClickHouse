@@ -484,6 +484,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     else if (type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         ostr << "MATERIALIZE TTL";
+        if (ttl_delta)
+            ostr << " " << ttl_delta;
+
         if (partition)
         {
             ostr << " IN PARTITION ";

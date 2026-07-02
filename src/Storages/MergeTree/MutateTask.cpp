@@ -3261,10 +3261,128 @@ bool MutateTask::prepare()
     /// disable parallel replicas for mutations
     context_for_reading->setSetting("enable_parallel_replicas", false);
 
-    for (const auto & command : *ctx->commands)
+    /// Clone the source part (hardlinking its files) into a new part with the target mutation
+    /// version, without rewriting any data. Used both when a part is untouched by the mutation
+    /// and by the fast `MODIFY TTL` path below.
+    auto clone_part = [&]() -> std::pair<MergeTreeData::MutableDataPartPtr, scope_guard>
     {
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
-            ctx->commands_for_part.emplace_back(command);
+        NameSet files_to_copy_instead_of_hardlinks;
+        auto settings_ptr = ctx->data->getSettings();
+        /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
+        /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
+        /// Example:
+        ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        ///                                         ^ part name don't participate in lock path
+        /// In case of full hardlink we will have:
+        ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
+        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
+        /// So we need to copy to have a new name
+        bool copy_checksumns = ctx->data->supportsReplication() && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
+        if (copy_checksumns)
+            files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
+
+        std::string prefix;
+        if (ctx->need_prefix)
+            prefix = "tmp_clone_";
+
+        IDataPartStorage::ClonePartParams clone_params
+        {
+            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
+            .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
+            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
+            .keep_metadata_version = true,
+        };
+
+        return ctx->data->cloneAndLoadDataPart(
+            ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params,
+            ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+    };
+
+    /// Fast `MODIFY TTL`: instead of rewriting every part, shift each part's TTL metadata by the
+    /// delta between the old and new TTL (computed in `AlterCommands::tryOptimizeModifyTLL`). Per part:
+    ///   * fully expired under the new TTL  -> replace with an empty part;
+    ///   * not yet expired                  -> clone the part and shift its `ttl.txt` in place;
+    ///   * partially expired                -> fall back to a regular `MATERIALIZE TTL` rewrite.
+    const bool is_fast_materialize_ttl = std::ranges::any_of(
+        *ctx->commands, [](const auto & command) { return command.type == MutationCommand::FAST_MATERIALIZE_TTL; });
+
+    if (is_fast_materialize_ttl)
+    {
+        if (ctx->commands->size() != 1)
+            throw Exception(ErrorCodes::ABORTED, "FAST_MATERIALIZE_TTL must be the only mutation command, cancelling mutation.");
+
+        const time_t ttl_delta = ctx->commands->front().ttl_delta;
+
+        /// The whole part is expired under the new TTL: replace it with an empty part.
+        if (ctx->source_part->ttl_infos.part_max_ttl + ttl_delta <= ctx->time_of_mutation)
+        {
+            LOG_TRACE(ctx->log, "Part {} is fully expired after MODIFY TTL, creating empty part with mutation version {}",
+                ctx->source_part->name, ctx->future_part->part_info.mutation);
+
+            auto [empty_part, lock] = ctx->data->createEmptyPart(
+                ctx->future_part->part_info, ctx->source_part->partition, ctx->future_part->name,
+                ctx->source_part->getMetadataSnapshot(), ctx->txn);
+
+            ctx->temporary_directory_lock = std::move(lock);
+            ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
+            promise.set_value(std::move(empty_part));
+            return false;
+        }
+
+        /// No row in the part is expired under the new TTL: clone the part and shift its TTL infos.
+        if (ctx->source_part->ttl_infos.part_min_ttl + ttl_delta >= ctx->time_of_mutation)
+        {
+            LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
+                ctx->source_part->name, ttl_delta, ctx->future_part->part_info.mutation);
+
+            auto [part, lock] = clone_part();
+
+            part->ttl_infos.table_ttl.min += ttl_delta;
+            part->ttl_infos.table_ttl.max += ttl_delta;
+            part->ttl_infos.part_min_ttl += ttl_delta;
+            part->ttl_infos.part_max_ttl += ttl_delta;
+
+            /// Rewrite the file with ttl infos in json format.
+            part->getDataPartStorage().removeFile("ttl.txt");
+            auto out_ttl = part->getDataPartStorage().writeFile("ttl.txt", 4096, ctx->context->getWriteSettings());
+            HashingWriteBuffer out_hashing(*out_ttl);
+            part->ttl_infos.write(out_hashing);
+            out_hashing.finalize();
+            part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+            part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+            out_ttl->finalize();
+            out_ttl->sync();
+
+            /// Rewrite the file with checksums.
+            part->getDataPartStorage().removeFile("checksums.txt");
+            auto out_checksums = part->getDataPartStorage().writeFile("checksums.txt", 4096, ctx->context->getWriteSettings());
+            part->checksums.write(*out_checksums);
+            out_checksums->finalize();
+            out_checksums->sync();
+
+            part->modification_time = time(nullptr);
+
+            part->getDataPartStorage().beginTransaction();
+            ctx->temporary_directory_lock = std::move(lock);
+            promise.set_value(std::move(part));
+            return false;
+        }
+
+        /// The part is partially expired: fall back to a regular `MATERIALIZE TTL` rewrite below.
+        MutationCommand materialize_ttl;
+        materialize_ttl.type = MutationCommand::MATERIALIZE_TTL;
+        materialize_ttl.ast_text = "MATERIALIZE TTL";
+        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, materialize_ttl, context_for_reading))
+            ctx->commands_for_part.emplace_back(std::move(materialize_ttl));
+    }
+    else
+    {
+        for (const auto & command : *ctx->commands)
+        {
+            if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
+                ctx->commands_for_part.emplace_back(command);
+        }
     }
 
     auto updated_columns_in_patches = alter_conversions->getColumnsUpdatedInPatches();
@@ -3298,44 +3416,11 @@ bool MutateTask::prepare()
 
     if (!is_storage_touched.any_rows_affected)
     {
-        NameSet files_to_copy_instead_of_hardlinks;
-        auto settings_ptr = ctx->data->getSettings();
-        /// In zero-copy replication checksums file path in s3 (blob path) is used for zero copy locks in ZooKeeper. If we will hardlink checksums file, we will have the same blob path
-        /// and two different parts (source and new mutated part) will use the same locks in ZooKeeper. To avoid this we copy checksums.txt to generate new blob path.
-        /// Example:
-        ///     part: all_0_0_0/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-        ///                                         ^ part name don't participate in lock path
-        /// In case of full hardlink we will have:
-        ///     part: all_0_0_0_1/checksums.txt -> /s3/blobs/shjfgsaasdasdasdasdasdas
-        ///     locks path in zk: /zero_copy/tbl_id/s3_blobs_shjfgsaasdasdasdasdasdas/replica_name
-        /// So we need to copy to have a new name
-        bool copy_checksumns = ctx->data->supportsReplication() && (*settings_ptr)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && ctx->source_part->isStoredOnRemoteDiskWithZeroCopySupport();
-        if (copy_checksumns)
-            files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
-
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        std::string prefix;
-        if (ctx->need_prefix)
-            prefix = "tmp_clone_";
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
-            .txn = ctx->txn, .hardlinked_files = &ctx->hardlinked_files,
-            .copy_instead_of_hardlink = (*settings_ptr)[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .files_to_copy_instead_of_hardlinks = std::move(files_to_copy_instead_of_hardlinks),
-            .keep_metadata_version = true,
-        };
-
-        MergeTreeData::MutableDataPartPtr part;
-        scope_guard lock;
-
-        {
-            std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
-            part->getDataPartStorage().beginTransaction();
-            ctx->temporary_directory_lock = std::move(lock);
-        }
+        auto [part, lock] = clone_part();
+        part->getDataPartStorage().beginTransaction();
+        ctx->temporary_directory_lock = std::move(lock);
 
         ProfileEvents::increment(ProfileEvents::MutationUntouchedParts);
         promise.set_value(std::move(part));

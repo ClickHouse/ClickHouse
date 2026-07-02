@@ -226,6 +226,9 @@ public:
     String to_database;
     String to_table;
 
+    /// MATERIALIZE TTL [ttl_delta], ttl_delta represents the change before and after modifying TTL.
+    time_t ttl_delta = 0;
+
     String snapshot_name;
     IAST * snapshot_desc{};
 

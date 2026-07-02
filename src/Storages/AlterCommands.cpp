@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -39,10 +41,12 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -119,6 +123,41 @@ AlterCommand::RemoveProperty removePropertyFromString(const String & property)
         return AlterCommand::RemoveProperty::SETTINGS;
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove unknown property '{}'", property);
+}
+
+struct ReplaceLiteralVisitorData
+{
+    using TypeToVisit = ASTFunction;
+
+    void visit(ASTFunction & func, ASTPtr &) const
+    {
+        for (auto & argument : func.arguments->children)
+        {
+            if (auto * literal = typeid_cast<ASTLiteral *>(argument.get()); literal)
+                argument = make_intrusive<ASTLiteral>(Field(0));
+        }
+    }
+};
+
+using ReplaceLiteralVisitor = InDepthNodeVisitor<OneTypeMatcher<ReplaceLiteralVisitorData>, true>;
+
+/// Replace literals and compare expressions to see if they are the same.
+bool isSameExpressionTemplate(const ASTPtr & lhs, const ASTPtr & rhs)
+{
+    ReplaceLiteralVisitor::Data data;
+    ReplaceLiteralVisitor visitor(data);
+
+    ASTPtr lhs_clone = lhs->clone();
+    visitor.visit(lhs_clone);
+    SipHash lhs_hash;
+    lhs_hash.update(lhs_clone->getTreeHash(false));
+
+    ASTPtr rhs_clone = rhs->clone();
+    visitor.visit(rhs_clone);
+    SipHash rhs_hash;
+    rhs_hash.update(rhs_clone->getTreeHash(false));
+
+    return lhs_hash.get64() == rhs_hash.get64();
 }
 
 DataTypePtr tryCreateAddToEnumType(const ASTPtr & type_ast, bool is_enum16)
@@ -2105,6 +2144,24 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
+static MutationCommand createFastMaterializeTTLCommand(time_t delta)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_TTL;
+    ast->ttl_delta = delta;
+    command.type = MutationCommand::FAST_MATERIALIZE_TTL;
+    /// `ast_text` is what gets persisted to the replicated log / ZooKeeper for this mutation,
+    /// serialized as `MATERIALIZE TTL <delta>`. This syntax is intentionally not understood by
+    /// servers built without the fast `MODIFY TTL` optimization, so a mixed-version cluster cannot
+    /// process such a mutation until every replica is upgraded. This is a deliberate trade-off
+    /// (the optimization is unconditional, with no gating setting); if it proves problematic the
+    /// whole feature can be reverted.
+    command.ast_text = ast->formatWithSecretsOneLine();
+    command.ttl_delta = delta;
+    return command;
+}
+
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
 {
     /// Save a copy of the original metadata before applying commands.
@@ -2146,6 +2203,19 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         {
             if (alter_cmd.isTTLAlter(original_metadata))
             {
+                /// FAST_MATERIALIZE_TTL cannot be executed together with other commands.
+                if (result.empty())
+                {
+                    /// Try optimizing TTL changes for the same column.
+                    /// Use `original_metadata`: `metadata` already has the new TTL applied above,
+                    /// so the old TTL needed to compute the delta is only available in the original copy.
+                    time_t delta = tryOptimizeModifyTLL(original_metadata, context, alter_cmd);
+                    if (delta != 0)
+                    {
+                       result.push_back(createFastMaterializeTTLCommand(delta));
+                       break;
+                    }
+                }
                 result.push_back(createMaterializeTTLCommand());
                 break;
             }
@@ -2153,6 +2223,72 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     }
 
     return result;
+}
+
+time_t AlterCommands::tryOptimizeModifyTLL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
+{
+    if (alter_cmd.type != AlterCommand::MODIFY_TTL || !alter_cmd.ttl || !metadata.hasAnyTableTTL())
+        return 0;
+
+    TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
+        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
+        || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
+        return 0;
+
+    const TTLTableDescription & old_table_ttl = metadata.table_ttl;
+    if (!old_table_ttl.rows_ttl.expression_ast ||
+        !isSameExpressionTemplate(new_table_ttl.rows_ttl.expression_ast, old_table_ttl.rows_ttl.expression_ast))
+        return 0;
+
+    /**
+     * old_ttl : col + toIntervalDay(100).
+     * new_ttl : col + toIntervalDay(1).
+     * delta =  (0 + toIntervalDay(100)) - (0 + toIntervalDay(1))
+     */
+    Block block;
+    for (const auto & ttl_column : new_table_ttl.rows_ttl.expression_columns)
+    {
+        ColumnWithTypeAndName column;
+        column.name = ttl_column.name;
+        column.type = ttl_column.type;
+        column.column = column.type->createColumnConst(0, Field(0));
+        block.insert(std::move(column));
+    }
+
+    auto get_ttl_timestamp = [&](const TTLDescription & ttl) -> time_t
+    {
+        auto ttl_expr = ttl.buildExpression(context);
+        auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(ttl_expr.expression, block, ttl.result_column);
+
+        if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
+        {
+            const auto & date_lut = DateLUT::serverTimezoneInstance();
+            return date_lut.fromDayNum(DayNum(column_date->getData()[0]));
+        }
+        else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(ttl_column.get()))
+        {
+            return column_date_time->getData()[0];
+        }
+        else if (const ColumnConst * column_const = typeid_cast<const ColumnConst *>(ttl_column.get()))
+        {
+            if (typeid_cast<const ColumnUInt16 *>(&column_const->getDataColumn()))
+            {
+                const auto & date_lut = DateLUT::serverTimezoneInstance();
+                return date_lut.fromDayNum(DayNum(column_const->getValue<UInt16>()));
+            }
+            else if (typeid_cast<const ColumnUInt32 *>(&column_const->getDataColumn()))
+            {
+                return column_const->getValue<UInt32>();
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of result TTL column");
+    };
+
+    return get_ttl_timestamp(new_table_ttl.rows_ttl) - get_ttl_timestamp(old_table_ttl.rows_ttl);
 }
 
 }
