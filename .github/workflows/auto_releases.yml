@@ -77,8 +77,6 @@ jobs:
       ref: ${{ matrix.release_params.commit_sha }}
       type: patch
       dry-run: ${{ fromJson(needs.AutoReleaseInfo.outputs.dry_run) }}
-    secrets:
-      ROBOT_CLICKHOUSE_COMMIT_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
 
   CleanUp:
     needs: [Releases]
