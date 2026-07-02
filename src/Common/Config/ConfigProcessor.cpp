@@ -634,16 +634,27 @@ void ConfigProcessor::doIncludesRecursive(
 
                 /// Unlike `from_env` (which is always plain text), the contents of a ZooKeeper
                 /// node may be a whole subtree. The format is autodetected the same way as for
-                /// configuration files: if the value begins with '<' it is parsed as an XML fragment.
-                /// Otherwise, a structural `<include from_zk=.../>` (which splices a subtree) parses
-                /// the value as YAML, while any other (leaf) substitution — for example
-                /// `<password from_zk=.../>` or `<some_setting from_zk=.../>` — keeps the value as
-                /// literal text. A leaf value is never reinterpreted by the YAML parser, so an
-                /// existing scalar or secret keeps its exact bytes: a value such as `abc: def` is not
-                /// turned into an `<abc>def</abc>` sub-element, and `abc # rotated` keeps its
-                /// `# rotated` suffix instead of being treated as a YAML comment. XML special
-                /// characters (for example `&`, `<` or `>`) are escaped the same way as for
-                /// `from_env`, so a leaf value can contain any text.
+                /// configuration files, based on whether the value begins with '<':
+                ///
+                ///  - A value that begins with '<' is parsed as an XML fragment. This is how a
+                ///    subtree is spliced into ANY element, both a structural `<include from_zk=.../>`
+                ///    and an ordinary container such as `<profiles from_zk=.../>` or
+                ///    `<http_handlers from_zk=.../>`. This is kept for backward compatibility:
+                ///    earlier versions always interpreted a `from_zk` value as XML.
+                ///  - A value that does not begin with '<' on a structural `<include from_zk=.../>`
+                ///    is parsed as a YAML subtree, expanded the same way as a configuration file.
+                ///  - A value that does not begin with '<' on any other element is kept as literal
+                ///    text using its exact original bytes. YAML autodetection is deliberately NOT
+                ///    applied here, even for an ordinary container element such as
+                ///    `<profiles from_zk=.../>`: such an element may just as well be a leaf holding
+                ///    a scalar — for example `<password from_zk=.../>` or `<some_setting from_zk=.../>`
+                ///    — whose exact bytes must be preserved. So a non-`<` value is never reinterpreted
+                ///    by the YAML parser: a value such as `abc: def` is not turned into an
+                ///    `<abc>def</abc>` sub-element, and `abc # rotated` keeps its `# rotated` suffix
+                ///    instead of being treated as a YAML comment. To splice a subtree into an ordinary
+                ///    element, provide it as XML (a value beginning with '<'). XML special characters
+                ///    (for example `&`, `<` or `>`) are escaped the same way as for `from_env`, so a
+                ///    literal value can contain any text.
                 const size_t pos = firstNonWhitespacePos(znode.contents);
                 if (pos != std::string::npos && znode.contents[pos] == '<')
                 {
@@ -658,7 +669,8 @@ void ConfigProcessor::doIncludesRecursive(
                 }
                 else
                 {
-                    /// A leaf substitution: keep the value as literal text using its exact original bytes.
+                    /// A leaf value or an ordinary element: keep the value as literal text using its
+                    /// exact original bytes (a subtree must be provided as XML on such an element).
                     zk_document = dom_parser.parseString("<from_zk>" + escapeForXMLText(znode.contents) + "</from_zk>");
                 }
                 return getRootNode(zk_document.get());

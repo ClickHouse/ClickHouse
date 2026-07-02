@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- from_zk on an ordinary (non-<include>) element: the ZooKeeper node holds a value that
+         begins with '<', so it is parsed as an XML fragment and its subtree is spliced in as child
+         elements. This is how a subtree is substituted into an ordinary container element such as
+         <merge_tree>, <profiles> or <http_handlers>, not only into a structural <include>. -->
+    <merge_tree from_zk="/merge_tree_xml_subtree" />
+</clickhouse>

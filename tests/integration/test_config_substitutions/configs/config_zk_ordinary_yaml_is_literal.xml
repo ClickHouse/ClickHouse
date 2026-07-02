@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- from_zk on an ordinary (non-<include>) element whose ZooKeeper node holds a value that does
+         NOT begin with '<' (a YAML subtree). It is kept as literal text, not autodetected as YAML:
+         YAML subtree autodetection is applied only to a structural <include from_zk=...>, because an
+         ordinary element may just as well be a leaf holding a scalar whose exact bytes must be
+         preserved. So the setting inside the YAML must NOT be applied. To splice a subtree into an
+         ordinary element, an XML fragment (a value beginning with '<') must be used instead. -->
+    <merge_tree from_zk="/merge_tree_yaml_subtree" />
+</clickhouse>

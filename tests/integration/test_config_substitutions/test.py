@@ -120,6 +120,22 @@ node16 = cluster.add_instance(
     user_configs=["configs/config_zk_leaf_crlf.xml"],
     with_zookeeper=True,
 )
+# from_zk subtree substitution into an ordinary (non-<include>) element such as <merge_tree>:
+# a value beginning with '<' is an XML fragment, so its subtree is spliced in as child elements.
+# This confirms subtree substitution works on any element, not only a structural <include>.
+node17 = cluster.add_instance(
+    "node17",
+    main_configs=["configs/config_zk_ordinary_xml_subtree.xml"],
+    with_zookeeper=True,
+)
+# from_zk on an ordinary (non-<include>) element such as <merge_tree> with a YAML (non-'<') value:
+# it must be kept as literal text, not autodetected as YAML, so the setting inside is NOT applied.
+# YAML subtree autodetection is applied only to a structural <include from_zk=...>.
+node18 = cluster.add_instance(
+    "node18",
+    main_configs=["configs/config_zk_ordinary_yaml_is_literal.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -193,6 +209,23 @@ def start_cluster():
             zk.create(
                 path="/leaf_with_crlf",
                 value=b"a\r\nb",
+                makepath=True,
+            )
+            # An XML fragment (begins with '<'), referenced from an ordinary (non-<include>) element
+            # `<merge_tree from_zk=.../>`: it is spliced in as child elements, so the subtree
+            # substitution applies just like it does for a structural <include>.
+            zk.create(
+                path="/merge_tree_xml_subtree",
+                value=b"<min_bytes_for_wide_part>33</min_bytes_for_wide_part>",
+                makepath=True,
+            )
+            # A YAML subtree (does not begin with '<'), referenced from an ordinary (non-<include>)
+            # element `<merge_tree from_zk=.../>`: it must be kept as literal text, not autodetected
+            # as YAML, so the `min_bytes_for_wide_part` setting inside must NOT be applied. YAML
+            # autodetection is reserved for a structural <include from_zk=...>.
+            zk.create(
+                path="/merge_tree_yaml_subtree",
+                value=b"min_bytes_for_wide_part: 33\n",
                 makepath=True,
             )
 
@@ -572,4 +605,36 @@ def test_config_zk_leaf_crlf_preserved(start_cluster):
     assert (
         node16.query("SELECT hex(value) FROM system.settings WHERE name = 'log_comment'")
         == "610D0A62\n"
+    )
+
+
+def test_config_zk_ordinary_element_xml_subtree(start_cluster):
+    """A from_zk value beginning with '<' is spliced as child elements into an ordinary element.
+
+    Subtree substitution via from_zk works on any element, not only a structural <include>: an XML
+    fragment stored at the ZooKeeper node becomes child elements of an ordinary container such as
+    `<merge_tree from_zk=.../>`, so `min_bytes_for_wide_part` is set to 33.
+    """
+    assert (
+        node17.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"
+        )
+        == "33\n"
+    )
+
+
+def test_config_zk_ordinary_element_yaml_is_literal(start_cluster):
+    """A from_zk YAML (non-'<') value on an ordinary element is kept literal, not expanded as YAML.
+
+    YAML subtree autodetection is applied only to a structural <include from_zk=...>. On an ordinary
+    element such as `<merge_tree from_zk=.../>` a non-'<' value is kept as literal text (an ordinary
+    element may just as well be a leaf whose exact scalar bytes must be preserved), so the YAML
+    `min_bytes_for_wide_part: 33` is NOT applied and the setting keeps its default value (not 33). To
+    splice a subtree into an ordinary element, an XML fragment (a value beginning with '<') is used.
+    """
+    assert (
+        node18.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"
+        )
+        != "33\n"
     )
