@@ -1,7 +1,9 @@
 #pragma once
 #include <Core/Joins.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <array>
 
 class SipHash;
@@ -233,6 +235,21 @@ void calculateHashTableCacheKeys(
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
+
+/// Estimate `RelationStats` (rows + per-column NDV) for an arbitrary right-of-join subtree.
+/// Walks the plan tree applying filters/limits/aggregation step-by-step (uses
+/// `ConditionSelectivityEstimator` at `ReadFromMergeTree`, then `FilterStep`/`Prewhere`,
+/// `LimitStep`, `AggregatingStep`, etc.). Returns `{}` if the shape is not estimable.
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+
+/// Same as `calculateJoinStepCacheKeyContribution` but built directly from a list of equi-key
+/// DAG nodes on the right side, in the same order they would be iterated from the join step's
+/// expression. Used to recompute the right-side contribution after `demoteLowNdvKeysToResidual`
+/// has removed some equi keys from the hash table, so the resulting cache key reflects only
+/// the keys that are actually inserted into the hash table.
+UInt64 calculateJoinStepCacheKeyContributionFromRightKeys(
+    const String & step_serialization_name,
+    const std::vector<const ActionsDAG::Node *> & right_equi_key_nodes);
 
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,

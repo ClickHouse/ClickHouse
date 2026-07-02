@@ -264,14 +264,13 @@ struct RuntimeHashStatisticsContext
     /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
     /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
     /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
-    /// sub-joins built earlier in the same reorder loop). Returns the derived right-side key,
-    /// suitable for `JoinStepLogical::setRightHashTableCacheKey`.
+    /// sub-joins built earlier in the same reorder loop). Returns the right child's raw subtree
+    /// hash (suitable for `JoinStepLogical::setRightSubtreeRawHash`); the parent join's
+    /// per-side contribution is applied at the consumer once it knows the kept equi-key set
+    /// (so demoted keys do not pollute the cache key).
     ///
-    /// Each child's final cache key combines its parent-independent subtree hash with the
-    /// parent join's per-side contribution (see `cache_keys` doc above for why both are
-    /// needed). We start from `raw_hashes[child]` rather than the previously-xored value in
-    /// `cache_keys[child]`, because under reorder the new parent's contribution can differ
-    /// from the original tree's parent contribution that was stamped into `cache_keys`.
+    /// `cache_keys` still tracks the full combined key (raw XOR parent contribution) because
+    /// downstream code (e.g. parallel-replicas consistency check) compares whole subtrees.
     UInt64 deriveCacheKeysForNewJoin(
         const QueryPlan::Node * left_child_node,
         const QueryPlan::Node * right_child_node,
@@ -301,7 +300,7 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        return right_key;
+        return raw_right;
     }
 };
 
@@ -342,7 +341,6 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
 RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
@@ -478,6 +476,10 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return estimateReadRowsCount(*node.children.front(), filter);
 #endif
 
+    /// Generic pass-through for any single-input transformation that preserves the row count
+    /// (e.g. `BuildRuntimeFilterStep`, `ExtractColumnsStep`). Without this, an upstream
+    /// optimization adding such a step on the right subtree would hide the underlying
+    /// `ReadFromMergeTree` from this walker and force callers to fall back to no stats.
     if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
         transform && transform->getTransformTraits().preserves_number_of_rows)
         return estimateReadRowsCount(*node.children.front(), filter);
@@ -1333,10 +1335,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             auto & new_node = nodes.emplace_back();
 
-            UInt64 right_table_key = query_graph_builder.context->statistics_context
+            UInt64 right_raw_hash = query_graph_builder.context->statistics_context
                 .deriveCacheKeysForNewJoin(left_child_node, right_child_node, new_node, *join_step);
-            if (right_table_key)
-                join_step->setRightHashTableCacheKey(right_table_key);
+            if (right_raw_hash)
+                join_step->setRightSubtreeRawHash(right_raw_hash);
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};

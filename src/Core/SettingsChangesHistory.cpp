@@ -62,6 +62,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
+            {"query_plan_hash_join_subset_keys_auto", false, false, "New setting to enable cardinality-based automatic demotion of JOIN equality keys. Off by default; enable per-query for opt-in experimentation."},
+            {"query_plan_hash_join_subset_keys_min_rows", 1000000, 1000000, "New setting: minimum right-side row count for `query_plan_hash_join_subset_keys_auto` to apply."},
+            {"query_plan_hash_join_subset_keys_min_kept_selectivity", 0.01, 0.01, "New setting: target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},

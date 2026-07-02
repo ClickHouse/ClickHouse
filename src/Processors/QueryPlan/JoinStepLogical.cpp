@@ -55,10 +55,15 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageJoin.h>
+
+#include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -797,6 +802,340 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
 }
 
 
+/// Strip the `__tableN.` qualifier added by the analyzer so the name matches
+/// the storage column (statistics are stored by storage column name).
+static String stripTableQualifier(const String & name)
+{
+    if (!name.starts_with("__table"))
+        return name;
+    if (auto dot_pos = name.find('.'); dot_pos != String::npos)
+        return name.substr(dot_pos + 1);
+    return name;
+}
+
+/// Return a profile (`rows` + per-key NDV in `column_stats`) for the right-side relation.
+/// Delegates to `QueryPlanOptimizations::estimateReadRowsCount`, which walks the right subtree
+/// applying `FilterStep` / `Prewhere` / `LimitStep` / `AggregatingStep` / nested
+/// `JoinStepLogical` step-by-step. Row count therefore reflects post-filter cardinality of
+/// the joined stream, not the raw table — important when the right side is a filtered or
+/// limited subquery. Returns `std::nullopt` when no row estimate is available, or when none
+/// of the join keys map to a known column statistic in the propagated `column_stats`.
+///
+/// Note: `FilterStep` adjusts `estimated_rows` but does not re-estimate per-column NDV (DAG
+/// remap only renames). A column's NDV under a filter therefore still reflects pre-filter
+/// NDV — better than ignoring filters entirely (which the previous walker did), but not
+/// exact under correlation between the filter and the join key.
+static std::optional<RelationProfile> tryEstimateRelationProfile(
+    QueryPlan::Node * source_node, const Names & column_names)
+{
+    if (!source_node)
+        return std::nullopt;
+
+    auto stats = QueryPlanOptimizations::estimateReadRowsCount(*source_node, /*filter=*/ nullptr);
+    if (!stats.estimated_rows)
+        return std::nullopt;
+
+    RelationProfile profile;
+    profile.rows = *stats.estimated_rows;
+
+    /// `column_stats` here is keyed by post-rename column names (the analyzer's `__tableN.`
+    /// qualifier survives the remap chain in `estimateReadRowsCount`). Look up each join
+    /// key both as-is and with the qualifier stripped, so we work whether or not a
+    /// rename-only `ExpressionStep` sat between the join and the source.
+    for (const auto & name : column_names)
+    {
+        const ColumnStats * found = nullptr;
+        if (auto it = stats.column_stats.find(name); it != stats.column_stats.end())
+            found = &it->second;
+        else if (auto stripped = stripTableQualifier(name);
+                 stripped != name)
+            if (auto it2 = stats.column_stats.find(stripped); it2 != stats.column_stats.end())
+                found = &it2->second;
+        if (found)
+            profile.column_stats[stripTableQualifier(name)] = *found;
+    }
+
+    return profile;
+}
+
+/// Demote high-NDV equality keys from the hash-table key set into the residual filter.
+/// Reduces hash table size when one equality key already discriminates well; the
+/// remaining keys (with much higher NDV) become equality predicates evaluated at probe
+/// time.
+///
+/// Returns `true` if at least one key was demoted. The caller must then force
+/// `mixed_join_expression` (so the equality is checked during probe rather than as a
+/// post-join filter) to actually realize the smaller-hash-table benefit.
+static bool demoteLowNdvKeysToResidual(
+    TableJoin::Clauses & clauses,
+    std::vector<JoinActionRef> & residual_filter,
+    JoinExpressionActions & expression_actions,
+    const JoinSettings & join_settings,
+    const std::vector<QueryPlan::Node *> & children,
+    const JoinAlgorithmParams & join_algorithm_params,
+    JoinKind kind,
+    JoinStrictness strictness)
+{
+    if (!join_settings.query_plan_hash_join_subset_keys_auto)
+        return false;
+    /// Demotion installs `mixed_join_expression` (see caller); `chooseJoinAlgorithm` only
+    /// accepts mixed conditions for hash / parallel-hash / grace-hash (or `default`, which
+    /// expands to `direct,hash` so `isEnabledAlgorithm(HASH)` resolves to true — see
+    /// `TableJoin::isEnabledAlgorithm`). `JoinAlgorithm::AUTO` is excluded on purpose:
+    /// `chooseJoinAlgorithm`'s pre-filter rejects mixed conditions for `auto` even though
+    /// the `JoinSwitcher` it would create wraps a `HashJoin` that *can* run them; skipping
+    /// demote here avoids turning a previously-valid `auto` plan into a
+    /// "JOIN with mixed conditions supports only hash join or grace hash join" exception.
+    {
+        const auto & algos = join_settings.join_algorithms;
+        auto supports_mixed = [](JoinAlgorithm a)
+        {
+            return a == JoinAlgorithm::HASH
+                || a == JoinAlgorithm::PARALLEL_HASH
+                || a == JoinAlgorithm::GRACE_HASH
+                || a == JoinAlgorithm::DEFAULT;
+        };
+        if (std::ranges::none_of(algos, supports_mixed))
+            return false;
+    }
+    /// `HashJoin::validateAdditionalFilterExpression` (see `Interpreters/HashJoin/HashJoin.cpp`)
+    /// only accepts mixed-condition predicates for a closed set of (kind, strictness) pairs.
+    /// In particular `RightAny` (which the analyzer can promote `Any` to when
+    /// `any_join_distinct_right_table_keys = 1` is set), `Asof`, `Semi`/`Anti` over
+    /// Inner/Full, and `Any` over Full are all rejected. Mirror that matrix here so the
+    /// rewrite only fires for combinations that the executor can actually run.
+    {
+        const bool kind_left_or_right = isLeft(kind) || isRight(kind);
+        const bool is_supported
+            = (strictness == JoinStrictness::All
+               && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind)))
+            || (strictness == JoinStrictness::Semi && kind_left_or_right)
+            || (strictness == JoinStrictness::Anti && kind_left_or_right)
+            || (strictness == JoinStrictness::Any && (kind_left_or_right || isInner(kind)));
+        if (!is_supported)
+            return false;
+    }
+    /// Single-clause only. Disjunctions (`OR`) have their own handling.
+    if (clauses.size() != 1 || children.size() < 2)
+        return false;
+
+    auto & clause = clauses.front();
+    auto & left = clause.key_names_left;
+    auto & right = clause.key_names_right;
+
+    if (left.size() != right.size() || left.size() < 2)
+        return false;
+
+    /// Skip null-safe keys: simple `equals` does not match null-safe semantics.
+    if (!clause.nullsafe_compare_key_indexes.empty())
+        return false;
+
+    auto * right_source = children.back();
+    auto profile = tryEstimateRelationProfile(right_source, right);
+    if (!profile)
+        return false;
+
+    /// Bail out if the right side is too small for the optimization to pay off —
+    /// the residual probe-time filter only helps when the avoided hash table is large.
+    if (profile->rows < join_settings.query_plan_hash_join_subset_keys_min_rows)
+        return false;
+
+    /// Resolve right-side DAG nodes once; the join key names may live in DAG outputs (when
+    /// transformed) or in the inputs (used directly), so we try both lookups.
+    auto lookup_node = [&expression_actions](const String & name) -> const ActionsDAG::Node *
+    {
+        auto ref = expression_actions.findNode(name, /*is_input=*/false, /*throw_if_not_found=*/false);
+        if (!ref)
+            ref = expression_actions.findNode(name, /*is_input=*/true, /*throw_if_not_found=*/false);
+        return ref ? ref.getNode() : nullptr;
+    };
+    std::vector<const ActionsDAG::Node *> right_nodes(right.size(), nullptr);
+    for (size_t i = 0; i < right.size(); ++i)
+    {
+        right_nodes[i] = lookup_node(right[i]);
+        if (!right_nodes[i])
+            return false;
+    }
+
+    /// Build kept-subset candidates from two sources:
+    ///  (a) storage `STATISTICS(uniq)` — yields a size-1 candidate per key with a known NDV.
+    ///  (b) `HashTablesStatistics<HashJoinEntry>` cache — yields a candidate for any subset
+    ///      a previous query on the same right subtree happened to build a hash table on.
+    ///      For our own past runs that means size-1 entries (after SINGLE-key demote) and
+    ///      the size-N all-keys entry; for queries the user wrote with a different equi-key
+    ///      subset, any size in between. The cache value is the observed joint NDV of the
+    ///      subset — joint by definition, so it implicitly captures correlation between
+    ///      keys (a pair of correlated keys reports a small `ht_size`, not their product).
+    struct Candidate
+    {
+        std::vector<size_t> indices;
+        UInt64 ndv;
+    };
+    std::vector<Candidate> candidates;
+
+    for (size_t i = 0; i < right.size(); ++i)
+    {
+        auto it = profile->column_stats.find(stripTableQualifier(right[i]));
+        if (it == profile->column_stats.end() || it->second.num_distinct_values == 0)
+            continue;
+        candidates.push_back({{i}, it->second.num_distinct_values});
+    }
+
+    if (join_algorithm_params.collect_hash_table_stats_during_joins
+        && join_algorithm_params.right_subtree_raw_hash)
+    {
+        auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+        /// Enumerate non-empty subsets up to a small bound. The cache hits are sparse (real
+        /// hits only on subsets the workload has actually built), so the enumeration cost
+        /// (one SipHash + one map probe per subset) dominates only on degenerate joins with
+        /// many equi keys. Cap at 4 to keep the worst case bounded.
+        const size_t N = right.size();
+        const size_t max_subset_size = std::min<size_t>(N, 4);
+        std::vector<size_t> subset;
+        subset.reserve(max_subset_size);
+        std::vector<const ActionsDAG::Node *> nodes_buf;
+        nodes_buf.reserve(max_subset_size);
+        auto probe_current = [&]()
+        {
+            nodes_buf.clear();
+            for (size_t i : subset)
+                nodes_buf.push_back(right_nodes[i]);
+            const UInt64 contribution = QueryPlanOptimizations::calculateJoinStepCacheKeyContributionFromRightKeys(
+                JoinStepLogical::serializationName(), nodes_buf);
+            const UInt64 probe_key = join_algorithm_params.right_subtree_raw_hash ^ contribution;
+            StatsCollectingParams params{
+                /*key_=*/ probe_key,
+                /*enable=*/ join_algorithm_params.collect_hash_table_stats_during_joins,
+                join_algorithm_params.max_entries_for_hash_table_stats,
+                join_algorithm_params.max_size_to_preallocate_for_joins};
+            if (auto hint = hash_table_stats.getSizeHint(params))
+                candidates.push_back({subset, hint->ht_size});
+        };
+        std::function<void(size_t, size_t)> enumerate = [&](size_t start, size_t depth_remaining)
+        {
+            if (!subset.empty())
+                probe_current();
+            if (depth_remaining == 0)
+                return;
+            for (size_t i = start; i < N; ++i)
+            {
+                subset.push_back(i);
+                enumerate(i + 1, depth_remaining - 1);
+                subset.pop_back();
+            }
+        };
+        enumerate(0, max_subset_size);
+    }
+
+    if (candidates.empty() || profile->rows == 0)
+        return false;
+
+    /// Same `indices` may appear multiple times (storage + cache, or different size-1 hits).
+    /// Keep the smallest NDV per indices set — conservative against either source over-stating
+    /// distinctness, which would under-estimate the bucket size.
+    std::sort(candidates.begin(), candidates.end(),
+        [](const auto & a, const auto & b)
+        {
+            if (a.indices != b.indices) return a.indices < b.indices;
+            return a.ndv < b.ndv;
+        });
+    candidates.erase(
+        std::unique(candidates.begin(), candidates.end(),
+            [](const auto & a, const auto & b) { return a.indices == b.indices; }),
+        candidates.end());
+
+    const Float64 rows_f = static_cast<Float64>(profile->rows);
+    const Float64 target_ndv = rows_f * join_settings.query_plan_hash_join_subset_keys_min_kept_selectivity;
+
+    /// Sort by NDV ascending, breaking ties toward fewer kept keys (cheaper per-row hashing).
+    std::sort(candidates.begin(), candidates.end(),
+        [](const auto & a, const auto & b)
+        {
+            if (a.ndv != b.ndv) return a.ndv < b.ndv;
+            return a.indices.size() < b.indices.size();
+        });
+
+    /// Pick the smallest-NDV candidate that still meets the target bucket bound.
+    const Candidate * chosen = nullptr;
+    for (const auto & c : candidates)
+    {
+        if (static_cast<Float64>(c.ndv) >= target_ndv)
+        {
+            chosen = &c;
+            break;
+        }
+    }
+    if (!chosen)
+        return false;
+
+    /// Demoting must save at least a 2x reduction in hash-table NDV vs an unrestricted
+    /// hash on all keys (bounded by `rows`). Otherwise the residual probe-time cost is
+    /// unlikely to pay for itself.
+    if (static_cast<Float64>(chosen->ndv) * 2.0 > rows_f)
+        return false;
+
+    const std::vector<size_t> keep_idx = chosen->indices;
+    const Float64 kept_ndv = static_cast<Float64>(chosen->ndv);
+
+    /// Build demote list (everything not kept).
+    std::vector<bool> kept_mask(right.size(), false);
+    for (size_t i : keep_idx)
+        kept_mask[i] = true;
+    std::vector<size_t> demote_idx;
+    demote_idx.reserve(right.size() - keep_idx.size());
+    for (size_t i = 0; i < right.size(); ++i)
+        if (!kept_mask[i])
+            demote_idx.push_back(i);
+
+    /// Resolve DAG nodes before mutating clause state, bail atomically on miss.
+    /// Join key names may live either in the DAG outputs (when transformed) or in the
+    /// inputs (when used directly without transformation), so try both lookups.
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> demoted_pairs;
+    demoted_pairs.reserve(demote_idx.size());
+    auto lookup = [&expression_actions](const String & name) -> JoinActionRef
+    {
+        auto node = expression_actions.findNode(name, /* is_input = */ false, /* throw_if_not_found = */ false);
+        if (!node)
+            node = expression_actions.findNode(name, /* is_input = */ true, /* throw_if_not_found = */ false);
+        return node;
+    };
+    for (size_t i : demote_idx)
+    {
+        auto lhs = lookup(left[i]);
+        auto rhs = lookup(right[i]);
+        if (!lhs || !rhs)
+            return false;
+        demoted_pairs.emplace_back(lhs, rhs);
+    }
+
+    Names new_left;
+    Names new_right;
+    new_left.reserve(keep_idx.size());
+    new_right.reserve(keep_idx.size());
+    for (size_t i : keep_idx)
+    {
+        new_left.push_back(left[i]);
+        new_right.push_back(right[i]);
+    }
+
+    for (const auto & [lhs, rhs] : demoted_pairs)
+    {
+        auto eq = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        residual_filter.push_back(eq);
+    }
+
+    left = std::move(new_left);
+    right = std::move(new_right);
+
+    static LoggerPtr log = getLogger("JoinKeySubset");
+    LOG_DEBUG(log,
+        "Demoted {} JOIN keys to residual filter, kept {} as hash keys "
+        "(right_rows={}, kept_ndv={}, target_ndv={})",
+        demote_idx.size(), keep_idx.size(), profile->rows, kept_ndv, target_ndv);
+    return true;
+}
+
+
 static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
     ColumnsWithTypeAndName columns;
@@ -1225,6 +1564,62 @@ static QueryPlanNode buildPhysicalJoinImpl(
         used_expressions.push_back(right_pre_filter_condition);
     }
 
+    /// Cardinality-driven optimization: when a JOIN equality key has much higher NDV than
+    /// the weakest key, drop it from the hash table and check the equality as a residual
+    /// filter during probe. Reduces hash table memory on multi-key joins where the trailing
+    /// keys are high-cardinality (e.g. `ON user_id = user_id AND request_id = request_id`
+    /// where `request_id` is near-unique while `user_id` has many duplicates).
+    bool keys_demoted_to_residual = demoteLowNdvKeysToResidual(
+        table_join_clauses, join_operator.residual_filter, expression_actions, join_settings, children,
+        join_algorithm_params, join_operator.kind, join_operator.strictness);
+
+    /// Derive the `HashTablesStatistics` cache key from the post-demote kept equi keys (the
+    /// actual hash-table keyset). `right_subtree_raw_hash` carries the parent-independent
+    /// fingerprint of the right subtree stamped during pre-order; here we apply the per-side
+    /// contribution computed from the surviving keys so that demote-on and demote-off shapes
+    /// of the same logical join do not collide in the cache.
+    if (join_algorithm_params.right_subtree_raw_hash && table_join_clauses.size() == 1)
+    {
+        std::vector<const ActionsDAG::Node *> kept_right_nodes;
+        kept_right_nodes.reserve(table_join_clauses.front().key_names_right.size());
+        auto lookup = [&expression_actions](const String & name) -> const ActionsDAG::Node *
+        {
+            auto ref = expression_actions.findNode(name, /*is_input=*/false, /*throw_if_not_found=*/false);
+            if (!ref)
+                ref = expression_actions.findNode(name, /*is_input=*/true, /*throw_if_not_found=*/false);
+            return ref ? ref.getNode() : nullptr;
+        };
+        bool all_resolved = true;
+        for (const auto & name : table_join_clauses.front().key_names_right)
+        {
+            const auto * node = lookup(name);
+            if (!node)
+            {
+                all_resolved = false;
+                break;
+            }
+            kept_right_nodes.push_back(node);
+        }
+        if (all_resolved && !kept_right_nodes.empty())
+        {
+            const UInt64 contribution = QueryPlanOptimizations::calculateJoinStepCacheKeyContributionFromRightKeys(
+                JoinStepLogical::serializationName(), kept_right_nodes);
+            join_algorithm_params.hash_table_key_hash = join_algorithm_params.right_subtree_raw_hash ^ contribution;
+        }
+    }
+
+    if (join_algorithm_params.hash_table_key_hash && join_algorithm_params.collect_hash_table_stats_during_joins)
+    {
+        StatsCollectingParams params{
+            /*key_=*/ join_algorithm_params.hash_table_key_hash,
+            /*enable=*/ join_algorithm_params.collect_hash_table_stats_during_joins,
+            join_algorithm_params.max_entries_for_hash_table_stats,
+            join_algorithm_params.max_size_to_preallocate_for_joins};
+        auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+        if (auto hint = hash_table_stats.getSizeHint(params))
+            join_algorithm_params.rhs_size_estimation = hint->source_rows;
+    }
+
     join_operator.residual_filter.append_range(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
@@ -1269,7 +1664,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
         }
     }
 
-    if (residual_filter_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    /// Force `mixed_join_expression` when keys were demoted to residual so the equality
+    /// is evaluated during probe (smaller intermediate result) rather than as a post-join filter.
+    if (residual_filter_condition && (is_disjunctive_condition || keys_demoted_to_residual || !canPushDownFromOn(join_operator)))
     {
         auto residual_filter_dag = JoinExpressionActions::getSubDAG(std::views::single(residual_filter_condition));
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
@@ -1427,32 +1824,25 @@ void JoinStepLogical::buildPhysicalJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
-    UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
-
     if (!join_step->join_algorithm_params)
     {
         join_step->join_algorithm_params = std::make_unique<JoinAlgorithmParams>(
             join_step->join_settings,
             optimization_settings.max_threads,
-            hash_table_key_hash,
+            /*hash_table_key_hash=*/ 0,
             optimization_settings.max_entries_for_hash_table_stats,
             optimization_settings.initial_query_id,
             optimization_settings.lock_acquire_timeout);
 
+        /// The hash-table-stats cache key depends on which equi keys actually end up in the
+        /// hash table; `demoteLowNdvKeysToResidual` may strip some. Stash the parent-independent
+        /// right-subtree hash here; `buildPhysicalJoinImpl` derives the final key (and looks
+        /// up the size hint) after demote, so the cache reflects the actual kept-key set.
+        if (optimization_settings.collect_hash_table_stats_during_joins)
+            join_step->join_algorithm_params->right_subtree_raw_hash = join_step->getRightSubtreeRawHash();
+
         if (join_step->right_rows_estimation)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
-
-        if (hash_table_key_hash)
-        {
-            StatsCollectingParams params{
-                /*key_=*/hash_table_key_hash,
-                /*enable=*/ optimization_settings.collect_hash_table_stats_during_joins,
-                optimization_settings.max_entries_for_hash_table_stats,
-                optimization_settings.max_size_to_preallocate_for_joins};
-            auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
-            if (auto hint = hash_table_stats.getSizeHint(params))
-                join_step->join_algorithm_params->rhs_size_estimation = hint->source_rows;
-        }
     }
 
     LogicalJoinInfo logical_join_info{

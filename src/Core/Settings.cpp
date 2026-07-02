@@ -5863,6 +5863,42 @@ Enable using collected hash table statistics for cardinality estimation during j
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
+    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, false, R"(
+Use column statistics to automatically demote high-cardinality JOIN equality keys to a residual filter evaluated at probe time. The hash table is built on the subset of equality keys that hits a target bucket size; the remaining keys become per-row equality checks during probe.
+
+For `t1 JOIN t2 ON t1.user_id = t2.user_id AND t1.request_id = t2.request_id` with many users and few `request_id` values per user, only `user_id` is used as a hash key (small) and `request_id = request_id` is evaluated at probe time. The hash table is built on the user_id space rather than the user_id x request_id space.
+
+Selects the kept-key subset by enumerating candidate subsets of the equality keys and picking
+the one with the smallest NDV that is still at least
+`total_right_rows * query_plan_hash_join_subset_keys_min_kept_selectivity`. Ties prefer fewer kept
+keys (cheaper per-row hashing). Candidate NDVs come from two sources:
+
+1. Storage `STATISTICS(uniq)` on the right-side columns — yields a per-column NDV; contributes
+   size-1 candidates.
+2. The in-process `HashTablesStatistics` cache built up during prior joins — contributes a
+   joint NDV for any subset a previous query on the same right subtree happened to build a
+   hash table on. The cache value is a joint observation, so it captures correlation between
+   keys directly (a pair of correlated keys reports the small actual joint NDV, not the
+   product of per-column NDVs).
+
+When the same subset has a value from both sources, the smaller NDV wins (conservative against
+either source over-stating distinctness).
+
+Filters, limits, projections, and nested joins above the right-side `MergeTree` scan are
+followed transparently; the row count and per-column NDV propagated through `FilterStep`,
+`LimitStep`, `AggregatingStep` and similar steps are used. Falls back to no demotion when no
+candidate reaches the target, when the right side is below `query_plan_hash_join_subset_keys_min_rows`,
+or when none of `hash`, `parallel_hash`, or `grace_hash` is enabled in `join_algorithm` (the
+residual filter is realized as a mixed-condition predicate, which only those algorithms accept).
+)", 0) \
+    DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, R"(
+Minimum estimated right-side row count for `query_plan_hash_join_subset_keys_auto` to kick in. Joins on small right tables do not benefit from key demotion (the hash table is already small) and the residual probe-time filter would only add overhead.
+)", 0) \
+    DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, R"(
+Target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`. Selectivity is approximated as `NDV(kept_keys) / total_right_rows`. The optimization keeps as few keys as possible (smallest hash table) such that this selectivity is still met, so that the residual filter runs over a bounded bucket.
+
+Default `0.01` targets an average bucket of about 100 right-side rows. Lower values are more permissive (allow larger buckets, smaller hash table); higher values demand tighter buckets and so keep more keys.
+)", 0) \
     \
     DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
 Disable limit on kafka_num_consumers that depends on the number of available CPU cores.

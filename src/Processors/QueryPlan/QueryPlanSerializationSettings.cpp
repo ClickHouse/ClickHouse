@@ -112,6 +112,9 @@ namespace DB
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
+    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, false, "Use column statistics to automatically demote high-NDV JOIN equality keys to a residual filter.", 0) \
+    DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, "Minimum estimated right-side row count for `query_plan_hash_join_subset_keys_auto` to kick in.", 0) \
+    DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, "Target NDV(kept_keys)/total_rows for `query_plan_hash_join_subset_keys_auto`.", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
 
