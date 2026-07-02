@@ -2,7 +2,9 @@
 #include "config.h"
 
 #include <atomic>
+#include <optional>
 #include <Common/CopyableAtomic.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/KeeperCommon.h>
@@ -23,6 +25,7 @@ using ClusterConfig = nuraft::cluster_config;
 using ClusterConfigPtr = nuraft::ptr<ClusterConfig>;
 
 class ReadBuffer;
+class ReadBufferFromNuraftBuffer;
 
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
@@ -41,9 +44,10 @@ enum SnapshotVersion : uint8_t
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
     V8 = 8, /// add destroy_time and ttl for TTL nodes
+    V9 = 9, /// chunked, independently-compressed ZSTD chunks; supports parallel reads and parallel per-chunk deserialization
 };
 
-static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
+static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V9;
 
 /// What is stored in binary snapshot
 struct SnapshotDeserializationResult
@@ -290,6 +294,11 @@ public:
     void setProtectedPendingSnapshotIndex(uint64_t log_idx);
 
 private:
+    /// Deserialize a chunked (independently-compressed ZSTD) snapshot from `buffer`.
+    /// Called from deserializeSnapshotFromBuffer after "CKFS" magic is detected.
+    SnapshotDeserializationResult
+    deserializeChunkedSnapshotFromBuffer(ReadBufferFromNuraftBuffer & buffer, bool load_full_storage = true) const;
+
     /// Detach the entry at `it` and same-index recovery copies, marking retired; caller's drop unlinks them.
     std::vector<SnapshotFileInfoPtr> detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileInfoPtr>::iterator it);
     /// `just_written_log_idx` (0 = none) pins the calling writer's own entry through this pass.
@@ -328,6 +337,10 @@ private:
     size_t storage_tick_time;
 
     KeeperContextPtr keeper_context;
+
+    /// Thread pool for parallel chunked snapshot deserialization (absent when deser_threads == 1).
+    mutable std::optional<ThreadPool> deser_pool;
+    size_t deser_threads = 1;
 
     LoggerPtr log = getLogger("KeeperSnapshotManager");
 };

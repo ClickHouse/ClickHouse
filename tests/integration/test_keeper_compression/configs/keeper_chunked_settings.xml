@@ -1,0 +1,8 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <write_snapshot_version>9</write_snapshot_version>
+            <snapshot_distance>5</snapshot_distance>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>

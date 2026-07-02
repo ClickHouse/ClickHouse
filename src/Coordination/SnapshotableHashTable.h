@@ -2,6 +2,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
 #include <list>
+#include <span>
 
 namespace DB
 {
@@ -9,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int CORRUPTED_DATA;
 }
 
 template<typename V>
@@ -245,21 +247,95 @@ public:
 
     struct KeyDeleter
     {
-        void operator()(const char * key)
-        {
-            if (key)
-                arena->free(key, size);
-        }
-
-        size_t size;
-        GlobalArena * arena;
+        void operator()(const char * key) { delete[] key; }
     };
 
     using KeyPtr = std::unique_ptr<char[], KeyDeleter>;
 
     KeyPtr allocateKey(size_t size)
     {
-        return KeyPtr{new char[size], KeyDeleter{size, &arena}};
+        return KeyPtr{new char[size]};
+    }
+
+    /// A batch of nodes parsed off-thread. Move-only: keys are bare string_views into
+    /// new[]-allocated char[] that ListElem does not free, so copies would double-free.
+    struct LocalInsertBatch
+    {
+        List nodes;
+
+        LocalInsertBatch() = default;
+        LocalInsertBatch(const LocalInsertBatch &) = delete;
+        LocalInsertBatch & operator=(const LocalInsertBatch &) = delete;
+        LocalInsertBatch(LocalInsertBatch &&) noexcept = default;
+        LocalInsertBatch & operator=(LocalInsertBatch && o) noexcept
+        {
+            if (this != &o)
+            {
+                freeOwnedKeys();
+                nodes = std::move(o.nodes);
+            }
+            return *this;
+        }
+        ~LocalInsertBatch() { freeOwnedKeys(); }
+
+        /// Frees keys still owned by this batch (no-op once buildMapFromBatches splices them out).
+        void freeOwnedKeys() noexcept
+        {
+            for (auto & e : nodes)
+                delete[] e.key.data();
+            nodes.clear();
+        }
+
+        KeyPtr allocateKey(size_t size) { return KeyPtr{new char[size]}; }
+
+        /// Append one parsed node. version/active_in_map are set later by buildMapFromBatches.
+        void emplace(KeyPtr key_data, size_t key_size, V value)
+        {
+            std::string_view key{key_data.release(), key_size};
+            nodes.push_back(ListElem{key, std::move(value)});
+        }
+
+        size_t size() const { return nodes.size(); }
+    };
+
+    LocalInsertBatch beginLocalInsert() { return {}; }
+
+    /// Splice batches in order, reserve the map, build the index. Table must be empty on entry.
+    void buildMapFromBatches(std::span<LocalInsertBatch> batches, uint64_t & out_total_children)
+    {
+        chassert(!snapshot_mode);
+        if (!map.empty() || !list.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "buildMapFromBatches requires an empty container");
+
+        size_t total = 0;
+        for (auto & b : batches)
+            total += b.nodes.size();
+        map.reserve(total);
+
+        for (auto & b : batches)
+        {
+            /// equal-allocator guarantee: O(1) splice
+            chassert(list.get_allocator() == b.nodes.get_allocator());
+            list.splice(list.end(), b.nodes); // O(1); empties b.nodes
+        }
+
+        out_total_children = 0;
+        for (auto it = list.begin(); it != list.end(); ++it)
+        {
+            size_t h = map.hash(it->key);
+            typename IndexMap::LookupResult mit;
+            bool inserted = false;
+            map.emplace(it->key, mit, inserted, h);
+            if (!inserted)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicate path '{}' in snapshot", it->key);
+            it->setVersion(current_version);
+            it->setActiveInMap();
+            mit->getMapped() = it;
+            updateDataSize(INSERT_OR_REPLACE, it->key.size(), it->value.sizeInBytes(), 0);
+            // numChildren() returns 0 for ephemeral nodes; the raw num_children field was
+            // validated >= 0 at parse time (readChunkedSnapshotNode), so the cast is safe.
+            out_total_children += static_cast<uint64_t>(it->value.numChildren());
+        }
     }
 
     void insertOrReplace(KeyPtr key_data, size_t key_size, V value)

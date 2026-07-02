@@ -79,7 +79,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 8 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 9 and above for chunked format). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
@@ -96,6 +96,8 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(UInt64, snapshot_deser_threads, 4, "Number of threads for parallel chunked-snapshot decompression and parse during load. 0 = use all CPU cores. 1 disables parallelism (uses the calling thread). Not clamped — the value is used as-is.", 0) \
+    DECLARE(UInt64, snapshot_chunk_size, 100000, "Number of nodes per independently-compressed ZSTD chunk in the chunked snapshot format. Only affects the chunked snapshot format (write_snapshot_version=9). Distinct from snapshot_transfer_chunk_size which controls network transfer bytes.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 

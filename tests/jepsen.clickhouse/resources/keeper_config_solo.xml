@@ -23,6 +23,8 @@
             <election_timeout_lower_bound_ms>2000</election_timeout_lower_bound_ms>
             <election_timeout_upper_bound_ms>4000</election_timeout_upper_bound_ms>
             <async_replication>1</async_replication>
+            <!-- exercise the chunked snapshot format -->
+            <write_snapshot_version>9</write_snapshot_version>
         </coordination_settings>
 
         <raft_configuration>

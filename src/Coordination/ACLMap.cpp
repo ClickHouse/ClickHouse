@@ -137,6 +137,13 @@ void ACLMap::addUsage(ACLId acl_id)
     numToAcl(acl_id).usage++;
 }
 
+void ACLMap::addUsageBatch(const std::unordered_map<ACLId, uint64_t> & batch)
+{
+    std::lock_guard lock(map_mutex);
+    for (const auto & [id, count] : batch)
+        numToAcl(id).usage += count;
+}
+
 void ACLMap::removeUsage(ACLId acl_id)
 {
     if (acl_id == 0)

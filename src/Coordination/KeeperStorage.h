@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -10,6 +11,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperReadThreadPool.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Common/SharedMutex.h>
 #include <Common/Concepts.h>
 
@@ -610,7 +612,14 @@ public:
     /// Used externally. Locks storage mutex and looks up the node.
     bool checkCommittedACL(std::string_view path, int32_t permissions, int64_t session_id);
 
-    KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
+    /// When `initialize_system_nodes=true` (default, fresh startup) the root `"/"` is inserted and
+    /// system nodes are created. When `false` (snapshot load), root comes from the snapshot data
+    /// and `initializeSystemNodes()` is called after deserialization.
+    KeeperStorage(
+        int64_t tick_time_ms,
+        const String & superdigest_,
+        const KeeperContextPtr & keeper_context_,
+        bool initialize_system_nodes = true);
     ~KeeperStorage();
 
     void initializeSystemNodes() TSA_NO_THREAD_SAFETY_ANALYSIS;
@@ -634,7 +643,7 @@ public:
         bool check_acl = true,
         std::optional<KeeperDigest> digest = std::nullopt,
         int64_t log_idx = 0);
-    void rollbackRequest(int64_t rollback_zxid, bool allow_missing);
+    void rollbackRequest(int64_t rollback_zxid, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Set of methods for creating snapshots
 
@@ -715,4 +724,24 @@ public:
     void prepareRemoveNodeWithoutUpdatingParent(std::string_view path, UncommittedNodeRef node);
 };
 
+// Parallel-snapshot load API — free functions so the per-worker insert batch
+// stays local to the deserialization code.
+
+/// Per-chunk state accumulated by one deserialization worker.
+struct MemorySnapshotLoadHandle
+{
+    SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch nodes;
+    uint64_t digest_sum = 0;
+    KeeperStorage::Ephemerals local_ephemerals;
+    size_t local_ephemeral_nodes = 0;
+    std::unordered_map<ACLId, uint64_t> acl_usage;
+    std::vector<String> local_ttl_paths;
+};
+
+/// Create a load handle. Thread-safe, takes no locks.
+MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperStorage & storage);
+
+/// Merge handles into `storage`: splice nodes, validate structure, merge side state.
+/// Caller must hold the storage lock (or be the init thread).
+void finalizeMemorySnapshotLoad(KeeperStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest) TSA_NO_THREAD_SAFETY_ANALYSIS;
 }

@@ -1,5 +1,6 @@
 /// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 
+#include <span>
 #include <algorithm>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -80,6 +81,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace FailPoints
@@ -672,15 +674,21 @@ KeeperStorage::KeeperStorage(int64_t tick_time_ms, const KeeperContextPtr & keep
 KeeperStorage::~KeeperStorage() = default;
 
 KeeperStorage::KeeperStorage(
-    int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, const bool initialize_system_nodes)
+    int64_t tick_time_ms,
+    const String & superdigest_,
+    const KeeperContextPtr & keeper_context_,
+    const bool initialize_system_nodes)
     : KeeperStorage(tick_time_ms, keeper_context_, superdigest_)
 {
-    Node root_node;
-    container.insert("/", root_node);
-    addDigest(root_node, "/");
-
+    /// On snapshot load (initialize_system_nodes == false) the root "/" comes from the
+    /// snapshot data, not from the constructor, so insert nothing here.
     if (initialize_system_nodes)
+    {
+        Node root_node;
+        container.insert("/", root_node);
+        addDigest(root_node, "/");
         initializeSystemNodes();
+    }
 }
 
 void KeeperStorage::initializeSystemNodes()
@@ -4424,6 +4432,86 @@ bool KeeperStorage::removePersistentWatch(const String & path, Coordination::Rem
     return removed;
 }
 
+MemorySnapshotLoadHandle beginMemorySnapshotLoad(KeeperStorage & storage)
+{
+    MemorySnapshotLoadHandle handle;
+    handle.nodes = storage.container.beginLocalInsert();
+    return handle;
+}
+
+void finalizeMemorySnapshotLoad(KeeperStorage & storage, std::span<MemorySnapshotLoadHandle> handles, bool recalculate_digest) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    // Splice all node batches into the container and build the hash map.
+    using LocalBatch = SnapshotableHashTable<KeeperMemNode>::LocalInsertBatch;
+    std::vector<LocalBatch> batches;
+    batches.reserve(handles.size());
+    for (auto & h : handles)
+        batches.push_back(std::move(h.nodes));
+
+    uint64_t out_total_children = 0;
+    storage.container.buildMapFromBatches(std::span<LocalBatch>{batches}, out_total_children);
+
+    if (!storage.container.contains("/"))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Chunked snapshot has no root '/' node");
+
+    // Folded equality check: per-node over-count + non-negative guarantee above imply
+    // this check is true only if children.size() == numChildren()
+    if (storage.container.size() - 1 != out_total_children)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Rebuilt child count {} != declared {} (corrupt snapshot)",
+            storage.container.size() - 1,
+            out_total_children);
+
+    // Rebuild parent→child links.
+    for (const auto & itr : storage.container)
+    {
+        if (itr.key == "/")
+            continue;
+
+        const auto parent_path = Coordination::parentNodePath(itr.key);
+        const auto child_name = Coordination::getBaseNodeName(itr.key);
+
+        storage.container.updateValue(
+            parent_path,
+            [&child_name, &parent_path](KeeperMemNode & parent)
+            {
+                parent.addChild(child_name);
+                if (static_cast<int64_t>(parent.getChildren().size()) > parent.numChildren())
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Children of '{}' ({}) exceed declared numChildren ({})",
+                        parent_path,
+                        parent.getChildren().size(),
+                        parent.numChildren());
+            });
+    }
+
+    // Merge side state from all handles.
+    for (auto & h : handles)
+    {
+        if (recalculate_digest)
+            storage.nodes_digest += h.digest_sum;
+
+        for (auto & [owner, paths] : h.local_ephemerals)
+            for (const auto & path : paths)
+                storage.committed_ephemerals[owner].insert(path);
+
+        storage.committed_ephemeral_nodes += h.local_ephemeral_nodes;
+
+        if (!h.acl_usage.empty())
+            storage.acl_map.addUsageBatch(h.acl_usage);
+
+        for (auto & path : h.local_ttl_paths)
+        {
+            storage.ttl_paths.insert(std::move(path));
+            storage.committed_ttl_nodes.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    /// Drop unreferenced ACLs, matching the legacy path. Must run after all ACL usage is merged.
+    storage.acl_map.removeUnusedACLs();
+}
 }
 
 // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)

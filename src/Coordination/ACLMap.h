@@ -67,6 +67,11 @@ public:
     void addUsage(ACLId acl_id);
     void removeUsage(ACLId acl_id);
 
+    /// Batch-add usage counts from a per-worker accumulator map (id -> count).
+    /// Acquires map_mutex exactly once regardless of batch size.
+    /// Used by the chunked snapshot parallel deserializer to merge per-chunk ACL counters.
+    void addUsageBatch(const std::unordered_map<ACLId, uint64_t> & batch);
+
     /// Remove all mappings whose usage counter is 0. Used after snapshot deserialization
     /// to drop ACLs that are present in the snapshot's ACL map but not referenced by any node.
     void removeUnusedACLs();

@@ -3,6 +3,9 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 
+#include <memory>
+#include <optional>
+
 
 namespace DB
 {
@@ -42,6 +45,10 @@ public:
     {
         return getPositionImpl();
     }
+
+    /// Returns a new ReadBufferFromMemory viewing the sub-range [offset, offset + size) of the
+    /// underlying memory. If size is omitted, the view extends to the end of the buffer.
+    std::unique_ptr<ReadBufferFromMemory> getView(size_t offset, std::optional<size_t> size = std::nullopt);
 
 private:
     friend class ReadBufferFromMemoryHelper<ReadBufferFromMemory>;
