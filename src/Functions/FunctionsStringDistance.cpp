@@ -325,13 +325,18 @@ struct BlockMyersEditDistance
     struct PatternMasksASCII
     {
         static constexpr size_t W = sizeof(Word) * 8;
+        // Needles up to stack_blocks * W chars keep the pattern table in inline storage,
+        // avoiding a per-row heap allocation in the hot edit-distance loop. Longer needles
+        // spill to a tracked allocation.
+        static constexpr size_t stack_blocks = 8;
         UInt32 num_blocks = 0;
-        VectorWithMemoryTracking<Word> tbl; // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
+        // flat: tbl[c * num_blocks + k] = bitmask of positions of char c in block k
+        PODArrayWithStackMemory<Word, 256 * stack_blocks * sizeof(Word)> tbl;
 
         void build(const UInt8 * needle, UInt32 m)
         {
             num_blocks = (m + W - 1) / W;
-            tbl.assign(256 * num_blocks, Word(0));
+            tbl.assign(static_cast<size_t>(num_blocks) * 256, Word(0));
             for (UInt32 i = 0; i < m; ++i)
                 tbl[needle[i] * num_blocks + i / W] |= Word(1) << (i % W);
         }
@@ -402,53 +407,38 @@ struct BlockMyersEditDistance
         PatternMasks PM_tbl;
         PM_tbl.build(needle, needle_len);
 
+        // Inline storage for needles up to stack_limit * W = 8192 chars keeps these
+        // per-row buffers off the heap, avoiding a per-row allocation and memory-tracker
+        // atomics in the hot loop. Longer needles spill to a tracked allocation.
+        constexpr size_t stack_limit = 128;
+        using StackVec = PODArrayWithStackMemory<Word, stack_limit * sizeof(Word)>;
+
         // As in the non-blocked version, but this time per block:
         // VP all ones, VN all zeros encodes that the first column's edit distances equal the row index (0,1,2,...,m).
-        VectorWithMemoryTracking<Word> VP(num_blocks, ~Word(0));
-        VectorWithMemoryTracking<Word> VN(num_blocks, Word(0));
+        StackVec VP;
+        StackVec VN;
+        VP.assign(static_cast<size_t>(num_blocks), ~Word(0));
+        VN.assign(static_cast<size_t>(num_blocks), Word(0));
         UInt32 score = needle_len;
 
-        // 3 * 128 * sizeof(Word) bytes of stack (3 KB for Word=UInt64).
-        // Covers needles up to 128*64 = 8192 chars
-        constexpr size_t stack_limit = 128;
-
-        VectorWithMemoryTracking<Word> hp_heap;
-        VectorWithMemoryTracking<Word> hn_heap;
-        VectorWithMemoryTracking<Word> d0_heap;
-        if (num_blocks > stack_limit)
-        {
-            hp_heap.resize(num_blocks);
-            hn_heap.resize(num_blocks);
-            d0_heap.resize(num_blocks);
-        }
+        // HP/HN/D0 per-block scratch, allocated once and reused across columns.
+        StackVec hp_arr;
+        StackVec hn_arr;
+        StackVec d0_arr;
+        hp_arr.resize(num_blocks);
+        hn_arr.resize(num_blocks);
+        d0_arr.resize(num_blocks);
 
         for (UInt32 col = 0; col < haystack_len; ++col)
         {
             const SymbolT ch = haystack[col];
             const Word *  pm = PM_tbl[ch]; // may be nullptr (no match anywhere)
 
-            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks)
+            // Pass 1: compute D0, HP, HN per block (cannot update VP/VN until we have HP/HN for all blocks).
+            // We store HP/HN/D0 in scratch arrays because we cannot overwrite VP/VN yet (we still need their old values).
             // Carry from the addition within block k propagates to block k+1.
             // carry = 0 initially (there is no carry into block 0).
             Word add_carry = 0;
-
-            // Store HP and HN in temporary arrays for now.
-            // We cannot overwrite VP/VN yet because we still need their old values.
-            // Small needle - use stack scratch:
-            Word hp_scratch[stack_limit]; // max 128 x block_size needle
-            Word hn_scratch[stack_limit];
-            Word d0_scratch[stack_limit];
-            // Large needle - use vector if needed
-
-            Word * hp_arr = hp_scratch;
-            Word * hn_arr = hn_scratch;
-            Word * d0_arr = d0_scratch;
-            if (num_blocks > stack_limit)
-            {
-                hp_arr = hp_heap.data();
-                hn_arr = hn_heap.data();
-                d0_arr = d0_heap.data();
-            }
 
             for (UInt32 k = 0; k < num_blocks; ++k)
             {
