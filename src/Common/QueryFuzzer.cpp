@@ -2391,8 +2391,19 @@ DataTypePtr QueryFuzzer::getRandomType()
                    std::make_shared<DataTypeBFloat16>(),
                    std::make_shared<DataTypeFloat32>(),
                    std::make_shared<DataTypeFloat64>()};
+            const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
+
+            /// Occasionally build a strided QBit. The constraints are: dimension % stride == 0 and (when strided) stride % 8 == 0.
+            if (fuzz_rand() % 4 == 0)
+            {
+                const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
+                const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
+                const size_t dimension = stride * num_groups;
+                return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            }
+
             const size_t dimension = fuzz_rand() % 128 + 1;
-            return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
         }
         case TypeIndex::AggregateFunction: {
             const size_t nargs = fuzz_rand() % 3;
