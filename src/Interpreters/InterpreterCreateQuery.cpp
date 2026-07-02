@@ -135,6 +135,7 @@ namespace Setting
     extern const SettingsBool data_type_default_nullable;
     extern const SettingsSQLSecurityType default_materialized_view_sql_security;
     extern const SettingsSQLSecurityType default_normal_view_sql_security;
+    extern const SettingsDefaultDatabaseEngine default_database_engine;
     extern const SettingsDefaultTableEngine default_table_engine;
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
@@ -270,7 +271,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             create.set(create.storage, storage);
         }
         auto engine = make_intrusive<ASTFunction>();
-        engine->name = "Atomic";
+        auto default_database_engine = getContext()->getSettingsRef()[Setting::default_database_engine].value;
+        if (default_database_engine == DefaultDatabaseEngine::Ordinary)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Default Ordinary database engine is obsolete");
+        if (default_database_engine == DefaultDatabaseEngine::Replicated
+            && !DatabaseCatalog::isPredefinedDatabase(database_name)
+            && database_name != DatabaseCatalog::DEFAULT_DATABASE)
+            engine->name = "Replicated";
+        else
+            engine->name = "Atomic";
         engine->setNoEmptyArgs(true);
         create.storage->set(create.storage->engine, engine);
     }

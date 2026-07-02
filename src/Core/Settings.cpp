@@ -4496,6 +4496,15 @@ ENGINE = Log
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 )", 0) \
+    DECLARE(DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic, R"(
+Default database engine to use when `ENGINE` is not set in a `CREATE DATABASE` statement.
+
+Possible values:
+
+- `Ordinary` — obsolete engine, kept for compatibility.
+- `Atomic` — default database engine with support for concurrent DDL and non-blocking `DROP TABLE`.
+- `Replicated` — [Replicated](../../engines/database-engines/replicated.md) database engine with DDL replication via ZooKeeper. Default parameters are taken from `DatabaseReplicatedSettings`.
+)", 0) \
     DECLARE(DefaultTableEngine, default_table_engine, DefaultTableEngine::MergeTree, R"(
 Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
 
@@ -8464,7 +8473,6 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS) \
     /* ---- */ \
-    MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
     MAKE_OBSOLETE(M, Seconds, periodic_live_view_refresh, 60) \
