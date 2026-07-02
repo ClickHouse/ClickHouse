@@ -1,0 +1,24 @@
+1
+1
+1
+MaterializingCTEs (Materialize CTEs before main query execution)
+  Union
+    Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
+      Limit (preliminary LIMIT)
+        Sorting (Sorting for ORDER BY)
+          Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+            ReadFromMemoryStorage
+    Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMemoryStorage
+    Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMemoryStorage
+  MaterializingCTE (Materializing CTE: alexey_events)
+    Expression (Project names)
+      Sorting (Sorting for ORDER BY)
+        Expression ((Before ORDER BY + Projection))
+          Aggregating
+            Expression (Before GROUP BY)
+              Filter ((WHERE + Change column names to column identifiers))
+                ReadNothing (Read from NullSource)
