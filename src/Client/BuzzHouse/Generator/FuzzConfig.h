@@ -297,6 +297,7 @@ public:
     std::vector<DiskInfo> disks;
     DB::Strings clusters;
     DB::Strings caches;
+    DB::Strings function_implementations;
     DB::Strings failpoints;
     DB::Strings remote_servers;
     DB::Strings remote_secure_servers;
