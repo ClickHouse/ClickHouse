@@ -1,6 +1,9 @@
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+#include <cstdlib>
 #include <Common/OSThreadNiceValue.h>
+#include <Common/StackTrace.h>
 #include <Common/Jemalloc.h>
 #include <Common/ThreadStatus.h>
 
@@ -105,6 +108,74 @@ void configureMemoryTrackerFromSettings(bool has_trace_collector, MemoryTracker 
     memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 }
 
+namespace
+{
+/// Borrowed-ThreadGroup lifetime checker (deterministic, no race needed).
+///
+/// A borrowed child group (`createForMaterializedView` / `createForFlushAsyncInsertQueue`) holds RAW
+/// pointers into its PARENT group's `memory_tracker` and `performance_counters`. The invariant is that
+/// such a child — and anything pinning it — MUST NOT outlive its parent group, otherwise a later attach
+/// walks a freed parent tracker chain (`MemoryTracker::setParent`) -> use-after-free.
+///
+/// This registry records child->parent at child creation; when ANY group is destroyed it flags every
+/// still-live borrowed child that names it as parent. That catches the invariant violation at the exact
+/// moment of the premature free — for THIS code path and any other — without waiting for the racy UAF
+/// read to land. Run any suite under it to enumerate every site where a borrowed child outlives its parent.
+struct BorrowedGroupRegistry
+{
+    std::mutex mutex;
+    std::unordered_map<const ThreadGroup *, const ThreadGroup *> child_to_parent;
+    std::unordered_map<const ThreadGroup *, StackTrace> child_create_stack;
+};
+
+BorrowedGroupRegistry & borrowedGroupRegistry()
+{
+    static BorrowedGroupRegistry registry;
+    return registry;
+}
+
+void registerBorrowedGroup(const ThreadGroup * child, const ThreadGroup * parent)
+{
+    auto & r = borrowedGroupRegistry();
+    std::lock_guard lock(r.mutex);
+    r.child_to_parent[child] = parent;
+    r.child_create_stack.emplace(child, StackTrace());
+}
+
+void checkAndUnregisterOnDestroy(const ThreadGroup * group)
+{
+    auto & r = borrowedGroupRegistry();
+    std::lock_guard lock(r.mutex);
+    r.child_to_parent.erase(group);
+    r.child_create_stack.erase(group);
+    bool violated = false;
+    for (const auto & [child, parent] : r.child_to_parent)
+    {
+        if (parent != group)
+            continue;
+        violated = true;
+        const auto it = r.child_create_stack.find(child);
+        LOG_FATAL(
+            getLogger("BorrowedThreadGroupChecker"),
+            "BORROWED THREADGROUP INVARIANT VIOLATION: ThreadGroup {} is being destroyed while borrowed child {} still references it "
+            "as parent — its raw memory_tracker/performance_counters pointers now dangle. The borrowed child was created at:\n{}",
+            static_cast<const void *>(group),
+            static_cast<const void *>(child),
+            it != r.child_create_stack.end() ? it->second.toString() : String("<no stack captured>"));
+    }
+    /// Fail loudly instead of only logging, so CI catches the violation deterministically, including when
+    /// the racy use-after-free read happens not to land.
+    if (violated)
+        abort();
+}
+
+}
+
+ThreadGroup::~ThreadGroup()
+{
+    checkAndUnregisterOnDestroy(this);
+}
+
 ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
@@ -122,7 +193,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_
     };
 }
 
-// c-tor for method createForMaterializedView
+bool ThreadGroup::isBorrowed() const
+{
+    return kind == ThreadGroupKind::Borrowed;
+}
+
+// Borrowed groups point their counters and memory tracker at `parent` without owning it.
+// They must stay scoped to synchronous work and must not be captured by async tasks.
+// Constructor for `createForMaterializedView`
 ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     : master_thread_id(parent->master_thread_id)
     , query_context(parent->query_context)
@@ -132,11 +210,13 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , kind(ThreadGroupKind::Borrowed)
     , shared_data(parent->getSharedData())
 {
+    registerBorrowedGroup(this, parent.get());
 }
 
-// c-tor for method createForFlushAsyncInsertQueue
+// Constructor for `createForFlushAsyncInsertQueue`
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     : master_thread_id(CurrentThread::get().thread_id)
     , query_context(query_context_)
@@ -146,7 +226,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     , memory_spill_scheduler(parent->memory_spill_scheduler)
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
+    , kind(ThreadGroupKind::Borrowed)
 {
+    registerBorrowedGroup(this, parent.get());
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -234,7 +316,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
-        res_group = std::make_shared<ThreadGroup>(current_group);
+        res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
     {
@@ -247,7 +329,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
 {
-    auto res_group = std::make_shared<ThreadGroup>(context, parent);
+    auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;
 }
@@ -360,6 +442,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
+
     try
     {
         performance_counters.setParent(&thread_group->performance_counters);

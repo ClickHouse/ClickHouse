@@ -26,6 +26,16 @@ ThreadGroupPtr getCurrentThreadGroup()
     return current_thread->getThreadGroup();
 }
 
+ThreadGroupPtr getCurrentThreadGroupForAsyncCallback()
+{
+    ThreadGroupPtr result = getCurrentThreadGroup();
+    if (result && result->isBorrowed())
+        result = nullptr;
+
+    chassert(!result || !result->isBorrowed());
+    return result;
+}
+
 ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
