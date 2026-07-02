@@ -322,6 +322,13 @@ endif()
 add_object_library(clickhouse_backups Backups)
 
 add_object_library(clickhouse_core Core)
+# The Mongo wire protocol depends on libbson/bsoncxx (mongo-cxx-driver). The Mongo
+# query dialect (src/Parsers/Mongo) is independent and is always built.
+if (TARGET ch_contrib::mongocxx)
+    add_object_library(clickhouse_core_mongo Core/Mongo)
+    add_object_library(clickhouse_core_mongo_wire Core/Mongo/Wire)
+    add_object_library(clickhouse_core_mongo_handlers Core/Mongo/Handlers)
+endif()
 list (APPEND dbms_sources Common/ExceptionExt.cpp)
 
 add_object_library(clickhouse_core_mysql Core/MySQL)

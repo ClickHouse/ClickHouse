@@ -79,6 +79,9 @@
 #endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -1134,7 +1137,7 @@ static BlockIO executeQueryImpl(
     QueryResultDetails & result_details)
 {
     const bool internal = flags.internal;
-
+    std::string full_inp(begin, end);
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
     /// to make sure SpanHolders in current stack ends in correct order, we disable this span for these internal queries
@@ -1226,6 +1229,11 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::mongo && !internal)
+        {
+            Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
@@ -1390,7 +1398,7 @@ static BlockIO executeQueryImpl(
         /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
         /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && probably_has_params && settings[Setting::dialect] != Dialect::mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);

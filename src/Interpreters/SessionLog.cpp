@@ -120,12 +120,13 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"gRPC",                   static_cast<Int8>(Interface::GRPC)},
             {"MySQL",                  static_cast<Int8>(Interface::MYSQL)},
             {"PostgreSQL",             static_cast<Int8>(Interface::POSTGRESQL)},
+            {"Mongo",                  static_cast<Int8>(Interface::MONGO)},
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
+    static_assert(magic_enum::enum_count<Interface>() == 11, "Please update the array above to match the enum.");
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
