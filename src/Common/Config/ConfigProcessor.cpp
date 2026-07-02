@@ -651,7 +651,7 @@ void ConfigProcessor::doIncludesRecursive(
                 /// Create a text child node directly to avoid XML-escaping issues
                 /// when vault values contain special XML characters like & or <.
                 Node * text_node = vault_document->createTextNode(vault_val);
-                root->appendChild(text_node);
+                root->appendChild(text_node)->release();
                 return root;
             };
 

@@ -2799,12 +2799,12 @@ try
         },
         [](ConfigurationPtr new_config) -> bool
         {
-            if (new_config->has("hashicorp_vault"))
-            {
-                HashiCorpVault::instance().load(*new_config, "hashicorp_vault");
-                return true;
-            }
-            return false;
+            /// Always load vault — load() calls reset() first, so if
+            /// <hashicorp_vault> was removed the singleton is properly
+            /// cleared.  Returns true only when the section is present
+            /// to trigger a second config-processing pass.
+            HashiCorpVault::instance().load(*new_config, "hashicorp_vault");
+            return new_config->has("hashicorp_vault");
         });
 
     const auto listen_hosts = getListenHosts(config());

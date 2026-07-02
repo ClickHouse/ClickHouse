@@ -177,16 +177,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         /// re-process config if it returns true (two-pass loading).
         bool needs_reprocess = false;
         if (pre_update_hook)
-        {
-            try
-            {
-                needs_reprocess = pre_update_hook(loaded_config.configuration);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Pre-updater hook failed, continuing without re-processing");
-            }
-        }
+            needs_reprocess = pre_update_hook(loaded_config.configuration);
 
         if (needs_reprocess)
         {
