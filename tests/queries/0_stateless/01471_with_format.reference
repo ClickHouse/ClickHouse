@@ -1,4 +1,5 @@
-WITH 1
+WITH
+    1
 SELECT 1
 FROM system.one
 WITH

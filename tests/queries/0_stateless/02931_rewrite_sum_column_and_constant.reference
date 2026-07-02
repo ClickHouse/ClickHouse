@@ -24,11 +24,13 @@ WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numb
 WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0);
 0
 EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number + my_literal) from numbers(0));
-WITH CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
+WITH
+    CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
 SELECT sum(plus(number, my_literal))
 FROM numbers(0)
 EXPLAIN SYNTAX (WITH 1::Nullable(UInt64) as my_literal Select sum(number) + my_literal * count() from numbers(0));
-WITH CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
+WITH
+    CAST(\'1\', \'Nullable(UInt64)\') AS my_literal
 SELECT plus(sum(number), multiply(my_literal, count()))
 FROM numbers(0)
 -- { echoOn }
