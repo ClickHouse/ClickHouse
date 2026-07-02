@@ -106,6 +106,29 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
+Names StorageSnapshot::getColumnNamesInStorageForAccessCheck(const Names & column_names) const
+{
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+
+    Names result;
+    result.reserve(column_names.size());
+    NameSet seen;
+    for (const auto & name : column_names)
+    {
+        /// If `name` resolves to a subcolumn, `getNameInStorage` returns its parent
+        /// storage column; otherwise (real column, virtual column or unknown name)
+        /// the name is kept as-is.
+        String name_in_storage = name;
+        if (auto column = tryGetColumn(options, name))
+            name_in_storage = column->getNameInStorage();
+
+        if (seen.insert(name_in_storage).second)
+            result.push_back(std::move(name_in_storage));
+    }
+
+    return result;
+}
+
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;

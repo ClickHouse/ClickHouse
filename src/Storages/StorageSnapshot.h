@@ -53,6 +53,15 @@ struct StorageSnapshot
     std::optional<NameAndTypePair> tryGetColumn(const GetColumnsOptions & options, const String & column_name) const;
     NameAndTypePair getColumn(const GetColumnsOptions & options, const String & column_name) const;
 
+    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) to their parent
+    /// storage column names for column-level access checks. Column-level grants are
+    /// stored against top-level storage columns only, so `GRANT SELECT(t)` must
+    /// implicitly cover `t.a`, `t.b`, etc. Names that are not subcolumns (real
+    /// columns, including columns literally containing a dot, virtual columns, or
+    /// unknown names) are returned unchanged. The result is deduplicated while
+    /// preserving the order of first appearance.
+    Names getColumnNamesInStorageForAccessCheck(const Names & column_names) const;
+
     /// Block with ordinary + materialized + aliases + virtuals + subcolumns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 

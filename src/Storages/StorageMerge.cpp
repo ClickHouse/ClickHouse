@@ -1331,7 +1331,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                         if  (!granted_select_on_all_tables)
                         {
                             const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, VirtualsKind::All, VirtualsMaterializationPlace::All);
-                            access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_to_check);
+                            /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) keeps the
+                            /// subcolumn name here, but column-level grants are stored against top-level storage
+                            /// columns only. Map subcolumns back to their parent column so that `GRANT SELECT(t)`
+                            /// implicitly covers `t.a`, `t.b`, etc.
+                            const auto columns_in_storage = storage_snapshot->getColumnNamesInStorageForAccessCheck(columns_to_check);
+                            access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_in_storage);
                         }
 
                         auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
