@@ -11,6 +11,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -187,6 +188,18 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
     if (tracks_null)
         writeIntBinary(null_count, buf);
+}
+
+std::optional<UInt64> StatisticsBasic::getSerializedSize() const
+{
+    UInt64 size = sizeof(row_count) + sizeof(UInt8);
+    if (tracks_numeric)
+        size += getFieldBinarySize(min) + getFieldBinarySize(max);
+    if (tracks_string)
+        size += sizeof(string_total_bytes);
+    if (tracks_null)
+        size += sizeof(null_count);
+    return size;
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
