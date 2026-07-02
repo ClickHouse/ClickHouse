@@ -104,6 +104,28 @@ class ClickHouseVersion:
     def get_stable_release_type(self) -> str:
         return VersionType.LTS if self._minor % 5 == 3 else VersionType.STABLE
 
+    def has_newer_release_tag(self) -> bool:
+        """Whether the release branch already has a release tag with a higher
+        version than this one.
+
+        Scans all `vX.Y.*` tags on the branch (by name, so it sees the whole
+        branch regardless of what is reachable from the current commit) and
+        ignores the `-new` branch-cut tag.
+        """
+        branch_tags = Shell.get_output(
+            f"git tag --list 'v{self._major}.{self._minor}.*'"
+        ).split()
+        for tag in branch_tags:
+            if tag.endswith("-new"):
+                continue
+            try:
+                other = _version_from_tag(tag)
+            except Exception:
+                continue
+            if self < other:
+                return True
+        return False
+
     @property
     def major(self) -> int:
         return self._major

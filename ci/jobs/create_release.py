@@ -50,9 +50,7 @@ from typing import Iterator, List
 
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
-    ClickHouseVersion,
     VersionType,
-    _version_from_tag,
     get_version_from_repo,
     update_cmake_version,
 )
@@ -131,32 +129,6 @@ def update_contributors(raise_error: bool = False) -> None:
         executer=executer, contributors="\n".join(contributors_lines)
     )
     Path(GENERATED_CONTRIBUTORS).write_text(content, encoding="utf-8")
-
-
-def has_newer_release_tag(version: ClickHouseVersion) -> bool:
-    """Whether the release branch already has a release tag with a higher version
-    than `version`.
-
-    Scans all `vX.Y.*` tags on the branch (by name, so it sees the whole branch
-    regardless of what is reachable from the current commit) and ignores the
-    `-new` branch-cut tag. This decides whether the release is the latest on its
-    branch (`is_branch_release`), which controls the floating minor/major Docker
-    tags: recovering the current release re-applies them, recovering a superseded
-    one does not.
-    """
-    branch_tags = Shell.get_output(
-        f"git tag --list 'v{version.major}.{version.minor}.*'"
-    ).split()
-    for tag in branch_tags:
-        if tag.endswith("-new"):
-            continue
-        try:
-            other = _version_from_tag(tag)
-        except Exception:
-            continue
-        if version < other:
-            return True
-    return False
 
 
 class ReleaseProgress:
@@ -328,7 +300,7 @@ class ReleaseInfo:
         self.latest = latest_release
 
         # Does the branch already carry a release tag newer than this version?
-        newer_release_exists = has_newer_release_tag(version)
+        newer_release_exists = version.has_newer_release_tag()
         # This release is the latest on its branch unless a newer tag exists —
         # controls the floating minor/major Docker tags (recovering the current
         # release re-applies them; recovering a superseded one does not).
