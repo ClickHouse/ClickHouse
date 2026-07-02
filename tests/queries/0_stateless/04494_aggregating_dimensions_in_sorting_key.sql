@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_agg_ok;
 DROP TABLE IF EXISTS t_agg_allowed;
 DROP TABLE IF EXISTS t_agg_simple;
 DROP TABLE IF EXISTS t_agg_partition;
+DROP TABLE IF EXISTS t_agg_materialized;
 DROP TABLE IF EXISTS t_agg_no_measure;
 DROP TABLE IF EXISTS t_agg_tuple;
 DROP TABLE IF EXISTS t_sum_explicit;
@@ -38,6 +39,12 @@ CREATE TABLE t_agg_partition (key UInt64, part_col UInt64, value AggregateFuncti
 ENGINE = AggregatingMergeTree PARTITION BY part_col ORDER BY key;
 SELECT 'agg_partition created';
 
+-- A MATERIALIZED column is computed (here from the sorting key), not a raw dimension, so it survives a
+-- merge unchanged and must not be rejected as an off-key dimension -> accepted.
+CREATE TABLE t_agg_materialized (key UInt64, mat String MATERIALIZED toString(key), value AggregateFunction(sum, UInt64))
+ENGINE = AggregatingMergeTree ORDER BY key;
+SELECT 'agg_materialized created';
+
 -- The table has no aggregate-state column, so it is not aggregating anything (out of scope) -> accepted.
 CREATE TABLE t_agg_no_measure (key UInt64, name String)
 ENGINE = AggregatingMergeTree ORDER BY key;
@@ -63,6 +70,7 @@ DROP TABLE t_agg_ok;
 DROP TABLE t_agg_allowed;
 DROP TABLE t_agg_simple;
 DROP TABLE t_agg_partition;
+DROP TABLE t_agg_materialized;
 DROP TABLE t_agg_no_measure;
 DROP TABLE t_agg_tuple;
 DROP TABLE t_sum_explicit;

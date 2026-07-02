@@ -1607,6 +1607,15 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         for (const auto & name : metadata.getPartitionKey().expression->getRequiredColumns())
             covered_columns.insert(name);
 
+    /// A `MATERIALIZED` column is computed from an expression, not supplied as raw data, so it is not
+    /// the off-key dimension from issue #751. When its expression depends only on covered columns (e.g.
+    /// `d MATERIALIZED toString(key)`), its value is constant within a merge group and therefore safe.
+    /// Treating all materialized columns as covered keeps the over-approximation free of false positives
+    /// (at the cost of not catching a materialized column derived from an off-key column, which is the
+    /// same accepted trade-off as above).
+    for (const auto & column : metadata.getColumns().getMaterialized())
+        covered_columns.insert(column.name);
+
     auto is_measure = [](const NameAndTypePair & column)
     {
         return WhichDataType(column.type).isAggregateFunction()
