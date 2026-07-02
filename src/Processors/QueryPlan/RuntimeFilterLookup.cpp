@@ -248,8 +248,9 @@ ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & valu
             return DataTypeUInt8().createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
-            /// If only 1 element in the set then use "value == const" instead of set lookup
-            auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
+            /// If only 1 element in the set then use "value == const" instead of set lookup.
+            /// Use the column directly from Set to avoid lossy Field roundtrip.
+            ColumnPtr const_column = ColumnConst::create(single_element_column, values.column->size());
             ColumnsWithTypeAndName arguments = {
                 values,
                 ColumnWithTypeAndName(const_column, filter_column_target_type, String())
