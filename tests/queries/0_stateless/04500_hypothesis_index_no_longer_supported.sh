@@ -58,7 +58,13 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = cu
 # Mutation (lightweight delete) completes instead of looping forever.
 $CLICKHOUSE_CLIENT --query "DELETE FROM t_attach WHERE c1;"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_attach;"
-$CLICKHOUSE_CLIENT --query "SELECT is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_attach';"
+# Heavyweight delete-to-empty goes through MergeTreeData::createEmptyPart, a separate schedule
+# point for the index aggregator: it must skip the inert index too (before the fix this mutation
+# looped forever with ILLEGAL_INDEX). --mutations_sync 1 surfaces a wedge as a failed query.
+$CLICKHOUSE_CLIENT --mutations_sync 1 --query "ALTER TABLE t_attach DELETE WHERE 1;"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM t_attach;"
+# No mutation is stuck (numbering-independent: asserts the wedge is gone regardless of versions).
+$CLICKHOUSE_CLIENT --query "SELECT countIf(is_done = 0) FROM system.mutations WHERE database = currentDatabase() AND table = 't_attach';"
 # The user can still drop the dead index.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_attach DROP INDEX i0;"
 $CLICKHOUSE_CLIENT --query "
