@@ -74,6 +74,89 @@ TEST_RESULT_PATTERN = re.compile(
     r"([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|NOT_FAILED) \])\s+([\d.]+) sec\."
 )
 
+# Markers that indicate a real server crash. If any of these appears in
+# `clickhouse-server.err.log`, the run must NOT be reclassified as a
+# CIDB-staging-cluster overload, even if the rest of the log looks like
+# shipping failures.
+_REAL_CRASH_PATTERN = re.compile(
+    r"<Fatal>|AddressSanitizer:|MemorySanitizer:|ThreadSanitizer:|UndefinedBehaviorSanitizer:|LOGICAL_ERROR"
+)
+
+# Logger names / table names that identify CIDB log-export shipping errors.
+# When the CIDB staging log cluster is overloaded or unresponsive, the
+# server keeps retrying to ship rows from `system.<table>_sender`
+# `Distributed` tables; these retries are logged as `<Error>` lines with
+# the logger names / source tables below. See `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`.
+_STAGING_SHIPPING_LOGGER_PATTERN = re.compile(
+    r"DistributedAsyncInsertQueue|DistributedAsyncInsertBatch|DistributedSink|"
+    r"BgDistSchPool|StorageDistributed|system\.\w+_sender"
+)
+
+# Minimum number of `<Error>` lines that must point at the CIDB staging
+# cluster before we treat the run as "infrastructure-only". A handful of
+# transient shipping errors should not silence a real failure; the
+# pathological cases @alexey-milovidov flagged on PR #106154 had ~1900
+# such errors in a single job, so a threshold in the low hundreds is
+# both safely above noise and well below real overload signatures.
+_STAGING_OVERLOAD_MIN_ERRORS = 100
+
+# Fraction of `<Error>` lines that must be CIDB-shipping retries for the
+# log to be classified as "staging-cluster-only". Conservative (95%) so
+# any non-shipping `<Error>` line — almost always a more interesting
+# failure — keeps us on the `Server died` path.
+_STAGING_OVERLOAD_MIN_FRACTION = 0.95
+
+
+def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
+    """Return ``True`` iff `clickhouse-server.err.log` looks like the CIDB
+    staging log cluster was unresponsive during the run and the server
+    itself was healthy.
+
+    The classifier requires:
+
+    * no real-crash markers (`<Fatal>`, sanitizer report, `LOGICAL_ERROR`)
+      anywhere in the file;
+    * at least `_STAGING_OVERLOAD_MIN_ERRORS` `<Error>` lines in the file;
+    * at least `_STAGING_OVERLOAD_MIN_FRACTION` of those `<Error>` lines
+      naming a Distributed-shipping logger (`DistributedAsyncInsertQueue`,
+      `BgDistSchPool`, `system.<table>_sender`, ...).
+
+    The file is streamed line by line because under chronic staging
+    overload it can grow to hundreds of MiB; any fixed byte cap on the
+    scan window could hide a real-crash marker appended after a large
+    initial block of shipping noise.
+
+    This is the heuristic @alexey-milovidov asked for on PR #106154: when
+    the only thing wrong is a flaky CIDB log staging cluster, the harness
+    wall-clock timeout that kills `clickhouse-test` should not paint the
+    job red. A green run with a `SKIPPED` informational leaf is more
+    honest than a synthetic `Server died` `FAIL`.
+    """
+    if not server_err_log.exists():
+        return False
+
+    error_lines = 0
+    shipping_lines = 0
+    try:
+        with server_err_log.open("r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                # A real-crash marker anywhere in the file disqualifies
+                # the run, so scan the full stream — never bail early on
+                # the dominance counts before the whole file is read.
+                if _REAL_CRASH_PATTERN.search(line):
+                    return False
+                if "<Error>" not in line:
+                    continue
+                error_lines += 1
+                if _STAGING_SHIPPING_LOGGER_PATTERN.search(line):
+                    shipping_lines += 1
+    except OSError:
+        return False
+
+    if error_lines < _STAGING_OVERLOAD_MIN_ERRORS:
+        return False
+    return shipping_lines >= _STAGING_OVERLOAD_MIN_FRACTION * error_lines
+
 
 class FTResultsProcessor:
     @dataclasses.dataclass
@@ -89,8 +172,18 @@ class FTResultsProcessor:
         success_finish: bool = False
         test_end: bool = True
 
-    def __init__(self, wd):
+    def __init__(self, wd, server_err_log_path: Optional[str] = None):
         self.tests_output_file = f"{wd}/test_result.txt"
+        # Path to the server's `err.log`. Used by the CIDB-staging-cluster
+        # overload classifier to distinguish a real `Server died` from a
+        # harness-killed runner that timed out shipping logs to a flaky
+        # staging cluster. Falls back to the conventional location used by
+        # `ci/jobs/scripts/clickhouse_proc.py` so callers that don't pass
+        # the path explicitly still get the heuristic.
+        self.server_err_log_path = Path(
+            server_err_log_path
+            or f"{wd}/var/log/clickhouse-server/clickhouse-server.err.log"
+        )
         self.debug_files = []
 
     def _process_test_output(self):
@@ -222,26 +315,67 @@ class FTResultsProcessor:
             state = Result.Status.FAIL
 
         info = ""
+        # Set when the run was killed by the harness but the only thing
+        # wrong was the CIDB staging log cluster being unresponsive. In
+        # that case we surface an informational `SKIPPED` leaf instead of
+        # a synthetic `Server died` `FAIL`, and we must also bypass the
+        # non-zero-exit-code `FAIL` guard further down.
+        ci_logs_cluster_overload = False
         if s.hung:
             state = Result.Status.FAIL
             test_results.append(
                 Result("Some queries hung", Result.Status.FAIL, info="Some queries hung")
             )
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
-            state = Result.Status.FAIL
             failed_results = [r for r in test_results if r.is_failure()]
-            if len(failed_results) > 1:
-                # Multiple tests failed when the server died - this is a parallel
-                # run where we can't tell which test (if any) caused the crash.
-                # Mark them all as UNKNOWN so they don't pollute failure reports.
-                # The actual failure is captured by the "Server died" / LOGICAL_ERROR
-                # entry added from the server log.
-                for result in failed_results:
-                    result.status = Result.Status.UNKNOWN
-            elif len(failed_results) == 1:
-                # Single test failed - sequential run, this test is the culprit.
-                failed_results[0].status = Result.Status.ERROR
-            test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
+            # `@ alexey-milovidov` directive on PR #106154: when the only
+            # evidence in `clickhouse-server.err.log` is repeated
+            # `Distributed`-shipping retries to the CIDB staging cluster
+            # (`DistributedAsyncInsertQueue` / `BgDistSchPool` errors with
+            # `TOO_MANY_PARTS` / `SOCKET_TIMEOUT` / `NETWORK_ERROR`), the
+            # ClickHouse server itself is healthy. The runner only got
+            # killed by the harness wall-clock timeout because flushing
+            # logs to the unresponsive staging cluster piled up. Treat
+            # this as an infrastructure outage, not a server crash, and
+            # don't paint the check red.
+            #
+            # `s.success_finish` is required so an incomplete run is
+            # never reclassified: if the wall-clock fires mid-suite, no
+            # test may have emitted `FAIL` yet, but not all selected
+            # tests ran either - the result must stay `Server died`.
+            if (
+                s.success_finish
+                and not failed_results
+                and is_ci_logs_cluster_overload(self.server_err_log_path)
+            ):
+                ci_logs_cluster_overload = True
+                test_results.append(
+                    Result(
+                        "CIDB log cluster unresponsive",
+                        Result.Status.SKIPPED,
+                        info=(
+                            "Test runner was killed by the wall-clock timeout while the "
+                            "ClickHouse server was healthy; `clickhouse-server.err.log` is "
+                            "dominated by `Distributed`-shipping retries to the CIDB staging "
+                            "log cluster. Not failing CI for an external-infrastructure outage. "
+                            "See ClickHouse/ClickHouse#106154."
+                        ),
+                    )
+                )
+            else:
+                state = Result.Status.FAIL
+                if len(failed_results) > 1:
+                    # Multiple tests failed when the server died - this is a parallel
+                    # run where we can't tell which test (if any) caused the crash.
+                    # Mark them all as UNKNOWN so they don't pollute failure reports.
+                    # The actual failure is captured by the "Server died" / LOGICAL_ERROR
+                    # entry added from the server log.
+                    for result in failed_results:
+                        result.status = Result.Status.UNKNOWN
+                elif len(failed_results) == 1:
+                    # Single test failed - sequential run, this test is the culprit.
+                    failed_results[0].status = Result.Status.ERROR
+                test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed
             # (`--max-failures` / `--max-failures-chain`). Unlike the aborted-run
@@ -287,9 +421,18 @@ class FTResultsProcessor:
         # nothing to blame. The synthetic leaf is added only when the parser
         # found nothing - otherwise the real failure already explains the result
         # and a duplicate entry is just noise.
-        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful, expected
-        # stop (handled above), not a failure, even though it is non-zero.
-        if runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE):
+        #
+        # `GLOBAL_TIME_LIMIT_EXIT_CODE` is excluded: it is a graceful,
+        # expected stop (handled above), not a failure, even though it is
+        # non-zero. The CIDB-staging-cluster overload heuristic is the
+        # other exception: when the runner was killed by the wall-clock
+        # timeout because shipping system logs to the unresponsive staging
+        # cluster piled up, the server was healthy and the run must read
+        # green.
+        if (
+            runner_exit_code not in (None, 0, GLOBAL_TIME_LIMIT_EXIT_CODE)
+            and not ci_logs_cluster_overload
+        ):
             if state == Result.Status.OK:
                 state = Result.Status.FAIL
                 test_results.append(
