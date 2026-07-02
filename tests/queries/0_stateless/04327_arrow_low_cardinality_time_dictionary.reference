@@ -1,0 +1,5 @@
+=== LowCardinality(Time) -> Arrow (low_cardinality_as_dictionary=1) -> read back ===
+01:00:00	Time64(0)
+01:00:00	Time64(0)
+02:00:00	Time64(0)
+02:00:00	Time64(0)
