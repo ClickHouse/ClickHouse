@@ -21,9 +21,11 @@
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <IO/SnappyReadBuffer.h>
-#include <IO/SnappyWriteBuffer.h>
+#if USE_SNAPPY
+#include <snappy.h>
+#include <snappy-sinksource.h>
+#endif
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
-#include <IO/Protobuf/ProtobufZeroCopyOutputStreamFromWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
@@ -53,6 +55,25 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
+
+#if USE_SNAPPY
+namespace
+{
+
+/// A `snappy::Sink` that forwards compressed bytes directly into a `WriteBuffer`.
+/// Avoids materializing a full-size compressed buffer for raw-block snappy outputs
+/// (used by Prometheus remote-read responses).
+class WriteBufferSnappySink : public snappy::Sink
+{
+public:
+    explicit WriteBufferSnappySink(WriteBuffer & out_) : out(out_) {}
+    void Append(const char * bytes, size_t n) override { out.write(bytes, n); }
+private:
+    WriteBuffer & out;
+};
+
+}
+#endif
 
 /// Base implementation of a prometheus protocol.
 class PrometheusRequestHandler::Impl
@@ -363,31 +384,47 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
         }
 
-        prometheus::ReadResponse read_response;
-
-        size_t num_queries = read_request.queries_size();
-        for (size_t i = 0; i != num_queries; ++i)
+        /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
+        /// used by `SnappyWriteBuffer` for HTTP `Content-Encoding`). The wire format is
+        /// `varint(uncompressed_total) || compressed_payload`, where the public snappy API only
+        /// compresses a complete buffer (always emitting the varint prefix). True chunked streaming
+        /// would require either threading or snappy's private `internal::CompressFragment`, neither
+        /// of which is justified here. Instead, we drop the `prometheus::ReadResponse` object tree
+        /// before running compression so only the serialized wire-format buffer is held during
+        /// `snappy::Compress`, then forward compressed chunks straight into the response
+        /// `WriteBuffer` through a `snappy::Sink`.
+        String serialized;
         {
-            const auto & query = read_request.queries(static_cast<int>(i));
-            auto & new_query_result = *read_response.add_results();
-            protocol.readTimeSeries(
-                *new_query_result.mutable_timeseries(),
-                query.start_timestamp_ms(),
-                query.end_timestamp_ms(),
-                query.matchers(),
-                query.hints());
-        }
+            prometheus::ReadResponse read_response;
+
+            size_t num_queries = read_request.queries_size();
+            for (size_t i = 0; i != num_queries; ++i)
+            {
+                const auto & query = read_request.queries(static_cast<int>(i));
+                auto & new_query_result = *read_response.add_results();
+                protocol.readTimeSeries(
+                    *new_query_result.mutable_timeseries(),
+                    query.start_timestamp_ms(),
+                    query.end_timestamp_ms(),
+                    query.matchers(),
+                    query.hints());
+            }
 
 #    if 0
-    LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
+            LOG_DEBUG(log, "ReadResponse = {}", read_response.DebugString());
 #    endif
+
+            read_response.SerializeToString(&serialized);
+        }
 
         response.setContentType("application/x-protobuf");
         response.set("Content-Encoding", "snappy");
 
-        ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
-        zero_copy_output_stream.finalize();
+        auto & out = getOutputStream(response);
+        snappy::ByteArraySource source(serialized.data(), serialized.size());
+        WriteBufferSnappySink sink(out);
+        snappy::Compress(&source, &sink);
+        out.finalize();
 
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Prometheus remote read protocol is disabled");

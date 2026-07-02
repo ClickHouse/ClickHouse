@@ -16,6 +16,7 @@
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
+#include <IO/SnappyMode.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -280,6 +281,8 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+DECLARE_SETTING_ENUM(SnappyMode)
 
 enum class TransactionsWaitCSNMode : uint8_t
 {

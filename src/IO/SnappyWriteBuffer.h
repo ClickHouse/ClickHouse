@@ -5,41 +5,46 @@
 #if USE_SNAPPY
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferDecorator.h>
 
 namespace DB
 {
-/// Performs compression using snappy library and write compressed data to the underlying buffer.
-class SnappyWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+
+/// Performs streaming compression using the snappy framing format
+/// (see https://github.com/google/snappy/blob/main/framing_format.txt)
+/// and writes compressed data to the underlying buffer.
+///
+/// Each nextImpl call compresses the accumulated input as one snappy frame,
+/// so memory usage is bounded by the buffer size (default DBMS_DEFAULT_BUFFER_SIZE).
+class SnappyWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
-    using Base = BufferWithOwnMemory<WriteBuffer>;
 public:
+    template <typename WriteBufferT>
     explicit SnappyWriteBuffer(
-        std::unique_ptr<WriteBuffer> out_,
+        WriteBufferT && out_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
-        size_t alignment = 0);
-
-    explicit SnappyWriteBuffer(
-        WriteBuffer & out_,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        char * existing_memory = nullptr,
-        size_t alignment = 0);
-
-    void finalizeImpl() override;
+        char * existing_memory = nullptr, /// NOLINT(readability-non-const-parameter)
+        size_t alignment = 0,
+        bool compress_empty_ = true)
+        : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment) /// NOLINT(bugprone-move-forwarding-reference)
+        , compress_empty(compress_empty_)
+    {
+    }
 
 private:
     void nextImpl() override;
 
-    void finishImpl();
-    void finish();
+    void finalFlushBefore() override;
 
-    void cancelImpl() noexcept override;
+    /// Write the 10-byte stream identifier chunk.
+    void writeStreamIdentifier();
 
-    WriteBuffer * out;
-    std::unique_ptr<WriteBuffer> out_holder;
+    /// Compress and write one snappy framed chunk.
+    void writeCompressedChunk(const char * data, size_t size);
 
-    String uncompress_buffer;
     String compress_buffer;
+    bool header_written = false;
+    bool compress_empty = true;
 };
 
 }
