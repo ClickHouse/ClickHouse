@@ -157,6 +157,9 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
+
+    String tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const;
+
     /// Remote databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
     /// Listing their tables typically requires calls to a remote service (sometimes paid).
     /// GetDatabasesOptions::with_remote_databases explicitly protects us from accidentally querying the remote service for trivial
@@ -329,6 +332,10 @@ private:
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
+    /// Lowercase database name -> set of original-case names, used by case-insensitive resolution.
+    /// Must stay in sync with `databases` — `attachDatabase` / `detachDatabase` / `updateDatabaseName` maintain it.
+    /// More than one entry means a case-only collision (e.g. `Foo` and `foo` both exist), reported as ambiguity at lookup time
+    std::unordered_map<String, std::unordered_set<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

@@ -84,6 +84,9 @@ void ASTIdentifier::setShortName(const String & new_name)
 
     full_name = new_name;
     name_parts = {new_name};
+    /// Resetting parts to a single name; the new short name was not quoted by the caller, so
+    /// clear the per-part quote tracking too (semantic in `standard` mode)
+    quote_styles.clear();
 
     bool special = semantic->special;
     auto table = semantic->table;
@@ -96,6 +99,23 @@ void ASTIdentifier::setShortName(const String & new_name)
 void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Only DoubleQuote changes analyzer semantics in `standard` mode (case-sensitive vs case-insensitive),
+    /// so include only the per-part double-quote flag in the AST hash. Backticks are kept out of the hash
+    /// because the formatter does not preserve them in the round-trip — including them would create a
+    /// spurious hash mismatch between the original AST and its reparsed form.
+    bool any_double_quoted = false;
+    for (auto style : quote_styles)
+        if (style == IdentifierQuoteStyle::DoubleQuote)
+        {
+            any_double_quoted = true;
+            break;
+        }
+    if (any_double_quoted)
+    {
+        hash_state.update(quote_styles.size());
+        for (auto style : quote_styles)
+            hash_state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
+    }
 }
 
 const String & ASTIdentifier::name() const
@@ -111,17 +131,28 @@ const String & ASTIdentifier::name() const
 
 void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    auto format_element = [&](const String & elem_name)
+    /// Preserve double quotes only — they are semantically meaningful for case-sensitivity in
+    /// `standard` mode, while backticks behave like unquoted and can use the formatter's default
+    /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
+    auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
-        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
+        /// Hoist the optional out of the `if` condition: `to_write` borrows from
+        /// `special_delimiter_and_identifier->second`, so the optional must outlive its use.
+        auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name);
+        if (special_delimiter_and_identifier)
         {
             ostr << special_delimiter_and_identifier->first;
-            settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+            if (quote == IdentifierQuoteStyle::DoubleQuote)
+                writeDoubleQuotedString(special_delimiter_and_identifier->second, ostr);
+            else
+                settings.writeIdentifier(ostr, special_delimiter_and_identifier->second, /*ambiguous=*/false);
+            return;
         }
+
+        if (quote == IdentifierQuoteStyle::DoubleQuote)
+            writeDoubleQuotedString(elem_name, ostr);
         else
-        {
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
-        }
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);  /// no copy on the common path
     };
 
     if (compound())
@@ -140,7 +171,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
                 ++j;
             }
             else
-                format_element(name_parts[i]);
+                format_element(name_parts[i], getQuoteStyleAt(i));
         }
     }
     else
@@ -149,7 +180,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         if (name.empty() && !children.empty())
             children.front()->format(ostr, settings, state, frame);
         else
-            format_element(name);
+            format_element(name, getQuoteStyleAt(0));
     }
 }
 
@@ -163,15 +194,30 @@ void ASTIdentifier::restoreTable()
     if (!compound())
     {
         name_parts.insert(name_parts.begin(), semantic->table);
+        /// Keep `quote_styles` aligned with `name_parts` when we prepend the table qualifier.
+        /// The inserted table name comes from semantic, not user input, so it has no quote style.
+        if (!quote_styles.empty())
+            quote_styles.insert(quote_styles.begin(), IdentifierQuoteStyle::None);
         resetFullName();
     }
 }
 
 boost::intrusive_ptr<ASTTableIdentifier> ASTIdentifier::createTable() const
 {
-    if (name_parts.size() == 1) return make_intrusive<ASTTableIdentifier>(name_parts[0]);
-    if (name_parts.size() == 2) return make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
-    return nullptr;
+    boost::intrusive_ptr<ASTTableIdentifier> result;
+    if (name_parts.size() == 1)
+        result = make_intrusive<ASTTableIdentifier>(name_parts[0]);
+    else if (name_parts.size() == 2)
+        result = make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1]);
+    else
+        return nullptr;
+
+    /// Preserve per-part quote styles so downstream resolution (e.g. case-insensitive lookup
+    /// in `standard` mode for `joinGet` with double-quoted parts) can still see which parts were quoted
+    if (!quote_styles.empty())
+        result->setQuoteStyles(quote_styles);
+
+    return result;
 }
 
 void ASTIdentifier::resetFullName()
@@ -222,10 +268,19 @@ String ASTTableIdentifier::getDatabaseName() const
 
 ASTPtr ASTTableIdentifier::getTable() const
 {
+    /// Carry the per-part quote style of the table-name slot onto the returned identifier so
+    /// downstream consumers preserve case-sensitivity in `standard` mode.
+    auto with_table_quote = [&](boost::intrusive_ptr<ASTIdentifier> id, size_t part) -> ASTPtr
+    {
+        auto style = getQuoteStyleAt(part);
+        if (style != IdentifierQuoteStyle::None)
+            id->setQuoteStyles({style});
+        return id;
+    };
     if (name_parts.size() == 2)
     {
         if (!name_parts[1].empty())
-            return make_intrusive<ASTIdentifier>(name_parts[1]);
+            return with_table_quote(make_intrusive<ASTIdentifier>(name_parts[1]), 1);
 
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[1]->clone());
@@ -235,7 +290,7 @@ ASTPtr ASTTableIdentifier::getTable() const
     {
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        return with_table_quote(make_intrusive<ASTIdentifier>(name_parts[0]), 0);
     }
     return {};
 }
@@ -246,7 +301,11 @@ ASTPtr ASTTableIdentifier::getDatabase() const
     {
         if (name_parts[0].empty())
             return make_intrusive<ASTIdentifier>("", children[0]->clone());
-        return make_intrusive<ASTIdentifier>(name_parts[0]);
+        auto id = make_intrusive<ASTIdentifier>(name_parts[0]);
+        auto style = getQuoteStyleAt(0);
+        if (style != IdentifierQuoteStyle::None)
+            id->setQuoteStyles({style});
+        return id;
     }
     return {};
 }
@@ -256,6 +315,9 @@ void ASTTableIdentifier::resetTable(const String & database_name, const String &
     auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
+    /// Clear stale per-part quote styles — the new `name_parts` come from caller strings that were
+    /// not user-quoted; leaving the old `quote_styles` would misalign with the new parts.
+    quote_styles.clear();
     uuid = identifier->uuid;
 }
 

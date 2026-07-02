@@ -12,6 +12,7 @@
 #include <Core/Joins.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
 
@@ -230,7 +231,18 @@ private:
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
-    void updateMatchedColumnsFromJoinUsing(QueryTreeNodesWithNames & result_matched_column_nodes_with_names, bool is_qualified_matcher, const Identifier & matched_qualified_identifier, IdentifierResolveScope & scope);
+    /// For a qualified matcher `t.*`, the matched column is `t.col` — its type must equal what the
+    /// explicit reference `t.col` resolves to, not the merged USING-key type (in a nested JOIN the
+    /// merged type can reflect the outer JOIN's other side, while `t.col` only follows the joins
+    /// `t` participates in). `matched_qualified_identifier`/`qualifier_quote_styles` describe the
+    /// matcher's qualifier so the synthetic `explicit_identifier` lookup keeps the user's
+    /// case-sensitivity (`"T".*` stays exact even in `standard` mode).
+    void updateMatchedColumnsFromJoinUsing(
+        QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+        bool is_qualified_matcher,
+        const Identifier & matched_qualified_identifier,
+        const std::vector<IdentifierQuoteStyle> & qualifier_quote_styles,
+        IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
@@ -265,7 +277,7 @@ private:
 
     void validateGroupByKeyType(const DataTypePtr & group_by_key_type, const IdentifierResolveScope & scope) const;
 
-    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope);
+    void resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpolate_node_list, IdentifierResolveScope & scope, const NamesAndTypes & projection_columns);
 
     void resolveWindowNodeList(QueryTreeNodePtr & window_node_list, IdentifierResolveScope & scope);
 

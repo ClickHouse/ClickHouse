@@ -4,9 +4,17 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/Exception.h>
+#include <Poco/String.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int AMBIGUOUS_IDENTIFIER;
+}
 
 struct StringTransparentHash
 {
@@ -30,6 +38,8 @@ struct StringTransparentHash
 };
 
 using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr, StringTransparentHash, std::equal_to<>>;
+/// Maps lowercase column name to the list of original column names that match
+using LowercaseToOriginalNamesMap = std::unordered_map<std::string, std::vector<std::string>>;
 
 struct AnalysisTableExpressionData
 {
@@ -37,6 +47,10 @@ struct AnalysisTableExpressionData
     std::string table_expression_description;
     std::string database_name;
     std::string table_name;
+    /// True iff `table_name` originated from a CTE defined with a double-quoted name
+    /// (`WITH "MyCte" AS ...`). Qualifier matching in `standard` mode keeps such names exact so
+    /// an unquoted `mycte.x` does not bind to a CTE defined as `"MyCte"`.
+    bool table_name_is_double_quoted = false;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
     NamesAndTypes column_names_and_types;
@@ -51,6 +65,10 @@ struct AnalysisTableExpressionData
     /// of a compound identifier could refer to a column in this table. Populated together
     /// with `column_names` by `ensureColumnMembershipSetsArePopulated()`.
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
+    /// Lowercase fold of every entry in `column_identifier_first_parts`, populated only in `standard`
+    /// mode (by `enableStandardMode`). Kept separate so a case-sensitive lookup (quoted base part)
+    /// cannot accidentally bind via a folded entry — only the `use_case_insensitive` branch may consult it.
+    mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> lowercase_column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
 
     void ensureColumnMembershipSetsArePopulated() const;
@@ -71,17 +89,72 @@ struct AnalysisTableExpressionData
     /// it inline (used for subquery / union projection lists, which are typically small).
     ColumnNameToColumnNodeMap & emplaceColumnNodeMap() const;
 
-    bool hasFullIdentifierName(IdentifierView identifier_view) const
+    /// Lowercase column name -> original-case names. Built once by `enableStandardMode()` from
+    /// `column_name_to_column_node`; do not mutate after that. Multiple entries per key are allowed
+    /// and reported as ambiguity at lookup time
+    LowercaseToOriginalNamesMap lowercase_column_name_to_original_names;
+
+    bool standard_mode = false;
+
+    bool hasFullIdentifierName(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
         ensureColumnMembershipSetsArePopulated();
-        return column_names.contains(identifier_view.getFullName());
+        const auto & full_name = identifier_view.getFullName();
+        if (column_names.contains(full_name))
+            return true;
+        if (use_case_insensitive)
+            return hasColumnCaseInsensitive(full_name);
+        return false;
     }
 
-    bool canBindIdentifier(IdentifierView identifier_view) const
+    bool canBindIdentifier(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
         ensureColumnMembershipSetsArePopulated();
-        return column_identifier_first_parts.contains(identifier_view.at(0)) || column_names.contains(identifier_view.at(0))
-            || tryGetSubcolumnInfo(identifier_view.getFullName());
+        const auto & first_part = identifier_view.at(0);
+        if (column_identifier_first_parts.contains(first_part) || column_names.contains(first_part))
+            return true;
+        if (use_case_insensitive)
+        {
+            /// Consult the lowercase-fold side index only on the case-insensitive path so a quoted/
+            /// base-case-sensitive lookup never matches a column whose first part differs only by case.
+            String lower_first = Poco::toLower(String(first_part));
+            if (lowercase_column_identifier_first_parts.contains(lower_first))
+                return true;
+        }
+        return tryGetSubcolumnInfo(identifier_view.getFullName(), use_case_insensitive).has_value();
+    }
+
+    /// Case-insensitive lookup of a column. Returns end() of the on-demand map when not found.
+    /// Throws AMBIGUOUS_IDENTIFIER when multiple columns differ only by case.
+    /// `get_scope_description` is only invoked on the ambiguity throw — formatting the scope AST
+    /// eagerly at every lookup is far too expensive for a non-error path.
+    template <typename ScopeDescriptionProvider>
+    ColumnNameToColumnNodeMap::const_iterator findColumnCaseInsensitive(
+        std::string_view identifier_name,
+        ScopeDescriptionProvider && get_scope_description) const
+    {
+        const auto & node_map = getColumnNodeMap();
+        /// Prefer an exact-case match — e.g. `information_schema.tables` exposes both `table_schema`
+        /// and `TABLE_SCHEMA`, and a literal lookup of either spelling must match the canonical entry
+        /// rather than throw on the case-insensitive collision.
+        if (auto exact_it = node_map.find(String(identifier_name)); exact_it != node_map.end())
+            return exact_it;
+
+        auto it = lowercase_column_name_to_original_names.find(Poco::toLower(String(identifier_name)));
+        if (it == lowercase_column_name_to_original_names.end())
+            return node_map.end();
+
+        if (it->second.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' is ambiguous: matches multiple columns with different cases: {}. In scope {}",
+                identifier_name, fmt::join(it->second, ", "), get_scope_description());
+        return node_map.find(it->second.front());
+    }
+
+    bool hasColumnCaseInsensitive(std::string_view identifier_name) const
+    {
+        String lower_name = Poco::toLower(String(identifier_name));
+        return lowercase_column_name_to_original_names.contains(lower_name);
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const
@@ -125,29 +198,124 @@ struct AnalysisTableExpressionData
     struct SubcolumnInfo
     {
         ColumnNodePtr column_node;
-        std::string_view subcolumn_name;
+        /// Owning string so a `standard`-mode case-insensitive match can return its canonical
+        /// suffix name without depending on a temporary returned by `IDataType::getSubcolumnNames`.
+        String subcolumn_name;
         DataTypePtr subcolumn_type;
     };
 
-    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name) const
+    template <typename ScopeDescriptionProvider>
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
+        std::string_view full_identifier_name,
+        bool use_case_insensitive,
+        ScopeDescriptionProvider && get_scope_description,
+        bool suffix_case_insensitive) const
     {
         ensureColumnMembershipSetsArePopulated();
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
-            /// Use `column_names` as a fast existence check before forcing the
-            /// `column_name_to_column_node` map to be built.
-            if (!column_names.contains(column_name))
-                continue;
-            const auto & node_map = getColumnNodeMap();
-            auto it = node_map.find(column_name);
-            if (it != node_map.end())
+            /// Use `column_names` as a fast existence check before forcing the column-node map to be built.
+            /// In case-insensitive mode also consult the lowercase index so e.g. `Data.field` matches a column `data`.
+            String resolved_column_name;
+            if (column_names.contains(column_name))
             {
-                if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
-                    return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
+                resolved_column_name = String(column_name);
+            }
+            else if (use_case_insensitive)
+            {
+                auto lower_it = lowercase_column_name_to_original_names.find(Poco::toLower(String(column_name)));
+                if (lower_it == lowercase_column_name_to_original_names.end() || lower_it->second.empty())
+                    continue;
+                if (lower_it->second.size() > 1)
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
+                        full_identifier_name, column_name, fmt::join(lower_it->second, ", "), get_scope_description());
+                resolved_column_name = lower_it->second.front();
+            }
+            else
+            {
+                continue;
+            }
+
+            const auto & node_map = getColumnNodeMap();
+            auto it = node_map.find(resolved_column_name);
+            if (it == node_map.end())
+                continue;
+
+            /// Exact-case match first; backwards-compatible and works for storages that expose the
+            /// subcolumn under its canonical name.
+            if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
+                return SubcolumnInfo{it->second, String(subcolumn_name), subcolumn_type};
+
+            /// In standard mode also try a case-insensitive subcolumn match. Tuple/Variant/Map
+            /// subcolumns are resolved via exact string lookup inside the type itself, so we have to
+            /// canonicalize the suffix here. Multiple case-only-different subcolumn names are an
+            /// ambiguity at this level. The fold is gated on `suffix_case_insensitive` rather than
+            /// `use_case_insensitive` so a double-quoted suffix like `data."name"` stays case-sensitive
+            /// even when the base part was unquoted.
+            if (suffix_case_insensitive)
+            {
+                auto data_type = it->second->getResultType();
+                String lower_suffix = Poco::toLower(String(subcolumn_name));
+                String matched_subcolumn;
+                for (const auto & candidate : data_type->getSubcolumnNames())
+                {
+                    if (Poco::toLower(candidate) != lower_suffix)
+                        continue;
+                    if (!matched_subcolumn.empty() && matched_subcolumn != candidate)
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "Identifier '{}' is ambiguous: subcolumn '{}' matches multiple subcolumns with different cases: '{}', '{}'. In scope {}",
+                            full_identifier_name, subcolumn_name, matched_subcolumn, candidate, get_scope_description());
+                    matched_subcolumn = candidate;
+                }
+                if (!matched_subcolumn.empty())
+                {
+                    if (auto subcolumn_type = data_type->tryGetSubcolumnType(matched_subcolumn))
+                        return SubcolumnInfo{it->second, std::move(matched_subcolumn), subcolumn_type};
+                }
             }
         }
 
         return std::nullopt;
+    }
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view full_identifier_name, bool use_case_insensitive = false) const
+    {
+        /// Convenience overload: callers that don't know the per-part quoting fold the suffix
+        /// case-insensitively iff the base did. Callers that need separate base/suffix flags
+        /// (e.g. for `data."name"`) must use the four-argument form.
+        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, [] { return String{}; }, use_case_insensitive);
+    }
+
+    /// Build lowercase-to-original mappings for case-insensitive identifier resolution from the
+    /// column-name source-of-truth `column_names_and_types`, so the lazy column-node map does not
+    /// have to be materialised here.
+    /// `case_sensitive_column_names` lists column names that must stay case-sensitive — they are
+    /// skipped from the lowercase index. Used for projection-override aliases that were defined
+    /// as double-quoted (e.g. `FROM (...) AS t("MyCol")`).
+    void enableStandardMode(const std::unordered_set<std::string> & case_sensitive_column_names = {})
+    {
+        standard_mode = true;
+        lowercase_column_name_to_original_names.clear();
+
+        for (const auto & [column_name, _] : column_names_and_types)
+        {
+            if (case_sensitive_column_names.contains(column_name))
+                continue;
+            String lower_name = Poco::toLower(column_name);
+            lowercase_column_name_to_original_names[lower_name].push_back(column_name);
+        }
+
+        /// Populate the side index of lowercase first parts. Keep it disjoint from
+        /// `column_identifier_first_parts` so case-sensitive callers never observe a folded entry.
+        ensureColumnMembershipSetsArePopulated();
+        lowercase_column_identifier_first_parts.clear();
+        for (const auto & first_part : column_identifier_first_parts)
+        {
+            if (case_sensitive_column_names.contains(first_part))
+                continue;
+            lowercase_column_identifier_first_parts.insert(Poco::toLower(first_part));
+        }
     }
 
 private:

@@ -69,7 +69,9 @@ public:
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool database_name_case_insensitive = false,
+        bool table_name_case_insensitive = false);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
@@ -77,11 +79,14 @@ public:
     static QueryTreeNodePtr tryResolveIdentifierAsNestedPrefix(
         const Identifier & identifier,
         const AnalysisTableExpressionData & table_expression_data,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool case_insensitive_prefix = false);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool database_name_case_insensitive = false,
+        bool table_name_case_insensitive = false);
 
     /// Suggest a same/similar-named table when a table identifier cannot be resolved,
     /// possibly in another database (e.g. `system.functions` for a bare `functions`).
@@ -96,7 +101,10 @@ public:
         const QueryTreeNodePtr & compound_expression,
         String compound_expression_source,
         IdentifierResolveScope & scope,
-        bool can_be_not_found = false);
+        bool can_be_not_found = false,
+        /// When set, fold the post-prefix suffix path case-insensitively against the type's subcolumn
+        /// names. Required for `standard` mode when the user-written suffix was unquoted.
+        bool fold_subcolumn_case_insensitively = false);
 
     IdentifierResolveResult tryResolveIdentifierFromExpressionArguments(
         const IdentifierLookup & identifier_lookup,

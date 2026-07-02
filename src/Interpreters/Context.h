@@ -1005,6 +1005,8 @@ public:
     void updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
+    /// Case-insensitive lookup of a temporary/external table; returns the original-case name or empty string
+    String tryResolveExternalTableNameCaseInsensitive(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
     HypotheticalIndexStore & getHypotheticalIndexStore() const;

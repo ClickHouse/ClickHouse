@@ -29,7 +29,7 @@ class QueryPlan;
 /// gating.
 struct MaterializedCTE
 {
-    explicit MaterializedCTE(const std::string & cte_name_);
+    explicit MaterializedCTE(const std::string & cte_name_, bool name_is_double_quoted_ = false);
 
     MaterializedCTE(const MaterializedCTE &) = delete;
     MaterializedCTE & operator=(const MaterializedCTE &) = delete;
@@ -74,6 +74,10 @@ struct MaterializedCTE
     std::optional<TemporaryTableHolder> table_holder = {};
     /// Name of the CTE.
     const std::string cte_name;
+    /// True iff the CTE was defined with a double-quoted name (`WITH "MyCte" AS ...`). Used by
+    /// qualifier-name matching in `standard` mode to keep `"MyCte"` case-sensitive (so an
+    /// unquoted `mycte.x` does not bind to it).
+    const bool name_is_double_quoted = false;
     /// Temporary table name
     const std::string temporary_table_name;
     /// Query Plan for the CTE

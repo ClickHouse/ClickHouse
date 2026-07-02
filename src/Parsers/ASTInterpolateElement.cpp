@@ -1,5 +1,6 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -14,10 +15,14 @@ ASTPtr ASTInterpolateElement::clone() const
     return clone;
 }
 
-
 void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.writeIdentifier(ostr, column, /*ambiguous=*/true);
+    /// Preserve double-quoting so the format/reparse round trip keeps the interpolation target
+    /// case-sensitive in `standard` mode.
+    if (column_is_double_quoted)
+        writeDoubleQuotedString(column, ostr);
+    else
+        settings.writeIdentifier(ostr, column, /*ambiguous=*/true);
     ostr << " AS ";
 
     /// If the expression has an alias, we need to wrap it in parentheses

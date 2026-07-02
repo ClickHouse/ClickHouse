@@ -1,5 +1,7 @@
 #include <Analyzer/IdentifierNode.h>
 
+#include <algorithm>
+
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -14,6 +16,12 @@ namespace DB
 IdentifierNode::IdentifierNode(Identifier identifier_)
     : IQueryTreeNode(children_size)
     , identifier(std::move(identifier_))
+{}
+
+IdentifierNode::IdentifierNode(Identifier identifier_, std::vector<IdentifierQuoteStyle> quote_styles_)
+    : IQueryTreeNode(children_size)
+    , identifier(std::move(identifier_))
+    , quote_styles(std::move(quote_styles_))
 {}
 
 IdentifierNode::IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_)
@@ -41,7 +49,9 @@ void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
 bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
-    return identifier == rhs_typed.identifier && table_expression_modifiers == rhs_typed.table_expression_modifiers;
+    return identifier == rhs_typed.identifier
+        && table_expression_modifiers == rhs_typed.table_expression_modifiers
+        && quote_styles == rhs_typed.quote_styles;
 }
 
 void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -49,6 +59,21 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     const auto & identifier_name = identifier.getFullName();
     state.update(identifier_name.size());
     state.update(identifier_name);
+
+    /// Mirror `ASTIdentifier::updateTreeHashImpl`: only DoubleQuote is semantically observable
+    /// (case-sensitive vs case-insensitive in `standard` mode). Backticks are not preserved by the
+    /// formatter, so including them in the hash would diverge between the initiator's tree and a
+    /// reparsed copy on the remote side (e.g. distributed IN-CTE set names — `03520`). Encode only
+    /// the per-part double-quote bit; identifiers with no DoubleQuote parts keep their previous hash.
+    const bool any_double_quoted = std::any_of(
+        quote_styles.begin(), quote_styles.end(),
+        [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
+    if (any_double_quoted)
+    {
+        state.update(quote_styles.size());
+        for (auto style : quote_styles)
+            state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
+    }
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
@@ -58,13 +83,17 @@ QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
     auto clone_identifier_node = std::make_shared<IdentifierNode>(identifier);
     clone_identifier_node->table_expression_modifiers = table_expression_modifiers;
+    clone_identifier_node->quote_styles = quote_styles;
     return clone_identifier_node;
 }
 
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
-    return make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+    auto ast_identifier = make_intrusive<ASTIdentifier>(std::move(identifier_parts));
+    if (!quote_styles.empty())
+        ast_identifier->setQuoteStyles(quote_styles);
+    return ast_identifier;
 }
 
 }

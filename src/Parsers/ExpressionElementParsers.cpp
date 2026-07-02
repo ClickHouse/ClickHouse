@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
+#include <Common/Exception.h>
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -28,6 +29,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+
+#include <algorithm>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -314,29 +317,42 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (pos->size() == 6) /// Empty Unicode-quoted identifiers are not allowed.
                 return false;
-            node = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            auto identifier = make_intrusive<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            identifier->setQuoteStyle(IdentifierQuoteStyle::DoubleQuote); /// treat Unicode quotes as double quotes
+            node = std::move(identifier);
             ++pos;
             return true;
         }
 
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
+        IdentifierQuoteStyle quote_style = IdentifierQuoteStyle::None;
 
         if (*pos->begin == '`')
+        {
             readBackQuotedStringWithSQLStyle(s, buf);
+            quote_style = IdentifierQuoteStyle::Backtick;
+        }
         else
+        {
             readDoubleQuotedStringWithSQLStyle(s, buf);
+            quote_style = IdentifierQuoteStyle::DoubleQuote;
+        }
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
-        node = make_intrusive<ASTIdentifier>(s);
+        auto identifier = make_intrusive<ASTIdentifier>(s);
+        identifier->setQuoteStyle(quote_style);
+        node = std::move(identifier);
         ++pos;
         return true;
     }
     if (pos->type == TokenType::BareWord)
     {
-        node = make_intrusive<ASTIdentifier>(String(pos->begin, pos->end));
+        auto identifier = make_intrusive<ASTIdentifier>(String(pos->begin, pos->end));
+        identifier->setQuoteStyle(IdentifierQuoteStyle::None);
+        node = std::move(identifier);
         ++pos;
         return true;
     }
@@ -471,6 +487,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
     std::vector<String> parts;
+    std::vector<IdentifierQuoteStyle> quote_styles;  /// Track quote style for each identifier part
     SpecialDelimiter last_special_delimiter = SpecialDelimiter::NONE;
     ASTs params;
 
@@ -487,6 +504,9 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             break;
         }
 
+        /// Capture quote style for each identifier part
+        quote_styles.push_back(element->as<ASTIdentifier>()->getQuoteStyleAt(0));
+
         if (last_special_delimiter != SpecialDelimiter::NONE)
         {
             parts.push_back(static_cast<char>(last_special_delimiter) + backQuote(getIdentifierName(element)));
@@ -497,7 +517,12 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
             if (!is_first && array_of_json_identifier_addition.check(pos, expected))
+            {
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
+                /// The synthetic `Array(JSON)` part is not user-typed, so it has no quoting.
+                /// Append a matching entry so `quote_styles` stays aligned with `parts`.
+                quote_styles.push_back(IdentifierQuoteStyle::None);
+            }
         }
 
         if (parts.back().empty())
@@ -542,13 +567,26 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
+        /// Keep `quote_styles` only when some part is actually quoted — the canonical form for
+        /// all-unquoted identifiers is an empty vector (avoids a heap allocation per identifier).
+        const bool any_part_quoted = std::any_of(
+            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
+        if (any_part_quoted)
+            node->as<ASTTableIdentifier>()->setQuoteStyles(std::move(quote_styles));
     }
     else
-        node = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
+    {
+        const bool any_part_quoted = std::any_of(
+            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
+        auto identifier = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
+        if (any_part_quoted)
+            identifier->setQuoteStyles(std::move(quote_styles));
+        node = std::move(identifier);
+    }
 
     return true;
 }
@@ -1974,6 +2012,9 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
             auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
             replacement->name = getIdentifierName(ident);
+            /// Track double-quote so analyzer can apply `standard`-mode case-sensitivity rules.
+            if (const auto * ident_typed = ident->as<ASTIdentifier>())
+                replacement->name_is_double_quoted = ident_typed->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
             replacement->children.push_back(std::move(expr));
             replacements.emplace_back(std::move(replacement));
             return true;
@@ -2167,8 +2208,14 @@ bool ParserQualifiedColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (name_parts.size() == 1 || name_parts.back() != "COLUMNS")
         return false;
 
+    /// Drop the trailing "COLUMNS" part, and keep the matching quote style for the qualifier
+    auto qualifier_quote_styles = identifier_node_typed.getQuoteStyles();
     name_parts.pop_back();
+    if (!qualifier_quote_styles.empty())
+        qualifier_quote_styles.pop_back();
     identifier_node = make_intrusive<ASTIdentifier>(std::move(name_parts), false, std::move(node->children));
+    if (!qualifier_quote_styles.empty())
+        identifier_node->as<ASTIdentifier &>().setQuoteStyles(std::move(qualifier_quote_styles));
 
     if (!parseColumnsMatcherBody(pos, node, expected, allowed_transformers))
         return false;
@@ -2335,6 +2382,10 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             tryGetIdentifierNameInto(alias_node, ast_with_alias->alias);
+
+            /// Remember whether the alias identifier was double-quoted so the analyzer can keep it case-sensitive
+            if (const auto * alias_identifier = alias_node->as<ASTIdentifier>())
+                ast_with_alias->alias_is_double_quoted = alias_identifier->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
 
             // the alias is parametrised and will be resolved later when the query context is known
             if (!alias_node->children.empty() && alias_node->children.front()->as<ASTQueryParameter>())
@@ -2510,6 +2561,10 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     auto elem = make_intrusive<ASTInterpolateElement>();
     elem->column = ident->getColumnName();
+    /// Preserve quote style of the target so `INTERPOLATE ("MyCol" AS ...)` stays case-sensitive in
+    /// `standard` mode after the AST → query-tree round trip.
+    if (const auto * ident_typed = ident->as<ASTIdentifier>())
+        elem->column_is_double_quoted = ident_typed->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
     elem->expr = expr;
     elem->children.push_back(expr);
 

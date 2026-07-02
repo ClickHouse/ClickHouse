@@ -72,6 +72,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
@@ -431,6 +432,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         auto identifier = first_argument_identifier.getIdentifier();
 
         IdentifierLookup identifier_lookup{identifier, IdentifierLookupContext::EXPRESSION};
+        /// Carry over per-part quote styles so case-sensitivity stays correct for quoted parts (e.g. dictGet("X", ...))
+        const auto & quote_styles = first_argument_identifier.getQuoteStyles();
+        identifier_lookup.is_part_double_quoted.reserve(quote_styles.size());
+        for (auto style : quote_styles)
+            identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
         auto resolve_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
         if (resolve_result.isResolved())
@@ -447,13 +453,36 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());
 
+            /// Resolved canonical name to thread into the constant argument that downstream code reparses.
+            /// Defaults to the original spelling for the dictionary path; the joinGet branch overwrites it
+            /// with the storage's canonical name so a case-insensitive analyzer lookup matches the exact
+            /// lookup `FunctionJoinGet::getJoin` does later via `context->resolveStorageID`.
+            String resolved_first_argument = identifier.getFullName();
+
             if (is_special_function_dict_get)
             {
                 scope.context->getExternalDictionariesLoader().assertDictionaryStructureExists(identifier.getFullName(), scope.context);
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                const bool standard_mode = scope.isStandardMode();
+                /// Each part is case-insensitive only if NOT double-quoted; quote-style info is available on the IdentifierNode.
+                bool database_name_case_insensitive = false;
+                bool table_name_case_insensitive = false;
+                if (standard_mode)
+                {
+                    if (parts_size == 2)
+                    {
+                        database_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
+                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(1);
+                    }
+                    else if (parts_size == 1)
+                    {
+                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
+                    }
+                }
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",
@@ -468,9 +497,41 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         function_name,
                         identifier.getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
+
+                /// In `standard` mode, substitute the canonical storage name resolved by the analyzer
+                /// when the actual lookup folded case-insensitively (so the resolved table name
+                /// differs from the user's spelling). Without this, `joinGet(myjoin, ...)` against
+                /// an actual `Join` table `MyJoin` would pass analyzer validation in `standard` mode
+                /// and then fail at function overload resolution because `FunctionJoinGet::getJoin`
+                /// does an exact `context->resolveStorageID` lookup. Don't substitute in default mode
+                /// (or when the names already match) — the analyzer here can't see temporary tables,
+                /// so always-substituting would steer `joinGet('03775_join', ...)` away from a
+                /// session temporary `03775_join` to a same-named regular table. For temporary
+                /// tables, substitute the user-visible name (`getTemporaryTableName`) rather than
+                /// the storage's internal `_tmp_<id>` name: `FunctionJoinGet::getJoin` reparses the
+                /// string and looks up via `Context::resolveStorageID`, which expects the visible name.
+                if (standard_mode)
+                {
+                    String candidate;
+                    if (table_node_typed.isTemporaryTable())
+                    {
+                        candidate = table_node_typed.getTemporaryTableName();
+                    }
+                    else
+                    {
+                        const auto resolved_storage_id = table_node_typed.getStorageID();
+                        const String resolved_table_name = resolved_storage_id.getTableName();
+                        if (parts_size == 2 && !resolved_storage_id.database_name.empty())
+                            candidate = resolved_storage_id.getDatabaseName() + "." + resolved_table_name;
+                        else
+                            candidate = resolved_table_name;
+                    }
+                    if (!candidate.empty() && candidate != identifier.getFullName())
+                        resolved_first_argument = std::move(candidate);
+                }
             }
 
-            first_argument = std::make_shared<ConstantNode>(identifier.getFullName());
+            first_argument = std::make_shared<ConstantNode>(resolved_first_argument);
         }
     }
 

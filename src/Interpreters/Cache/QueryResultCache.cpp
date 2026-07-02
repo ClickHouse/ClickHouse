@@ -387,6 +387,17 @@ public:
                 std::vector<String> trimmed_parts(identifier->name_parts.begin() + 1, identifier->name_parts.end());
                 auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
                 new_identifier->setAlias(identifier->tryGetAlias());
+                /// Carry the trimmed per-part quote styles and the alias double-quote bit so a
+                /// subquery cache key cannot collide `__table1."x"` with `__table1.x` under
+                /// `case_insensitive_names = 'standard'`.
+                const auto & original_quote_styles = identifier->getQuoteStyles();
+                if (original_quote_styles.size() > 1)
+                {
+                    std::vector<IdentifierQuoteStyle> trimmed_quote_styles(
+                        original_quote_styles.begin() + 1, original_quote_styles.end());
+                    new_identifier->setQuoteStyles(std::move(trimmed_quote_styles));
+                }
+                new_identifier->alias_is_double_quoted = identifier->alias_is_double_quoted;
                 ast = std::move(new_identifier);
             }
         }

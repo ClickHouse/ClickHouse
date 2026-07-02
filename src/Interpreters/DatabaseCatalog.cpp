@@ -22,6 +22,8 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Poco/DirectoryIterator.h>
+#include <Poco/String.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/UniqueLock.h>
@@ -85,12 +87,14 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int THERE_IS_NO_QUERY;
     extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
 {
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_remote_databases_in_system_tables;
@@ -644,6 +648,9 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     if (!database->isRemoteDatabase())
         databases_without_remote.emplace(database_name, database);
 
+    String lowercase_name = Poco::toLower(database_name);
+    lowercase_db_to_original_names[lowercase_name].insert(database_name);
+
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
         if (db_uuid != UUIDHelpers::Nil)
@@ -669,6 +676,16 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             if (db_uuid != UUIDHelpers::Nil)
                 removeUUIDMapping(db_uuid);
             databases.erase(database_name);
+
+            /// Update case-insensitive lookup map
+            String lowercase_name = Poco::toLower(database_name);
+            if (auto lower_it = lowercase_db_to_original_names.find(lowercase_name); lower_it != lowercase_db_to_original_names.end())
+            {
+                // removal from unord_set is O(1)
+                lower_it->second.erase(database_name);
+                if (lower_it->second.empty())
+                    lowercase_db_to_original_names.erase(lower_it);
+            }
         }
         if (auto it = databases_without_remote.find(database_name); it != databases_without_remote.end())
             databases_without_remote.erase(it);
@@ -759,6 +776,17 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         databases_without_remote.erase(local_it);
         databases_without_remote.emplace(new_name, db);
     }
+
+    /// Keep the case-insensitive lookup map in sync so resolution after `RENAME DATABASE`
+    /// no longer points to the old name and finds the new one.
+    String old_lowercase_name = Poco::toLower(old_name);
+    if (auto lower_it = lowercase_db_to_original_names.find(old_lowercase_name); lower_it != lowercase_db_to_original_names.end())
+    {
+        lower_it->second.erase(old_name);
+        if (lower_it->second.empty())
+            lowercase_db_to_original_names.erase(lower_it);
+    }
+    lowercase_db_to_original_names[Poco::toLower(new_name)].insert(new_name);
 
     for (const auto & table_name : tables_in_database)
     {
@@ -885,6 +913,34 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
     chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     return databases.contains(database_name);
+}
+
+String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const
+{
+    chassert(!database_name.empty());
+    std::lock_guard lock{databases_mutex};
+
+    /// use precomputed map for lookup
+    String lowercase_name = Poco::toLower(String(database_name));
+    auto it = lowercase_db_to_original_names.find(lowercase_name);
+    if (it == lowercase_db_to_original_names.end() || it->second.empty())
+        return {};
+
+    if (it->second.size() > 1)
+    {
+        /// `information_schema` and `INFORMATION_SCHEMA` are built-in aliases of the same logical schema.
+        /// Treat their case-only collision as non-ambiguous and canonicalize to the lowercase form.
+        if (it->second.size() == 2
+            && it->second.contains(INFORMATION_SCHEMA)
+            && it->second.contains(INFORMATION_SCHEMA_UPPERCASE))
+            return INFORMATION_SCHEMA;
+
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Database name '{}' is ambiguous: matches multiple databases with different cases: {}",
+            database_name, fmt::join(it->second, ", "));
+    }
+
+    return *it->second.begin();
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

@@ -1,0 +1,39 @@
+--- Standard mode: column case-insensitivity ---
+John
+John
+John
+Doe
+Doe
+30
+30
+--- Default mode: case-sensitive ---
+John
+--- Compound identifiers ---
+John
+John
+John
+John
+--- Table alias case-insensitivity ---
+John
+John
+John
+--- Expressions ---
+JOHN	35
+JOHN	35
+--- ORDER BY ---
+A	1
+B	2
+C	3
+A	1
+B	2
+C	3
+--- GROUP BY ---
+A	30
+B	15
+A	30
+B	15
+--- DISTINCT ---
+A
+B
+A
+B

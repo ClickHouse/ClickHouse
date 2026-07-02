@@ -31,6 +31,9 @@ public:
     /// The alias, if any, or an empty string.
     String alias;
 
+    /// True if the alias text came from a double-quoted identifier (e.g. `1 AS "MyAlias"`)
+    bool alias_is_double_quoted = false;
+
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
     bool preferAliasToColumnName() const { return flags<ASTWithAliasFlags>().prefer_alias_to_column_name; }

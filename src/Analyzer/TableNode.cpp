@@ -91,14 +91,15 @@ TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
 TableNode::TableNode(
     const std::string & cte_name_,
     QueryTreeNodePtr materialized_cte_subquery_,
-    const ContextPtr & context_)
+    const ContextPtr & context_,
+    bool cte_name_is_double_quoted_)
     : TableNode(
         std::make_shared<StorageDummy>(
             StorageID{"_dummy", "_materialized_cte_" + cte_name_},
             ColumnsDescription{NamesAndTypesList{{"_dummy", std::make_shared<DataTypeUInt8>()}}}),
         context_)
 {
-    materialized_cte = std::make_shared<MaterializedCTE>(cte_name_);
+    materialized_cte = std::make_shared<MaterializedCTE>(cte_name_, cte_name_is_double_quoted_);
     children[materialized_cte_subquery_index] = std::move(materialized_cte_subquery_);
     setTemporaryTableName(materialized_cte->temporary_table_name);
 }

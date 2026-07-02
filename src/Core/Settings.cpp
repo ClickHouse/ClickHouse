@@ -7721,6 +7721,48 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
     DECLARE(Bool, enforce_strict_identifier_format, false, R"(
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
+    DECLARE(CaseInsensitiveNames, case_insensitive_names, CaseInsensitiveNames::Default, R"(
+Controls case sensitivity for identifier matching during `SELECT` query analysis (database, table,
+column, alias, and CTE names).
+
+Possible values:
+- `default` — Case-sensitive matching (current behavior). Identifiers must match exactly.
+- `standard` — SQL standard-like behavior:
+  - Unquoted identifiers are case-insensitive
+  - Double-quoted identifiers ("...") are case-sensitive
+  - Backtick-quoted identifiers (`...`) are case-insensitive (like unquoted)
+  - Expression aliases and CTE names follow the same rules
+
+Ambiguity model for column, table, and CTE lookups in `standard` mode:
+  - An exact-case unquoted lookup always binds to the literal object of that name, even when
+    another case variant exists. For example, with columns `Val` and `val` in the same table,
+    `SELECT Val FROM t` returns `Val` and `SELECT val FROM t` returns `val`.
+  - An unquoted lookup whose spelling does not exactly match any object is matched
+    case-insensitively. If two or more objects then match, the lookup throws an ambiguity
+    error (e.g. `SELECT VAL FROM t` when both `Val` and `val` exist).
+  - Built-in dual-case namespaces such as `information_schema` / `INFORMATION_SCHEMA` and their
+    views (`tables`/`TABLES`, ...) are recognised as canonical aliases of one logical schema and
+    are not treated as ambiguous.
+
+Database names follow a stricter rule: collisions among user-defined databases that differ only
+in case are reported as ambiguous unless the lookup is double-quoted.
+
+Example with `standard` mode:
+- `SELECT FirstName FROM t` matches column `firstname`, `FIRSTNAME`, or `FirstName`
+- `SELECT "FirstName" FROM t` only matches column `FirstName` exactly
+- ``SELECT `FirstName` FROM t`` matches any case (same as unquoted)
+
+Scope: this setting affects identifier resolution inside the query analyzer. `INSERT` target
+table / column-list lookup and DDL statements (`CREATE`, `DROP`, `ALTER`, `RENAME`) still resolve
+names via exact match through the database catalog and `Block::findByName`. To reference an
+existing object whose name differs only in case, either quote it case-sensitively or rely on the
+exact-case object name. Removing this restriction is planned as a follow-up.
+
+Remote database engines (`PostgreSQL`, `MySQL`, `DataLake`, etc.) only resolve table names via the
+exact-case lookup; the case-insensitive fallback that enumerates the catalog is skipped to avoid a
+paid remote round trip per missing-name probe. A typo in the case of a remote table name surfaces
+as `UNKNOWN_TABLE` — quote the name case-sensitively or use the exact remote object name.
+)", 0) \
     DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", 0) \

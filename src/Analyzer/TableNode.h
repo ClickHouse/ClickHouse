@@ -47,7 +47,8 @@ public:
     explicit TableNode(
         const std::string & cte_name_,
         QueryTreeNodePtr materialized_cte_subquery_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        bool cte_name_is_double_quoted_ = false);
 
     /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.
     void finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_);

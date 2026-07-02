@@ -4,6 +4,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ColumnTransformers.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/re2.h>
 
 
@@ -100,6 +101,30 @@ public:
         return qualified_identifier;
     }
 
+    /// Per-part quote styles of the qualifier identifier. Drives case sensitivity of
+    /// qualifier resolution in `standard` mode (e.g. `"T".*` stays case-sensitive).
+    const std::vector<IdentifierQuoteStyle> & getQualifiedIdentifierQuoteStyles() const
+    {
+        return qualified_identifier_quote_styles;
+    }
+
+    void setQualifiedIdentifierQuoteStyles(std::vector<IdentifierQuoteStyle> quote_styles)
+    {
+        qualified_identifier_quote_styles = std::move(quote_styles);
+    }
+
+    /// Per-identifier quote styles of the column-list arguments of `COLUMNS(a, b, ...)`.
+    /// One vector per identifier in `columns_identifiers`; each vector has one entry per identifier part.
+    const std::vector<std::vector<IdentifierQuoteStyle>> & getColumnsIdentifierQuoteStyles() const
+    {
+        return columns_identifiers_quote_styles;
+    }
+
+    void setColumnsIdentifierQuoteStyles(std::vector<std::vector<IdentifierQuoteStyle>> quote_styles)
+    {
+        columns_identifiers_quote_styles = std::move(quote_styles);
+    }
+
     /// Get columns matcher. Valid only if this matcher has type COLUMNS_REGEXP.
     const std::shared_ptr<re2::RE2> & getColumnsMatcher() const
     {
@@ -124,8 +149,10 @@ public:
         return children[column_transformers_child_index];
     }
 
-    /// Returns true if matcher match column name, false otherwise
-    bool isMatchingColumn(const std::string & column_name);
+    /// Returns true if matcher match column name, false otherwise.
+    /// In `standard` mode unquoted COLUMNS(...) identifiers match case-insensitively; quoted ones
+    /// stay case-sensitive. Pass `standard_mode = true` to enable that behaviour.
+    bool isMatchingColumn(const std::string & column_name, bool standard_mode = false);
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -152,7 +179,9 @@ private:
 
     MatcherNodeType matcher_type;
     Identifier qualified_identifier;
+    std::vector<IdentifierQuoteStyle> qualified_identifier_quote_styles;
     Identifiers columns_identifiers;
+    std::vector<std::vector<IdentifierQuoteStyle>> columns_identifiers_quote_styles;
     std::shared_ptr<re2::RE2> columns_matcher;
     std::unordered_set<std::string> columns_identifiers_set;
 

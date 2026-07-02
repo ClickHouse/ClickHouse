@@ -119,6 +119,16 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
             return false;
 
+        /// Quoted aliases are semantic in `standard` mode (case-sensitive vs case-insensitive);
+        /// otherwise hash/equality would deduplicate `expr AS x` and `expr AS "x"` despite the
+        /// two registering differently in `QueryExpressionsAliasVisitor`. Consult the quote bit
+        /// only when both sides actually have an alias — otherwise a node whose alias was removed
+        /// would still compare unequal to its semantically-identical sibling because of stale quote state.
+        if (compare_options.compare_aliases
+            && !lhs_node_to_compare->alias.empty()
+            && lhs_node_to_compare->alias_is_double_quoted != rhs_node_to_compare->alias_is_double_quoted)
+            return false;
+
         const auto & lhs_children = lhs_node_to_compare->children;
         const auto & rhs_children = rhs_node_to_compare->children;
 
@@ -223,6 +233,10 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
+            /// Quoted vs unquoted alias is semantic in `standard` mode. Only mix in the flag
+            /// when it's true so old (unquoted) aliases keep their hash unchanged.
+            if (node_to_process->alias_is_double_quoted)
+                hash_state.update(true);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);
@@ -299,6 +313,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->setAliasIsDoubleQuoted(node_to_clone->isAliasDoubleQuoted());
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
@@ -365,8 +380,12 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
-        converted_node->setAlias(alias);
+    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+    {
+        ast_with_alias->setAlias(alias);
+        /// Preserve the alias quote style across query-tree -> AST conversion
+        ast_with_alias->alias_is_double_quoted = alias_is_double_quoted;
+    }
 
     converted_node->setParenthesized(parenthesized);
 

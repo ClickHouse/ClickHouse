@@ -13,10 +13,14 @@ ASTWithAlias::~ASTWithAlias() = default;
 ASTWithAlias::ASTWithAlias(const ASTWithAlias &) = default;
 ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 
-static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
+static void writeAlias(const String & name, bool name_is_double_quoted, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
 {
     ostr << " AS ";
-    settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    /// Preserve the original double-quoting so format/reparse keeps the alias case-sensitive in `standard` mode
+    if (name_is_double_quoted)
+        writeDoubleQuotedString(name, ostr);
+    else
+        settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
 }
 
 
@@ -26,7 +30,10 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
     if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
-        settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
+        if (alias_is_double_quoted)
+            writeDoubleQuotedString(alias, ostr);
+        else
+            settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
     }
     else if (frame.parenthesize_alias_inner_only && !alias.empty())
     {
@@ -41,7 +48,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         inner.need_parens = false;
         formatImplWithoutAlias(ostr, settings, state, inner);
         ostr.write(')');
-        writeAlias(alias, ostr, settings);
+        writeAlias(alias, alias_is_double_quoted, ostr, settings);
     }
     else
     {
@@ -59,7 +66,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         }
         formatImplWithoutAlias(ostr, settings, state, frame);
         if (!alias.empty())
-            writeAlias(alias, ostr, settings);
+            writeAlias(alias, alias_is_double_quoted, ostr, settings);
         if (wrap_around_alias)
             ostr.write(')');
     }
@@ -68,7 +75,14 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
     if (!alias.empty() && !ignore_aliases)
+    {
         hash_state.update(alias);
+        /// Quoted alias is semantic in `standard` mode (case-sensitive vs case-insensitive),
+        /// so `expr AS "x"` and `expr AS x` must hash distinctly. Only mix in when true so
+        /// non-quoted aliases keep their previous hash.
+        if (alias_is_double_quoted)
+            hash_state.update(true);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

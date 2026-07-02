@@ -424,6 +424,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
@@ -2673,6 +2674,56 @@ std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & 
         holder = iter->second;
     }
     return holder;
+}
+
+String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_name) const
+{
+    if (isGlobalContext())
+        return {};
+
+    /// Mirror `resolveStorageIDImpl`: walk current → query_context → session_context so a temporary
+    /// table registered higher up the chain (most common: session_context) is reachable from a
+    /// query_context that has no temp tables of its own. Within a single context, prefer an
+    /// exact-case match over case-insensitive matches. Crucially, **stop at the first context that
+    /// has any match**: a nearer fuzzy match must shadow a farther exact match, just like the
+    /// case-sensitive path does. Otherwise a session-context exact `temp` would override a nearer
+    /// query-context `Temp`.
+    auto scan_one = [&](const Context * ctx) -> String
+    {
+        SharedLockGuard lock(ctx->mutex);
+        if (auto exact_it = ctx->external_tables_mapping.find(table_name); exact_it != ctx->external_tables_mapping.end())
+            return exact_it->first;
+
+        String resolved;
+        for (const auto & [name, _] : ctx->external_tables_mapping)
+        {
+            if (Poco::icompare(name, table_name) != 0)
+                continue;
+            if (!resolved.empty() && resolved != name)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Temporary table '{}' is ambiguous: matches multiple temporary tables with different cases: '{}' and '{}'",
+                    table_name, resolved, name);
+            resolved = name;
+        }
+        return resolved;
+    };
+
+    if (auto match = scan_one(this); !match.empty())
+        return match;
+
+    if (auto query_context_ptr = query_context.lock(); query_context_ptr && query_context_ptr.get() != this)
+    {
+        if (auto match = scan_one(query_context_ptr.get()); !match.empty())
+            return match;
+    }
+
+    if (auto session_context_ptr = session_context.lock(); session_context_ptr && session_context_ptr.get() != this)
+    {
+        if (auto match = scan_one(session_context_ptr.get()); !match.empty())
+            return match;
+    }
+
+    return {};
 }
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)

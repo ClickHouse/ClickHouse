@@ -1,4 +1,5 @@
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithElement.h>
@@ -67,6 +68,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             auto with_element = make_intrusive<ASTWithElement>();
 
             tryGetIdentifierNameInto(cte_name, with_element->name);
+            if (const auto * cte_ident = cte_name->as<ASTIdentifier>())
+                with_element->name_is_double_quoted = cte_ident->getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote;
             with_element->aliases = std::move(aliases);
             with_element->is_materialized = has_materialized_keyword;
             with_element->subquery = std::move(subquery);

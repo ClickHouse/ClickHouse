@@ -9,6 +9,7 @@
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
 #include <Common/AsyncLoader.h>
+#include <Poco/String.h>
 
 
 namespace CurrentMetrics
@@ -21,13 +22,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
-
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
@@ -48,6 +49,71 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
         backQuoteIfNeed(name),
         backQuoteIfNeed(hint.first),
         backQuoteIfNeed(hint.second));
+}
+
+String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
+{
+    /// Remote / data-lake databases (PostgreSQL, MySQL, DataLake, ...) do not participate in
+    /// case-insensitive resolution at all. The outer lookup path already performs an exact-name
+    /// probe; an additional probe here would double the remote round trips for every reference
+    /// against such a database, and the catalog scan below is even more expensive.
+    /// Documented under the `case_insensitive_names` setting (`Scope:` section): a typo against a
+    /// remote table surfaces as `UNKNOWN_TABLE` — this is the deliberate trade-off.
+    if (isRemoteDatabase())
+        return {};
+
+    /// Prefer the narrow exact-name lookup first: `getTablesIterator` may enumerate the entire
+    /// catalog, which is more expensive than a single `tryGetTable` probe. The case-insensitive
+    /// scan only fires when the exact lookup misses.
+    /// This is what makes `information_schema.tables` work in standard mode — the database
+    /// contains both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables`
+    /// exactly and avoids the otherwise-ambiguous case-insensitive scan.
+    if (tryGetTable(name, context))
+        return name;
+
+    /// `information_schema` (and its uppercase twin) intentionally expose each predefined view in
+    /// two cases (`tables` and `TABLES`, etc.). Settings documentation promises those pairs are
+    /// canonical aliases of one logical view, so a mixed-case lookup like `TaBlEs` must resolve to
+    /// one of them rather than throw on the otherwise-ambiguous case-insensitive scan.
+    {
+        const String & db_name = getDatabaseName();
+        const bool is_info_schema_lower = db_name == "information_schema";
+        const bool is_info_schema_upper = db_name == "INFORMATION_SCHEMA";
+        if (is_info_schema_lower || is_info_schema_upper)
+        {
+            static constexpr std::string_view predefined_views[] = {
+                "schemata", "tables", "views", "columns",
+                "key_column_usage", "referential_constraints", "statistics",
+                "character_sets", "collations", "engines",
+            };
+            const String lowered_name = Poco::toLower(name);
+            for (const auto view : predefined_views)
+            {
+                if (lowered_name != view)
+                    continue;
+                /// Canonical view name: lowercase variant for the lowercase schema, uppercase for the uppercase one.
+                String canonical = is_info_schema_upper ? Poco::toUpper(name) : Poco::toLower(name);
+                if (tryGetTable(canonical, context))
+                    return canonical;
+            }
+        }
+    }
+
+    String found_name;
+    for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
+    {
+        const auto & table_name = table_it->name();
+        if (Poco::icompare(table_name, name) != 0)
+            continue;
+        if (!found_name.empty())
+        {
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
+                name, found_name, table_name);
+        }
+        found_name = table_name;
+    }
+    return found_name;
 }
 
 IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))

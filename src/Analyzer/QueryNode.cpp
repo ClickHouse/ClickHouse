@@ -80,6 +80,12 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 {
     auto & projection_nodes = getProjection().getNodes();
     size_t projection_columns_size = projection_columns.size();
+    /// The projection-override vectors are indexed by projection column position. They must be
+    /// compacted in lockstep with `projection_columns`, otherwise pruning shifts entries and
+    /// `toAST` emits the wrong alias spelling for `FROM (...) AS t(A, "B")`-style overrides.
+    const bool has_override_aliases = !projection_aliases_to_override.empty();
+    const bool has_override_quote_flags = !projection_aliases_to_override_is_double_quoted.empty();
+    const bool has_projection_quote_flags = !projection_columns_double_quoted.empty();
     size_t write_index = 0;
 
     for (size_t i = 0; i < projection_columns_size; ++i)
@@ -89,11 +95,29 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
         projection_nodes[write_index] = projection_nodes[i];
         projection_columns[write_index] = projection_columns[i];
+        if (has_override_aliases && i < projection_aliases_to_override.size())
+            projection_aliases_to_override[write_index] = std::move(projection_aliases_to_override[i]);
+        if (has_override_quote_flags && i < projection_aliases_to_override_is_double_quoted.size())
+            projection_aliases_to_override_is_double_quoted[write_index] = projection_aliases_to_override_is_double_quoted[i];
+        if (has_projection_quote_flags && i < projection_columns_double_quoted.size())
+            projection_columns_double_quoted[write_index] = projection_columns_double_quoted[i];
         ++write_index;
     }
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
+    if (has_override_aliases)
+        projection_aliases_to_override.erase(
+            projection_aliases_to_override.begin() + std::min(write_index, projection_aliases_to_override.size()),
+            projection_aliases_to_override.end());
+    if (has_override_quote_flags)
+        projection_aliases_to_override_is_double_quoted.erase(
+            projection_aliases_to_override_is_double_quoted.begin() + std::min(write_index, projection_aliases_to_override_is_double_quoted.size()),
+            projection_aliases_to_override_is_double_quoted.end());
+    if (has_projection_quote_flags)
+        projection_columns_double_quoted.erase(
+            projection_columns_double_quoted.begin() + std::min(write_index, projection_columns_double_quoted.size()),
+            projection_columns_double_quoted.end());
 
     if (hasInterpolate())
     {
@@ -349,8 +373,15 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
 {
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
+    /// Quoted vs unquoted CTE and projection-override aliases are semantic in `standard` mode;
+    /// include them in equality / hash so the query-tree cache never deduplicates two nodes
+    /// that resolve differently
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
+        (options.ignore_cte
+            || (is_cte == rhs_typed.is_cte
+                && cte_name == rhs_typed.cte_name
+                && cte_name_is_double_quoted == rhs_typed.cte_name_is_double_quoted
+                && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -362,6 +393,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        projection_aliases_to_override == rhs_typed.projection_aliases_to_override &&
+        projection_aliases_to_override_is_double_quoted == rhs_typed.projection_aliases_to_override_is_double_quoted &&
         settings_changes == rhs_typed.settings_changes;
 }
 
@@ -380,6 +413,9 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
+        /// Skip the quote flag when it's the default (false) so non-CTE queries keep the old hash
+        if (cte_name_is_double_quoted)
+            state.update(true);
     }
 
     state.update(projection_columns.size());
@@ -391,10 +427,21 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         projection_column.type->updateHash(state);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
+    /// Skip the size prefix when the override list is empty so we keep the previous hash for
+    /// the common case (no projection override) — only mix in size + per-element quote flags
+    /// when we actually have overrides.
+    if (!projection_aliases_to_override.empty())
     {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
+        state.update(projection_aliases_to_override.size());
+        for (size_t i = 0; i < projection_aliases_to_override.size(); ++i)
+        {
+            const auto & projection_alias = projection_aliases_to_override[i];
+            state.update(projection_alias.size());
+            state.update(projection_alias);
+            const bool quoted = i < projection_aliases_to_override_is_double_quoted.size()
+                && projection_aliases_to_override_is_double_quoted[i];
+            state.update(quoted);
+        }
     }
 
     state.update(is_materialized);
@@ -440,9 +487,12 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_order_by_all = is_order_by_all;
     result_query_node->is_limit_by_all = is_limit_by_all;
     result_query_node->cte_name = cte_name;
+    result_query_node->cte_name_is_double_quoted = cte_name_is_double_quoted;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
     result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->projection_aliases_to_override_is_double_quoted = projection_aliases_to_override_is_double_quoted;
+    result_query_node->projection_columns_double_quoted = projection_columns_double_quoted;
 
     return result_query_node;
 }
@@ -490,6 +540,11 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
             auto with_element_ast = make_intrusive<ASTWithElement>();
             with_element_ast->name = with_node_cte_name;
+            /// Preserve double-quoting of the CTE name so reparsing under standard mode keeps
+            /// the definition case-sensitive.
+            with_element_ast->name_is_double_quoted = with_query_node
+                ? with_query_node->isCTENameDoubleQuoted()
+                : with_union_node->isCTENameDoubleQuoted();
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
@@ -513,7 +568,14 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(projection_expression_list_ast.children[i].get());
 
             if (ast_with_alias)
+            {
                 ast_with_alias->setAlias(projection_columns[i].name);
+                /// Preserve the original double-quoting for projection-override aliases
+                /// (`AS t("MyCol")` / `WITH cte("MyCol")`) so reparsing under `standard` mode
+                /// keeps the column alias case-sensitive instead of folding it to unquoted.
+                if (i < projection_aliases_to_override_is_double_quoted.size())
+                    ast_with_alias->alias_is_double_quoted = projection_aliases_to_override_is_double_quoted[i];
+            }
         }
     }
 

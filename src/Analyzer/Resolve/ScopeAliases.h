@@ -3,6 +3,8 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Poco/String.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -26,6 +28,13 @@ struct ScopeAliases
 
     UnorderedMapWithMemoryTracking<std::string, DataTypePtr> alias_name_to_expression_type;
 
+    /// Lowercase alias -> list of original-case alias names, populated for unquoted aliases in standard mode.
+    /// Must stay in sync with the primary alias_name_to_*_node maps above — always route inserts through
+    /// `registerAlias(...)`, which updates both atomically and skips duplicate registrations
+    std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_alias_to_originals;
+    std::unordered_map<std::string, std::vector<std::string>> lowercase_lambda_alias_to_originals;
+    std::unordered_map<std::string, std::vector<std::string>> lowercase_table_alias_to_originals;
+
     std::unordered_map<std::string, QueryTreeNodePtr> & getAliasMap(IdentifierLookupContext lookup_context)
     {
         switch (lookup_context)
@@ -34,6 +43,18 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }
+        UNREACHABLE();
+    }
+
+    std::unordered_map<std::string, std::vector<std::string>> & getLowercaseAliasMap(IdentifierLookupContext lookup_context)
+    {
+        switch (lookup_context)
+        {
+            case IdentifierLookupContext::EXPRESSION: return lowercase_expression_alias_to_originals;
+            case IdentifierLookupContext::FUNCTION: return lowercase_lambda_alias_to_originals;
+            case IdentifierLookupContext::TABLE_EXPRESSION: return lowercase_table_alias_to_originals;
+        }
+        UNREACHABLE();
     }
 
     enum class FindOption
@@ -49,9 +70,10 @@ struct ScopeAliases
             case FindOption::FIRST_NAME: return identifier.front();
             case FindOption::FULL_NAME: return identifier.getFullName();
         }
+        UNREACHABLE();
     }
 
-    QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option)
+    QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option)
     {
         auto & alias_map = getAliasMap(lookup.lookup_context);
         const std::string * key = &getKey(lookup.identifier, find_option);
@@ -64,9 +86,73 @@ struct ScopeAliases
         return &it->second;
     }
 
-    const QueryTreeNodePtr * find(IdentifierLookup lookup, FindOption find_option) const
+    const QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option) const
     {
         return const_cast<ScopeAliases *>(this)->find(lookup, find_option);
+    }
+
+    const QueryTreeNodePtr * findCaseInsensitive(const IdentifierLookup & lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr) const
+    {
+        return const_cast<ScopeAliases *>(this)->findCaseInsensitive(lookup, find_option, ambiguous_aliases);
+    }
+
+    /// case-insensitive find, does the same as find but sets ambiguous_aliases if multiple matches exist
+    QueryTreeNodePtr * findCaseInsensitive(const IdentifierLookup & lookup, FindOption find_option, std::vector<std::string> * ambiguous_aliases = nullptr)
+    {
+        auto & alias_map = getAliasMap(lookup.lookup_context);
+        auto & lowercase_map = getLowercaseAliasMap(lookup.lookup_context);
+
+        const std::string & key = getKey(lookup.identifier, find_option);
+
+        /// Prefer an exact-case match. The built-in `information_schema.tables` view defines aliases
+        /// in both cases (`x AS table_catalog`, then `table_catalog AS TABLE_CATALOG`); a literal
+        /// lookup of either spelling must bind to its exact alias rather than throw on the case-only
+        /// collision in the lowercase index.
+        if (auto exact_it = alias_map.find(key); exact_it != alias_map.end())
+            return &exact_it->second;
+
+        String lower_key = Poco::toLower(key);
+
+        auto it = lowercase_map.find(lower_key);
+        if (it == lowercase_map.end())
+            return {};
+
+        const auto & original_names = it->second;
+        if (original_names.size() > 1)
+        {
+            if (ambiguous_aliases)
+                *ambiguous_aliases = original_names;
+            return {};
+        }
+
+        auto alias_it = alias_map.find(original_names.front());
+        if (alias_it == alias_map.end())
+            return {};
+
+        return &alias_it->second;
+    }
+
+    void registerAliasCaseInsensitive(const std::string & alias_name, IdentifierLookupContext lookup_context)
+    {
+        auto & lowercase_map = getLowercaseAliasMap(lookup_context);
+        String lower_name = Poco::toLower(alias_name);
+        lowercase_map[lower_name].push_back(alias_name);
+    }
+
+    /// Insert into the primary alias map and (when `register_for_case_insensitive_lookup` is true) the lowercase index.
+    /// Returns true if the primary insert added a new entry; the lowercase index is updated only on a successful
+    /// primary insert so duplicate aliases never cause spurious "ambiguous" findCaseInsensitive results.
+    bool registerAlias(
+        IdentifierLookupContext lookup_context,
+        const std::string & alias_name,
+        QueryTreeNodePtr node,
+        bool register_for_case_insensitive_lookup)
+    {
+        auto & alias_map = getAliasMap(lookup_context);
+        auto [_, inserted] = alias_map.emplace(alias_name, std::move(node));
+        if (inserted && register_for_case_insensitive_lookup)
+            registerAliasCaseInsensitive(alias_name, lookup_context);
+        return inserted;
     }
 };
 

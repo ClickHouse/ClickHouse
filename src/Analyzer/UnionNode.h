@@ -145,6 +145,9 @@ public:
         cte_name = std::move(cte_name_value);
     }
 
+    bool isCTENameDoubleQuoted() const noexcept { return cte_name_is_double_quoted; }
+    void setCTENameDoubleQuoted(bool value) { cte_name_is_double_quoted = value; }
+
     /// Get union mode
     SelectUnionMode getUnionMode() const
     {
@@ -229,6 +232,7 @@ private:
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
+    bool cte_name_is_double_quoted = false;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
 

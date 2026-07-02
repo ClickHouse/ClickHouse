@@ -2,6 +2,8 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -21,7 +23,11 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    /// Preserve original double-quoting so format/reparse keeps the CTE name case-sensitive in `standard` mode
+    if (name_is_double_quoted)
+        writeDoubleQuotedString(name, ostr);
+    else
+        settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
     if (aliases)
     {
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;
@@ -36,6 +42,28 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
+}
+
+void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// CTE name and its quote style are semantic in `standard` mode; otherwise two CTEs that
+    /// differ only by `"X"` vs `X` would hash the same and a QueryResultCache could share entries.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(is_materialized);
+    if (name_is_double_quoted)
+        hash_state.update(true);
+
+    /// `aliases` is stored as a side field (not in `children`), so `IAST::updateTreeHashImpl` never
+    /// sees it. `updateTreeHashImpl` on its own would only hash the wrapper's node id, not its
+    /// children — call `updateTreeHash` to traverse every alias identifier (including each
+    /// identifier's per-part double-quote bit, contributed by `ASTIdentifier::updateTreeHashImpl`).
+    /// Without this, `QueryResultCache::Key` would collide queries that differ only by CTE output
+    /// aliases (e.g. `WITH cte(MyCol) AS (...)` vs `WITH cte("MyCol") AS (...)`).
+    if (aliases)
+        aliases->updateTreeHash(hash_state, ignore_aliases);
+
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 }

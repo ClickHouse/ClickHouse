@@ -1,0 +1,79 @@
+--- JOIN USING with quoted key ---
+2
+2
+--- ARRAY JOIN quoted alias ---
+1
+2
+3
+10
+20
+--- Quoted lambda argument ---
+[2,3,4]
+[2,3,4]
+--- Recursive CTE with quoted name ---
+3
+3
+--- Alias self-reference case awareness ---
+0	0
+1	1
+--- Quoted alias distinct from unquoted (hash/cache) ---
+1	2
+--- information_schema alias is not ambiguous ---
+1
+1
+--- Tuple subcolumn case-insensitive fold ---
+val
+val
+--- Temporary table exact-case-first ---
+7
+--- EXCEPT/REPLACE transformers (standard mode) ---
+Smith	30
+Smith	30
+Alice	Smith	0
+Smith	30
+Alice	Smith	0
+--- JOIN USING case-insensitive duplicate / matcher qualifier quoting ---
+--- information_schema mixed-case view names canonicalize ---
+1
+1
+--- AST hash distinguishes quoted vs unquoted CTE output aliases / INTERPOLATE targets ---
+1
+1
+1
+1
+--- Lambda arguments: exact case wins over case-insensitive bucket ---
+[11,22]
+--- ARRAY JOIN: double-quoted alias does not bind to unquoted lookup ---
+1	1
+--- Folded subcolumn lookup returns canonical column name ---
+hello
+--- JOIN USING (Key, key) with distinct exact columns is valid ---
+1	a
+--- Materialized CTE double-quoted name stays case-sensitive in qualifier ---
+--- INTERPOLATE quoted target survives format/reparse ---
+1
+--- Non-materialized CTE double-quoted name stays case-sensitive ---
+--- Exact regular table beats folded temporary table ---
+42
+--- REPLACE folded target rewrites WHERE/HAVING ---
+0
+0
+--- EXCEPT/REPLACE: backtick-quoted target containing dots is one part ---
+2
+1
+1	0
+--- JOIN USING: distinct case-sibling column keeps its own type ---
+String
+--- Quoted subquery projection alias stays exact ---
+1
+--- INTERPOLATE folded target survives projection pruning ---
+1
+11
+--- RENAME DATABASE updates the folded lookup index ---
+7
+--- Quoted table alias survives join-tree resolution ---
+1
+1
+--- INTERPOLATE folded target over projection alias ---
+1	2
+2	7

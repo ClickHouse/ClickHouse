@@ -484,6 +484,10 @@ IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
     {{"path", ArrowFlightDescriptorType::Path},
      {"command", ArrowFlightDescriptorType::Command}})
 
+IMPLEMENT_SETTING_ENUM(CaseInsensitiveNames, ErrorCodes::BAD_ARGUMENTS,
+    {{"default", CaseInsensitiveNames::Default},
+     {"standard", CaseInsensitiveNames::Standard}})
+
 IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
     {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE},
      {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},

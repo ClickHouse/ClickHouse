@@ -302,7 +302,13 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     chassert(children.size() == 1);
 
     children[0]->format(ostr, settings, state, frame);
-    ostr << " AS " << backQuoteIfNeed(name);
+    ostr << " AS ";
+    /// Preserve `REPLACE (expr AS "Col")` quoting so the round-trip format/reparse keeps the target
+    /// case-sensitive in `standard` mode.
+    if (name_is_double_quoted)
+        writeDoubleQuotedString(name, ostr);
+    else
+        ostr << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
@@ -311,7 +317,10 @@ void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & o
 
     children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
-    writeProbablyBackQuotedString(name, ostr);
+    if (name_is_double_quoted)
+        writeDoubleQuotedString(name, ostr);
+    else
+        writeProbablyBackQuotedString(name, ostr);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
@@ -320,6 +329,9 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 
     hash_state.update(name.size());
     hash_state.update(name);
+    /// Mix in only when set so plain (unquoted) replacement targets keep the previous hash.
+    if (name_is_double_quoted)
+        hash_state.update(true);
     children[0]->updateTreeHashImpl(hash_state, ignore_aliases);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

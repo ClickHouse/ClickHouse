@@ -174,8 +174,13 @@ const char * toString(ExceptColumnTransformerType type);
 class ExceptColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
-    /// Initialize except column transformer with column names
-    explicit ExceptColumnTransformerNode(Names except_column_names_, bool is_strict_);
+    /// Initialize except column transformer with structured target identifiers. Each target keeps
+    /// its parsed parts (a single part may itself contain dots, e.g. `` `a.b` ``) plus a parallel
+    /// per-part double-quote flag — the flattened full name is derived, never re-split.
+    explicit ExceptColumnTransformerNode(
+        std::vector<std::vector<String>> target_parts_,
+        bool is_strict_,
+        std::vector<std::vector<bool>> target_parts_double_quoted_ = {});
 
     /// Initialize except column transformer with regexp column matcher
     explicit ExceptColumnTransformerNode(std::shared_ptr<re2::RE2> column_matcher_);
@@ -195,7 +200,13 @@ public:
     }
 
     /// Returns true if except transformer match column name, false otherwise.
-    bool isColumnMatching(const std::string & column_name) const;
+    /// `standard_mode` enables case-insensitive matching for transformer targets that were not
+    /// double-quoted, so `SELECT * EXCEPT (firstname)` drops table column `FirstName`. Each target's
+    /// per-identifier double-quote flag is tracked separately (see `target_is_double_quoted`).
+    /// When `matched_target` is non-null and the match was via the COLUMN_LIST path, the original
+    /// target name (as written by the user) is written through it — STRICT bookkeeping uses this so
+    /// the per-target consumption check still aligns even when the actual column name differs by case.
+    bool isColumnMatching(const std::string & column_name, bool standard_mode = false, std::string * matched_target = nullptr) const;
 
     /** Get except column names.
       * Valid only for column list except transformer.
@@ -223,7 +234,18 @@ protected:
 
 private:
     ExceptColumnTransformerType except_transformer_type;
+    /// Structured target identifiers, one inner vector of parsed parts per target. A single part
+    /// may contain dots (`` EXCEPT (`a.b`) `` is one part "a.b"), so the flattened
+    /// `except_column_names` below is derived from these parts and must never be re-split.
+    std::vector<std::vector<String>> target_parts;
+    /// Flattened full names derived from `target_parts` (parts joined with '.'). Kept for the
+    /// public `getExceptColumnNames` API, exact-match passes, and error messages.
     Names except_column_names;
+    /// Parallel to `target_parts`. Inner element `j` is true when part `j` of that target was
+    /// written `"Name"` rather than `Name` / `` `Name` ``. A compound target like `data."Name"`
+    /// carries `{false, true}` so the `data` part folds case-insensitively in `standard` mode
+    /// while the `Name` suffix stays exact. Empty when built without quote tracking.
+    std::vector<std::vector<bool>> target_parts_double_quoted;
     std::shared_ptr<re2::RE2> column_matcher;
     bool is_strict = false;
 
@@ -242,11 +264,15 @@ private:
 class ReplaceColumnTransformerNode final : public IColumnTransformerNode
 {
 public:
-    /// Replacement is column name and replace expression
+    /// Replacement is a structured target identifier and replace expression. `parts` holds the
+    /// parsed identifier parts (today the parser only produces a single part, which may itself
+    /// contain dots, e.g. `` REPLACE (x AS `a.b`) ``); `parts_double_quoted` is parallel to it.
+    /// Quoted parts stay case-sensitive in `standard` mode while unquoted parts fold.
     struct Replacement
     {
-        std::string column_name;
+        std::vector<String> parts;
         QueryTreeNodePtr expression_node;
+        std::vector<bool> parts_double_quoted;
     };
 
     /// Initialize replace column transformer with replacements
@@ -283,8 +309,12 @@ public:
 
     /** Returns replacement expression if replacement is registered for expression name, null otherwise.
       * Returned replacement expression must be cloned by caller.
+      * `standard_mode` enables case-insensitive matching against replacements whose target was not
+      * double-quoted. When `matched_target` is non-null, the original target name (as written by the
+      * user) is written through it — STRICT bookkeeping uses this so the per-target consumption check
+      * still aligns when the matched column differs from the target by case.
       */
-    QueryTreeNodePtr findReplacementExpression(const std::string & expression_name);
+    QueryTreeNodePtr findReplacementExpression(const std::string & expression_name, bool standard_mode = false, std::string * matched_target = nullptr);
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
@@ -303,7 +333,16 @@ private:
         return children[replacements_child_index]->as<ListNode &>();
     }
 
+    /// Structured target identifiers (parsed parts, never re-split from the flattened name; a
+    /// single part may contain dots).
+    std::vector<std::vector<String>> target_parts;
+    /// Flattened full names derived from `target_parts`. Kept for the `getReplacementsNames` API,
+    /// exact-match passes, and error messages.
     Names replacements_names;
+    /// Parallel to `target_parts`. Inner element `j` is true when target part `j` was
+    /// double-quoted; quoted parts stay exact in `standard` mode while unquoted parts fold.
+    /// Empty when the transformer was built without quote tracking.
+    std::vector<std::vector<bool>> target_parts_double_quoted;
     bool is_strict = false;
 
     static constexpr size_t replacements_child_index = 0;

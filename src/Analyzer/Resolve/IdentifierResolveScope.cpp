@@ -4,7 +4,10 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Context.h>
+#include <Poco/String.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -12,10 +15,12 @@ namespace Setting
 {
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
 }
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,6 +64,11 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         join_use_nulls = context->getSettingsRef()[Setting::join_use_nulls];
     else if (parent_scope)
         join_use_nulls = parent_scope->join_use_nulls;
+
+    if (context)
+        standard_mode = context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+    else if (parent_scope)
+        standard_mode = parent_scope->standard_mode;
 }
 
 [[maybe_unused]] const IdentifierResolveScope * IdentifierResolveScope::getNearestQueryScope() const
@@ -125,6 +135,58 @@ void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 void IdentifierResolveScope::popExpressionNode()
 {
     expressions_in_resolve_process_stack.pop();
+}
+
+void IdentifierResolveScope::addExpressionArgument(const std::string & name, QueryTreeNodePtr node, bool is_double_quoted)
+{
+    expression_argument_name_to_node.emplace(name, std::move(node));
+    /// Quoted lambda arguments / quoted recursive-CTE self-references stay case-sensitive in standard mode.
+    /// Keep them out of the lowercase index so an unquoted lookup cannot match them.
+    if (!is_double_quoted)
+        lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
+}
+
+IdentifierResolveScope::CTERegisterResult
+IdentifierResolveScope::registerCTE(const std::string & cte_name, QueryTreeNodePtr node, bool is_double_quoted)
+{
+    auto [_, inserted] = cte_name_to_query_node.emplace(cte_name, std::move(node));
+    if (!inserted)
+        return CTERegisterResult::DuplicateName;
+
+    /// Standard mode: unquoted CTE names collide case-insensitively; quoted names stay distinct
+    if (isStandardMode() && !is_double_quoted)
+    {
+        auto & originals = lowercase_cte_to_original_names[Poco::toLower(cte_name)];
+        if (!originals.empty())
+            return CTERegisterResult::CaseInsensitiveCollision;
+        originals.push_back(cte_name);
+    }
+    return CTERegisterResult::OK;
+}
+
+std::unordered_map<std::string, QueryTreeNodePtr>::iterator
+IdentifierResolveScope::findExpressionArgument(const std::string & name, bool case_insensitive)
+{
+    /// Exact-case wins, like columns/aliases/tables in `standard` mode. Without this,
+    /// `arrayMap((x, X) -> x + X, [1], [2])` would throw AMBIGUOUS_IDENTIFIER because
+    /// `x` and `X` share a lowercase bucket, even though both references are exact.
+    auto exact_it = expression_argument_name_to_node.find(name);
+    if (exact_it != expression_argument_name_to_node.end() || !case_insensitive)
+        return exact_it;
+
+    auto lowercase_it = lowercase_expression_arg_to_names.find(Poco::toLower(name));
+    if (lowercase_it == lowercase_expression_arg_to_names.end())
+        return expression_argument_name_to_node.end();
+
+    const auto & original_names = lowercase_it->second;
+    if (original_names.size() > 1)
+    {
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Identifier '{}' is ambiguous: matches multiple arguments with different cases: '{}' and '{}'. In scope {}",
+            name, original_names[0], original_names[1], scope_node->formatASTForErrorMessage());
+    }
+
+    return expression_argument_name_to_node.find(original_names.front());
 }
 
 namespace
@@ -209,7 +271,14 @@ bool IdentifierResolveScope::canCacheIdentifier(
     /// Match on the first identifier component, mirroring alias binding in
     /// tryResolveIdentifierFromAliases: a compound lookup like `value.a` binds to an
     /// in-flight alias named `value`, so it must be excluded from the cache as well.
-    if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
+    const auto & first_part = lookup.identifier.front();
+    if (expressions_in_resolve_process_stack.hasExpressionWithAlias(first_part))
+        return false;
+    /// Standard-mode unquoted lookup may bind transitively to a differently-cased in-flight alias.
+    /// Excluding the cache here keeps later lookups of the same identifier from receiving a stale
+    /// result that pre-dates the in-flight alias's resolution.
+    if (isStandardMode() && !lookup.isPartDoubleQuoted(0)
+        && expressions_in_resolve_process_stack.hasExpressionWithAliasCaseInsensitive(first_part))
         return false;
 
     return true;

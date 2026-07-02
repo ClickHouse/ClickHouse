@@ -97,6 +97,8 @@ private:
     {
         std::string_view cte_name;
         bool is_materialized = false;
+        /// Whether the CTE definition name was written as `"X"` rather than X
+        bool name_is_double_quoted = false;
     };
 
     QueryTreeNodePtr buildSelectOrUnionExpression(
@@ -201,6 +203,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectWithUnionExpression(
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_with_union_query);
 
@@ -244,6 +247,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectIntersectExceptQuery(
     union_node->setIsSubquery(is_subquery);
     union_node->setIsCTE(!cte_data.cte_name.empty());
     union_node->setCTEName(std::string(cte_data.cte_name));
+    union_node->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     union_node->setIsMaterialized(cte_data.is_materialized);
     union_node->setOriginalAST(select_intersect_except_query);
 
@@ -318,6 +322,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsSubquery(is_subquery);
     current_query_tree->setIsCTE(!cte_data.cte_name.empty());
     current_query_tree->setCTEName(std::string(cte_data.cte_name));
+    current_query_tree->setCTENameDoubleQuoted(cte_data.name_is_double_quoted);
     current_query_tree->setIsMaterialized(cte_data.is_materialized);
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
@@ -370,18 +375,24 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     // Apply the override aliases to the projection nodes
     if (aliases)
     {
-        // Collect the aliases into a vector of strings
+        // Collect the aliases into a vector of strings; also remember which were double-quoted
+        // so quoted CTE column aliases like `WITH cte("MyCol") AS (...)` stay case-sensitive
         Names collected_aliases;
+        std::vector<bool> collected_aliases_is_double_quoted;
         auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
         collected_aliases.reserve(override_aliases_children.size());
+        collected_aliases_is_double_quoted.reserve(override_aliases_children.size());
 
         for (const auto & child : override_aliases_children)
         {
             const auto & alias_ast = child->as<ASTIdentifier &>();
             collected_aliases.push_back(alias_ast.name());
+            collected_aliases_is_double_quoted.push_back(
+                alias_ast.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
         }
 
         current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+        current_query_tree->setProjectionAliasesToOverrideIsDoubleQuoted(std::move(collected_aliases_is_double_quoted));
     }
 
     auto prewhere_expression = select_query_typed.prewhere();
@@ -614,7 +625,21 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        auto expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        /// Preserve `INTERPOLATE ("Col" AS ...)` case-sensitivity: the double-quoted target is one
+        /// parsed part (its text may contain dots, e.g. `"a.b"`), so it must NOT go through the
+        /// full-name Identifier constructor, which would re-split it on dots and misalign the
+        /// single-element quote vector. Unquoted targets keep the historical splitting behavior.
+        std::shared_ptr<IdentifierNode> expression_to_interpolate;
+        if (interpolate_element.column_is_double_quoted)
+        {
+            expression_to_interpolate = std::make_shared<IdentifierNode>(
+                Identifier(std::vector<std::string>{interpolate_element.column}));
+            expression_to_interpolate->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
+        }
+        else
+        {
+            expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
+        }
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 
@@ -667,12 +692,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
         auto identifier = Identifier(ast_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(std::move(identifier), ast_identifier->getQuoteStyles());
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
         auto identifier = Identifier(table_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(std::move(identifier), table_identifier->getQuoteStyles());
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
@@ -683,7 +708,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     {
         auto & qualified_identifier = qualified_asterisk->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_asterisk->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        result = std::move(matcher);
     }
     else if (const auto * ast_literal = expression->as<ASTLiteral>())
     {
@@ -702,6 +729,9 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             auto lambda_arguments_nodes = std::make_shared<ListNode>();
             Names lambda_arguments;
             NameSet lambda_arguments_set;
+            /// Track per-argument quote style so a double-quoted lambda argument stays case-sensitive
+            /// in `standard` mode after the AST -> query tree translation.
+            std::vector<IdentifierQuoteStyle> lambda_argument_quote_styles;
 
             if (lambda_arguments_tuple.arguments)
             {
@@ -730,6 +760,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
                             argument_name);
 
                     lambda_arguments.push_back(argument_name);
+                    lambda_argument_quote_styles.push_back(lambda_argument_identifier->getQuoteStyleAt(0));
                 }
             }
 
@@ -737,6 +768,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
             auto lambda_expression_node = buildExpression(lambda_expression, context);
 
             result = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(lambda_expression_node), function->isOperator());
+
+            /// Propagate per-argument quote styles onto the freshly-built IdentifierNodes inside the
+            /// LambdaNode's argument list, so the resolver can later see which arguments were quoted.
+            auto & lambda_arg_list_nodes = result->as<LambdaNode &>().getArguments().getNodes();
+            for (size_t i = 0; i < lambda_argument_quote_styles.size() && i < lambda_arg_list_nodes.size(); ++i)
+            {
+                if (lambda_argument_quote_styles[i] == IdentifierQuoteStyle::None)
+                    continue;
+                if (auto * id_node = lambda_arg_list_nodes[i]->as<IdentifierNode>())
+                    id_node->setQuoteStyles({lambda_argument_quote_styles[i]});
+            }
         }
         else
         {
@@ -798,6 +840,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
         CommonTableExpressionData cte_data = {
             .cte_name = with_element->name,
             .is_materialized = with_element->is_materialized,
+            .name_is_double_quoted = with_element->name_is_double_quoted,
         };
         auto query_node = buildSelectWithUnionExpression(with_element_subquery, true /*is_subquery*/, cte_data /*cte_data*/, with_element->aliases /*aliases*/, context);
 
@@ -811,38 +854,51 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     else if (const auto * columns_list_matcher = expression->as<ASTColumnsListMatcher>())
     {
         Identifiers column_list_identifiers;
+        std::vector<std::vector<IdentifierQuoteStyle>> column_list_identifiers_quote_styles;
         column_list_identifiers.reserve(columns_list_matcher->column_list->children.size());
+        column_list_identifiers_quote_styles.reserve(columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers_quote_styles.push_back(column_list_identifier.getQuoteStyles());
         }
 
         auto column_transformers = buildColumnTransformers(columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(std::move(column_list_identifiers), std::move(column_transformers));
+        matcher->setColumnsIdentifierQuoteStyles(std::move(column_list_identifiers_quote_styles));
+        result = std::move(matcher);
     }
     else if (const auto * qualified_columns_regexp_matcher = expression->as<ASTQualifiedColumnsRegexpMatcher>())
     {
         auto & qualified_identifier = qualified_columns_regexp_matcher->qualifier->as<ASTIdentifier &>();
         auto column_transformers = buildColumnTransformers(qualified_columns_regexp_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), qualified_columns_regexp_matcher->getPattern(), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        result = std::move(matcher);
     }
     else if (const auto * qualified_columns_list_matcher = expression->as<ASTQualifiedColumnsListMatcher>())
     {
         auto & qualified_identifier = qualified_columns_list_matcher->qualifier->as<ASTIdentifier &>();
 
         Identifiers column_list_identifiers;
+        std::vector<std::vector<IdentifierQuoteStyle>> column_list_identifiers_quote_styles;
         column_list_identifiers.reserve(qualified_columns_list_matcher->column_list->children.size());
+        column_list_identifiers_quote_styles.reserve(qualified_columns_list_matcher->column_list->children.size());
 
         for (auto & column_list_child : qualified_columns_list_matcher->column_list->children)
         {
             auto & column_list_identifier = column_list_child->as<ASTIdentifier &>();
             column_list_identifiers.emplace_back(Identifier{column_list_identifier.name_parts});
+            column_list_identifiers_quote_styles.push_back(column_list_identifier.getQuoteStyles());
         }
 
         auto column_transformers = buildColumnTransformers(qualified_columns_list_matcher->transformers, context);
-        result = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        auto matcher = std::make_shared<MatcherNode>(Identifier(qualified_identifier.name_parts), std::move(column_list_identifiers), std::move(column_transformers));
+        matcher->setQualifiedIdentifierQuoteStyles(qualified_identifier.getQuoteStyles());
+        matcher->setColumnsIdentifierQuoteStyles(std::move(column_list_identifiers_quote_styles));
+        result = std::move(matcher);
     }
     else if (const auto * query_parameter = expression->as<ASTQueryParameter>())
     {
@@ -858,6 +914,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     }
 
     result->setAlias(expression->tryGetAlias());
+    if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(expression.get()))
+        result->setAliasIsDoubleQuoted(ast_with_alias->alias_is_double_quoted);
     result->setOriginalAST(expression);
     result->setParenthesized(expression->isParenthesized());
 
@@ -992,14 +1050,17 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
-                QueryTreeNodePtr table_identifier_node;
+                std::shared_ptr<IdentifierNode> table_identifier_node;
 
                 if (table_expression_modifiers)
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
                 else
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
 
+                table_identifier_node->setQuoteStyles(table_identifier_typed.getQuoteStyles());
+
                 table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
+                table_identifier_node->setAliasIsDoubleQuoted(table_identifier_typed.alias_is_double_quoted);
                 table_identifier_node->setOriginalAST(table_element.table_expression);
 
                 table_expressions.push_back(std::move(table_identifier_node));
@@ -1011,6 +1072,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
 
                 auto node = buildSelectWithUnionExpression(select_with_union_query, true /*is_subquery*/, {} /*cte_name*/, select_query.aliases(), context);
                 node->setAlias(subquery_expression.tryGetAlias());
+                node->setAliasIsDoubleQuoted(subquery_expression.alias_is_double_quoted);
                 node->setOriginalAST(select_with_union_query);
 
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
@@ -1018,21 +1080,32 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 {
                     const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
                     Names column_alias_names;
+                    std::vector<bool> column_alias_is_double_quoted;
                     column_alias_names.reserve(column_aliases_list.children.size());
+                    column_alias_is_double_quoted.reserve(column_aliases_list.children.size());
 
                     std::unordered_set<std::string> seen_aliases;
                     for (const auto & column_alias : column_aliases_list.children)
                     {
-                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        const auto & alias_identifier = column_alias->as<ASTIdentifier &>();
+                        const auto & alias_name = alias_identifier.name();
                         if (!seen_aliases.insert(alias_name).second)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Duplicate column alias '{}' in table expression column list", alias_name);
                         column_alias_names.push_back(alias_name);
+                        column_alias_is_double_quoted.push_back(
+                            alias_identifier.getQuoteStyleAt(0) == IdentifierQuoteStyle::DoubleQuote);
                     }
+
+                    auto apply_overrides = [&](QueryNode & qn)
+                    {
+                        qn.setProjectionAliasesToOverride(std::move(column_alias_names));
+                        qn.setProjectionAliasesToOverrideIsDoubleQuoted(std::move(column_alias_is_double_quoted));
+                    };
 
                     if (auto * query_node = node->as<QueryNode>())
                     {
-                        query_node->setProjectionAliasesToOverride(std::move(column_alias_names));
+                        apply_overrides(*query_node);
                     }
                     else if (auto * union_node = node->as<UnionNode>())
                     {
@@ -1044,7 +1117,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                         {
                             if (auto * inner_query = current->as<QueryNode>())
                             {
-                                inner_query->setProjectionAliasesToOverride(std::move(column_alias_names));
+                                apply_overrides(*inner_query);
                                 break;
                             }
                             else if (auto * inner_union = current->as<UnionNode>())
@@ -1077,6 +1150,8 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 if (table_expression_modifiers)
                     node->setTableExpressionModifiers(*table_expression_modifiers);
                 node->setAlias(table_expression.table_function->tryGetAlias());
+                if (const auto * ast_with_alias = dynamic_cast<const ASTWithAlias *>(table_expression.table_function.get()))
+                    node->setAliasIsDoubleQuoted(ast_with_alias->alias_is_double_quoted);
                 node->setOriginalAST(table_expression.table_function);
 
                 table_expressions.push_back(std::move(node));
@@ -1250,13 +1325,26 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             }
             else
             {
-                Names except_column_names;
-                except_column_names.reserve(except_transformer->children.size());
+                std::vector<std::vector<String>> target_parts;
+                std::vector<std::vector<bool>> target_parts_double_quoted;
+                target_parts.reserve(except_transformer->children.size());
+                target_parts_double_quoted.reserve(except_transformer->children.size());
 
                 for (auto & except_transformer_child : except_transformer->children)
-                    except_column_names.push_back(except_transformer_child->as<ASTIdentifier &>().full_name);
+                {
+                    auto & ident = except_transformer_child->as<ASTIdentifier &>();
+                    /// Pass the PARSED parts (a single part may itself contain dots, e.g. `` `a.b` ``)
+                    /// with a parallel per-part quote vector — the node never re-splits flattened names.
+                    std::vector<bool> per_part;
+                    per_part.reserve(ident.name_parts.size());
+                    for (size_t p = 0; p < ident.name_parts.size(); ++p)
+                        per_part.push_back(ident.getQuoteStyleAt(p) == IdentifierQuoteStyle::DoubleQuote);
+                    target_parts.push_back(ident.name_parts);
+                    target_parts_double_quoted.push_back(std::move(per_part));
+                }
 
-                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(std::move(except_column_names), except_transformer->is_strict));
+                column_transformers.emplace_back(std::make_shared<ExceptColumnTransformerNode>(
+                    std::move(target_parts), except_transformer->is_strict, std::move(target_parts_double_quoted)));
             }
         }
         else if (auto * replace_transformer = child->as<ASTColumnsReplaceTransformer>())
@@ -1267,7 +1355,14 @@ ColumnTransformersNodes QueryTreeBuilder::buildColumnTransformers(const ASTPtr &
             for (const auto & replace_transformer_child : replace_transformer->children)
             {
                 auto & replacement = replace_transformer_child->as<ASTColumnsReplaceTransformer::Replacement &>();
-                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{replacement.name, buildExpression(replacement.children[0], context)});
+                /// `ASTColumnsReplaceTransformer::Replacement` stores the target as a raw `name`
+                /// string with a single `name_is_double_quoted` flag, because the parser only
+                /// accepts a single-part identifier. That name becomes ONE structured part —
+                /// never split on dots, which may legitimately occur inside a backtick-quoted name.
+                replacements.emplace_back(ReplaceColumnTransformerNode::Replacement{
+                    {replacement.name},
+                    buildExpression(replacement.children[0], context),
+                    std::vector<bool>{replacement.name_is_double_quoted}});
             }
 
             column_transformers.emplace_back(std::make_shared<ReplaceColumnTransformerNode>(replacements, replace_transformer->is_strict));

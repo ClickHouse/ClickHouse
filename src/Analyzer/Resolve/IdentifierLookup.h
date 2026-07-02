@@ -5,6 +5,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ inline const char * toString(IdentifierLookupContext identifier_lookup_context)
         case IdentifierLookupContext::FUNCTION: return "FUNCTION";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "TABLE_EXPRESSION";
     }
+    UNREACHABLE();
 }
 
 inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context)
@@ -35,6 +37,7 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
         case IdentifierLookupContext::FUNCTION: return "function";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
+    UNREACHABLE();
 }
 
 /** Structure that represent identifier lookup during query analysis.
@@ -45,6 +48,11 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    /// Per-part double-quote tracking for compound identifiers like "db".table
+    std::vector<bool> is_part_double_quoted = {};
+
+    IdentifierLookup(Identifier identifier_, IdentifierLookupContext lookup_context_)
+        : identifier(std::move(identifier_)), lookup_context(lookup_context_) {}
 
     bool isExpressionLookup() const
     {
@@ -61,6 +69,38 @@ struct IdentifierLookup
         return lookup_context == IdentifierLookupContext::TABLE_EXPRESSION;
     }
 
+    bool isPartDoubleQuoted(size_t index) const
+    {
+        if (index < is_part_double_quoted.size())
+            return is_part_double_quoted[index];
+        return false;
+    }
+
+    /// used for expression lookups (table.column), the last part is the column name that
+    /// looked up in the column map, so its quote style determines case sensitivity.
+    /// Index through `isPartDoubleQuoted` so a quote vector that's shorter than the identifier
+    /// (or empty) cannot be silently misaligned with `back()`.
+    bool isLastPartDoubleQuoted() const
+    {
+        const size_t parts = identifier.getPartsSize();
+        if (parts == 0)
+            return false;
+        chassert(is_part_double_quoted.empty() || is_part_double_quoted.size() == parts);
+        return isPartDoubleQuoted(parts - 1);
+    }
+
+    /// In SQL-standard mode, a part participates in case-insensitive matching only if it was not double-quoted.
+    /// These helpers consolidate the repeated `standard_mode && !isPartDoubleQuoted(...)` checks.
+    bool isPartCaseInsensitive(size_t index, bool standard_mode) const
+    {
+        return standard_mode && !isPartDoubleQuoted(index);
+    }
+
+    bool isLastPartCaseInsensitive(bool standard_mode) const
+    {
+        return standard_mode && !isLastPartDoubleQuoted();
+    }
+
     String dump() const
     {
         return identifier.getFullName() + ' ' + toString(lookup_context);
@@ -69,8 +109,11 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
+    /// Include per-part quote info so the identifier-resolve cache cannot serve an unquoted
+    /// case-insensitive hit to a later double-quoted (case-sensitive) lookup of the same text.
     return lhs.identifier.getFullName() == rhs.identifier.getFullName()
-        && lhs.lookup_context == rhs.lookup_context;
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.is_part_double_quoted == rhs.is_part_double_quoted;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -82,8 +125,11 @@ struct IdentifierLookupHash
 {
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
-        return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
+        size_t h = std::hash<std::string>()(identifier_lookup.identifier.getFullName())
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        for (bool quoted : identifier_lookup.is_part_double_quoted)
+            h = (h * 31) ^ static_cast<size_t>(quoted);
+        return h;
     }
 };
 
@@ -113,6 +159,7 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
         case IdentifierResolvePlace::NILADIC_FUNCTION: return "NILADIC_FUNCTION";
     }
+    UNREACHABLE();
 }
 
 struct IdentifierResolveScope;

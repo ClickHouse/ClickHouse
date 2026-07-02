@@ -232,6 +232,8 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
         && is_materialized == rhs_typed.is_materialized
         && is_recursive_cte == rhs_typed.is_recursive_cte
         && cte_name == rhs_typed.cte_name
+        /// Quoted vs unquoted CTE name is semantic in `standard` mode
+        && cte_name_is_double_quoted == rhs_typed.cte_name_is_double_quoted
         && union_mode == rhs_typed.union_mode;
 }
 
@@ -251,6 +253,9 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     state.update(cte_name.size());
     state.update(cte_name);
+    /// Skip the quote flag when it's the default (false) so non-CTE unions keep the old hash
+    if (cte_name_is_double_quoted)
+        state.update(true);
 
     state.update(static_cast<size_t>(union_mode));
 }
@@ -265,6 +270,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
     result_union_node->is_recursive_cte = is_recursive_cte;
     result_union_node->recursive_cte_table = recursive_cte_table;
     result_union_node->cte_name = cte_name;
+    result_union_node->cte_name_is_double_quoted = cte_name_is_double_quoted;
 
     return result_union_node;
 }
@@ -287,6 +293,9 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
         auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
+        /// Preserve double-quoting of the recursive CTE name so reparsing under standard mode
+        /// keeps the definition case-sensitive.
+        with_element_ast->name_is_double_quoted = cte_name_is_double_quoted;
         with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 
