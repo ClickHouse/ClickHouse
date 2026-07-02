@@ -31,7 +31,8 @@ Pipe createMergeTreeSequentialSource(
     std::shared_ptr<std::atomic<size_t>> filtered_rows_count,
     bool apply_deleted_mask,
     bool read_with_direct_io,
-    bool prefetch);
+    bool prefetch,
+    ContextPtr context);
 
 class QueryPlan;
 

@@ -15,10 +15,12 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -70,6 +72,13 @@ bool hasMaterializedTextIndex(
     return false;
 }
 
+NameSet collectRequiredSourceColumns(const ASTPtr & expression)
+{
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(expression);
+    return columns_context.requiredColumns();
+}
+
 /// Columns absent in part may depend on other absent columns so we are
 /// searching all required physical columns recursively. Return true if found at
 /// least one existing (physical) column in part.
@@ -79,6 +88,7 @@ bool injectRequiredColumnsRecursively(
     const AlterConversionsPtr & alter_conversions,
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
+    ContextPtr context,
     Names & columns,
     NameSet & required_columns,
     NameSet & injected_columns)
@@ -135,21 +145,101 @@ bool injectRequiredColumnsRecursively(
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
     const auto column_default = storage_snapshot->getDefault(column_name);
-    ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
-    if (!default_expression)
+    if (!column_default || !column_default->expression)
         return false;
 
-    /// collect identifiers required for evaluation
-    IdentifierNameSet identifiers;
-    default_expression->collectIdentifierNames(identifiers);
+    /// Collect identifiers required for evaluation.
+    auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
+    validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
+    auto identifiers = collectRequiredSourceColumns(default_expression);
 
     bool result = false;
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            options, context, columns, required_columns, injected_columns);
 
     return result;
+}
+
+bool needsDefaultForNullableToNonNullableConversion(
+    const String & column_name,
+    const StorageSnapshotPtr & storage_snapshot,
+    const AlterConversionsPtr & alter_conversions,
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const GetColumnsOptions & options)
+{
+    auto column_in_storage = storage_snapshot->tryGetColumn(options, column_name);
+    if (!column_in_storage || column_in_storage->isSubcolumn())
+        return false;
+
+    auto column_name_in_part = column_in_storage->getNameInStorage();
+    if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+        column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+
+    auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+    if (!column_in_part)
+        return false;
+
+    bool share_nested = true;
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    if (alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested))
+        return false;
+
+    if (!isNullableOrLowCardinalityNullable(column_in_part->type) || isNullableOrLowCardinalityNullable(column_in_storage->type))
+        return false;
+
+    const auto column_default = storage_snapshot->getDefault(column_name);
+    return column_default && column_default->expression;
+}
+
+void injectRequiredColumnsForNullableDefaultConversions(
+    const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
+    const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr context,
+    bool with_subcolumns,
+    Names & columns)
+{
+    NameSet required_columns{std::begin(columns), std::end(columns)};
+    NameSet injected_columns;
+
+    AlterConversionsPtr alter_conversions;
+    if (!data_part_info_for_reader.isProjectionPart())
+        alter_conversions = data_part_info_for_reader.getAlterConversions();
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
+        .withSubcolumns(with_subcolumns);
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const String column_name = columns[i];
+        if (!needsDefaultForNullableToNonNullableConversion(
+                column_name, storage_snapshot, alter_conversions, data_part_info_for_reader, options))
+            continue;
+
+        const auto column_default = storage_snapshot->getDefault(column_name);
+        auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
+        validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
+
+        auto identifiers = collectRequiredSourceColumns(default_expression);
+
+        for (const auto & identifier : identifiers)
+        {
+            injectRequiredColumnsRecursively(
+                identifier,
+                storage_snapshot,
+                alter_conversions,
+                data_part_info_for_reader,
+                options,
+                context,
+                columns,
+                required_columns,
+                injected_columns);
+        }
+    }
 }
 
 }
@@ -162,6 +252,7 @@ bool injectRequiredColumnsRecursively(
 NameSet injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
+    ContextPtr context,
     bool with_subcolumns,
     Names & columns)
 {
@@ -192,6 +283,7 @@ NameSet injectRequiredColumns(
             alter_conversions,
             data_part_info_for_reader,
             options,
+            context,
             columns,
             required_columns,
             injected_columns);
@@ -461,6 +553,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
+    ContextPtr context,
     bool with_subcolumns)
 {
     MergeTreeReadTaskColumns result;
@@ -468,7 +561,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     Names column_to_read_after_prewhere = required_columns;
 
     /// Inject columns required for defaults evaluation
-    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumns(data_part_info_for_reader, storage_snapshot, context, with_subcolumns, column_to_read_after_prewhere);
+    injectRequiredColumnsForNullableDefaultConversions(
+        data_part_info_for_reader, storage_snapshot, context, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
@@ -505,7 +600,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         {
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
-                with_subcolumns, step_column_names);
+                context, with_subcolumns, step_column_names);
+            injectRequiredColumnsForNullableDefaultConversions(
+                data_part_info_for_reader, storage_snapshot, context, with_subcolumns, step_column_names);
         }
 
         /// More columns could have been added, filter them as well by the list of columns from previous steps.
@@ -560,7 +657,8 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
-    const PrewhereExprSteps & mutation_steps)
+    const PrewhereExprSteps & mutation_steps,
+    ContextPtr context)
 {
     return getReadTaskColumns(
         data_part_info_for_reader,
@@ -572,6 +670,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
         /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
+        context,
         storage_snapshot->storage.supportsSubcolumns());
 }
 

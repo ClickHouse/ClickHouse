@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -35,6 +36,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
@@ -117,6 +119,66 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
+}
+
+ASTPtr cloneAndValidateExpandedDefaultExpression(
+    const String & column_name,
+    const ColumnDefault & column_default,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    auto expression = cloneAndExpandColumnDefaultExpressionWithAliases(column_default, columns, context);
+    validateNoCyclicAliasesAfterExpansion(column_name, expression, columns, context);
+    return expression;
+}
+
+ASTPtr cloneAndValidateExpandedDefaultExpression(
+    const ColumnDescription & column,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    return cloneAndValidateExpandedDefaultExpression(column.name, column.default_desc, columns, context);
+}
+
+void addColumnsRequiredForDefaultConversions(
+    Names & required_columns,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeData::DataPartPtr & part,
+    const ContextPtr & context)
+{
+    if (!part)
+        return;
+
+    const auto & columns_desc = metadata_snapshot->getColumns();
+    auto source_columns = columns_desc.getAllPhysical();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    auto initial_required_columns = required_columns;
+
+    for (const auto & column_name : initial_required_columns)
+    {
+        auto metadata_column = columns_desc.tryGetPhysical(column_name);
+        if (!metadata_column)
+            continue;
+
+        auto part_column = part->tryGetColumn(column_name);
+        if (!part_column)
+            continue;
+
+        if (!isNullableOrLowCardinalityNullable(part_column->type) || isNullableOrLowCardinalityNullable(metadata_column->type))
+            continue;
+
+        auto default_desc = columns_desc.getDefault(column_name);
+        if (!default_desc)
+            continue;
+
+        auto default_expression = cloneAndValidateExpandedDefaultExpression(column_name, *default_desc, columns_desc, context);
+        auto syntax_result = TreeRewriter(context).analyze(default_expression, source_columns);
+        for (const auto & dependency : syntax_result->requiredSourceColumns())
+        {
+            if (required_columns_set.emplace(dependency).second)
+                required_columns.push_back(dependency);
+        }
+    }
 }
 
 }
@@ -728,7 +790,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 && available_columns_set.contains(column.name)
                 && column.default_desc.expression)
             {
-                auto query = column.default_desc.expression->clone();
+                auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
                 auto required_columns = syntax_result->requiredSourceColumns();
@@ -954,7 +1016,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
                         ASTPtr materialized_column = makeASTFunction("_CAST",
-                            column.default_desc.expression->clone(),
+                            cloneAndValidateExpandedDefaultExpression(column, columns_desc, context),
                             type_literal);
 
                         /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
@@ -994,7 +1056,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
             auto materialized_column = makeASTFunction(
-                "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+                "_CAST", cloneAndValidateExpandedDefaultExpression(column, columns_desc, context), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -1261,7 +1323,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     || !column.default_desc.expression)
                     continue;
 
-                auto query = column.default_desc.expression->clone();
+                auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const auto & dep : syntax_result->requiredSourceColumns())
@@ -1403,7 +1465,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
                 ASTPtr materialized_column = makeASTFunction("_CAST",
-                    column.default_desc.expression->clone(),
+                    cloneAndValidateExpandedDefaultExpression(column, columns_desc, context),
                     type_literal);
 
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
@@ -2085,6 +2147,7 @@ void MutationsInterpreter::Source::read(
     }
 
     auto storage_snapshot = getStorageSnapshot(snapshot_, context_, mutation_settings.can_execute);
+    addColumnsRequiredForDefaultConversions(required_columns, snapshot_, part, context_);
 
     if (!mutation_settings.can_execute)
     {

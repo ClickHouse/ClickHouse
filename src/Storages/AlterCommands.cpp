@@ -141,6 +141,41 @@ void applyNullModifier(DataTypePtr & data_type, const std::optional<bool> & null
         data_type = makeNullable(data_type);
 }
 
+ASTPtr makeStoredDefaultExpressionList(const ColumnsDescription & columns)
+{
+    auto default_expr_list = make_intrusive<ASTExpressionList>();
+
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        const auto tmp_column_name = column.name + "_tmp_alter" + toString(randomSeed());
+        default_expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), column.type->getName()), column.name));
+        default_expr_list->children.emplace_back(setAlias(column.default_desc.expression->clone(), tmp_column_name));
+    }
+
+    return default_expr_list;
+}
+
+void renameColumnInStoredExpressions(ColumnsDescription & columns, const String & from, const String & to)
+{
+    RenameColumnData rename_data{from, to};
+    RenameColumnVisitor rename_visitor(rename_data);
+
+    for (const auto & column : columns)
+    {
+        columns.modify(column.name, [&](ColumnDescription & column_to_modify)
+        {
+            if (column_to_modify.default_desc.expression)
+                rename_visitor.visit(column_to_modify.default_desc.expression);
+            if (column_to_modify.ttl)
+                rename_visitor.visit(column_to_modify.ttl);
+        });
+    }
+}
+
 }
 
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
@@ -1476,7 +1511,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
             Block old_projection_block = projection.sample_block;
-            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
+            performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns());
             new_projections.add(std::move(new_projection));
         }
         catch (const Exception & exception)
@@ -1680,6 +1715,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    bool revalidate_stored_defaults = false;
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1733,7 +1769,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     settings[Setting::allow_experimental_codecs]);
             }
 
-            all_columns.add(ColumnDescription(column_name, command.data_type));
+            ColumnDescription column(column_name, command.data_type);
+            if (command.default_expression)
+            {
+                column.default_desc.kind = command.default_kind;
+                column.default_desc.expression = command.default_expression->clone();
+            }
+
+            all_columns.add(std::move(column), command.after_column, command.first);
+            revalidate_stored_defaults = true;
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -1844,6 +1888,31 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            const bool removes_default_expression = command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
+            const bool changes_position = !command.after_column.empty() || command.first;
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
+            {
+                all_columns.modify(column_name, command.after_column, command.first, [&](ColumnDescription & column)
+                {
+                    if (command.data_type)
+                        column.type = command.data_type;
+
+                    if (removes_default_expression)
+                    {
+                        column.default_desc = ColumnDefault{};
+                    }
+                    else if (command.default_expression)
+                    {
+                        column.default_desc.kind = command.default_kind;
+                        column.default_desc.expression = command.default_expression->clone();
+                    }
+                });
+            }
+
+            if (command.data_type || command.default_expression || removes_default_expression || changes_position)
+                revalidate_stored_defaults = true;
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -1862,7 +1931,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         {
                             if (const auto & default_expression = column.default_desc.expression)
                             {
-                                auto expression = buildQueryTree(default_expression->clone(), execution_context);
+                                ASTPtr query = default_expression->clone();
+                                expandColumnMatchersInExpression(query, all_columns, context);
+                                auto expression = buildQueryTree(query, execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
                                 GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
@@ -1887,6 +1958,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             if (const auto & default_expression = column.default_desc.expression)
                             {
                                 ASTPtr query = default_expression->clone();
+                                expandColumnMatchersInExpression(query, all_columns, context);
                                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
                                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                                 for (const auto & required_column : actions->getRequiredColumns())
@@ -1899,7 +1971,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         }
                     }
                 }
-                all_columns.remove(command.column_name);
+                if (!command.clear)
+                {
+                    all_columns.remove(command.column_name);
+                    revalidate_stored_defaults = true;
+                }
             }
             else if (!command.if_exists)
             {
@@ -2000,21 +2076,30 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
 
+            bool renamed_column = false;
             if (from_nested && to_nested)
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
             }
             else if (!from_nested && !to_nested)
             {
                 all_columns.rename(command.column_name, command.rename_to);
+                renamed_column = true;
                 renamed_columns.emplace(command.column_name);
                 renamed_columns.emplace(command.rename_to);
             }
             else
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
+            }
+
+            if (renamed_column)
+            {
+                renameColumnInStoredExpressions(all_columns, command.column_name, command.rename_to);
+                revalidate_stored_defaults = true;
             }
         }
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
@@ -2072,7 +2157,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+    if (revalidate_stored_defaults)
+        validateColumnsDefaultsAndGetSampleBlock(makeStoredDefaultExpressionList(all_columns), all_columns, context);
+    else
+        validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns, context);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const

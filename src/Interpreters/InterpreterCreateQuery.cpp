@@ -581,6 +581,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
+    ColumnsDescription columns_for_default_validation;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
     /// Known limitation: with distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION
@@ -605,9 +606,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
 
+        ColumnDescription column_for_validation(col_decl.name, column_names_and_types.back().type);
+        if (col_decl.getDefaultExpression())
+            column_for_validation.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
+        columns_for_default_validation.add(std::move(column_for_validation));
+
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
     }
+
+    /// Column matchers (`*`, `COLUMNS(...)`) in default/materialized/alias expressions are stored unexpanded and
+    /// re-expanded against the table's `ColumnsDescription` every time the default is evaluated. The metadata is
+    /// flattened below (with `flatten_nested = 1`), so a matcher in a default expression is expanded at execution
+    /// time against the flattened schema. Validate against the same flattened schema, otherwise a matcher could
+    /// expand differently (or to nothing) at runtime than during validation — e.g. `length(COLUMNS('^n$'))` over a
+    /// `Nested` column `n` would validate against `n` but execute against `n.x`, persisting a default that throws on
+    /// insert. Flatten the validation columns under the same condition as `res` below.
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE && !already_normalized_on_initiator
+        && !is_restore_from_backup && context_->getSettingsRef()[Setting::flatten_nested])
+        columns_for_default_validation.flattenNested();
 
     Block defaults_sample_block;
     /// Set missing types and wrap default_expression's in a conversion-function if necessary.
@@ -617,7 +634,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_for_default_validation, context_);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;

@@ -243,6 +243,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         index_read_tasks,
         actions_settings,
         reader_settings,
+        getContext(),
         /*with_subcolumns=*/ true);
 
     if (read_task_info.alter_conversions->hasPatches())

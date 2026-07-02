@@ -1,6 +1,5 @@
 #include <Interpreters/ColumnAliasesVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -44,7 +43,7 @@ void ColumnAliasesMatcher::visit(ASTFunction & node, ASTPtr & /*ast*/, Data & da
     if (node.name == "lambda")
     {
         Names local_aliases;
-        auto names_from_lambda = RequiredSourceColumnsMatcher::extractNamesFromLambda(node);
+        auto names_from_lambda = getASTLambdaArgumentNames(node);
         for (const auto & name : names_from_lambda)
         {
             if (data.private_aliases.insert(name).second)
@@ -71,21 +70,34 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
         {
             auto alias = node.tryGetAlias();
-            auto alias_expr = col.default_desc.expression->clone();
+            auto alias_expr = cloneAndExpandColumnDefaultExpression(col.default_desc, data.columns, data.context);
+            validateNoCyclicAliasesAfterExpansion(*column_name, alias_expr, data.columns, data.context);
             auto original_column = alias_expr->getColumnName();
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
             if (data.array_join_result_columns.contains(original_column) || data.array_join_source_columns.contains(original_column))
                 return;
-            ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
-            // We need to set back the original column name, or else the process of naming resolution will complain.
-            if (!alias.empty())
-                ast->setAlias(alias);
+
+            /// Normalize the alias body outside the caller lambda scope.
+            /// Lambdas inside the alias body will add their own private aliases.
+            auto alias_data = data;
+            alias_data.private_aliases.clear();
+            alias_data.changed = false;
+            Visitor(alias_data).visit(alias_expr);
+
+            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
+                ast = addTypeConversionToAST(std::move(alias_expr), col.type->getName(), data.columns.getAll(), data.context);
             else
-                ast->setAlias(*column_name);
+                ast = std::move(alias_expr);
+            // We need to set back the original column name, or else the process of naming resolution will complain.
+            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
+            {
+                if (!alias.empty())
+                    ast->setAlias(alias);
+                else
+                    ast->setAlias(*column_name);
+            }
 
             data.changed = true;
-            // revisit ast to track recursive alias columns
-            Visitor(data).visit(ast);
         }
     }
 }

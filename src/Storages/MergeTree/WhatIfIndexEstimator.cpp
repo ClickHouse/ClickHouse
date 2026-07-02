@@ -425,7 +425,8 @@ bool tryEstimateEmpirical(
                 std::make_shared<std::atomic<size_t>>(0),
                 false,
                 false,
-                false);
+                false,
+                context);
 
             /// Apply the query's execution-speed limits here too (size is the explicit check below)
             if (auto query_limits = read_step->getQueryInfo().storage_limits)

@@ -25,12 +25,18 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -42,6 +48,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/re2.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -64,6 +71,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool asterisk_include_alias_columns;
+    extern const SettingsBool asterisk_include_materialized_columns;
 }
 
 namespace ErrorCodes
@@ -75,6 +84,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -1117,22 +1128,201 @@ bool hasSubqueryInTree(const ASTPtr & ast)
     return false;
 }
 
-void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
+NamesAndTypesList getColumnsForAsteriskMatcher(const ColumnsDescription & columns, ContextPtr context)
 {
-    if (node->getNodeType() == QueryTreeNodeType::MATCHER)
+    const auto & settings = context->getSettingsRef();
+    UInt8 get_columns_options_kind = GetColumnsOptions::Ordinary;
+
+    if (settings[Setting::asterisk_include_alias_columns])
+        get_columns_options_kind |= GetColumnsOptions::Kind::Aliases;
+
+    if (settings[Setting::asterisk_include_materialized_columns])
+        get_columns_options_kind |= GetColumnsOptions::Kind::Materialized;
+
+    return columns.get(GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)));
+}
+
+NamesAndTypesList getColumnsForColumnsMatcher(const ColumnsDescription & columns)
+{
+    return columns.get(GetColumnsOptions::AllPhysicalAndAliases);
+}
+
+ASTs makeIdentifiers(const NamesAndTypesList & columns)
+{
+    ASTs result;
+    result.reserve(columns.size());
+
+    for (const auto & column : columns)
+        result.push_back(make_intrusive<ASTIdentifier>(column.name));
+
+    return result;
+}
+
+void applyColumnTransformers(ASTs & columns, const ASTPtr & transformers)
+{
+    if (!transformers)
+        return;
+
+    for (const auto & transformer : transformers->children)
+        IASTColumnsTransformer::transform(transformer, columns);
+}
+
+ASTs expandColumnMatcher(const ASTPtr & matcher, const ColumnsDescription & columns, ContextPtr context)
+{
+    ASTs result;
+
+    if (const auto * asterisk = matcher->as<ASTAsterisk>())
+    {
+        if (asterisk->expression)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Compound asterisk matcher is not allowed in column expression");
+
+        result = makeIdentifiers(getColumnsForAsteriskMatcher(columns, context));
+        applyColumnTransformers(result, asterisk->transformers);
+        return result;
+    }
+
+    if (const auto * qualified_asterisk = matcher->as<ASTQualifiedAsterisk>())
     {
         throw Exception(
             ErrorCodes::UNKNOWN_IDENTIFIER,
-            "Matcher (e.g. asterisk '*' or COLUMNS expression) is not allowed {}. "
-            "Use explicit column names instead",
-            context_description);
+            "Qualified matcher {} cannot be resolved in column expression",
+            qualified_asterisk->formatForErrorMessage());
     }
 
-    for (const auto & child : node->getChildren())
+    if (const auto * columns_regexp_matcher = matcher->as<ASTColumnsRegexpMatcher>())
     {
-        if (child)
-            assertNoMatcherNodes(child, context_description);
+        if (columns_regexp_matcher->expression)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Compound COLUMNS matcher is not allowed in column expression");
+
+        const auto & pattern = columns_regexp_matcher->getPattern();
+        re2::RE2 regexp(pattern, re2::RE2::Quiet);
+        if (!regexp.ok())
+            throw Exception(
+                ErrorCodes::CANNOT_COMPILE_REGEXP,
+                "COLUMNS pattern {} cannot be compiled: {}",
+                pattern,
+                regexp.error());
+
+        for (const auto & column : getColumnsForColumnsMatcher(columns))
+            if (re2::RE2::PartialMatch(column.name, regexp))
+                result.push_back(make_intrusive<ASTIdentifier>(column.name));
+
+        applyColumnTransformers(result, columns_regexp_matcher->transformers);
+        return result;
     }
+
+    if (const auto * columns_list_matcher = matcher->as<ASTColumnsListMatcher>())
+    {
+        if (columns_list_matcher->expression)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Compound COLUMNS matcher is not allowed in column expression");
+
+        result.reserve(columns_list_matcher->column_list->children.size());
+        for (const auto & identifier : columns_list_matcher->column_list->children)
+            result.push_back(identifier->clone());
+
+        applyColumnTransformers(result, columns_list_matcher->transformers);
+        return result;
+    }
+
+    if (const auto * qualified_columns_regexp_matcher = matcher->as<ASTQualifiedColumnsRegexpMatcher>())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Qualified matcher {} cannot be resolved in column expression",
+            qualified_columns_regexp_matcher->formatForErrorMessage());
+    }
+
+    if (const auto * qualified_columns_list_matcher = matcher->as<ASTQualifiedColumnsListMatcher>())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Qualified matcher {} cannot be resolved in column expression",
+            qualified_columns_list_matcher->formatForErrorMessage());
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected matcher node {}", matcher->formatForErrorMessage());
+}
+
+bool isColumnMatcher(const ASTPtr & node)
+{
+    return node->as<ASTAsterisk>()
+        || node->as<ASTQualifiedAsterisk>()
+        || node->as<ASTColumnsRegexpMatcher>()
+        || node->as<ASTColumnsListMatcher>()
+        || node->as<ASTQualifiedColumnsRegexpMatcher>()
+        || node->as<ASTQualifiedColumnsListMatcher>();
+}
+
+void expandColumnMatchersImpl(ASTPtr & node, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (!node)
+        return;
+
+    if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTSubquery>())
+        return;
+
+    if (isColumnMatcher(node))
+    {
+        auto expanded_columns = expandColumnMatcher(node, columns, context);
+        if (expanded_columns.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH,
+                "Column matcher {} expands to {} columns, but a single expression is expected",
+                node->formatForErrorMessage(),
+                expanded_columns.size());
+
+        if (auto alias = node->tryGetAlias(); !alias.empty())
+            expanded_columns.front()->setAlias(alias);
+
+        node = std::move(expanded_columns.front());
+        expandColumnMatchersImpl(node, columns, context);
+        return;
+    }
+
+    if (auto * expression_list = node->as<ASTExpressionList>())
+    {
+        ASTs new_children;
+        for (auto & child : expression_list->children)
+        {
+            if (isColumnMatcher(child))
+            {
+                auto expanded_columns = expandColumnMatcher(child, columns, context);
+                if (auto alias = child->tryGetAlias(); !alias.empty() && expanded_columns.size() == 1)
+                    expanded_columns.front()->setAlias(alias);
+
+                for (auto & expanded_column : expanded_columns)
+                {
+                    expandColumnMatchersImpl(expanded_column, columns, context);
+                    new_children.push_back(std::move(expanded_column));
+                }
+            }
+            else
+            {
+                expandColumnMatchersImpl(child, columns, context);
+                new_children.push_back(std::move(child));
+            }
+        }
+
+        expression_list->children = std::move(new_children);
+        return;
+    }
+
+    for (auto & child : node->children)
+        if (child)
+            expandColumnMatchersImpl(child, columns, context);
+}
+
+ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
+{
+    ColumnsDescription result;
+
+    for (const auto & column : columns.getAll())
+    {
+        ColumnDescription column_description(column.name, column.type);
+        result.add(std::move(column_description));
+    }
+
+    return result;
 }
 
 void collectAliasDependenciesFromAST(
@@ -1143,17 +1333,11 @@ void collectAliasDependenciesFromAST(
     if (!node)
         return;
 
-    if (const auto * identifier = node->as<ASTIdentifier>())
-    {
-        const auto & column_name = identifier->name();
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(node);
+    for (const auto & column_name : columns_context.requiredColumns())
         if (candidate_names.contains(column_name))
             dependencies.insert(column_name);
-        return;
-    }
-
-    for (const auto & child : node->children)
-        if (child)
-            collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
@@ -1173,17 +1357,24 @@ void collectAliasDependenciesFromAST(
     throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
 }
 
+NameSet getDefaultColumnNames(const ASTPtr & default_expr_list, const ColumnsDescription & columns);
+
 /**
- * Build a dependency graph between all aliases present in the DEFAULT expression list.
+ * Build a dependency graph between aliases in the DEFAULT expression list and existing column default expressions.
  * The additional alias map is required because typed defaults are rewritten into temporary
  * aliases (e.g. `a_tmp_alter...`) before the analyzer runs, so we must consider every alias,
  * not only user-visible column names, to detect cycles that pass through those synthetic nodes.
  */
 void detectRecursiveDefaultCycles(
     const ASTPtr & expression_list,
-    const NameSet & default_column_names)
+    const ColumnsDescription & columns,
+    ContextPtr context)
 {
-    if (!expression_list || default_column_names.empty())
+    if (!expression_list)
+        return;
+
+    const NameSet default_column_names = getDefaultColumnNames(expression_list, columns);
+    if (default_column_names.empty())
         return;
 
     const auto * list_node = expression_list->as<ASTExpressionList>();
@@ -1192,8 +1383,8 @@ void detectRecursiveDefaultCycles(
 
     NameSet alias_names;
     std::unordered_map<String, ASTPtr> alias_to_expression;
-    alias_names.reserve(list_node->children.size());
-    alias_to_expression.reserve(list_node->children.size());
+    alias_names.reserve(list_node->children.size() + columns.size());
+    alias_to_expression.reserve(list_node->children.size() + columns.size());
     for (const auto & child : list_node->children)
     {
         if (!child)
@@ -1208,6 +1399,15 @@ void detectRecursiveDefaultCycles(
 
         alias_names.insert(alias);
         alias_to_expression.emplace(alias, child);
+    }
+
+    for (const ColumnDescription & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        alias_names.insert(column.name);
+        alias_to_expression.try_emplace(column.name, cloneAndExpandColumnDefaultExpression(column.default_desc, columns, context));
     }
 
     enum class Color
@@ -1264,7 +1464,44 @@ void detectRecursiveDefaultCycles(
     }
 }
 
-std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
+void validateNoCyclicAliasesAfterExpansionImpl(
+    const String & alias_name,
+    const ASTPtr & expanded_alias_expression,
+    const ColumnsDescription & columns,
+    ContextPtr context)
+{
+    if (!expanded_alias_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected expanded alias expression");
+
+    auto expression_list = make_intrusive<ASTExpressionList>();
+    expression_list->children.emplace_back(setAlias(expanded_alias_expression->clone(), alias_name));
+    detectRecursiveDefaultCycles(expression_list, columns, context);
+}
+
+NameSet getDefaultColumnNames(const ASTPtr & default_expr_list, const ColumnsDescription & columns)
+{
+    NameSet table_column_names;
+    for (const auto & column : columns.getAll())
+        table_column_names.insert(column.name);
+
+    NameSet default_column_names;
+    default_column_names.reserve(default_expr_list->children.size());
+    for (const auto & child : default_expr_list->children)
+    {
+        if (!child)
+            continue;
+
+        String alias = child->tryGetAlias();
+        if (alias.empty())
+            alias = child->getColumnName();
+        if (!alias.empty() && table_column_names.contains(alias))
+            default_column_names.insert(alias);
+    }
+
+    return default_column_names;
+}
+
+std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, bool get_sample_block)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1275,27 +1512,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     auto execution_context = Context::createCopy(context);
 
-    NameSet table_column_names;
-    table_column_names.reserve(all_columns.size());
-    for (const auto & column : all_columns)
-        table_column_names.insert(column.name);
-
-    NameSet default_column_names;
-    default_column_names.reserve(default_expr_list->children.size());
-    for (const auto & child : default_expr_list->children)
-    {
-        if (!child)
-            continue;
-        String alias = child->tryGetAlias();
-        if (alias.empty())
-            alias = child->getColumnName();
-        if (!alias.empty() && table_column_names.contains(alias))
-            default_column_names.insert(alias);
-    }
-
-    detectRecursiveDefaultCycles(default_expr_list, default_column_names);
-
-    ColumnsDescription fake_column_descriptions(all_columns);
+    auto fake_column_descriptions = clearDefaultExpressions(columns);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -1306,9 +1523,6 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
 
     auto query_node = std::make_shared<QueryNode>(execution_context);
     auto expression_list = buildQueryTree(default_expr_list, execution_context);
-
-    /// Fail fast before analyzer expands matchers into concrete columns.
-    assertNoMatcherNodes(expression_list, "in column DEFAULT expression");
 
     query_node->getProjectionNode() = expression_list;
     query_node->getJoinTree() = fake_table_expression;
@@ -1357,7 +1571,7 @@ std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, cons
     return result_block;
 }
 
-std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, bool get_sample_block)
 {
     if (!default_expr_list || default_expr_list->children.empty())
     {
@@ -1370,13 +1584,16 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
         if (hasSubqueryInTree(child))
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
+    expandColumnMatchersImpl(default_expr_list, columns, context);
+    detectRecursiveDefaultCycles(default_expr_list, columns, context);
+
     try
     {
         if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block);
+            return validateDefaultsWithAnalyzer(default_expr_list, columns, context, get_sample_block);
         else
         {
-            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, columns.getAll(), {}, {}, false, /* allow_self_aliases = */ false);
             const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
             for (const auto & action : actions->getActions())
                 if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
@@ -1396,15 +1613,51 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 }
 }
 
-void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context)
 {
-    /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
-    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false);
+    expandColumnMatchersImpl(expression, columns, context);
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+void validateNoCyclicAliasesAfterExpansion(
+    const String & alias_name,
+    const ASTPtr & expanded_alias_expression,
+    const ColumnsDescription & columns,
+    ContextPtr context)
 {
-    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true);
+    validateNoCyclicAliasesAfterExpansionImpl(alias_name, expanded_alias_expression, columns, context);
+}
+
+ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)
+{
+    if (!column_default.expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected column default expression");
+
+    auto expression = column_default.expression->clone();
+    expandColumnMatchersInExpression(expression, columns, context);
+    return expression;
+}
+
+ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto expression = cloneAndExpandColumnDefaultExpression(column_default, columns, context);
+    replaceAliasColumnsInQuery(expression, columns, {}, context);
+    return expression;
+}
+
+void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context)
+{
+    expandColumnMatchersImpl(expression_list, columns, context);
+}
+
+void validateColumnsDefaults(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context)
+{
+    /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
+    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, columns, context, /*get_sample_block=*/false);
+}
+
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context)
+{
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, columns, context, /*get_sample_block=*/true);
     chassert(result.has_value());
     return std::move(*result);
 }

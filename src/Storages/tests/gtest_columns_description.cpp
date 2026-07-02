@@ -1,6 +1,11 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/StringUtils.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
@@ -44,6 +49,38 @@ TEST_F(ColumnsDescriptionTest, Normalize)
     tryRegisterFunctions();
 
     ASSERT_EQ(ColumnsDescription::parse(columns), ColumnsDescription::parse(columns_normalized));
+}
+
+TEST_F(ColumnsDescriptionTest, ExpandRootColumnMatcherExpression)
+{
+    ColumnsDescription columns
+    {
+        ColumnDescription{"a", std::make_shared<DataTypeUInt8>()},
+        ColumnDescription{"b", std::make_shared<DataTypeUInt8>()},
+    };
+
+    auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+    matcher->setPattern("^a$");
+    ASTPtr expression = matcher;
+
+    expandColumnMatchersInExpression(expression, columns, getContext().context);
+
+    const auto * identifier = expression->as<ASTIdentifier>();
+    ASSERT_NE(identifier, nullptr);
+    EXPECT_EQ(identifier->name(), "a");
+}
+
+TEST_F(ColumnsDescriptionTest, RejectRootColumnMatcherExpressionWithMultipleColumns)
+{
+    ColumnsDescription columns
+    {
+        ColumnDescription{"a", std::make_shared<DataTypeUInt8>()},
+        ColumnDescription{"b", std::make_shared<DataTypeUInt8>()},
+    };
+
+    ASTPtr expression = make_intrusive<ASTAsterisk>();
+
+    EXPECT_THROW(expandColumnMatchersInExpression(expression, columns, getContext().context), Exception);
 }
 
 TEST_F(ColumnsDescriptionTest, ColumnsSameAsSubcolumns1)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Interpreters/ColumnAliasReplacementMode.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/IAST_fwd.h>
@@ -64,8 +65,18 @@ public:
         /// Check if query is changed by this visitor.
         bool changed = false;
 
-        Data(const ColumnsDescription & columns_, const NameToNameMap & array_join_result_columns_, ContextPtr context_, const std::unordered_set<IAST *> & excluded_nodes_)
-            : columns(columns_), context(context_), excluded_nodes(excluded_nodes_)
+        ColumnAliasReplacementMode replacement_mode = ColumnAliasReplacementMode::QueryAnalysis;
+
+        Data(
+            const ColumnsDescription & columns_,
+            const NameToNameMap & array_join_result_columns_,
+            ContextPtr context_,
+            const std::unordered_set<IAST *> & excluded_nodes_,
+            ColumnAliasReplacementMode replacement_mode_ = ColumnAliasReplacementMode::QueryAnalysis)
+            : columns(columns_)
+            , context(context_)
+            , excluded_nodes(excluded_nodes_)
+            , replacement_mode(replacement_mode_)
         {
             for (const auto & [result, source] : array_join_result_columns_)
             {
