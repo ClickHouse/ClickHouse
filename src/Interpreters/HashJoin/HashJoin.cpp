@@ -813,14 +813,18 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
     size_t max_rows_in_join = table_join->sizeLimits().max_rows;
 
-    if (kind == JoinKind::Cross && tmp_data
+    /// Never spill a zero-column right block: its row count lives only in the selector, but the temporary
+    /// stream serializes Block::rows() == 0 and would undercount the cross product. It has no data to spill anyway.
+    if (kind == JoinKind::Cross && tmp_data && block_to_save.columns() != 0
         && (tmp_stream || (max_bytes_in_join && getTotalByteCount() + block_to_save.allocatedBytes() >= max_bytes_in_join)
             || (max_rows_in_join && getTotalRowCount() + block_to_save.rows() >= max_rows_in_join)))
     {
         if (!tmp_stream)
             tmp_stream.emplace(std::make_shared<const Block>(right_sample_block), tmp_data);
 
-        chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
+        /// We don't run parallel_hash for cross join, so the selector covers the whole block.
+        /// Zero-column blocks are kept in memory above, so this path always has columns.
+        chassert(rows == block.rows());
         tmp_stream.value()->write(block_to_save);
         return true;
     }
@@ -842,7 +846,10 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             && ((min_bytes_to_compress && getTotalByteCount() >= min_bytes_to_compress)
                 || (min_rows_to_compress && getTotalRowCount() >= min_rows_to_compress)))
         {
-            chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
+            /// We don't run parallel_hash for cross join, so the selector covers the whole block.
+            /// A zero-column right block (PREWHERE consumed all right columns) reports rows() == 0,
+            /// while the real row count is carried by the selector.
+            chassert(rows == block.rows() || block.columns() == 0);
             block_to_save = block_to_save.compress();
             have_compressed = true;
         }
