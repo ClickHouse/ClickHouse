@@ -8,6 +8,9 @@
 
 #include <sqlite3.h>
 
+#include <atomic>
+#include <mutex>
+
 namespace Poco
 {
 class Logger;
@@ -55,11 +58,23 @@ public:
 private:
     friend class SQLiteSink; /// for write_context
 
+    /// Re-derive the generated-column classification from the remote schema on the first successful open,
+    /// when it could not be applied at construction time because the database file was unavailable. See the
+    /// constructor and `generated_columns_reclassification_pending`.
+    void reclassifyGeneratedColumnsFromRemote(ContextPtr query_context);
+
     TableNameOrQuery remote_table_or_query;
     String database_path;
     SQLitePtr sqlite_db;
     LoggerPtr log;
     ContextPtr write_context;
+
+    /// True while the generated-column classification of an explicitly declared column list still has to be
+    /// re-derived from the remote schema because the database file was unavailable when the storage was
+    /// constructed (e.g. a persisted `SQLite` table attached on startup while the file is temporarily
+    /// missing). It is repaired lazily on the first successful open in `read`/`write`.
+    std::atomic<bool> generated_columns_reclassification_pending{false};
+    std::mutex reclassify_mutex;
 };
 
 }

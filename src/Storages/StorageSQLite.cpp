@@ -47,8 +47,8 @@ ContextPtr makeSQLiteWriteContext(ContextPtr context)
 ///
 /// Best-effort: if the remote schema cannot be read (e.g. the database file is temporarily unavailable while
 /// a persisted table is attached), the declared classification is kept rather than failing the whole
-/// `CREATE`/`ATTACH` - the marking is re-applied the next time the storage is constructed while the remote
-/// schema is reachable.
+/// `CREATE`/`ATTACH` - `StorageSQLite::reclassifyGeneratedColumnsFromRemote` then re-applies the marking on
+/// the first successful open in `read`/`write`.
 void markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, ColumnsDescription & columns, LoggerPtr log)
 {
     std::optional<ColumnsDescription> remote_columns;
@@ -133,6 +133,38 @@ StorageSQLite::StorageSQLite(
     storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+
+    /// The explicit-column path (`registerStorageSQLite`) re-derives the generated-column classification from
+    /// the remote schema, but only when the database file could be opened at construction time. If it was
+    /// unavailable (`sqlite_db_` is null - a persisted table attached while the file is temporarily missing),
+    /// the classification is still pending: `read`/`write` reopen the database and repair it then, so a
+    /// generated column does not stay insertable for the rest of the table's lifetime. The auto-inferred case
+    /// (empty column list) gets the classification straight from `getTableStructureFromData` above, and a
+    /// query-backed source is read-only, so neither needs the lazy repair.
+    generated_columns_reclassification_pending = !sqlite_db_ && !columns_.empty() && !remote_table_or_query.isQuery();
+}
+
+void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context)
+{
+    if (!generated_columns_reclassification_pending.load(std::memory_order_acquire))
+        return;
+
+    std::lock_guard lock(reclassify_mutex);
+    if (!generated_columns_reclassification_pending.load(std::memory_order_relaxed))
+        return;
+
+    /// The caller has just opened `sqlite_db`, so the remote schema that was unavailable at construction time
+    /// is now reachable and the pending generated-column classification can be re-derived and stored in the
+    /// in-memory metadata, where subsequent reads and writes pick it up.
+    auto old_metadata = getInMemoryMetadataPtr(query_context, false);
+    ColumnsDescription columns = old_metadata->getColumns();
+    markRemoteGeneratedColumns(sqlite_db.get(), remote_table_or_query.getTableName(), columns, log);
+
+    StorageInMemoryMetadata new_metadata = *old_metadata;
+    new_metadata.setColumns(std::move(columns));
+    setInMemoryMetadata(new_metadata);
+
+    generated_columns_reclassification_pending.store(false, std::memory_order_release);
 }
 
 VirtualColumnsDescription StorageSQLite::createVirtuals()
@@ -172,6 +204,8 @@ Pipe StorageSQLite::read(
 {
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
+    reclassifyGeneratedColumnsFromRemote(context_);
 
     storage_snapshot->check(column_names);
 
@@ -286,13 +320,15 @@ private:
 };
 
 
-SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/, bool /*async_insert*/)
+SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_insert*/)
 {
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+
+    reclassifyGeneratedColumnsFromRemote(context_);
 
     return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_or_query.getTableName());
 }
