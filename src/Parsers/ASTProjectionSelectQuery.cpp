@@ -39,6 +39,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
@@ -65,6 +66,13 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     ostr << indent_str << "SELECT";
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+
+    if (where())
+    {
+        ostr << s.nl_or_ws << indent_str << "WHERE";
+        ostr << ' ';
+        where()->format(ostr, s, state, frame);
+    }
 
     if (groupBy())
     {
@@ -141,6 +149,13 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         }
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     }
+    /// `WHERE` must be inserted before `GROUP BY` to match the canonical child order produced by
+    /// `ParserSelectQuery` (see `ASTSelectQuery::normalizeChildrenOrder`). `ASTSelectQuery` tree hashes
+    /// depend on the `children` order and are used for column identifiers and scalar/cache keys, so a
+    /// non-canonical order here would give a filtered aggregate projection different identifiers than
+    /// the same `SELECT` parsed from text.
+    if (where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
 
