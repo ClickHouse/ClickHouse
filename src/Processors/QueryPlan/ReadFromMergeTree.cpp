@@ -27,6 +27,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/PrefetchingConcatProcessor.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -1474,9 +1475,101 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
+        /// Check if we can use PrefetchingConcatProcessor instead of MergingSorted.
+        /// PrefetchingConcat outputs data from streams in order (0, 1, 2, ...),
+        /// so this is only correct when the complete sequence of ranges across all
+        /// streams is in ascending primary key order.
+        ///
+        /// The splitting takes parts from the back of parts_with_ranges, so for
+        /// multiple parts the stream order is reversed relative to part order.
+        /// We must verify the entire chain, including within-stream part transitions
+        /// (a single stream may span multiple parts).
+        auto can_use_prefetching_concat = [&]() -> bool
+        {
+            if (need_preliminary_merge
+                || output_each_partition_through_separate_port
+                || prefer_multiple_streams
+                || input_order_info->direction != 1
+                || split_parts_and_ranges.size() <= 1)
+                return false;
+
+            /// Only enable PrefetchingConcat when there is per-chunk CPU work
+            /// (a PREWHERE filter or a row-level security filter). The benefit
+            /// of `PrefetchingConcat` is parallelizing that work across streams.
+            /// For pure pass-through reads (`SELECT * ... ORDER BY pk`) the
+            /// single-output `MergingSortedTransform` is already efficient for
+            /// non-overlapping ranges, and adding a concat with its own buffering
+            /// just introduces scheduling overhead — see the filter-less
+            /// `SELECT * ... ORDER BY key` query in
+            /// `tests/performance/read_in_order_single_part.xml`, which guards
+            /// against this regression.
+            ///
+            /// Note: a `LIMIT` from the query is not propagated to
+            /// `input_order_info->limit` whenever a filter is in the plan
+            /// (`buildSortingDAG` zeroes it out for any `PREWHERE`,
+            /// row-level filter, `FilterStep`, etc.), so a separate `LIMIT`
+            /// guard here would be unreachable given the filter requirement
+            /// above.
+            if (!query_info.prewhere_info && !query_info.row_level_filter)
+                return false;
+
+            /// PrefetchingConcat is only safe when all streams reference the same
+            /// single data part. Ranges from a single part are non-overlapping and
+            /// pre-sorted, so concatenation preserves order.
+            ///
+            /// For multiple parts, the PK index marks only store the first row of
+            /// each granule — not an upper bound for all rows in that granule.
+            /// Comparing mark keys across parts cannot prove that all rows of the
+            /// previous range precede all rows of the next range, so concatenation
+            /// could produce misordered output. Fall back to MergingSortedTransform.
+            const IMergeTreeDataPart * single_part = nullptr;
+            for (const auto & stream : split_parts_and_ranges)
+            {
+                for (const auto & entry : stream)
+                {
+                    if (entry.ranges.empty())
+                        continue;
+
+                    if (!single_part)
+                        single_part = entry.data_part.get();
+                    else if (entry.data_part.get() != single_part)
+                        return false;
+                }
+            }
+
+            return true;
+        };
+
+        const bool use_prefetching_concat = can_use_prefetching_concat();
+
         for (auto && item : split_parts_and_ranges)
             pipes.emplace_back(readInOrder(
                 std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+
+        if (use_prefetching_concat)
+        {
+            /// `parts_with_ranges` is consumed by the splitting loop above, so its size
+            /// here is unreliable. The gate already requires a single underlying part,
+            /// so report stream count only.
+            LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams (single part)", pipes.size());
+
+            /// Capture the source header before uniting pipes so we can build the
+            /// projection that drops temporary sorting-key columns added back to
+            /// compensate for `PREWHERE` removing them. The downstream sorting step
+            /// builds this projection from `out_projection` only when the early-return
+            /// code paths below run, so we must set it here as well.
+            Block source_header;
+            if (have_input_columns_removed_after_prewhere && !pipes.empty())
+                source_header = pipes.front().getHeader();
+
+            auto pipe = Pipe::unitePipes(std::move(pipes));
+            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+
+            if (have_input_columns_removed_after_prewhere)
+                out_projection = createProjection(source_header);
+
+            return pipe;
+        }
     }
 
     Block pipe_header;
@@ -3375,6 +3468,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    cloned_step->prefer_multiple_streams = prefer_multiple_streams;
     return cloned_step;
 }
 
