@@ -310,16 +310,21 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// A plan that already reads from remote shards (a `ReadFromRemotePlanStep` placeholder or a
+    /// `ReadFromRemote` step) must not additionally go through the MPP conversion below — the
+    /// distributed split has already been decided, and the MPP machinery would mangle the
+    /// initiator plan (e.g. WITH TOTALS over Distributed would throw here).
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan && !planReadsFromRemote(root);
+
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
     /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
     /// than silently running single-node.
-    if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
+    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (optimization_settings.make_distributed_plan)
+    if (make_distributed_plan)
         checkDistributedReadSupported(root);
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
@@ -589,6 +594,12 @@ void optimizeTreeSecondPass(
         optimizeJoinByShards(root);
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
+
+    /// Replace `ReadFromRemotePlanStep` placeholders with final `ReadFromRemote` steps carrying
+    /// the per-shard plans. Done in the optimizer (not in buildQueryPipeline), so that
+    /// `EXPLAIN PLAN` shows the final step and `EXPLAIN PLAN distributed=1` prints the inner plan.
+    if (optimization_settings.make_distributed_plan)
+        finalizeReadFromRemotePlan(root);
 }
 
 void addStepsToBuildSets(

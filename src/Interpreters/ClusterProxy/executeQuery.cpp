@@ -104,7 +104,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -283,7 +283,7 @@ ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr c
 }
 
 
-static ThrottlerPtr getThrottler(const ContextPtr & context)
+ThrottlerPtr getThrottler(const ContextPtr & context)
 {
     const Settings & settings = context->getSettingsRef();
 
