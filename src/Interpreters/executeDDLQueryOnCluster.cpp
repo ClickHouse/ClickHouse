@@ -16,6 +16,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
@@ -224,27 +225,63 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
 {
-    const auto * query = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
-    if (!query || !query->table)
+    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    if (!query_on_cluster || query_on_cluster->cluster.empty())
         return false;
 
-    String database_name = query->getDatabase();
-    if (database_name.empty())
-        database_name = context->getCurrentDatabase();
+    /// Extract the target database(s). For multi-element queries (RENAME / EXCHANGE TABLES)
+    /// all elements must reference the same database, otherwise we can't safely pass through.
+    String database_name;
+    const String & current_database = context->getCurrentDatabase();
 
-    auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
-    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-    if (database && database->shouldReplicateQuery(context, query_ptr))
+    if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get()))
     {
-        if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database] && database_name != query_on_cluster->cluster)
+        if (!with_table->table)
             return false;
-        /// It's Replicated database and query is replicated on database level,
-        /// so ON CLUSTER clause is redundant.
-        query_on_cluster->cluster.clear();
-        return true;
+        database_name = with_table->getDatabase();
+        if (database_name.empty())
+            database_name = current_database;
+    }
+    else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()))
+    {
+        if (rename->database)
+            return false;  /// RENAME DATABASE: target DB does not yet have a Replicated catalog
+        for (const auto & elem : rename->getElements())
+        {
+            String from = elem.from.getDatabase();
+            String to = elem.to.getDatabase();
+            if (from.empty())
+                from = current_database;
+            if (to.empty())
+                to = current_database;
+            if (from != to)
+                return false;
+            if (database_name.empty())
+                database_name = from;
+            else if (database_name != from)
+                return false;
+        }
+        if (database_name.empty())
+            return false;
+    }
+    else
+    {
+        return false;
     }
 
-    return false;
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    if (!database || !database->shouldReplicateQuery(context, query_ptr))
+        return false;
+
+    if (!context->getSettingsRef()[Setting::ignore_on_cluster_for_replicated_database]
+        && database_name != query_on_cluster->cluster)
+        return false;
+
+    /// It's a Replicated database and the query is replicated at the database level,
+    /// so the ON CLUSTER clause is redundant when the cluster name matches the database name
+    /// (the database's automatic cluster) or when `ignore_on_cluster_for_replicated_database` is set.
+    query_on_cluster->cluster.clear();
+    return true;
 }
 
 }
