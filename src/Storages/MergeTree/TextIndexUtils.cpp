@@ -398,7 +398,9 @@ void MergeTextIndexesTask::flushPostingList()
         token_info.position_offset = positions_stream->plain_hashing.count();
         token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
 
-        TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
+        TextIndexPositionCodec::encode(
+            output_positions, positions_stream->plain_hashing,
+            TextIndexPositionCodec::parseEncoding(params.positions_codec));
     }
 
     output_infos.push_back(token_info);
@@ -520,7 +522,10 @@ bool MergeTextIndexesTask::executeStep()
                 pos_stream->seekToMark({token_info.position_offset, 0});
 
                 PODArray<RoaringishEntry> position_entries;
-                TextIndexPositionCodec::decode(*pos_data_buffer, position_entries);
+                TextIndexPositionCodec::decode(
+                    *pos_data_buffer, position_entries,
+                    TextIndexPositionCodec::parseEncoding(params.positions_codec),
+                    position_decode_scratch);
 
                 /// Adjust doc_ids if merging parts with offset remapping.
                 if (merged_part_offsets)

@@ -125,10 +125,11 @@ using TokenToPositionListMap = StringHashMap<PositionListBuilder>;
 
 /// Struct-of-arrays form of a roaringish position list, used on the query/decode path.
 ///
-/// Decoding de-interleaves the on-disk AoS entries straight into these three lanes — no temp
-/// buffers, no SoA->AoS copy — so the decoded footprint is just the data (12 bytes/entry).
-/// Phrase search consumes this form directly, computing the (doc_id, group) merge key inline.
-/// Entries are sorted ascending by key() and unique per (doc_id, group).
+/// The pfor codec stores doc/group/bitmap as three independent columnar lanes; decoding
+/// straight into these three arrays needs no temp buffers and no SoA->AoS interleave, so
+/// the decoded footprint is just the data (12 bytes/entry) instead of temp lanes + an
+/// AoS copy. Phrase search consumes this form directly, computing the (doc_id, group)
+/// merge key inline. Entries are sorted ascending by key() and unique per (doc_id, group).
 struct PositionList
 {
     PaddedPODArray<UInt32> doc;

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -136,6 +137,8 @@ private:
     PostingList output_postings;
     /// Positions accumulated for the current token (phrase query support).
     PODArray<RoaringishEntry> output_positions;
+    /// Reused across tokens to keep Pfor position decode allocation-free during merge.
+    TextIndexPositionCodec::DecodeScratch position_decode_scratch;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

@@ -894,6 +894,8 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 std::vector<PositionList> position_lists;
                 position_lists.reserve(position_offsets.size());
 
+                auto positions_codec = TextIndexPositionCodec::parseEncoding(granule->getParams().positions_codec);
+
                 auto * data_buffer = positions_stream->getDataBuffer();
                 {
                     ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
@@ -901,7 +903,7 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                     {
                         positions_stream->seekToMark({position_offset, 0});
                         auto & positions = position_lists.emplace_back();
-                        TextIndexPositionCodec::decode(*data_buffer, positions);
+                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_payload_scratch);
                     }
                 }
 

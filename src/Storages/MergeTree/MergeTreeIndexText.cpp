@@ -92,6 +92,7 @@ static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POST
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
 /// within one index.
 static constexpr bool DEFAULT_POSITIONS = false;
+static constexpr String DEFAULT_POSITIONS_CODEC = "none";
 
 bool DictionaryBlockBase::empty() const
 {
@@ -1411,7 +1412,9 @@ DictionarySparseIndex serializeTokensAndPostings(
                 token_info.position_offset = positions_stream->plain_hashing.count();
                 token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
 
-                TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+                TextIndexPositionCodec::encode(
+                    position_entries, positions_stream->plain_hashing,
+                    TextIndexPositionCodec::parseEncoding(params.positions_codec));
             }
 
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
@@ -1834,6 +1837,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "positions";
+static const String ARGUMENT_POSITIONS_CODEC = "positions_codec";
 
 namespace
 {
@@ -1939,12 +1943,14 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    String positions_codec = extractFieldOption<String>(options, ARGUMENT_POSITIONS_CODEC).value_or(DEFAULT_POSITIONS_CODEC);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
+        positions_codec,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast)};
 
@@ -1997,6 +2003,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
+
+    const auto positions_codec_opt = extractFieldOption<String>(options, ARGUMENT_POSITIONS_CODEC);
+    if (!positions && positions_codec_opt.has_value())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' requires '{}' to be enabled", ARGUMENT_POSITIONS_CODEC, ARGUMENT_POSITIONS);
+
+    String positions_codec = positions_codec_opt.value_or(DEFAULT_POSITIONS_CODEC);
+    if (positions_codec != "none" && positions_codec != "pfor")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 'none' or 'pfor', but got '{}'", ARGUMENT_POSITIONS_CODEC, positions_codec);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
