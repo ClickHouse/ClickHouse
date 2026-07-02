@@ -707,6 +707,7 @@ These settings should be defined in the disk configuration section.
 | `load_metadata_threads`               | Integer | `16`       | Number of threads for loading cache metadata at startup.                                                                                                                                     |
 | `use_split_cache`                     | Boolean | `false`    | Use separation of files to system/data.                                                                                                                                     |
 | `split_cache_ratio`                   | Double | `0.1`    | Ratio of system segment to total size of cache for split_cache.                                                                                                                                     |
+| `use_real_disk_size`                  | Boolean | `false`    | Accounts cache usage in filesystem allocation units (block size) instead of the written byte count. When enabled, `FilesystemCacheSize`, the eviction-size metrics, and `current_size` in `system.filesystem_cache_settings` reflect the real on-disk usage, so a sub-block file (e.g. 1 byte) is charged for the whole block it occupies. |
 
 > **Note**: Size values support units like `ki`, `Mi`, `Gi`, etc. (e.g., `10Gi`).
 
