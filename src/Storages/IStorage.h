@@ -650,6 +650,17 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
+    /// Size-only drop gate used by `CREATE OR REPLACE` to enforce
+    /// `max_table_size_to_drop` before EXCHANGE. Narrower than
+    /// `checkTableCanBeDropped` (no dictionary/view-dependency throws), so it
+    /// can run on any storage engine. NOT a pure dry-run: the `MergeTreeData`
+    /// override reaches `Context::checkCanBeDropped`, which removes the
+    /// `force_drop_table` flag when it authorizes an over-limit drop. Callers
+    /// must invoke it exactly once; a second call after the flag was consumed
+    /// throws TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT.
+    /// Default: no-op (engine has no on-disk data the size guard would care about).
+    virtual void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const {}
+
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
