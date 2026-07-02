@@ -273,7 +273,11 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column->size();
-        auto mutable_column = column->assumeMutable();
+        /// Use `IColumn::mutate` instead of `assumeMutable`: when `column` is shared (e.g. it was
+        /// placed into the substreams cache by an earlier substream read), appending to it in place
+        /// would mutate data still referenced by another owner. `mutate` clones only when shared and
+        /// is a no-op for the common uniquely-owned case.
+        auto mutable_column = IColumn::mutate(std::move(column));
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
@@ -805,7 +809,12 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     /// To determine what case we have we store number of read rows in last range in cache.
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
     {
-        result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        /// COW-safe append: `result_column` may be shared (it can be handed to the substreams cache
+        /// below and reused for another substream in the same range), so clone it when shared instead
+        /// of reallocating a buffer still referenced elsewhere via `assumeMutable`.
+        auto mutable_result = IColumn::mutate(std::move(result_column));
+        mutable_result->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        result_column = std::move(mutable_result);
         if (update_cache_after_insert)
         {
             /// Replace column in the cache with the new column to avoid inserting into it again
