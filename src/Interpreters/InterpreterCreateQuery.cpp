@@ -210,7 +210,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getMaxDatabaseNumToThrow();
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
