@@ -4,6 +4,7 @@
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
+#    include <Poco/Net/VerificationErrorArgs.h>
 #endif
 
 #include <mutex>
@@ -56,10 +57,21 @@ private:
         auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
         request_context = nullptr;
+        certificate_handler_type = CertificateHandlerType::Default;
 #endif
     }
+
+#if USE_SSL
+    enum class CertificateHandlerType
+    {
+        Default,
+        Accept,
+        Reject
+    };
+#endif
 #if USE_SSL
     void initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    void onInvalidCertificate(const void * pSender, Poco::Net::VerificationErrorArgs & errorCert);
 #endif
     String makeRequest(const String & method, const String & path, const String & request_token, const String & body);
     String login();
@@ -79,6 +91,7 @@ private:
     HashiCorpVaultAuthMethod auth_method = HashiCorpVaultAuthMethod::Token;
 #if USE_SSL
     Poco::Net::Context::Ptr request_context;
+    CertificateHandlerType certificate_handler_type = CertificateHandlerType::Default;
 #endif
 };
 

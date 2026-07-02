@@ -6,6 +6,7 @@
 #include <Poco/Net/HTTPResponse.h>
 
 #if USE_SSL
+#    include <Poco/Delegate.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/HTTPSClientSession.h>
 #    include <Poco/Net/SSLManager.h>
@@ -121,8 +122,28 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     bool prefer_server_ciphers = config.getBool(ssl_prefix + Poco::Net::SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
     if (prefer_server_ciphers)
         request_context->preferServerCiphers();
+
+    std::string cert_handler_name = config.getString(ssl_prefix + "invalidCertificateHandler.name", "");
+    if (!cert_handler_name.empty())
+    {
+        if (cert_handler_name == "AcceptCertificateHandler")
+            certificate_handler_type = CertificateHandlerType::Accept;
+        else if (cert_handler_name == "RejectCertificateHandler")
+            certificate_handler_type = CertificateHandlerType::Reject;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown invalidCertificateHandler name for vault: {}.", cert_handler_name);
+    }
 }
 #endif
+
+#if USE_SSL
+void HashiCorpVault::onInvalidCertificate(const void *, Poco::Net::VerificationErrorArgs & errorCert)
+{
+    if (certificate_handler_type == CertificateHandlerType::Accept)
+        errorCert.setIgnoreError(true);
+}
+#endif
+
 
 void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
@@ -236,6 +257,33 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
     }
     else
         session = std::make_unique<Poco::Net::HTTPClientSession>(host, port);
+
+    /// Subscribe a per-connection certificate handler so vault SSL connections use
+    /// the handler configured specifically for vault rather than the global one.
+#if USE_SSL
+    struct VaultCertificateGuard
+    {
+        Poco::Net::SSLManager & mgr;
+        HashiCorpVault & vault;
+        bool active;
+
+        VaultCertificateGuard(HashiCorpVault & v)
+            : mgr(Poco::Net::SSLManager::instance()), vault(v)
+        {
+            active = vault.certificate_handler_type != CertificateHandlerType::Default;
+            if (active)
+                mgr.ClientVerificationError += Poco::Delegate<HashiCorpVault, Poco::Net::VerificationErrorArgs>(
+                    &vault, &HashiCorpVault::onInvalidCertificate);
+        }
+
+        ~VaultCertificateGuard()
+        {
+            if (active)
+                mgr.ClientVerificationError -= Poco::Delegate<HashiCorpVault, Poco::Net::VerificationErrorArgs>(
+                    &vault, &HashiCorpVault::onInvalidCertificate);
+        }
+    } cert_guard(*this);
+#endif
 
     session->setTimeout(Poco::Timespan(30, 0));
 

@@ -75,6 +75,7 @@ namespace DB
     {
         extern const int SYSTEM_ERROR;
         extern const int LOGICAL_ERROR;
+        extern const int BAD_ARGUMENTS;
     }
 }
 
@@ -134,6 +135,11 @@ void BaseDaemon::loadConfiguration()
 #if USE_SSL
     if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_hashicorp_vault"))
     {
+        if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "hashicorp_vault", "from_zk"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "from_zk is not supported under <hashicorp_vault> when from_hashicorp_vault is used in encryption_codecs. "
+                "Use a direct value instead.");
+
         HashiCorpVault::instance().load(config(), "hashicorp_vault");
         loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
