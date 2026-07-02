@@ -1,0 +1,14 @@
+--- merge() AS m: alias-qualified virtual column ---
+t_61298_a
+t_61298_b
+--- merge() AS m: alias-qualified _database ---
+1
+1
+--- merge() AS m: WHERE filter on alias-qualified _table ---
+1	t_61298_a
+--- merge() AS m JOIN ... : forces toAST() conversion path ---
+t_61298_a	one
+t_61298_b	two
+--- merge() AS m: GROUP BY alias-qualified _table ---
+t_61298_a	1
+t_61298_b	1
