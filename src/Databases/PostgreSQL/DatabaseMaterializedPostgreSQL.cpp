@@ -197,28 +197,48 @@ void DatabaseMaterializedPostgreSQL::stopLoading()
 void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
 {
     std::lock_guard lock(handler_mutex);
-    bool need_update_on_disk = false;
 
+    /// Validate the whole list before applying anything. Otherwise a rejected change (an unknown,
+    /// immutable, or not-allowed setting) combined with an accepted one in the same statement could
+    /// leave the database partially modified: the accepted change would already be applied to the live
+    /// `replication_handler` and in-memory `settings` while the rejected change aborts the statement
+    /// before the on-disk metadata is updated, so the live state would diverge from the metadata until
+    /// the next restart. Checking everything first makes the `ALTER DATABASE ... MODIFY SETTING` atomic.
     for (const auto & change : settings_changes)
     {
         if (!settings->has(change.name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
 
-        if ((change.name == "materialized_postgresql_tables_list"))
+        if (change.name == "materialized_postgresql_tables_list")
         {
             if (!query_context->isInternalQuery())
                 throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Changing setting `{}` is not allowed", change.name);
+        }
+        else if (change.name == "materialized_postgresql_use_extended_date_and_time_types")
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED,
+                            "Setting `{}` only controls the column types chosen when the nested tables are created "
+                            "by type inference, and cannot be changed for an existing database: the already created "
+                            "nested tables keep their fixed column types. Recreate the database to change it.", change.name);
+        }
+        else if ((change.name != "materialized_postgresql_allow_automatic_update") && (change.name != "materialized_postgresql_max_block_size"))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
+        }
+    }
 
+    /// All changes are valid; apply them.
+    bool need_update_on_disk = false;
+    for (const auto & change : settings_changes)
+    {
+        if (change.name == "materialized_postgresql_tables_list")
+        {
             need_update_on_disk = true;
         }
         else if ((change.name == "materialized_postgresql_allow_automatic_update") || (change.name == "materialized_postgresql_max_block_size"))
         {
             replication_handler->setSetting(change);
             need_update_on_disk = true;
-        }
-        else
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown setting");
         }
 
         settings->applyChange(change);
@@ -728,60 +748,67 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-    Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
-    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
+Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
-    ```sql
-    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
-    ```
+```sql
+materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
 
-    Default value: empty list — means whole PostgreSQL database will be replicated.
+Default value: empty list — means whole PostgreSQL database will be replicated.
 
 ### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
-    Default value: empty string. (Default schema is used)
+Default value: empty string. (Default schema is used)
 
 ### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
-    Default value: empty list. (Default schema is used)
+Default value: empty list. (Default schema is used)
 
 ### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
-    Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
+Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
+- Positive integer.
 
-    Default value: `65536`.
+Default value: `65536`.
 
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
-    A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-    A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
-    ```sql
-    CREATE DATABASE database1
-    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-    SELECT * FROM database1.table1;
-    ```
+SELECT * FROM database1.table1;
+```
 
-    The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
+The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-    ```sql
-    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-    ```
+```sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
 
 ### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 
 Use a unique replication consumer identifier for replication. Default: `0`.
 If set to `1`, allows to setup several `MaterializedPostgreSQL` tables pointing to the same `PostgreSQL` table.
+
+### `materialized_postgresql_use_extended_date_and_time_types` {#materialized-postgresql-use-extended-date-and-time-types}
+
+Map the PostgreSQL `date` and `timestamp`/`timestamptz` types to ClickHouse `Date32` and `DateTime64`, which cover the wider value range of the PostgreSQL types. Default: `1`.
+If set to `0`, the narrower `Date` and `DateTime` types are used instead (values outside their range or with sub-second precision are not representable).
+
+This setting only controls the column types chosen by type inference when the nested tables are created, so it must be specified at `CREATE DATABASE` time. It cannot be changed afterwards with `ALTER DATABASE ... MODIFY SETTING` (the already created nested tables keep their fixed column types, and such a change is rejected); recreate the database to change it. It is not applicable to the `MaterializedPostgreSQL` table engine, where the column types are declared explicitly.
 
 ## Notes {#notes}
 
@@ -841,13 +868,13 @@ Please note that this should be used only if it is actually needed. If there is 
 
 ### Required permissions {#required-permissions}
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- create query privilege.
 
-2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
+2. [CREATE_REPLICATION_SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privilege.
 
-3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
+3. [pg_drop_replication_slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- replication privilege or superuser.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
 
 It is possible to avoid executing `2` and `3` commands and having those permissions. Use settings `materialized_postgresql_replication_slot` and `materialized_postgresql_snapshot`. But with much care.
 

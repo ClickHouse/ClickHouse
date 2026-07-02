@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
@@ -88,7 +89,7 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
+    const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
@@ -358,3 +359,6 @@ void StorageSystemCompletions::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCompletions) }
