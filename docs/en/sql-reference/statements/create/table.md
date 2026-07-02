@@ -342,7 +342,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#column_compression_codec}
 
-By default, ClickHouse applies `ZSTD(3)` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+By default, ClickHouse applies `ZSTD(3)` compression in the self-managed version, and `zstd` in ClickHouse Cloud. For the `MergeTree` family the default is size-aware: parts smaller than 100 MB use the faster `LZ4` and larger parts use `ZSTD(3)`, so freshly inserted data starts as `LZ4` and the bigger parts produced by background merges switch to `ZSTD(3)`.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/operations/server-configuration-parameters/settings#compression) section of a server configuration.
 
@@ -402,7 +402,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 #### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1. `ZSTD(3)` is the codec applied by default to columns that do not specify a codec explicitly.
+`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1. `ZSTD(3)` is the codec applied by default to columns that do not specify a codec explicitly (for `MergeTree` parts this applies once a part grows past 100 MB; smaller parts use `LZ4`).
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 

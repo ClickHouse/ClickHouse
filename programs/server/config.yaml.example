@@ -806,12 +806,13 @@ top_level_domains_lists: ''
 # https://clickhouse.com/docs/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
-# Uncomment if you want large parts to be compressed even better than the ZSTD(3) default.
+# By default the codec is chosen by part size: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
+# Uncomment if you want to compress large parts even better than the ZSTD(3) default.
 # Don't do that if you just started using ClickHouse.
 # Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
 
 # compression:
-#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, the default codec ZSTD(3) will be used.
+#     # Set of variants. Checked in order. Last matching case wins. If nothing matches, the size-aware built-in default is used: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts.
 #     case:
 #         Conditions. All must be satisfied. Some conditions may be omitted.
 #         # min_part_size: 10000000000    # Min part size in bytes.
