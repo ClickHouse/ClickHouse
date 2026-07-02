@@ -20,7 +20,6 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/SharedPtr.h>
-#include <Poco/URI.h>
 
 #include <memory>
 #include <string>
@@ -222,7 +221,6 @@ public:
     ~UnityCatalogTestServer()
     {
         server->stop();
-        server->join();
     }
 
     std::string getUrl() const
