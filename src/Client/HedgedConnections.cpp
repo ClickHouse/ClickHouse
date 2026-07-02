@@ -544,6 +544,19 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
 
 void HedgedConnections::startNewReplica()
 {
+    if (cancelled)
+    {
+        /// The query is already cancelled (the factory has been stopped), so we must not
+        /// start a new connection. But getReadyReplicaLocation() has just queued this offset
+        /// and set next_replica_in_process = true before calling us, so we still have to
+        /// clear that bookkeeping (exactly as the normal CANNOT_CHOOSE path and
+        /// checkNewReplica() do). Otherwise next_replica_in_process stays set and can
+        /// suppress a later receive-timeout in resumePacketReceiver(), leaving
+        /// getReadyReplicaLocation() blocked on an empty epoll.
+        processNewReplicaState(HedgedConnectionsFactory::State::CANNOT_CHOOSE, nullptr);
+        return;
+    }
+
     Connection * connection = nullptr;
     HedgedConnectionsFactory::State state = hedged_connections_factory.startNewConnection(connection);
 
