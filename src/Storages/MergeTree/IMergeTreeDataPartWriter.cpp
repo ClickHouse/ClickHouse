@@ -17,11 +17,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString default_compression_codec;
-}
-
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
 {
     /// The cache is meaningful only when a permutation is applied: it stores the result
@@ -154,12 +149,13 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
 
 ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
+    /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
+    /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
+    /// We must trust it here: re-reading `default_compression_codec` and overriding `default_codec`
+    /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
+    /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
+    /// actual on-disk data would diverge and recompression would not be applied.
     ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
-
-    auto default_compression_codec_mergetree_settings = (*storage_settings)[MergeTreeSetting::default_compression_codec].value;
-    // Prioritize the codec from the settings over `default_codec`
-    if (!default_compression_codec_mergetree_settings.empty())
-        default_codec_desc = CompressionCodecFactory::instance().get(default_compression_codec_mergetree_settings)->getFullCodecDesc();
 
     if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;

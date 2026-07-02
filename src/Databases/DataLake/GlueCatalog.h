@@ -67,6 +67,14 @@ public:
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
     void dropTable(const String & namespace_name, const String & table_name) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured

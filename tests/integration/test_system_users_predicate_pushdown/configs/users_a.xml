@@ -1,0 +1,12 @@
+<clickhouse>
+    <users>
+        <dup_user>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+        </dup_user>
+        <only_a>
+            <password></password>
+            <networks><ip>::/0</ip></networks>
+        </only_a>
+    </users>
+</clickhouse>

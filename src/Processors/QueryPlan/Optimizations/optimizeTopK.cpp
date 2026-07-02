@@ -1,3 +1,4 @@
+#include <Columns/Collator.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
@@ -9,6 +10,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/logger_useful.h>
+#include <Common/SipHash.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionTopKFilter.h>
@@ -18,6 +20,16 @@ namespace DB::QueryPlanOptimizations
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
+    /// The dynamic-filtering path injects an internal `__topKFilter` function that
+    /// is created on demand with a runtime threshold tracker and is not registered
+    /// in `FunctionFactory`. The skip-index-on-data-read path likewise relies on a
+    /// `TopKThresholdTracker` shared between `SortingStep` and `ReadFromMergeTree`.
+    /// None of this can be transmitted to remote workers, so when the plan is
+    /// going to be distributed, the remote node would fail to deserialize the
+    /// plan with `Unknown function __topKFilter` (or run with stale state).
+    if (settings.make_distributed_plan)
+        return 0;
+
     QueryPlan::Node * node = parent_node;
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
@@ -41,6 +53,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (expression_step)
     {
+        /// `arrayJoin` changes the number of rows. The dynamic top-K prewhere filter
+        /// applies the threshold to source rows BEFORE the expansion, while the sort
+        /// + limit operates on EXPANDED rows. Mixing the two breaks the assumption
+        /// that "rows seen by the filter" equals "rows seen by the sort": the
+        /// threshold can stabilize at the wrong value, letting the wrong source rows
+        /// through and producing non-deterministic / incorrect results. See #82279.
+        if (expression_step->getExpression().hasArrayJoin())
+            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -49,6 +69,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (filter_step)
     {
+        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort
+        /// breaks the top-K source-row threshold assumption. See #82279.
+        if (filter_step->getExpression().hasArrayJoin())
+            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -221,7 +245,27 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     ///                                __topKFilter() (Prewhere filtering)
 
     if (use_skip_index || use_dynamic_filtering)
-        read_from_mergetree_step->setTopKColumn({sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker});
+    {
+        TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0};
+
+        /// Compute a deterministic hash from the planning-time parameters. Used by
+        /// `updateQueryConditionCache` to partition QCC entries by TopK plan, so the same
+        /// query reuses cached granule decisions and a different TopK plan (different LIMIT,
+        /// sort column, direction, NULLS FIRST/LAST, COLLATE, etc.) gets a fresh entry.
+        SipHash hash;
+        hash.update(info.column_name);
+        const String type_name = info.data_type->getName();
+        hash.update(type_name);
+        hash.update(info.num_sort_columns);
+        hash.update(info.limit_n);
+        hash.update(info.direction);
+        hash.update(sort_col_desc.nulls_direction);
+        if (sort_col_desc.collator)
+            hash.update(sort_col_desc.collator->getLocale());
+        info.condition_hash = hash.get64();
+
+        read_from_mergetree_step->setTopKColumn(info);
+    }
 
     return added_step ? 1 : 0;
 }

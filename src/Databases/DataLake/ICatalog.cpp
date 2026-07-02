@@ -305,6 +305,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
+    changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
 }
@@ -317,6 +318,16 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
+bool ICatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }
 
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const

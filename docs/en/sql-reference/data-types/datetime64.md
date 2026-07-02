@@ -13,6 +13,8 @@ Allows to store an instant in time, that can be expressed as a calendar date and
 Tick size (precision): 10<sup>-precision</sup> seconds. Valid range: [ 0 : 9 ].
 Typically, are used - 3 (milliseconds), 6 (microseconds), 9 (nanoseconds).
 
+Default value: 3 (milliseconds).
+
 **Syntax:**
 
 ```sql

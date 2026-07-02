@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -158,11 +159,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
                 auto to_int64 = FunctionFactory::instance().get("toInt64", nullptr);
                 auto reinterpret_func = FunctionFactory::instance().get("reinterpretAsUInt64", nullptr);
                 auto bitxor_func = FunctionFactory::instance().get("bitXor", nullptr);
-                ColumnWithTypeAndName sign_bit_const;
-                sign_bit_const.type = std::make_shared<DataTypeUInt64>();
-                sign_bit_const.column = sign_bit_const.type->createColumnConst(1, Field(UInt64(1) << 63));
-                sign_bit_const.name = "__sign_bit";
-                const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_const));
+                auto sign_bit_type = std::make_shared<DataTypeUInt64>();
+                auto sign_bit_column = sign_bit_type->createColumnConst(0, Field(UInt64(1) << 63));
+                const auto * sign_bit_node = &dag.addColumn(std::move(sign_bit_column), std::move(sign_bit_type), "__sign_bit");
                 const auto * version_int64 = &dag.addFunction(to_int64, {version_node}, {});
                 const auto * version_uint64 = &dag.addFunction(reinterpret_func, {version_int64}, {});
                 version_node = &dag.addFunction(bitxor_func, {version_uint64, sign_bit_node}, {});
@@ -170,11 +169,9 @@ QueryPlan LazyReadReplacingFinalSource::buildPlanFromReadingStep(
 
             const auto * version_128 = &dag.addFunction(to_uint128, {version_node}, {});
             const auto * row_index_128 = &dag.addFunction(to_uint128, {row_index_node}, {});
-            ColumnWithTypeAndName shift_const;
-            shift_const.type = std::make_shared<DataTypeUInt8>();
-            shift_const.column = shift_const.type->createColumnConst(1, Field(UInt8(64)));
-            shift_const.name = "__shift_64";
-            const auto * shift_amount = &dag.addColumn(std::move(shift_const));
+            auto shift_type = std::make_shared<DataTypeUInt8>();
+            auto shift_column = shift_type->createColumnConst(0, Field(UInt8(64)));
+            const auto * shift_amount = &dag.addColumn(std::move(shift_column), std::move(shift_type), "__shift_64");
             const auto * shifted = &dag.addFunction(bit_shift_left, {version_128, shift_amount}, {});
             const auto * tiebreaker = &dag.addFunction(plus_func, {shifted, row_index_128}, {});
             tiebreaker = &dag.addAlias(*tiebreaker, tiebreaker_column_name);

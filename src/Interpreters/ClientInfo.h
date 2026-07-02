@@ -90,6 +90,9 @@ public:
     String os_user;
     String client_hostname;
     String client_name;
+    /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
+    /// detected from environment variables. Empty when no agent is detected.
+    String client_agent;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
@@ -106,6 +109,13 @@ public:
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
     UInt32 connection_tcp_protocol_version = 0;
+    /// Parallel-replicas protocol version negotiated with the immediate upstream connection on
+    /// hello. Populated locally by `TCPHandler` from its own `client_parallel_replicas_protocol_version`
+    /// member — NOT serialized to the wire. A follower uses this to recognise whether its
+    /// initiator can speak features bumped in newer parallel-replicas protocol versions
+    /// (e.g. announcement-response in `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`)
+    /// and degrade gracefully when it can't. 0 means "unknown / pre-versioning".
+    UInt32 connection_parallel_replicas_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
@@ -146,8 +156,12 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    void write(WriteBuffer & out, UInt64 server_protocol_revision) const;
-    void read(ReadBuffer & in, UInt64 client_protocol_revision);
+    /// `with_client_agent` controls whether the `client_agent` field is (de)serialized as a trailing
+    /// member of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
+    /// `Distributed` insert header, where `client_agent` is stored as a trailing header field instead,
+    /// so that older binaries draining newer queue files can read the header without misinterpreting it.
+    void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_client_agent = true) const;
+    void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_client_agent = true);
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();

@@ -20,12 +20,18 @@
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
+
+namespace ProfileEvents
+{
+    extern const Event FileProgressCallbackInvocations;
+}
 
 namespace DB
 {
@@ -152,7 +158,11 @@ void LocalConnection::sendQuery(
     /// Always track progress so that output formats (e.g. JSON) can report accurate statistics.
     /// The send_progress flag only controls the client-side progress bar, not progress tracking.
     query_context->setProgressCallback([this](const Progress & value) { this->updateProgress(value); });
-    query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+    query_context->setFileProgressCallback([this](const FileProgress & value)
+    {
+        ProfileEvents::increment(ProfileEvents::FileProgressCallbackInvocations);
+        this->updateProgress(Progress(value));
+    });
 
     if (is_cancelled_callback)
     {
@@ -813,6 +823,11 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
 }
 
 void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
+void LocalConnection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

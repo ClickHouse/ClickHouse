@@ -1,4 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <base/sort.h>
 #include <AggregateFunctions/Helpers.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -39,7 +41,7 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
 {
     /// either sort whole container or do so partially merging ranges afterwards
     if (!prefix_sorted && !suffix_sorted)
-        std::stable_sort(std::begin(events_list), std::end(events_list));
+        ::stableSort(std::begin(events_list), std::end(events_list));
     else
     {
         const auto begin = std::begin(events_list);
@@ -47,10 +49,10 @@ void mergeEventsList(T & events_list, size_t prefix_size, bool prefix_sorted, bo
         const auto end = std::end(events_list);
 
         if (!prefix_sorted)
-            std::stable_sort(begin, middle);
+            ::stableSort(begin, middle);
 
         if (!suffix_sorted)
-            std::stable_sort(middle, end);
+            ::stableSort(middle, end);
 
         std::inplace_merge(begin, middle, end);
     }
@@ -102,7 +104,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -223,7 +225,7 @@ struct AggregateFunctionWindowFunnelStrictOnceData
     {
         if (!sorted)
         {
-            std::stable_sort(std::begin(events_list), std::end(events_list));
+            ::stableSort(std::begin(events_list), std::end(events_list));
             sorted = true;
         }
     }
@@ -568,7 +570,7 @@ public:
             this->data(place).advanceId();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -580,7 +582,28 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
-        this->data(place).deserialize(buf);
+        auto & data = this->data(place);
+        data.deserialize(buf);
+
+        /// Event types come from untrusted serialized state. getEventLevel* uses (event - 1) to index
+        /// events_timestamp / event_sequences, both sized events_size, so an out-of-range event would
+        /// read and write out of bounds. Valid event types are [1, events_size]; 0 is the no-event
+        /// sentinel produced only with strict_order, so it is accepted only in that mode.
+        const UInt8 min_event = strict_order ? 0 : 1;
+        for (const auto & event : data.events_list)
+        {
+            UInt8 event_type = 0;
+            if constexpr (Data::strict_once_enabled)
+                event_type = event.event_type;
+            else
+                event_type = event.second;
+
+            if (event_type < min_event || event_type > events_size)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Invalid event type {} in the state of function {}, must be in range [{}, {}]",
+                    static_cast<UInt16>(event_type), getName(), static_cast<UInt16>(min_event), static_cast<UInt16>(events_size));
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

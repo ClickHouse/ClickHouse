@@ -216,9 +216,9 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
     ActionsDAG::NodeRawConstPtrs outputs;
     outputs.reserve(out_header.columns() + 1);
 
-    auto grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
+    ColumnConst::Ptr grouping_col = ColumnConst::create(ColumnUInt64::create(1, group), 0);
     const auto * grouping_node = &dag.addColumn(
-        {ColumnPtr(std::move(grouping_col)), std::make_shared<DataTypeUInt64>(), "__grouping_set"});
+        std::move(grouping_col), std::make_shared<DataTypeUInt64>(), "__grouping_set");
 
     grouping_node = &dag.materializeNode(*grouping_node);
     outputs.push_back(grouping_node);
@@ -240,8 +240,8 @@ ActionsDAG AggregatingStep::makeCreatingMissingKeysForGroupingSetDAG(
             col.type->insertDefaultInto(*column_with_default);
             column_with_default->finalize();
 
-            auto column = ColumnConst::create(std::move(column_with_default), 0);
-            const auto * node = &dag.addColumn({ColumnPtr(std::move(column)), col.type, col.name});
+            ColumnConst::Ptr column = ColumnConst::create(std::move(column_with_default), 0);
+            const auto * node = &dag.addColumn(std::move(column), col.type, col.name);
             node = &dag.materializeNode(*node);
             outputs.push_back(node);
         }
@@ -335,6 +335,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     const size_t max_threads = pipeline.getReadStreamCountWasReduced()
         ? std::min(params.max_threads, pipeline.getNumStreams())
         : params.max_threads;
+
+    /// Clear after use so it does not leak into downstream JOIN/UNION pipeline compositions.
+    pipeline.setReadStreamCountWasReduced(false);
 
     QueryPipelineProcessorsCollector collector(pipeline, this);
 
@@ -533,6 +536,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data,
                     counter++,
+                    limit_hint,
                     nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
                 );
             });
@@ -554,7 +558,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 transform_params,
                 group_by_sort_description,
                 max_block_size,
-                aggregation_in_order_max_block_bytes);
+                aggregation_in_order_max_block_bytes,
+                limit_hint);
 
             pipeline.addTransform(std::move(transform));
 
@@ -582,6 +587,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
+                    limit_hint,
                     dataflow_cache_updater);
             });
 

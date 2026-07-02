@@ -12,12 +12,12 @@ Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that deno
 `T` can't be any of the following composite data types:
 - [Array](../../sql-reference/data-types/array.md) — Not supported
 - [Map](../../sql-reference/data-types/map.md) — Not supported
-- [Tuple](../../sql-reference/data-types/tuple.md) — Experimental support available*
+- [Tuple](../../sql-reference/data-types/tuple.md) — Beta support available*
 
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
 
-:::note Experimental: Nullable Tuples
-* [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `allow_experimental_nullable_tuple_type = 1` is enabled.
+:::note Beta: Nullable Tuples
+* [Nullable(Tuple(...))](../../sql-reference/data-types/tuple.md#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
 :::
 
 A `Nullable` type field can't be included in table indexes.

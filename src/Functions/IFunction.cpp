@@ -741,6 +741,8 @@ DataTypePtr IFunctionOverloadResolver::getReturnType(const ColumnsWithTypeAndNam
 
 FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & arguments) const
 {
+    FunctionBasePtr base;
+
     /// Use FunctionBaseDynamicAdaptor if default implementation for Dynamic is enabled and we have Dynamic type in arguments.
     if (useDefaultImplementationForDynamic())
     {
@@ -752,13 +754,14 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 DataTypes data_types(arguments.size());
                 for (size_t i = 0; i < arguments.size(); ++i)
                     data_types[i] = arguments[i].type;
-                return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+                base = std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+                break;
             }
         }
     }
 
     /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
-    if (useDefaultImplementationForVariant())
+    if (!base && useDefaultImplementationForVariant())
     {
         checkNumberOfArguments(arguments.size());
 
@@ -767,13 +770,22 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
             if (isVariant(arg.type))
             {
                 ColumnsWithTypeAndName args_copy = arguments;
-                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
+                base = std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(args_copy));
+                break;
             }
         }
     }
 
-    auto return_type = getReturnType(arguments);
-    return buildImpl(arguments, return_type);
+    if (!base)
+    {
+        auto return_type = getReturnType(arguments);
+        base = buildImpl(arguments, return_type);
+    }
+
+    if (base && factory_handle)
+        base->setFactoryHandle(factory_handle);
+
+    return base;
 }
 
 void IFunctionOverloadResolver::getLambdaArgumentTypes(DataTypes & arguments [[maybe_unused]]) const

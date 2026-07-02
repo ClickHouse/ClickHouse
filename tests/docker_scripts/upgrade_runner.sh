@@ -22,6 +22,8 @@ source /repo/tests/docker_scripts/stress_tests.lib
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
 
+bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
+
 echo "Get previous release tag"
 PACKAGES_DIR=/repo/ci/tmp
 # shellcheck disable=SC2016
@@ -38,8 +40,20 @@ git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --br
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
 
-echo $previous_release_tag | download_release_packages && echo -e "Download script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+# --- download previous release packages: fail closed on a missing required one ---
+# `download_release_packages` exits nonzero when a required previous-release
+# package is missing or fails to download. Stop here at the download boundary
+# with a clear, attributable status instead of letting the later `install_packages`
+# die with an opaque `dpkg` glob error. (`set -e` does not fire inside an
+# `&& ... || ...` list, so the nonzero status must be handled explicitly.)
+if echo $previous_release_tag | download_release_packages; then
+    echo -e "Download script exit code$OK" >> /test_output/test_results.tsv
+else
+    echo -e "Download script failed$FAIL" >> /test_output/test_results.tsv
+    echo -e 'failure\tFailed to download previous release packages' > /test_output/check_status.tsv
+    exit 1
+fi
+# --- end download previous release packages ---
 
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
@@ -98,7 +112,7 @@ if [ $((RANDOM % 2)) -eq 0 ]; then
 fi
 
 # Start server from previous release
-configure "${configure_opts[@]}"
+configure "${configure_opts[@]}" --previous-release
 
 # But we still need default disk because some tables loaded only into it
 sudo sed -i "s|<main><disk>s3</disk></main>|<main><disk>s3</disk></main><default><disk>default</disk></default>|" /etc/clickhouse-server/config.d/s3_storage_policy_by_default.xml
@@ -107,7 +121,7 @@ sudo chgrp clickhouse /etc/clickhouse-server/config.d/s3_storage_policy_by_defau
 
 start_server || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 mkdir tmp_stress_output
 
@@ -135,8 +149,12 @@ configure "${configure_opts[@]}"
 
 # Check that all new/changed setting were added in settings changes history.
 # Some settings can be different for builds with sanitizers, so we check
-# Also the automatic value of 'max_threads' and similar was displayed as "'auto(...)'" in previous versions instead of "auto(...)".
 # settings changes only for non-sanitizer builds.
+# The automatic value of 'max_threads' and similar settings is rendered as auto(N); older releases
+# rendered it as the quoted 'auto(N)' (with the quotes baked into the value). Suppress only this pure
+# rendering difference - a row where the old value is exactly the new value wrapped in single quotes -
+# so it is not reported as a setting change. A genuine change of an auto-valued setting's default is
+# still caught and must have a settings changes history entry.
 IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
 if [ "${IS_SANITIZED}" -eq "0" ]
 then
@@ -156,6 +174,7 @@ then
   FROM new_settings
   LEFT JOIN old_settings ON new_settings.name = old_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -175,6 +194,7 @@ then
   FROM new_merge_tree_settings
   LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
   WHERE (old_value IS NULL OR new_value != old_value)
+      AND NOT (old_value IS NOT NULL AND new_value LIKE 'auto(%' AND old_value = concat('''', new_value, ''''))
       AND (name NOT IN (
       SELECT arrayJoin(tupleElement(changes, 'name'))
       FROM
@@ -286,7 +306,7 @@ check_allow_list() {
 
 start_server || check_allow_list || (echo "Failed to start server" && exit 1)
 
-clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
+clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
     >> /test_output/test_results.tsv)
@@ -294,7 +314,7 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''"
 # Remove file application_errors.txt if it's empty
 [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
-clickhouse-client --query="SELECT 'Server version: ', version()"
+clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', version()"
 
 # Let the server run for a while before checking log.
 sleep 60
@@ -313,8 +333,25 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       `CANNOT_PARSE_TEXT` errors come from:
 #       - 00834_kill_mutation{,_replicated_zookeeper}: `DELETE WHERE toUInt32(s) = 1` on String data ('a', 'b')
 #       - 01414_mutations_and_errors_zookeeper: `MODIFY COLUMN value UInt64` on String data ('Hello')
+#       - 04338_on_fly_mutation_read_overwritten_lc_source: `MODIFY COLUMN v UInt64` on String data ('x')
+#       - 01155_old_mutation_parts_to_do: `UPDATE m = m*toInt8(s) WHERE n=3` on String data ('fail')
 #       `MutateFromLogEntryTask` is also excluded for the same reason, but only catches the first log line;
 #       the wrapping `MergeTreeBackgroundExecutor` line also needs to be excluded.
+# `Value passed to 'throwIf' function is non-zero` (`FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, Code: 395) is the same
+#       class of expected test-induced mutation error. It comes from tests that run an intentionally-failing
+#       `ALTER TABLE ... UPDATE <col> = <col> <op> throwIf(1)` async mutation:
+#       - 04341_broken_mutation_part_log_flush: plain `MergeTree`, so the error is emitted by
+#         `MutatePlainMergeTreeTask`, which is NOT covered by the `MutateFromLogEntryTask` exclusion above.
+#       - 02597_column_{update,delete,update_tricky_expression}_and_replication: `ReplicatedMergeTree`, where
+#         `MutateFromLogEntryTask` catches only the first line and the wrapping `MergeTreeBackgroundExecutor`
+#         line leaks.
+#       After the upgrade restart the broken mutation is retried in the background and logged to
+#       `clickhouse-server.upgrade.log`. `throwIf` is a user-level function that only ever raises when a query
+#       explicitly calls it with a truthy argument, so this default message can only ever originate from such a
+#       test query, never from a background or internal assertion - matching it is therefore safe to suppress
+#       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
+#       mutations emit above. Matching the message rather than the task type also covers the wrapping
+#       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
 # `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
@@ -344,6 +381,13 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       via regex in the secondary pipe below to require the `rdk:FAIL` tag AND the specific connection-refused
 #       message together, so real Kafka regressions (auth, protocol, config) that also emit `rdk:FAIL` are
 #       not masked.
+# `StorageKafka2` + `Exception during get topic partitions from Kafka: Local: Broker transport failure` is
+#       the wrapper-exception variant of the same class of error: the `KafkaConsumer2` background poll loop
+#       (`KafkaConsumer2::getAllTopicPartitionOffsets` -> `cppkafka::HandleException`) keeps polling while the
+#       Redpanda broker is in transition during the upgrade restart sequence and logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require both the `StorageKafka2` engine context AND
+#       the `Broker transport failure` symptom together, so real `StorageKafka2` regressions (auth errors,
+#       timeouts, protocol errors, other broker errors) still surface.
 # `No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed` is the unique signature of
 #       issue #102259 (`getFileNameForRenamedColumnStream` uses `substr(0, N)` instead of `substr(N)`, producing
 #       `<renamed><original>.bin` instead of `<renamed>.bin`). The fix is in PR #102689; until it lands, the
@@ -366,6 +410,31 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       this regex covers the other variant (peer wins, read returns EOF or another transient socket error).
 #       Filtered via regex in the secondary pipe below to require all three substrings together, so unrelated
 #       RaftInstance errors are not masked.
+# `Failed to flush system log system.metric_log` + `DEADLOCK_AVOIDED` is a transient lock-timeout emitted by
+#       `SystemLog<MetricLogElement>::flushImpl` when the background `MetricLog` flush loop races with the
+#       ongoing upgrade-test shutdown sequence. Another worker (DROP/RENAME/DETACH on `system.metric_log`,
+#       or a parallel mutation/merge) holds the table-level write lock, the flush blocks for the 60s timeout,
+#       and then aborts with code 473 (`DEADLOCK_AVOIDED`). Losing a few `MetricLogElement` samples during
+#       shutdown is harmless; the upgrade-check stage is not asserting on metric continuity. Filtered via
+#       regex in the secondary pipe below to require BOTH the `SystemLog` flush wrapper for `metric_log` AND
+#       the `DEADLOCK_AVOIDED` error code together, so unrelated lock-timeout errors and unrelated
+#       `metric_log` errors are not masked.
+# `PostgreSQLConnectionPool: Connection error` and `DatabasePostgreSQL::removeOutdatedTables` + `Connection to`
+#       + `failed` are benign background-reconnection errors from a `DatabasePostgreSQL` engine left behind by
+#       `04210_show_remote_databases_in_system_tables` when the stress phase interrupts that test between its
+#       `CREATE DATABASE ... ENGINE = PostgreSQL('192.0.2.1:5432', ...)` and the final `DROP DATABASE` (the
+#       documentation IP `192.0.2.1`, RFC 5737, is intentionally unreachable). `DatabasePostgreSQL::startup`
+#       always activates the `PostgreSQLCleanerTask`, so after the upgrade restart the leftover database's cleaner
+#       task (`removeOutdatedTables`) tries to connect and the connection pool logs `<Error>` for each retry.
+#       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
+#       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
+#       query errors) are not masked.
+# The MySQL matchers below filter the same class of benign connection failure from a `DatabaseMySQL` engine
+#       that `04210_show_remote_databases_in_system_tables` also creates
+#       (`ENGINE = MySQL('192.0.2.1:3306', ...)`, the same unreachable RFC 5737 host). On the post-upgrade
+#       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
+#       expected connection failure. Filtered to require the MySQL component AND the connection-failure
+#       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -396,6 +465,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "is lost forever." \
            -e "Unknown index: idx." \
            -e "Cannot parse string 'Hello' as UInt64" \
+           -e "Cannot parse string 'x' as UInt64" \
            -e "Cannot parse string 'Hello' as UInt32" \
            -e "Cannot parse string \'Hello\' as UInt32" \
            -e "Cannot parse string \\'Hello\\' as UInt32" \
@@ -403,6 +473,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string \'b\' as UInt32" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
+           -e "Cannot parse string 'fail' as Int8" \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -437,6 +508,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Tuple element name 'null' is reserved" \
            -e "No stream (column1_renamedcolumn1.bin) file checksum for column column1_renamed" \
            -e "No stream (ba1.bin) file checksum for column b" \
+           -e "Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
@@ -444,8 +516,16 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
     | grep -av -e "rdk:FAIL.*Connect to.*failed: Connection refused" \
+    | grep -av -e "StorageKafka2.*Exception during get topic partitions from Kafka: Local: Broker transport failure" \
     | grep -av -e "wrong_metadata.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "RaftInstance: session.*failed to read rpc header from socket.*due to error" \
+    | grep -av -e "SystemLog.*Failed to flush system log system\.metric_log.*DEADLOCK_AVOIDED" \
+    | grep -av -e "Value passed to 'throwIf' function is non-zero" \
+    | grep -av -e "PostgreSQLConnectionPool: Connection error" \
+    | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
+    | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
+    | grep -av -e "Application: Connection to mysql failed" \
+    | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
