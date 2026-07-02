@@ -157,6 +157,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"mutation_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of mutation IDs applied to the source part (merged_from) for the event with type MUTATE_PART_START and MUTATE_PART."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+
+        {"projections_duration_ms", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Per-projection merge/rebuild duration in milliseconds."},
     };
 }
 
@@ -233,6 +235,13 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     else
     {
         columns[i++]->insertDefault();
+    }
+
+    {
+        Map map;
+        for (const auto & [name, duration] : projections_duration_ms)
+            map.push_back(Tuple{name, duration});
+        columns[i++]->insert(map);
     }
 }
 

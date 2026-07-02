@@ -22,12 +22,14 @@ public:
         String module_hash;
         String source_function_name;
         WasmAbiVersion abi_version = WasmAbiVersion::RowDirect;
+        bool is_deterministic = false;
 
         WebAssemblyFunctionSettings settings;
     };
 
     bool or_replace = false;
     bool if_not_exists = false;
+    bool is_deterministic = false;
 
     String getID(char delim) const override;
 
@@ -51,6 +53,20 @@ public:
     void setSourceFunctionName(ASTPtr ast) { source_function_name_ast = children.emplace_back(std::move(ast)); }
     void setAbi(ASTPtr ast) { abi_ast = children.emplace_back(std::move(ast)); }
     void setSettings(SettingsChanges settings_) { function_settings = std::move(settings_); }
+
+    /// Rebuild children in the canonical order that formatImpl uses.
+    /// Must be called after parsing to ensure consistent tree hashing.
+    void normalizeChildrenOrder()
+    {
+        children.clear();
+        if (function_name_ast) children.push_back(function_name_ast);
+        if (arguments_ast) children.push_back(arguments_ast);
+        if (result_type_ast) children.push_back(result_type_ast);
+        if (module_name_ast) children.push_back(module_name_ast);
+        if (source_function_name_ast) children.push_back(source_function_name_ast);
+        if (module_hash_ast) children.push_back(module_hash_ast);
+        if (abi_ast) children.push_back(abi_ast);
+    }
 
 private:
     ASTPtr function_name_ast;

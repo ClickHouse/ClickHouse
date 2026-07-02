@@ -2,6 +2,7 @@ DROP TABLE IF EXISTS tt;
 CREATE TABLE tt (n UInt64) ENGINE=MergeTree() ORDER BY tuple();
 INSERT INTO tt SELECT * FROM numbers(10);
 
+SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 SET enable_parallel_replicas=1, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;

@@ -1,9 +1,11 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <atomic>
 #include <filesystem>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
@@ -60,22 +62,121 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 {
     auto modified_settings{read_settings};
     /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_method = LocalFSReadMethod::pread;
-    modified_settings.direct_io_threshold = 0; /// Disable.
+    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
-}
-
-std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint) const
-{
-    LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 }
 
 namespace
 {
+
+/// Wrapper around a read buffer that adds blob storage logging in the destructor.
+///
+/// Local reads (and HDFS) have no discrete "API call" boundary like S3 `GetObject` or
+/// Azure `Download`, so we aggregate `elapsed_microseconds` and `bytes_read` across all
+/// `nextImpl`/`readBigAt` calls and emit a single `Read` event per buffer lifetime.
+/// S3 and Azure log each request/attempt separately as time-to-first-byte instead.
+class ReadBufferFromFileWithLogging final : public ReadBufferFromFileDecorator
+{
+public:
+    ReadBufferFromFileWithLogging(
+        std::unique_ptr<ReadBufferFromFileBase> impl_,
+        const String & file_path_,
+        const String & bucket_,
+        BlobStorageLogWriterPtr blob_log_)
+        : ReadBufferFromFileDecorator(std::move(impl_))
+        , file_path(file_path_)
+        , bucket(bucket_)
+        , blob_log(std::move(blob_log_))
+    {
+    }
+
+    ~ReadBufferFromFileWithLogging() override
+    {
+        /// The destructor is implicitly `noexcept`. `addEvent` is potentially throwing
+        /// (e.g. allocations inside `SystemLogQueue::push`), so wrap it in `try/catch`
+        /// to avoid `std::terminate` if it throws during stack unwinding.
+        if (blob_log && read_attempted && !read_failed)
+        {
+            try
+            {
+                blob_log->addEvent(
+                    BlobStorageLogElement::EventType::Read,
+                    /* bucket */ bucket,
+                    /* remote_path */ file_path,
+                    /* local_path */ {},
+                    /* data_size */ bytes_read,
+                    elapsed_microseconds,
+                    /* error_code */ 0,
+                    /* error_message */ {});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
+    }
+
+    std::string getFileName() const override { return file_path; }
+
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override
+    {
+        Stopwatch watch;
+        read_attempted = true;
+        try
+        {
+            size_t result = impl->readBigAt(to, n, offset, progress_callback);
+            elapsed_microseconds += watch.elapsedMicroseconds();
+            bytes_read += result;
+            return result;
+        }
+        catch (...)
+        {
+            read_failed = true;
+            throw;
+        }
+    }
+
+    /// Forward methods that the base ReadBufferFromFileDecorator does not delegate.
+    /// These are used when our wrapper is plugged into ReadBufferFromRemoteFSGather
+    /// or AsynchronousBoundedReadBuffer (e.g. for the local_blob_storage disk type).
+    size_t getFileOffsetOfBufferEnd() const override { return impl->getFileOffsetOfBufferEnd(); }
+    void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+    void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+    bool supportsRightBoundedReads() const override { return impl->supportsRightBoundedReads(); }
+    bool isSeekCheap() override { return impl->isSeekCheap(); }
+    bool isContentCached(size_t offset, size_t size) override { return impl->isContentCached(offset, size); }
+
+private:
+    bool nextImpl() override
+    {
+        Stopwatch next_watch;
+        read_attempted = true;
+        try
+        {
+            bool result = ReadBufferFromFileDecorator::nextImpl();
+            elapsed_microseconds += next_watch.elapsedMicroseconds();
+            if (result)
+                bytes_read += working_buffer.size();
+            return result;
+        }
+        catch (...)
+        {
+            read_failed = true;
+            throw;
+        }
+    }
+
+    const String file_path;
+    const String bucket;
+    BlobStorageLogWriterPtr blob_log;
+    mutable std::atomic<size_t> elapsed_microseconds = 0;
+    mutable std::atomic<size_t> bytes_read = 0;
+    mutable std::atomic<bool> read_attempted = false;
+    mutable std::atomic<bool> read_failed = false;
+};
 
 /// Wrapper around WriteBufferFromFile that adds blob storage logging on finalize.
 /// Inherits from WriteBufferFromFileDecorator to follow the established pattern.
@@ -120,6 +221,30 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
+}
+
+std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    std::optional<size_t> read_hint,
+    bool /* use_external_buffer */,
+    bool /* restrict_seek */) const
+{
+    LOG_TEST(log, "Read object: {}", object.remote_path);
+    auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+
+    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    {
+        auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
+        if (blob_storage_log)
+        {
+            blob_storage_log->local_path = object.local_path;
+            return std::make_unique<ReadBufferFromFileWithLogging>(
+                std::move(buf), object.remote_path, settings.key_prefix, std::move(blob_storage_log));
+        }
+    }
+
+    return buf;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
@@ -243,6 +368,18 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
+namespace
+{
+/// The concurrent-disappearance class for a best-effort local listing: an entry
+/// removed mid-stat (ENOENT) or whose parent path component was concurrently
+/// replaced by a non-directory (ENOTDIR). Mirrors libc++'s own `__is_dne_error`.
+/// Every other error (EACCES, EIO, ...) is a real failure and must propagate.
+bool isVanishedEntryError(const std::error_code & error)
+{
+    return error == std::errc::no_such_file_or_directory || error == std::errc::not_a_directory;
+}
+}
+
 ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     ObjectMetadata object_metadata;
@@ -266,13 +403,20 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
     auto time = fs::last_write_time(path, error);
     if (error)
     {
-        if (error == std::errc::no_such_file_or_directory)
+        if (isVanishedEntryError(error))
             return {};
         throw fs::filesystem_error("Got unexpected error while getting last write time", path, error);
     }
 
-    /// no_such_file_or_directory is ignored only for last_write_time for consistency
-    object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.size_bytes = fs::file_size(path, error);
+    if (error)
+    {
+        /// The entry may vanish between the two stat calls (concurrent removal),
+        /// or a parent path component may be concurrently replaced by a file.
+        if (isVanishedEntryError(error))
+            return {};
+        throw fs::filesystem_error("Got unexpected error while getting file size", path, error);
+    }
 
     object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
@@ -282,18 +426,102 @@ std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std
 
 void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t/* max_keys */) const
 {
+    /// A path with an embedded NUL is malformed: libc truncates every syscall
+    /// argument at the NUL while our `std::string`/`fs::path` keep the full
+    /// value, so the traversal below would re-open the same truncated directory
+    /// and queue ever-longer NUL-bearing child paths that never converge (an
+    /// unbounded loop for a directory that holds only subdirectories). A
+    /// `readdir` entry name never contains a NUL, so this single up-front check
+    /// guarantees no path derived during traversal can reintroduce one.
+    if (path.find('\0') != std::string::npos)
+        throw fs::filesystem_error(
+            "Path contains an embedded NUL byte", path,
+            std::make_error_code(std::errc::invalid_argument));
+
     if (!fs::exists(path) || !fs::is_directory(path))
         return;
 
-    for (const auto & entry : fs::directory_iterator(path))
+    /// Listing is a best-effort snapshot driven with the non-throwing
+    /// `error_code` overloads. Tolerate ONLY the concurrent-disappearance class
+    /// (see `isVanishedEntryError`) - such an entry is simply omitted, mirroring
+    /// how a remote object store omits a concurrently-deleted object. Any other
+    /// error (EACCES, EIO, ...) is propagated, so a caller never reads a
+    /// silently truncated listing. The same tolerance is applied by
+    /// `tryGetObjectMetadata` below for the per-entry metadata stat.
+    auto throw_unless_vanished = [&](const std::error_code & e, const fs::path & at)
     {
-        if (entry.is_directory())
+        if (!isVanishedEntryError(e))
+            throw fs::filesystem_error("Cannot list local object storage directory", at, e);
+    };
+
+    /// We descend with an explicit stack of non-recursive `directory_iterator`s
+    /// rather than a single `recursive_directory_iterator`. The recursive
+    /// iterator opens each child directory with `opendir` while incrementing and,
+    /// if that `opendir` fails (e.g. the directory was concurrently removed), it
+    /// resets itself to `end()` - silently dropping every later, still-present
+    /// sibling. Listing only the open directory at a time lets a vanished
+    /// directory skip just its own subtree while the remaining entries are still
+    /// reported. Each directory is fully drained before any subdirectory is
+    /// opened, so an invalid path (e.g. a NUL-truncated argument) fails fast on
+    /// the per-entry stat instead of recursing.
+    std::vector<fs::path> pending_dirs;
+    pending_dirs.emplace_back(path);
+
+    while (!pending_dirs.empty())
+    {
+        const fs::path dir = std::move(pending_dirs.back());
+        pending_dirs.pop_back();
+
+        std::error_code ec;
+        fs::directory_iterator it(dir, ec);
+        if (ec)
         {
-            listObjects(entry.path(), children, 0);
+            /// The directory itself vanished (or a path component was replaced)
+            /// before we could open it: omit only this subtree, keep the rest.
+            throw_unless_vanished(ec, dir);
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
+        const fs::directory_iterator end;
+        while (it != end)
+        {
+            const fs::path entry_path = it->path();
+            const bool is_dir = it->is_directory(ec); /// follows symlinks
+            if (ec)
+            {
+                throw_unless_vanished(ec, entry_path); /// entry vanished before we could stat it: skip it
+            }
+            else if (is_dir)
+            {
+                /// Descend only into real subdirectories, never into symlinks,
+                /// matching the no-follow-symlink default of the recursive
+                /// iterator (avoids cycles). A symlink-to-directory is neither
+                /// descended into nor reported as an object. The symlink probe
+                /// is the fourth stat in this path: route its error through the
+                /// same disappearance filter so a real error (EACCES, EIO) is
+                /// not silently dropped while a vanished entry is skipped.
+                std::error_code sym_ec;
+                const bool is_symlink = it->is_symlink(sym_ec);
+                if (sym_ec)
+                    throw_unless_vanished(sym_ec, entry_path);
+                else if (!is_symlink)
+                    pending_dirs.push_back(entry_path);
+            }
+            else
+            {
+                if (auto metadata = tryGetObjectMetadata(entry_path, /*with_tags=*/ false))
+                    children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry_path, std::move(*metadata)));
+            }
+
+            it.increment(ec);
+            if (ec)
+            {
+                /// `increment` resets the iterator to end() on error; a vanished
+                /// entry only affects this directory, the worklist preserves the rest.
+                throw_unless_vanished(ec, dir);
+                break;
+            }
+        }
     }
 }
 

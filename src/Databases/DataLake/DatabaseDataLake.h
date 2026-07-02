@@ -22,7 +22,8 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
-        UUID uuid);
+        UUID uuid,
+        bool lazy_init);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
@@ -47,6 +48,9 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
+
+    void checkDatabase() const override;
 
     void shutdown() override {}
 
@@ -63,6 +67,7 @@ public:
         const String & name,
         bool /*sync*/) override;
 
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
@@ -79,10 +84,18 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    mutable std::mutex catalog_mutex;
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
+
+    /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
+    /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
+    /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
+    /// of running eagerly in the constructor. That keeps one misconfigured or unreachable database
+    /// from blocking server startup. On CREATE it still runs eagerly so problems are reported up
+    /// front. Guarded by `catalog_mutex` because lazy initialization can race concurrent readers.
+    void initialize() const TSA_REQUIRES(catalog_mutex);
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

@@ -2,7 +2,6 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -16,6 +15,8 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -28,6 +29,11 @@ struct ConnectionTimeouts;
 class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
+
+bool urlPathHasListableGlobs(std::string_view uri);
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 /**
  * This class represents table engine for external urls.
@@ -158,7 +164,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-class StorageURLSource : public ISource, WithContext
+class StorageURLSource final : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -196,7 +202,8 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false);
+        bool need_only_count_ = false,
+        StorageID storage_id_ = StorageID::createEmpty());
 
     ~StorageURLSource() override;
 
@@ -204,7 +211,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
@@ -237,12 +244,14 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
+    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
+    StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
@@ -257,7 +266,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink : public SinkToStorage
+class StorageURLSink final : public SinkToStorage
 {
 public:
     StorageURLSink(
@@ -327,7 +336,7 @@ public:
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
@@ -349,6 +358,24 @@ public:
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
+
+    /// Resolve a possibly relative URL against a base URL per RFC 3986.
+    /// If the URL already contains a scheme, it is returned as-is.
+    /// Otherwise, it is resolved relative to the base:
+    /// - `//host/path` → scheme-relative (uses scheme from base)
+    /// - `/path` → host-relative (uses scheme and host from base)
+    /// - `path` → path-relative (merged with base URL path: replaces everything
+    ///   after the last `/` in the base path, then normalizes dot segments)
+    /// - `?query` → replaces base query/fragment, preserves base path
+    /// - `#frag` → replaces base fragment, preserves base path and query
+    /// The resolution is done by string manipulation to allow malformed URLs.
+    static String resolveURLBase(const String & url, const String & base);
+
+    /// Rewrite engine args so that the URL literal (positional) or `url='...'`
+    /// override (named-collection) matches the URL resolved via `url_base`.
+    /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
+    /// to avoid leaking them through the persisted CREATE TABLE AST.
+    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
 };
 
 

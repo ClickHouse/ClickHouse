@@ -1,3 +1,4 @@
+#include <Functions/multiMatchAny.h>
 #include <Functions/FunctionsMultiStringSearch.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/MultiMatchAnyImpl.h>

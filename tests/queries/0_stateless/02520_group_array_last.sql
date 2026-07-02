@@ -1,3 +1,5 @@
+SET optimize_on_insert = 1;
+
 drop table if exists simple_agg_groupArrayLastArray;
 
 -- { echo }

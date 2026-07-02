@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
@@ -8,7 +9,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
-#include <Common/DateLUT.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -17,6 +17,24 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+}
+
+UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
+{
+    SipHash hash;
+    hash.update("DateTime");
+    auto tz = time_zone_.getTimeZone().getTimeZone();
+    hash.update(tz.size());
+    hash.update(tz);
+    hash.update(time_zone_.hasExplicitTimeZone());
+    return hash.get128();
+}
+
+UInt128 SerializationTime::getHash(const DataTypeTime & /*time_type*/)
+{
+    SipHash hash;
+    hash.update("Time");
+    return hash.get128();
 }
 
 namespace
@@ -38,19 +56,19 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
 inline void readAsIntText(time_t & x, ReadBuffer & istr)
 {
     readIntText(x, istr);
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    bool res;
+    bool res = false;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
@@ -64,7 +82,7 @@ inline bool tryReadText(
             break;
     }
 
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return res;
 }
 
@@ -72,7 +90,7 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 {
     if (!tryReadIntText(x, istr))
         return false;
-    x = std::max<time_t>(0, x);
+    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return true;
 }
 
@@ -81,6 +99,16 @@ inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
 {
+}
+
+SerializationPtr SerializationDateTime::create(const TimezoneMixin & time_zone_)
+{
+    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDateTime(time_zone_); });
+}
+
+SerializationPtr SerializationTime::create(const DataTypeTime & time_type)
+{
+    return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
 }
 
 void SerializationDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -217,7 +245,7 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadIntText(x, istr))
+        if (!tryReadAsIntText(x, istr))
             return false;
     }
 

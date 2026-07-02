@@ -69,5 +69,7 @@ if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     fi
 fi
 
+chmod -R a+rX /var/log/clickhouse-server 2>/dev/null || true
+
 # Preserve exit code of the server
 exit $server_exit_code

@@ -236,9 +236,7 @@ namespace QueryPlanOptimizations
 void considerEnablingParallelReplicas(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan & query_plan)
 {
-    if (!optimization_settings.automatic_parallel_replicas_mode
-        || !optimization_settings.query_plan_with_parallel_replicas_builder
-        || optimization_settings.parallel_replicas_enabled)
+    if (!optimization_settings.automatic_parallel_replicas_mode || !optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
     // Cannot guarantee projection usage with parallel replicas
@@ -322,18 +320,22 @@ void considerEnablingParallelReplicas(
         if (apply_plan_with_parallel_replicas)
         {
             const auto max_threads = optimization_settings.max_threads;
+            // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
+            // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
+            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
+                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
+                : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
-            const auto local_plan_cost_estimation = stats->input_bytes / max_threads;
+            const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas;
+                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / num_replicas;
             LOG_DEBUG(
                 getLogger("optimizeTree"),
-                "The applied formula: {} / {} ? ({} / ({} * {}) + {} / {}) ≡ {} ? {}",
+                "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
                 stats->input_bytes,
-                max_threads,
+                std::min<size_t>(max_threads, effective_max_reading_threads),
                 stats->input_bytes,
-                max_threads,
-                num_replicas,
+                std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
                 stats->output_bytes,
                 num_replicas,
                 local_plan_cost_estimation,

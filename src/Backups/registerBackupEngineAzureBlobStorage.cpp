@@ -51,6 +51,8 @@ namespace
 }
 #endif
 
+void registerBackupEngineAzureBlobStorage(BackupFactory &);
+
 void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 {
     auto creator_fn = []([[maybe_unused]] BackupFactory::CreateParams params) -> std::unique_ptr<IBackup>
@@ -145,20 +147,10 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            auto lightweight_snapshot_writer = std::make_shared<BackupWriterAzureBlobStorage>(
-                connection_params,
-                "",
-                params.allow_azure_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.azure_attempt_to_create_container);
-
             return std::make_unique<BackupImpl>(
                 params.backup_info,
                 archive_params,
-                reader,
-                lightweight_snapshot_writer);
+                reader);
         }
 
         params.use_same_s3_credentials_for_base_backup = false;

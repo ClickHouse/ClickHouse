@@ -14,7 +14,7 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     bool partial_result = true;
     std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b;
+        bool b = false;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result &= b;
@@ -43,7 +43,7 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     bool partial_result = false;
     std::erase_if(arguments, [&](const ASTPtr & argument)
     {
-        bool b;
+        bool b = false;
         if (!tryGetLiteralBool(argument.get(), b))
             return false;
         partial_result |= b;
@@ -81,7 +81,7 @@ bool tryGetLiteralBool(const IAST * ast, bool & value)
         }
         return false;
     }
-    catch (...)
+    catch (const Exception &)
     {
         return false;
     }

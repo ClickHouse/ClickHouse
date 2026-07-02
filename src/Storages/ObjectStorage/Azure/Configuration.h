@@ -72,7 +72,8 @@ struct AzureStorageParsedArguments : private StorageParsedArguments
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     void initializeForOneLake(
         ASTs & args,
-        ContextPtr context);
+        ContextPtr context,
+        bool use_blob_endpoint);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -98,6 +99,7 @@ public:
     std::string getEngineName() const override { return engine_name; }
 
     Path getRawPath() const override { return blob_path; }
+    void setRawPath(const Path & path) override { blob_path = path; }
     const String & getRawURI() const override { return blob_path.path; }
 
     const Paths & getPaths() const override { return blobs_paths; }
@@ -106,6 +108,11 @@ public:
     String getNamespace() const override { return connection_params.getContainer(); }
     String getDataSourceDescription() const override { return std::filesystem::path(connection_params.getConnectionURL()) / connection_params.getContainer(); }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
+
+    String getContainer() const { return connection_params.getContainer(); }
+    String getAccountName() const { return connection_params.endpoint.account_name; }
+    String getAccountKey() const { return connection_params.endpoint.account_key; }
+    String getSasKey() const { return connection_params.endpoint.sas_auth; }
 
     void check(ContextPtr context) override;
 
@@ -118,11 +125,12 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_)
+    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_, bool use_blob_endpoint_)
     {
         onelake_client_id = client_id_;
         onelake_client_secret = client_secret_;
         onelake_tenant_id = tenant_id_;
+        onelake_use_blob_endpoint = use_blob_endpoint_;
     }
 
 protected:
@@ -140,6 +148,7 @@ private:
     String onelake_client_id;
     String onelake_client_secret;
     String onelake_tenant_id;
+    bool onelake_use_blob_endpoint = true;
 
     void initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments);
 };

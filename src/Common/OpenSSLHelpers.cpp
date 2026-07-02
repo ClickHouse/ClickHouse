@@ -56,6 +56,8 @@ void encodeSHA256(std::string_view text, unsigned char * out)
 void encodeSHA256(const void * text, size_t size, unsigned char * out)
 {
     auto ctx = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_new failed: {}", getOpenSSLErrors());
 
     if (!EVP_DigestInit(ctx.get(), EVP_sha256()))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_DigestInit failed: {}", getOpenSSLErrors());
@@ -94,7 +96,7 @@ std::string rsaSHA256Sign(EVP_PKEY * pkey, const std::string & data)
     return signature;
 }
 
-bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
+static bool genericSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::string & signature)
 {
     EVP_MD_CTX* ctx = EVP_MD_CTX_new();
 
@@ -253,6 +255,8 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
 
     /// And our CSR is ready
     BIO_ptr req_bio(BIO_new(BIO_s_mem()), BIO_free);
+    if (!req_bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
     if (i2d_X509_REQ_bio(req_bio.get(), req.get()) < 0)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio: {}", getOpenSSLErrors());
 

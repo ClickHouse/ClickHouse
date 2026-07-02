@@ -3,7 +3,6 @@
 #include <Common/SettingsChanges.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -141,6 +140,18 @@ public:
     void setCTEName(std::string cte_name_value)
     {
         cte_name = std::move(cte_name_value);
+    }
+
+    /// Returns true if query node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set query node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
     }
 
     /// Returns true if query node has RECURSIVE WITH, false otherwise
@@ -685,6 +696,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;

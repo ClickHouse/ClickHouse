@@ -1,7 +1,8 @@
+#include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <IO/Operators.h>
+#include <Parsers/ASTSnapshotQuery.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -191,6 +192,18 @@ namespace
         out_settings->is_standalone = false;
         return out_settings;
     }
+
+    constexpr ASTBackupQuery::ElementType toBackupElementType(ASTSnapshotQuery::ElementType snapshot_type)
+    {
+        switch (snapshot_type)
+        {
+            case ASTSnapshotQuery::ElementType::TABLE:
+                return ASTBackupQuery::ElementType::TABLE;
+            case ASTSnapshotQuery::ElementType::ALL:
+                return ASTBackupQuery::ElementType::ALL;
+        }
+        std::unreachable();
+    }
 }
 
 
@@ -224,6 +237,35 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
     }
 }
 
+ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
+{
+    auto res = make_intrusive<ASTBackupQuery>();
+    res->children.clear();
+
+    const auto & element = query.element;
+    res->elements.push_back(
+        ASTBackupQuery::Element{
+            toBackupElementType(element.type),
+            element.table_name,
+            element.database_name,
+            element.table_name,
+            element.database_name,
+            /*partitions*/ {},
+            element.except_tables,
+            element.except_databases});
+    if (query.snapshot_destination)
+        res->set(res->backup_name, query.snapshot_destination->clone());
+
+    SettingsChanges changes;
+    changes.emplace_back("experimental_lightweight_snapshot", true);
+    changes.emplace_back("snapshot", true);
+    auto settings = make_intrusive<ASTSetQuery>();
+    settings->changes = std::move(changes);
+    settings->is_standalone = false;
+    res->settings = settings;
+
+    return res;
+};
 
 void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const String & current_database)
 {
@@ -249,6 +291,9 @@ ASTPtr ASTBackupQuery::clone() const
     if (base_backup_name)
         res->set(res->base_backup_name, base_backup_name->clone());
 
+    if (base_snapshot_name)
+        res->set(res->base_snapshot_name, base_snapshot_name->clone());
+
     if (cluster_host_ids)
         res->cluster_host_ids = cluster_host_ids->clone();
 
@@ -265,7 +310,17 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
-    formatElements(elements, ostr, fs);
+    if (base_snapshot_name)
+    {
+        /// BACKUP FROM SNAPSHOT <snapshot_name> [ON CLUSTER ...] TO <backup_name>
+        ostr << "FROM SNAPSHOT ";
+        base_snapshot_name->format(ostr, fs);
+    }
+    else
+    {
+        formatElements(elements, ostr, fs);
+    }
+
     formatOnCluster(ostr, fs);
 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");

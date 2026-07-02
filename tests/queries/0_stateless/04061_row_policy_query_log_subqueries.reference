@@ -1,0 +1,13 @@
+View
+2
+3
+Nested subquery
+2
+3
+INSERT SELECT
+2
+3
+query_log
+SELECT * FROM v_row_policy ORDER BY x;	['p_filter ON default.t_row_policy','p_filter2 ON default.t_row_policy']
+SELECT * FROM (SELECT * FROM (SELECT * FROM t_row_policy)) ORDER BY x;	['p_filter ON default.t_row_policy','p_filter2 ON default.t_row_policy']
+INSERT INTO t_row_policy_dest SELECT * FROM t_row_policy;	['p_filter ON default.t_row_policy','p_filter2 ON default.t_row_policy']

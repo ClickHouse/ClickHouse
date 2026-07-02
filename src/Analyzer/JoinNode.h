@@ -101,6 +101,24 @@ public:
         return hasJoinExpression() && !is_using_join_expression;
     }
 
+    /// Returns true if this is a NATURAL JOIN (USING columns are derived from common column names)
+    bool isNaturalJoin() const
+    {
+        return is_natural;
+    }
+
+    /// Set the natural join flag (used during analysis to inject a synthesized USING expression)
+    void setNatural(bool value)
+    {
+        is_natural = value;
+    }
+
+    /// Mark this join as a USING-style join (used when synthesizing USING from NATURAL JOIN)
+    void setUsingJoinExpression()
+    {
+        is_using_join_expression = true;
+    }
+
     /// Get join locality
     JoinLocality getLocality() const
     {
@@ -123,6 +141,12 @@ public:
     JoinKind getKind() const
     {
         return kind;
+    }
+
+    /// Set join kind
+    void setKind(JoinKind kind_value)
+    {
+        kind = kind_value;
     }
 
     /// Convert join node to ASTTableJoin
@@ -156,6 +180,7 @@ private:
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
     bool is_using_join_expression;
+    bool is_natural = false;
 
     static constexpr size_t left_table_expression_child_index = 0;
     static constexpr size_t right_table_expression_child_index = 1;

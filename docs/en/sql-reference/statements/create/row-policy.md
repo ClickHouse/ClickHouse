@@ -34,18 +34,6 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-:::note
-If there are no row policies defined for a table, then any user can `SELECT` all the rows from the table. Defining one or more row policies for the table makes access to the table dependent on the row policies, no matter if those row policies are defined for the current user or not. For example, the following policy:
-
-`CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
-
-forbids the users `mira` and `peter` from seeing the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
-
-If that's not desirable, it can be fixed by adding one more row policy, like the following:
-
-`CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
-:::
-
 ## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.

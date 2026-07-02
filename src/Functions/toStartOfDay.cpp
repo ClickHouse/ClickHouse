@@ -24,7 +24,7 @@ toStartOfDay(datetime)
         {"datetime", "A date or date with time to round.", {"Date", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value =
-        {"Returns the date with time rounded down to the start of the day.", {"Date", "DateTime", "Date32", "DateTime64"}};
+        {"Returns the date with time rounded down to the start of the day.", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples = {
         {"Round down to the start of the day", R"(
 SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))

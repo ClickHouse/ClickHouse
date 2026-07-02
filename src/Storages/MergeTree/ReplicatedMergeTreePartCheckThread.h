@@ -33,7 +33,7 @@ struct ReplicatedCheckResult
     CheckResult status;
     Action action = None;
 
-    bool exists_in_zookeeper;
+    bool exists_in_zookeeper{};
     MergeTreeDataPartPtr part;
     time_t recheck_after_seconds = 0;
 };
@@ -71,7 +71,7 @@ public:
     /// The returned guard can be safely destroyed from any thread.
     BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
 
-    /// Can be called only while holding a TemporaryPause guard.
+    /// Can be called only while holding a BackgroundSchedulePoolTaskBlocker guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:

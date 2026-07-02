@@ -9,10 +9,19 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
 {
+
+ContextPtr getQueryOrGlobalContext()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext(); query_context != nullptr)
+        return query_context;
+    return Context::getGlobalContextInstance();
+}
 
 template <typename Definition, typename Configuration, bool is_data_lake>
 StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_lake>::executeImpl(
@@ -36,10 +45,10 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        bool can_use_distributed_iterator =
-            client_info.collaborate_with_initiator &&
-            context->hasClusterFunctionReadTaskCallback();
-
+        /// Like urlCluster/fileCluster, always request a distributed read on a secondary query and
+        /// let the initiator decide: it serves the read task when it installed an iterator (the
+        /// legitimate top-level and INSERT-SELECT dispatch) and rejects it otherwise (the nested
+        /// cluster-function shapes), so every *Cluster function behaves the same way.
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
@@ -54,7 +63,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* catalog*/nullptr,
             /* if_not_exists*/false,
             /* is_datalake_query*/ false,
-            /* distributed_processing */ can_use_distributed_iterator,
+            /* distributed_processing */ true,
             /* partition_by_ */Base::partition_by,
             /* order_by_ */nullptr,
             /* is_table_function */true,
@@ -122,6 +131,7 @@ void registerTableFunctionObjectStorageCluster(TableFunctionFactory & factory)
 
 
 #if USE_AVRO
+void registerTableFunctionIcebergCluster(TableFunctionFactory & factory);
 void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -178,6 +188,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 #endif
 }
 
+void registerTableFunctionPaimonCluster(TableFunctionFactory & factory);
 void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -228,6 +239,7 @@ void registerTableFunctionPaimonCluster(TableFunctionFactory & factory)
 
 
 #if USE_PARQUET
+void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory);
 void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -264,6 +276,7 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
 #endif
 
 #if USE_AWS_S3
+void registerTableFunctionHudiCluster(TableFunctionFactory & factory);
 void registerTableFunctionHudiCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionHudiCluster>(

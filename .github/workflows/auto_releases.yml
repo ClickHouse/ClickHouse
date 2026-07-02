@@ -66,6 +66,8 @@ jobs:
   Releases:
     needs: AutoReleaseInfo
     strategy:
+      # Without this, a failure on one release branch cancels the queued matrix entries for the others.
+      fail-fast: false
       matrix:
         release_params: ${{ fromJson(needs.AutoReleaseInfo.outputs.data).releases }}
       max-parallel: 1

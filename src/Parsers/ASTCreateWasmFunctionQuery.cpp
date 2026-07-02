@@ -35,6 +35,10 @@ ASTPtr ASTCreateWasmFunctionQuery::clone() const
     res->setArguments(arguments_ast->clone());
     res->setReturnType(result_type_ast->clone());
     res->setModuleName(module_name_ast->clone());
+    if (source_function_name_ast)
+        res->setSourceFunctionName(source_function_name_ast->clone());
+    if (module_hash_ast)
+        res->setModuleHash(module_hash_ast->clone());
     if (abi_ast)
         res->setAbi(abi_ast->clone());
 
@@ -92,6 +96,9 @@ void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSett
         ostr << " ABI ";
         abi_ast->format(ostr, settings, state, frame);
     }
+
+    if (is_deterministic)
+        ostr << " DETERMINISTIC";
 
     if (module_hash_ast)
     {
@@ -163,6 +170,8 @@ ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGe
         String abi_name = getIdentifierName(abi_ast);
         info.abi_version = getWasmAbiFromString(abi_name);
     }
+
+    info.is_deterministic = is_deterministic;
 
     for (const auto & setting : function_settings)
         info.settings.trySet(setting.name, setting.value);

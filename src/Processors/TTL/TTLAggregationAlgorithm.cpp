@@ -216,10 +216,13 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 {
     if (!aggregation_result.empty())
     {
-        auto aggregated_res = aggregator->convertToBlocks(aggregation_result, true);
+        auto aggregated_res = aggregator->convertToChunks(aggregation_result, true);
+        auto res_header = aggregator->getParams().getHeader(header, true);
 
-        for (auto & agg_block : aggregated_res)
+        for (auto & agg_chunk : aggregated_res)
         {
+            auto agg_block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
+
             for (const auto & it : description.set_parts)
             {
                 it.expression->execute(agg_block);

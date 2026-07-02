@@ -5,6 +5,7 @@
 #include <Common/FloatUtils.h>
 
 #include <arrow/util/bit_stream_utils_internal.h>
+#include <arrow/util/byte_stream_split_internal.h>
 
 namespace DB::ErrorCodes
 {
@@ -86,7 +87,7 @@ struct BitPackedRLEDecoder : public PageDecoder
 
     void startRun()
     {
-        UInt64 len;
+        UInt64 len = 0;
         data = readVarUInt(len, data, end - data);
         if (len & 1)
         {
@@ -159,7 +160,7 @@ struct BitPackedRLEDecoder : public PageDecoder
                 {
                     for (size_t i = 0; i < n; ++i)
                     {
-                        size_t x;
+                        size_t x = 0;
                         memcpy(&x, data + (bit_idx >> 3), 8);
                         x = (x >> (bit_idx & 7)) & value_mask;
 
@@ -239,7 +240,7 @@ struct PlainBooleanDecoder : public PageDecoder
         size_t end_bit_idx = bit_idx + num_values;
         if ((end_bit_idx + 7) / 8 > size_t(end - data))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
-        char * to;
+        char * to = nullptr;
         bool direct = converter->isTrivial();
         if (direct)
         {
@@ -272,7 +273,7 @@ struct PlainBooleanDecoder : public PageDecoder
         size_t end_bit_idx = bit_idx + num_values;
         if ((end_bit_idx + 7) / 8 > size_t(end - data))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data");
-        char * to;
+        char * to = nullptr;
         bool direct = converter->isTrivial();
         if (direct)
         {
@@ -328,7 +329,7 @@ struct PlainStringDecoder : public PageDecoder
     {
         for (size_t i = 0; i < num_values; ++i)
         {
-            UInt32 x;
+            UInt32 x = 0;
             memcpy(&x, data, 4); /// omitting range check because input is padded
             size_t len = 4 + size_t(x);
             requireRemainingBytes(len);
@@ -350,7 +351,7 @@ struct PlainStringDecoder : public PageDecoder
             col_str.reserve(col_str.size() + to_reserve);
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x;
+                UInt32 x = 0;
                 memcpy(&x, data, 4); /// omitting range check because input is padded
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
@@ -372,7 +373,7 @@ struct PlainStringDecoder : public PageDecoder
                 {
                     for (size_t i = 0; i < num_values; ++i)
                     {
-                        UInt32 x;
+                        UInt32 x = 0;
                         memcpy(&x, data, 4);
                         data += 4 + size_t(x);
                     }
@@ -383,7 +384,7 @@ struct PlainStringDecoder : public PageDecoder
                 size_t offset = 0;
                 for (size_t i = 0; i < num_values; ++i)
                 {
-                    UInt32 x;
+                    UInt32 x = 0;
                     memcpy(&x, data, 4);
                     size_t len = 4 + size_t(x);
                     requireRemainingBytes(len);
@@ -405,7 +406,7 @@ struct PlainStringDecoder : public PageDecoder
             size_t offset = 0;
             for (size_t i = 0; i < num_values; ++i)
             {
-                UInt32 x;
+                UInt32 x = 0;
                 memcpy(&x, data, 4); /// omitting range check because input is padded
                 size_t len = 4 + size_t(x);
                 requireRemainingBytes(len);
@@ -439,7 +440,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     size_t miniblock_idx = 0; // within block
     /// Initially set to 1 as a special case to report the first value.
     size_t miniblock_values_remaining = 1;
-    arrow::bit_util::BitReader bit_reader;
+    arrow::bit_util::BitReader bit_reader{};
 
     PODArray<UInt64> temp_values;
 
@@ -509,7 +510,24 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
 
         miniblock_values_remaining = values_per_block / miniblocks_per_block;
         size_t bytes = (miniblock_values_remaining * miniblock_bit_widths[miniblock_idx] + 7) / 8;
-        requireRemainingBytes(bytes);
+
+        /// Tolerate missing padding at the end of the last block.
+        /// The Parquet spec requires zero-padding the last block to the full block size,
+        /// but some writers (e.g. parquet-go) only write bytes for the actual values.
+        /// The missing bytes correspond to padding values beyond total_values_remaining
+        /// that would never be read by decodeImpl, so we reduce the miniblock's readable
+        /// value count to match the available data.
+        size_t available = size_t(end - data);
+        if (bytes > available)
+        {
+            bytes = available;
+            if (miniblock_bit_widths[miniblock_idx] > 0)
+                miniblock_values_remaining = (available * 8) / miniblock_bit_widths[miniblock_idx];
+
+            if (!miniblock_values_remaining)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected end of page data in DELTA_BINARY_PACKED miniblock");
+        }
+
         bit_reader.Reset(reinterpret_cast<const uint8_t *>(data), int(bytes));
         data += bytes;
     }
@@ -578,7 +596,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
     void decodeImplFull(size_t num_values, IColumn & col)
     {
         bool direct = converter->isTrivial();
-        char * to;
+        char * to = nullptr;
         if (direct)
         {
             auto to_span = col.insertRawUninitialized(num_values);
@@ -810,7 +828,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
             if (!filter)
             {
                 bool direct = string_converter->isTrivial();
-                ColumnString * col_str;
+                ColumnString * col_str = nullptr;
                 if (direct)
                     col_str = assert_cast<ColumnString *>(&col);
                 else
@@ -927,11 +945,10 @@ struct ByteStreamSplitDecoder : public PageDecoder
         temp_buffer.resize(num_values * num_streams);
         char * to = temp_buffer.data();
         requireRemainingBytes(num_values);
-        for (size_t i = 0; i < num_values; ++i)
-        {
-            for (size_t stream = 0; stream < num_streams; ++stream)
-                to[i * num_streams + stream] = data[i + stream * stream_size];
-        }
+        arrow::util::internal::ByteStreamSplitDecode(
+            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
+            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
+            reinterpret_cast<uint8_t *>(to));
         data += num_values;
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
@@ -970,35 +987,12 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
         requireRemainingBytes(num_values);
 
-        size_t i = 0;
-        while (i < num_values)
-        {
-            if (num_values - i >= 8)
-            {
-                /// Slightly faster code path that reads 8 bytes at once.
-                /// Arrow has ByteStreamSplitDecode with various fancy simd implementations, maybe
-                /// we should reuse that instead.
-                for (size_t stream = 0; stream < num_streams; ++stream)
-                {
-                    UInt64 x = unalignedLoad<UInt64>(&data[i + stream * stream_size]);
-                    to[(i + 0) * num_streams + stream] = char(UInt8(x >> 0));
-                    to[(i + 1) * num_streams + stream] = char(UInt8(x >>  8));
-                    to[(i + 2) * num_streams + stream] = char(UInt8(x >> 16));
-                    to[(i + 3) * num_streams + stream] = char(UInt8(x >> 24));
-                    to[(i + 4) * num_streams + stream] = char(UInt8(x >> 32));
-                    to[(i + 5) * num_streams + stream] = char(UInt8(x >> 40));
-                    to[(i + 6) * num_streams + stream] = char(UInt8(x >> 48));
-                    to[(i + 7) * num_streams + stream] = char(UInt8(x >> 56));
-                }
-                i += 8;
-            }
-            else
-            {
-                for (size_t stream = 0; stream < num_streams; ++stream)
-                    to[i * num_streams + stream] = data[i + stream * stream_size];
-                i += 1;
-            }
-        }
+        /// De-interleave the byte streams back into values. Arrow has SIMD (NEON/AVX2/SSE4.2) implementations of
+        /// exactly this transpose, gated behind the ARROW_HAVE_* defines enabled in contrib/arrow-cmake.
+        arrow::util::internal::ByteStreamSplitDecode(
+            reinterpret_cast<const uint8_t *>(data), static_cast<int>(num_streams),
+            static_cast<int64_t>(num_values), static_cast<int64_t>(stream_size),
+            reinterpret_cast<uint8_t *>(to));
         data += num_values;
 
         if (!direct)
@@ -1185,7 +1179,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
         const char * end = data.data() + data.size();
         for (size_t i = 0; i < num_values; ++i)
         {
-            UInt32 x;
+            UInt32 x = 0;
             memcpy(&x, ptr, 4); /// omitting range check because input is padded
             size_t len = 4 + size_t(x);
             if (len > size_t(end - ptr))
@@ -1450,10 +1444,50 @@ void Float16Converter::convertColumn(std::span<const char> data, size_t num_valu
     out_data.reserve(out_data.size() + num_values);
     for (size_t i = 0; i < num_values; ++i)
     {
-        uint16_t x;
+        uint16_t x = 0;
         memcpy(&x, data.data() + i * 2, 2);
         out_data.push_back(convertFloat16ToFloat32(x));
     }
+}
+
+static inline UUID decodeParquetUUID(const char * data)
+{
+    UUID res;
+    std::memcpy(&res, data, 16);
+    auto * bytes = reinterpret_cast<uint8_t *>(&res);
+
+    // Parquet demands Big-Endian (network byte order) for UUIDs
+    if constexpr (std::endian::native == std::endian::little)
+    {
+        std::reverse(bytes, bytes + 8);
+        std::reverse(bytes + 8, bytes + 16);
+    }
+    else
+    {
+        std::swap_ranges(bytes, bytes + 8, bytes + 8);
+    }
+
+    return res;
+}
+
+void UUIDConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
+{
+    auto & col_data = assert_cast<ColumnVector<UUID> &>(col).getData();
+    size_t old_size = col_data.size();
+    col_data.resize(old_size + num_values);
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        col_data[old_size + i] = decodeParquetUUID(data.data() + i * 16);
+    }
+}
+
+void UUIDConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
+{
+    if (data.size() != input_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of UUID in statistics: {} != {}", data.size(), input_size);
+
+    out = decodeParquetUUID(data.data());
 }
 
 void FixedStringConverter::convertField(std::span<const char> data, bool /*is_max*/, Field & out) const
@@ -1552,7 +1586,7 @@ T BigEndianHelper<T>::convertPaddedValue(const char * data) const
 {
     /// We take advantage of input padding and do fixed-size memcpy of size sizeof(T) instead
     /// of variable-size memcpy of size input_size. Variable-size memcpy is slow.
-    T x;
+    T x{};
     memcpy(&x, data - value_offset, sizeof(T));
     fixupValue(x);
     return x;
@@ -1667,7 +1701,7 @@ void Int96Converter::convertColumn(std::span<const char> data, size_t num_values
         /// arrow/cpp/src/parquet/types.h) and with a test file written by spark
         /// (tests/queries/0_stateless/02998_native_parquet_reader.sh).
         bool overflow = false;
-        Int64 x;
+        Int64 x = 0;
         overflow |= common::subOverflow(julian_day, static_cast<Int64>(2440588l), x); // unix day number
         overflow |= common::mulOverflow(x, day_nanos, x); // unix nanoseconds
         overflow |= common::addOverflow(x, nanos, x);

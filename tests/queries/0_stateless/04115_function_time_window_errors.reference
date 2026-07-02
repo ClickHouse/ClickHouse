@@ -1,0 +1,21 @@
+--- tumble: error paths ---
+--- hop: error paths ---
+--- tumbleStart: error paths ---
+--- tumbleEnd/hopStart/hopEnd: similar validation ---
+--- windowID ---
+1577926800
+1577926800
+--- Tuple extraction via tumbleStart/tumbleEnd pass-through ---
+2020-01-02 10:00:00
+2020-01-02 11:00:00
+2020-01-02
+2020-01-03
+--- Tuple extraction via hopStart/hopEnd pass-through ---
+2020-01-02 10:00:00
+2020-01-02 11:00:00
+--- tumble result types for all interval kinds ---
+Tuple(DateTime(\'UTC\'), DateTime(\'UTC\'))
+Tuple(Date, Date)
+Tuple(Date, Date)
+Tuple(Date, Date)
+Tuple(Date, Date)

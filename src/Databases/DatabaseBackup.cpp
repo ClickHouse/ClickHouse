@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -27,6 +28,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupFactory.h>
@@ -55,6 +57,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -121,6 +125,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     engine->arguments = std::move(args);
+    engine->setNoEmptyArgs(true);
 
     /// Set new engine for the old query
     create_query->storage->set(create_query->storage->engine, engine->clone());
@@ -327,8 +332,14 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            }
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -455,6 +466,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -470,7 +482,106 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
-    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
+    factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
+        .description = R"DOCS_MD(
+Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
+
+Database backup works with both incremental and non-incremental backups.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE backup_database
+ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
+```
+
+The backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
+
+**Engine Parameters**
+
+- `database_name_inside_backup` — Name of the database inside the backup.
+- `backup_destination` — Backup destination.
+
+## Usage example {#usage-example}
+
+Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
+
+```xml
+<storage_configuration>
+    <disks>
+        <backups>
+            <type>local</type>
+            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
+        </backups>
+    </disks>
+</storage_configuration>
+<backups>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
+</backups>
+```
+
+Example of usage. Let's create test database, tables, insert some data and then create a backup:
+
+```sql
+CREATE DATABASE test_database;
+
+CREATE TABLE test_database.test_table_1 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_1 VALUES (0, 'test_database.test_table_1');
+
+CREATE TABLE test_database.test_table_2 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_2 VALUES (0, 'test_database.test_table_2');
+
+CREATE TABLE test_database.test_table_3 (id UInt64, value String) ENGINE=MergeTree ORDER BY id;
+INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
+
+BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
+```
+
+So now we have `test_database_backup` backup, let's create database Backup:
+
+```sql
+CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
+```
+
+Now we can query any table from database:
+
+```sql
+SELECT id, value FROM test_database_backup.test_table_1;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_1 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_2;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_2 │
+└────┴────────────────────────────┘
+
+SELECT id, value FROM test_database_backup.test_table_3;
+
+┌─id─┬─value──────────────────────┐
+│  0 │ test_database.test_table_3 │
+└────┴────────────────────────────┘
+```
+
+It is also possible to work with this database Backup as with any ordinary database. For example query tables in it:
+
+```sql
+SELECT database, name FROM system.tables WHERE database = 'test_database_backup';
+```
+
+```text
+┌─database─────────────┬─name─────────┐
+│ test_database_backup │ test_table_1 │
+│ test_database_backup │ test_table_2 │
+│ test_database_backup │ test_table_3 │
+└──────────────────────┴──────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))",
+        .related = {}});
 }
 
 }

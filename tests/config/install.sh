@@ -17,10 +17,12 @@ EXPORT_S3_STORAGE_POLICIES=1
 USE_AZURE_STORAGE_FOR_MERGE_TREE=${USE_AZURE_STORAGE_FOR_MERGE_TREE:0}
 USE_ASYNC_INSERT=${USE_ASYNC_INSERT:0}
 BUGFIX_VALIDATE_CHECK=0
+PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
+LLVM_COVERAGE=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -30,6 +32,7 @@ while [[ "$#" -gt 0 ]]; do
         --parallel-rep) USE_PARALLEL_REPLICAS=1 ;;
         --db-replicated) USE_DATABASE_REPLICATED=1 ;;
         --distributed-plan) USE_DISTRIBUTED_PLAN=1 ;;
+        --distributed-cache) USE_DISTRIBUTED_CACHE=1 ;;
 
         --wide-parts) USE_POLYMORPHIC_PARTS=1 ;;
         --db-ordinary) USE_DATABASE_ORDINARY=1 ;;
@@ -39,6 +42,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --async-insert) USE_ASYNC_INSERT=1 ;;
         --bugfix-validation) BUGFIX_VALIDATE_CHECK=1 ;;
+        --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
         --wasm-engine) WASM_ENGINE=$2 && shift ;;
@@ -46,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
+        --llvm-coverage) LLVM_COVERAGE=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -73,7 +78,6 @@ function is_fast_build()
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
-mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
@@ -81,12 +85,20 @@ mkdir -p $DEST_CLIENT_PATH
 # you should check clickhouse version so that you won't
 # break validations using previous ClickHouse version (like bugfix validation).
 
+# Patching configs which are symbolic links can affect source files,
+# need to delete links created by previous script versions
+# Also this is generally good (least astonishment principle) not to retain any old configs
+rm -rf "$DEST_SERVER_PATH"/config.d
+mkdir -p $DEST_SERVER_PATH/config.d/
+
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/core_dump.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_write.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/max_num_to_warn.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/blob_storage_log.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/predicate_statistics_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/database_catalog_drop_table_concurrency.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_access_control_improvements.xml $DEST_SERVER_PATH/config.d/
@@ -105,8 +117,7 @@ if check_clickhouse_version 25.4; then
 fi
 ln -sf $SRC_PATH/config.d/merge_tree_old_dirs_cleanup.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/test_cluster_with_incorrect_pw.xml $DEST_SERVER_PATH/config.d/
-# copy to not update original file later on in the script
-cp $SRC_PATH/config.d/keeper_port.xml $DEST_SERVER_PATH/config.d/
+
 if check_clickhouse_version 25.10; then
     ln -sf $SRC_PATH/config.d/keeper_max_request_size.xml $DEST_SERVER_PATH/config.d/
 fi
@@ -119,9 +130,7 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
-if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-    ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
-fi
+ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
@@ -130,13 +139,44 @@ ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/small_caches.xml $DEST_SERVER_PATH/config.d/
 
 # Randomize which logger is used (until sync logger is removed, if that ever happens)
-ln -sf $SRC_PATH/config.d/logger_trace.xml $DEST_SERVER_PATH/config.d/
 value=$((RANDOM % 2))
 echo "Async logging: $value"
-sed --follow-symlinks -i "s|<async>[01]</async>|<async>$value</async>|" $DEST_SERVER_PATH/config.d/logger_trace.xml
+sed "s|<async>[01]</async>|<async>$value</async>|" $SRC_PATH/config.d/logger_trace.xml >$DEST_SERVER_PATH/config.d/logger_trace.xml
 
+# Randomize the default compression codec (used for columns without an explicit CODEC)
+# across LZ4, ZSTD(1) and ZSTD(3) to exercise all of them across CI runs. It is set through
+# the `default_compression_codec` MergeTree setting in the <merge_tree> config section, NOT
+# the top-level <compression> codec selector: clickhouse-client/local read <compression> as
+# a connection-level boolean (ConnectionParameters), so a codec selector there makes them
+# fail with "Cannot convert to boolean" (e.g. the system-table scraping step). It applies to
+# .sql and .sh tests alike; a test that needs a specific codec pins it with
+# `SETTINGS default_compression_codec = '...'`, which overrides this server default.
+default_compression_codec_options=("LZ4" "ZSTD(1)" "ZSTD(3)")
+default_compression_codec="${default_compression_codec_options[$((RANDOM % ${#default_compression_codec_options[@]}))]}"
+echo "Default compression codec: $default_compression_codec"
+{
+    echo "<clickhouse>"
+    echo "    <merge_tree>"
+    echo "        <default_compression_codec>${default_compression_codec}</default_compression_codec>"
+    echo "    </merge_tree>"
+    echo "</clickhouse>"
+} > $DEST_SERVER_PATH/config.d/default_compression_codec.xml
+
+# Randomize the per-step overcommit eviction budget so the multi-step retry path
+# in `OvercommitFileCachePriority::collectCandidatesForEviction` gets exercised
+# across runs. Picked from values spanning single-step and many-step regimes.
+#
+# The outer retry loop has a fixed `max_tries = 1000` cap, so the smallest step
+# must keep `step * max_tries` above the largest expected single-reservation
+# deficit. With `max_file_segment_size = 5Mi` in the cache config, that means
+# step >= ~5243 bytes; we use 8Ki as a safe lower bound that still forces ~640
+# outer iterations per 5 MiB reservation.
+overcommit_evict_step_values=(8192 65536 1048576 10485760)
+OVERCOMMIT_EVICT_STEP=${overcommit_evict_step_values[$((RANDOM % ${#overcommit_evict_step_values[@]}))]}
+echo "Overcommit eviction evict step: $OVERCOMMIT_EVICT_STEP"
+export OVERCOMMIT_EVICT_STEP
 ln -sf $SRC_PATH/config.d/named_collection.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
+cp $SRC_PATH/config.d/ssl_certs.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_cache_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/filesystem_read_prefetches_log.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/session_log.xml $DEST_SERVER_PATH/config.d/
@@ -151,13 +191,27 @@ ln -sf $SRC_PATH/config.d/display_name.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/compressed_marks_and_index.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/disable_s3_env_credentials.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/enable_wait_for_shutdown_replicated_tables.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
+cp $SRC_PATH/config.d/storage_conf_backups.xml $DEST_SERVER_PATH/config.d/
+cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
+cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
+# distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
+# non-Linux builds; only install it where the streaming exchange is supported.
+if [ "$(uname -s)" = "Linux" ]; then
+    ln -sf $SRC_PATH/config.d/distributed_query.xml $DEST_SERVER_PATH/config.d/
+fi
+
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+function is_sanitizer_build()
+{
+    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
+}
+if is_sanitizer_build; then
+    ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
@@ -223,6 +277,19 @@ if [[ -n "$USE_DISTRIBUTED_PLAN" ]] && [[ "$USE_DISTRIBUTED_PLAN" -eq 1 ]]; then
     ln -sf $SRC_PATH/users.d/distributed_plan.xml $DEST_SERVER_PATH/users.d/
 fi
 
+echo $USE_DISTRIBUTED_CACHE
+if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+    ln -sf $SRC_PATH/users.d/enable_distributed_cache_for_reads.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/enable_distributed_cache_for_tmp_files.xml $DEST_SERVER_PATH/config.d/
+
+fi
+
+if [[ -n "$LLVM_COVERAGE" ]] && [[ "$LLVM_COVERAGE" -eq 1 ]]; then
+    # Pin random-by-default fault injection seeds in the default profile so coverage
+    # is deterministic without injecting per-query settings (which break readonly tests).
+    ln -sf $SRC_PATH/users.d/coverage_fault_injection_seeds.xml $DEST_SERVER_PATH/users.d/
+fi
+
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),
 # but socket is owned by HTTPSessionPool, so it's not closed.
@@ -252,8 +319,7 @@ ln -sf $SRC_PATH/server.key $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/server.crt $DEST_SERVER_PATH/
 ln -sf $SRC_PATH/dhparam.pem $DEST_SERVER_PATH/
 
-# Retain any pre-existing config and allow ClickHouse to load it if required
-ln -sf --backup=simple --suffix=_original.xml \
+ln -sf \
    $SRC_PATH/config.d/query_masking_rules.xml $DEST_SERVER_PATH/config.d/
 
 # Always install zookeeper.xml as the base config
@@ -272,22 +338,34 @@ else
     rm -f $DEST_SERVER_PATH/config.d/cannot_allocate_thread_injection.xml ||:
 fi
 
+if [[ -n "$CLICKHOUSE_FAILPOINTS_INJECTION" ]] && [[ "$CLICKHOUSE_FAILPOINTS_INJECTION" -eq 1 ]]; then
+    ln -sf $SRC_PATH/config.d/fail_points_active.xml $DEST_SERVER_PATH/config.d/
+else
+    rm -f $DEST_SERVER_PATH/config.d/fail_points_active.xml ||:
+fi
+
 # We randomize creating the snapshot on exit for Keeper to test out using older snapshots
-value=$((RANDOM % 2))
-echo "Replacing create_snapshot_on_exit with $value"
-sed --follow-symlinks -i "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value</create_snapshot_on_exit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+value_create_snapshot_on_exit=$((RANDOM % 2))
+echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
 
-value=$(((RANDOM + 100) * 2048))
-echo "Replacing latest_logs_cache_size_threshold with $value"
-sed --follow-symlinks -i "s|<latest_logs_cache_size_threshold>[[:digit:]]\+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value</latest_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+value_latest_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
+echo "Replacing latest_logs_cache_size_threshold with $value_latest_logs_cache_size_threshold"
 
-value=$(((RANDOM + 100) * 2048))
-echo "Replacing commit_logs_cache_size_threshold with $value"
-sed --follow-symlinks -i "s|<commit_logs_cache_size_threshold>[[:digit:]]\+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value</commit_logs_cache_size_threshold>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+value_commit_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
+echo "Replacing commit_logs_cache_size_threshold with $value_commit_logs_cache_size_threshold"
 
 value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
-sed --follow-symlinks -i "s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|" $DEST_SERVER_PATH/config.d/keeper_port.xml
+
+value_nuraft_use_bg_thread_for_snapshot_io=$((RANDOM % 2))
+echo "Replacing nuraft_use_bg_thread_for_snapshot_io with $value_nuraft_use_bg_thread_for_snapshot_io"
+
+sed -E "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value_create_snapshot_on_exit</create_snapshot_on_exit>|; \
+    s|<latest_logs_cache_size_threshold>[[:digit:]]+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value_latest_logs_cache_size_threshold</latest_logs_cache_size_threshold>|; \
+    s|<commit_logs_cache_size_threshold>[[:digit:]]+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value_commit_logs_cache_size_threshold</commit_logs_cache_size_threshold>|; \
+    s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|; \
+    s|<nuraft_use_bg_thread_for_snapshot_io>[01]</nuraft_use_bg_thread_for_snapshot_io>|<nuraft_use_bg_thread_for_snapshot_io>$value_nuraft_use_bg_thread_for_snapshot_io</nuraft_use_bg_thread_for_snapshot_io>|" \
+    $SRC_PATH/config.d/keeper_port.xml > $DEST_SERVER_PATH/config.d/keeper_port.xml
 
 inject_auth=$((RANDOM % 2))
 if [[ $KEEPER_INJECT_AUTH -eq 0 ]]; then
@@ -342,26 +420,58 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     else
         ln -sf $SRC_PATH/config.d/azure_storage_policy_by_default.xml $DEST_SERVER_PATH/config.d/
     fi
+    ln -sf $SRC_PATH/config.d/azure_storage_connection_limits.xml $DEST_SERVER_PATH/config.d/
 fi
 
 if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
-    if [[ "$NO_AZURE" != "1" ]] && [[ -n "$AZURE_CONNECTION_STRING" ]]; then
+    if [[ "$NO_AZURE" != "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
 
+    # Randomize the filesystem cache reserve_granularity to get coverage of the reserve-ahead path.
+    reserve_granularity_options=("1Mi" "4Mi" "8Mi")
+    reserve_granularity="${reserve_granularity_options[$((RANDOM % ${#reserve_granularity_options[@]}))]}"
+    echo "Replacing s3_cache reserve_granularity with $reserve_granularity"
+    # Scope the substitution to the <s3_cache> block so it does not touch other caches'
+    # reserve_granularity (e.g. dynamically_resize_filesystem_cache intentionally sets it to 0).
+    reserve_granularity_sed="/<s3_cache>/,/<\/s3_cache>/s|<reserve_granularity>[^<]*</reserve_granularity>|<reserve_granularity>$reserve_granularity</reserve_granularity>|"
+
     if check_clickhouse_version 25.5; then
-      ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
       ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     else
-      cat $SRC_PATH/config.d/storage_conf.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf.xml
-      cat $SRC_PATH/config.d/storage_conf_02944.xml | sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" > $DEST_SERVER_PATH/config.d/storage_conf_02944.xml
+      sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf_02944.xml >$DEST_SERVER_PATH/config.d/storage_conf_02944.xml
     fi
-    ln -sf $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/
-    ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
+    # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
+    # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
+    # reserve_granularity in 26.7.
+    # --remove-destination: an earlier install may have left this path as a symlink to the
+    # source; without it cp would follow the link and fail with "same file" under set -e.
+    cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
+    # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
+    if check_clickhouse_version 26.7; then
+        sed -i "$reserve_granularity_sed" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    else
+        sed -i "s|<reserve_granularity>[^<]*</reserve_granularity>||g" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    fi
+
+    # Apply `overcommit_eviction_evict_step` randomization only under
+    # distributed cache — that is where the overcommit multi-step retry path
+    # actually gets exercised in CI. `sed >tmp && mv` reads through the dest
+    # (symlink or file) and atomically replaces it without touching the source.
+    if [[ -n "$USE_DISTRIBUTED_CACHE" ]] && [[ "$USE_DISTRIBUTED_CACHE" -eq 1 ]]; then
+        sed "s|<overcommit_eviction_evict_step>[0-9]*</overcommit_eviction_evict_step>|<overcommit_eviction_evict_step>$OVERCOMMIT_EVICT_STEP</overcommit_eviction_evict_step>|" \
+            $DEST_SERVER_PATH/config.d/storage_conf.xml >$DEST_SERVER_PATH/config.d/storage_conf.xml.tmp
+        mv $DEST_SERVER_PATH/config.d/storage_conf.xml.tmp $DEST_SERVER_PATH/config.d/storage_conf.xml
+    fi
     ln -sf $SRC_PATH/config.d/storage_conf_02963.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_02961.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03517.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/config.d/storage_conf_03755.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/storage_conf_04070.xml $DEST_SERVER_PATH/config.d/
+    ln -sf $SRC_PATH/config.d/s3_settings_override.xml $DEST_SERVER_PATH/config.d/
     ln -sf $SRC_PATH/users.d/s3_cache.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/users.d/s3_cache_new.xml $DEST_SERVER_PATH/users.d/
 fi
@@ -403,12 +513,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<replica>r1</replica>|<replica>r2</replica>|" > $ch_server_1_path/config.d/macros.xml
     cat $DEST_SERVER_PATH/config.d/macros.xml | sed "s|<shard>s1</shard>|<shard>s2</shard>|" > $ch_server_2_path/config.d/macros.xml
 
-    if [[ -z "$USE_ENCRYPTED_STORAGE" ]] || [[ "$USE_ENCRYPTED_STORAGE" == "0" ]]; then
-        rm $ch_server_1_path/config.d/transactions.xml
-        rm $ch_server_2_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
-        cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
-    fi
+    rm $ch_server_1_path/config.d/transactions.xml
+    rm $ch_server_2_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn1|" > $ch_server_1_path/config.d/transactions.xml
+    cat $DEST_SERVER_PATH/config.d/transactions.xml | sed "s|/test/clickhouse/txn|/test/clickhouse/txn2|" > $ch_server_2_path/config.d/transactions.xml
 
 #    ch_server_lib_1=$DEST_SERVER_PATH/../../var/lib/clickhouse1
 #    ch_server_lib_2=$DEST_SERVER_PATH/../../var/lib/clickhouse2
@@ -433,16 +541,13 @@ if [ ! -z "$WASM_ENGINE" ]; then
     sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
 fi
 
-if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 ]]; then
-    sed -i "/<use_xid_64>1<\/use_xid_64>/d" $DEST_SERVER_PATH/config.d/zookeeper.xml
-
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
     {
         sed -i "/<$1>$2<\/$1>/d" $DEST_SERVER_PATH/config.d/keeper_port.xml
     }
 
-    remove_keeper_config "remove_recursive" "[[:digit:]]\+"
-    remove_keeper_config "use_xid_64" "[[:digit:]]\+"
+    remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

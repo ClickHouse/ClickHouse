@@ -32,8 +32,6 @@ ASTPtr ASTCreateIndexQuery::clone() const
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     ostr << indent_str;
@@ -68,8 +66,8 @@ ASTPtr ASTCreateIndexQuery::convertToASTAlterCommand() const
     command->type = ASTAlterCommand::ADD_INDEX;
     command->if_not_exists = if_not_exists;
 
-    command->index = command->children.emplace_back(index_name).get();
-    command->index_decl = command->children.emplace_back(index_decl).get();
+    command->index_decl = command->children.emplace_back(index_decl->clone()).get();
+    command->index_decl->as<ASTIndexDeclaration &>().part_of_create_index_query = false;
 
     return command;
 }

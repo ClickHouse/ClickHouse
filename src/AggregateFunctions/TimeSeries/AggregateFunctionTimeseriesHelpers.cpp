@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 
 /// Extracts integer or decimal parameter value and converts it to decimal with the target scale (scale of the timestamp column)
-Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
+static Decimal64 normalizeParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field, UInt32 target_scale)
 {
     auto target_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(target_scale);
 
@@ -40,15 +40,15 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     {
         auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
         auto value_scale_multiplier = value.getScaleMultiplier();
-        return Decimal64(value.getValue()) / value_scale_multiplier * target_scale_multiplier;
+        return (Decimal128(value.getValue()) / Decimal128(value_scale_multiplier)) * Decimal128(target_scale_multiplier);
     }
     else if (Int64 int_value = 0; parameter_field.tryGet(int_value))
     {
-        return Decimal64(int_value) * target_scale_multiplier;
+        return Decimal128(int_value) * Decimal128(target_scale_multiplier);
     }
     else if (UInt64 uint_value = 0; parameter_field.tryGet(uint_value))
     {
-        return Decimal64(uint_value) * target_scale_multiplier;
+        return Decimal128(uint_value) * Decimal128(target_scale_multiplier);
     }
     else if (String string_value; parameter_field.tryGet(string_value))
     {
@@ -56,7 +56,7 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
         UInt32 scale = target_scale;
         ReadBufferFromString buf(string_value);
         if (tryReadDecimalText(buf, value, 20, scale))
-            return value * DecimalUtils::scaleMultiplier<Decimal64>(scale);
+            return Decimal128(value) * Decimal128(DecimalUtils::scaleMultiplier<Decimal64>(scale));
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot parse {} parameter for aggregate function {}", parameter_name, function_name);
@@ -69,9 +69,29 @@ Decimal64 normalizeParameter(const std::string & function_name, const std::strin
     }
 }
 
-UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+static UInt64 extractIntParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
-    if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
+    if (parameter_field.getType() == Field::Types::Decimal64)
+    {
+        auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
+        auto scale_multiplier = value.getScaleMultiplier();
+        auto raw_value = value.getValue();
+        if (scale_multiplier > 1 && raw_value % scale_multiplier != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot convert Decimal64 {} parameter to integer for aggregate function {}", parameter_name, function_name);
+        return raw_value / scale_multiplier;
+    }
+    else if (parameter_field.getType() == Field::Types::Decimal32)
+    {
+        auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
+        auto scale_multiplier = value.getScaleMultiplier();
+        auto raw_value = value.getValue();
+        if (scale_multiplier > 1 && raw_value % scale_multiplier != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot convert Decimal32 {} parameter to integer for aggregate function {}", parameter_name, function_name);
+        return raw_value / scale_multiplier;
+    }
+    else if (UInt64 int_value = 0; parameter_field.tryGet(int_value))
     {
         return int_value;
     }
@@ -93,9 +113,19 @@ UInt64 extractIntParameter(const std::string & function_name, const std::string 
     }
 }
 
-Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
+static Float64 extractFloatParameter(const std::string & function_name, const std::string & parameter_name, const Field & parameter_field)
 {
-    if (Float64 float_value = 0; parameter_field.tryGet(float_value))
+    if (parameter_field.getType() == Field::Types::Decimal64)
+    {
+        auto value = parameter_field.safeGet<DecimalField<Decimal64>>();
+        return static_cast<Float64>(value.getValue()) / static_cast<Float64>(value.getScaleMultiplier());
+    }
+    else if (parameter_field.getType() == Field::Types::Decimal32)
+    {
+        auto value = parameter_field.safeGet<DecimalField<Decimal32>>();
+        return static_cast<Float64>(value.getValue()) / static_cast<Float64>(value.getScaleMultiplier());
+    }
+    else if (Float64 float_value = 0; parameter_field.tryGet(float_value))
     {
         return float_value;
     }
@@ -177,12 +207,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param) * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(target_scale));
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, DateTime64, Int64, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, target_scale);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, target_scale);
         }
     }
     else if (isDateTime(timestamp_type) || isUInt32(timestamp_type))
@@ -196,12 +226,12 @@ AggregateFunctionPtr createWithValueType(const std::string & name, const DataTyp
         {
             Float64 predict_offset = extractFloatParameter(name, "predict_offset", predict_offset_param);
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_predict>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0, predict_offset);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0, predict_offset);
         }
         else
         {
             res = std::make_shared<Function<FunctionTraits<array_arguments, UInt32, Int32, ValueType, is_rate_or_resets>>>
-                (argument_types, start_timestamp, end_timestamp, step, window, 0);
+                (argument_types, parameters, start_timestamp, end_timestamp, step, window, 0);
         }
     }
 
@@ -262,6 +292,7 @@ AggregateFunctionPtr createAggregateFunctionTimeseries(const std::string & name,
 
 }
 
+void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory)
 {
     /// timeSeriesRateToGrid documentation
@@ -290,6 +321,7 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -317,6 +349,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -367,6 +400,7 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -394,6 +428,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -444,6 +479,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -471,6 +507,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -522,6 +559,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -549,6 +587,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -599,6 +638,7 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Calculate derivative values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -626,6 +666,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -675,6 +716,7 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
     {
         "Calculate predict_linear values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] with a 60 second offset",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -703,6 +745,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -753,6 +796,7 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
     {
         "Calculate changes values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -780,6 +824,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -828,6 +873,7 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(tim
     {
         "Calculate resets values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -855,6 +901,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values,
@@ -906,6 +953,7 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -933,6 +981,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,

@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames, JobNames
+from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames
 from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(
@@ -28,6 +28,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/check_sync_pr_mergeable.py",
     ],
 )
 

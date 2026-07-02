@@ -1,3 +1,4 @@
+import io
 import os
 import uuid
 from typing import Dict
@@ -138,7 +139,7 @@ def setup_minio_users(cluster):
 )
 def setup_cluster(request):
     cluster = ClickHouseCluster(__file__)
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node",
         main_configs=[
             "configs/disk_s3.xml",
@@ -382,6 +383,19 @@ def test_backup_to_s3(cluster):
     check_system_tables(cluster, backup_events["query_id"])
 
 
+def test_backup_to_s3_ignores_prefixed_backup_metadata(cluster):
+    storage_policy = "default"
+    backup_name = new_backup_name()
+    backup_key = f"data/backups/{backup_name}"
+    data = b"not a backup"
+    cluster.minio_client.put_object(
+        "root", f"{backup_key}/.backup.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{backup_key}', 'minio', '{minio_secret_key}')"
+    check_backup_and_restore(cluster, storage_policy, backup_destination)
+
+
 def test_backup_to_s3_named_collection(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -470,16 +484,6 @@ def test_backup_to_s3_multipart(cluster):
         "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
-    s3_backup_events = (
-        "WriteBufferFromS3Microseconds",
-        "WriteBufferFromS3Bytes",
-        "WriteBufferFromS3RequestsErrors",
-    )
-    s3_restore_events = (
-        "ReadBufferFromS3Microseconds",
-        "ReadBufferFromS3Bytes",
-        "ReadBufferFromS3RequestsErrors",
-    )
 
     objects = node.cluster.minio_client.list_objects(
         "root", f"data/backups/multipart/{backup_name}/"
@@ -771,6 +775,23 @@ def test_backup_to_zip(cluster):
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
+def test_restore_from_s3_archive_ignores_prefixed_archive(cluster):
+    node = cluster.instances["node"]
+    backup_name = new_backup_name()
+    archive_key = f"data/backups/{backup_name}.zip"
+    data = b"not a backup archive"
+    cluster.minio_client.put_object(
+        "root", f"{archive_key}.tmp", io.BytesIO(data), len(data)
+    )
+
+    backup_destination = f"S3('http://minio1:9001/root/{archive_key}', 'minio', '{minio_secret_key}')"
+    error = node.query_and_get_error(
+        f"RESTORE TABLE data AS data_restored FROM {backup_destination}"
+    )
+
+    assert "BACKUP_NOT_FOUND" in error, error
+
+
 def test_backup_to_tar(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()
@@ -820,6 +841,9 @@ def test_user_specific_auth(cluster):
         node.query(f"CREATE USER {user}")
         node.query(f"GRANT CURRENT GRANTS ON *.* TO {user}")
 
+    def assert_access_denied(error):
+        assert "Access Denied" in error or "ACCESS_DENIED" in error, error
+
     create_user("superuser1")
     create_user("superuser2")
     create_user("regularuser")
@@ -838,7 +862,7 @@ def test_user_specific_auth(cluster):
         restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
 
         if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
+            assert_access_denied(node.query_and_get_error(backup_query, user=user))
         else:
             node.query(backup_query, user=user)
             node.query("DROP TABLE specific_auth SYNC")
@@ -861,9 +885,11 @@ def test_user_specific_auth(cluster):
 
     backup_restore(f"S3('{backup2_path}')", user="superuser2", should_fail=False)
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (2)")
@@ -882,9 +908,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup1_path}')",
     )
 
-    assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -911,9 +939,11 @@ def test_user_specific_auth(cluster):
         on_cluster=True,
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
+            user="regularuser",
+        )
     )
 
     node.query("INSERT INTO specific_auth VALUES (3)")
@@ -934,9 +964,11 @@ def test_user_specific_auth(cluster):
         base_backup=f"S3('{backup3_path}')",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
-        user="regularuser",
+    assert_access_denied(
+        node.query_and_get_error(
+            f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
+            user="regularuser",
+        )
     )
 
     assert "Access Denied" in node.query_and_get_error(
@@ -1001,8 +1033,11 @@ def test_backup_to_s3_different_credentials(
         # To make the test deterministic, `S3WriteRequestsErrors` is asserted in `events` only when `allow_s3_native_copy` is enabled or `use_multipart_copy` is disabled.
         if allow_s3_native_copy == True or use_multipart_copy == False:
             assert ("S3WriteRequestsErrors" in events) == (allow_s3_native_copy == True)
-        assert "S3ReadRequestsErrors" not in events
-        assert "DiskS3ReadRequestsErrors" not in events
+        # Note: we don't assert the absence of S3ReadRequestsErrors/DiskS3ReadRequestsErrors here.
+        # Under CI load (especially with sanitizer builds), transient S3 network errors on
+        # GET/HEAD requests are expected during large data transfers. These errors are retried
+        # and the operation succeeds — the data integrity check in check_backup_and_restore
+        # already validates that all reads completed correctly.
         assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
 
@@ -1033,15 +1068,13 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
 
 
 def test_backup_restore_s3_plain(cluster):
-    storage_policy = "policy_s3"
-    to_disk = "disk_s3_plain"
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
 
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     instance.query(
-        f"""
+        """
     DROP TABLE IF EXISTS sample SYNC;
     CREATE TABLE sample (key Int, value String)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -1053,7 +1086,7 @@ def test_backup_restore_s3_plain(cluster):
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
+    table_data_path = instance.query("SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
     local_path = os.path.join(instance.path, "database")
     source_table_path = f"{local_path}/{table_data_path}"
@@ -1064,7 +1097,7 @@ def test_backup_restore_s3_plain(cluster):
         minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;

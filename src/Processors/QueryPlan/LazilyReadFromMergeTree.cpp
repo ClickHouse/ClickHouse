@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -73,7 +74,7 @@ void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline
 
 void LazilyReadFromMergeTree::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
     settings.out << prefix << "Lazily read columns: ";
 

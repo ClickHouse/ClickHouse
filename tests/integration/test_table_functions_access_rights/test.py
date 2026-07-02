@@ -1,7 +1,6 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance")
@@ -58,10 +57,9 @@ def test_merge():
     instance.query("REVOKE ALL ON default.* FROM A")
     instance.query("GRANT SELECT ON default.table1 TO A")
     instance.query("GRANT INSERT ON default.table2 TO A")
-    assert (
-        "it's necessary to have the grant SELECT(x) ON default.table2"
-        in instance.query_and_get_error(select_query, user="A")
-    )
+    err = instance.query_and_get_error(select_query, user="A")
+    # INSERT on table2 implies SHOW_COLUMNS, so the hint is allowed to include column names.
+    assert "it's necessary to have the grant SELECT(x) ON default.table2" in err
 
     instance.query("REVOKE ALL ON default.* FROM A")
     describe_query = f"DESCRIBE TABLE {merge_spec}"

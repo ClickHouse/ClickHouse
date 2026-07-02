@@ -1,6 +1,7 @@
 [profile.release]
 debug = false
 strip = true
+@RUST_RELEASE_PROFILE_EXTRA@
 
 # We use LTO to slightly decrease binary size
 [profile.release-thinlto]
@@ -31,7 +32,7 @@ replace-with = "vendored-sources"
 git = "https://github.com/azat-rust/cursive_table_view"
 branch = "next"
 replace-with = "vendored-sources"
-[source."git+https://github.com/ys-l/flamelens?branch=main"]
-git = "https://github.com/ys-l/flamelens"
-branch = "main"
+[source."git+https://github.com/azat-rust/flamelens?branch=diff-mode"]
+git = "https://github.com/azat-rust/flamelens"
+branch = "diff-mode"
 replace-with = "vendored-sources"

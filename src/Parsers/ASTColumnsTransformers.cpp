@@ -228,7 +228,12 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (!pattern)
     {
         for (const auto & child : children)
-            expected_columns.insert(child->as<const ASTIdentifier &>().name());
+        {
+            if (const auto * identifier = child->as<ASTIdentifier>())
+                expected_columns.insert(identifier->name());
+            else
+                expected_columns.insert(child->getAliasOrColumnName());
+        }
 
         for (auto it = nodes.begin(); it != nodes.end();)
         {
@@ -294,7 +299,7 @@ std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     children[0]->format(ostr, settings, state, frame);
     ostr << " AS " << backQuoteIfNeed(name);
@@ -302,7 +307,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
@@ -311,7 +316,7 @@ void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & o
 
 void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     hash_state.update(name.size());
     hash_state.update(name);

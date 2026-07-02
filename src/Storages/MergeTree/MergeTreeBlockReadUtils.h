@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
@@ -112,6 +111,10 @@ protected:
         double bytes_per_row_global = 0;
         double bytes_per_row = 0;
         size_t size_bytes = 0;
+        /// For subcolumns, the output column may be much smaller than the data actually
+        /// read from disk (e.g. a Map subcolumn extracts one key but reads the whole Map).
+        /// When set, `bytes_per_row` will not drop below `bytes_per_row_global`.
+        bool is_subcolumn = false;
     };
 
     std::vector<ColumnInfo> dynamic_columns_infos;

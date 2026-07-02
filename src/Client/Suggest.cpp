@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/QueryScope.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -150,10 +151,10 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
     {
         /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;
-        CurrentThread::QueryScope query_scope;
+        QueryScope query_scope;
         /// LocalConnection creates QueryScope for each query
         if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
-            query_scope = CurrentThread::QueryScope::create(my_context);
+            query_scope = QueryScope::create(my_context);
 
         setThreadName(ThreadName::SUGGEST);
 

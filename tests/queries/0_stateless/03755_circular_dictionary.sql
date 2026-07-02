@@ -139,8 +139,8 @@ CREATE TABLE background_metrics
     (
         SELECT
             metric,
-            dictGet('background_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('background_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -154,8 +154,8 @@ CREATE TABLE ddlworker_metrics
     (
         SELECT
             metric,
-            dictGet('ddlworker_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('ddlworker_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -169,8 +169,8 @@ CREATE TABLE distrcache_metrics
     (
         SELECT
             metric,
-            dictGet('distrcache_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('distrcache_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -184,8 +184,8 @@ CREATE TABLE drop_metrics
     (
         SELECT
             metric,
-            dictGet('drop_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('drop_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -199,8 +199,8 @@ CREATE TABLE filesystem_metrics
     (
         SELECT
             metric,
-            dictGet('filesystem_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('filesystem_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -214,8 +214,8 @@ CREATE TABLE kafka_metrics
     (
         SELECT
             metric,
-            dictGet('kafka_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('kafka_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -229,8 +229,8 @@ CREATE TABLE mergetree_metrics
     (
         SELECT
             metric,
-            dictGet('mergetree_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('mergetree_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -244,8 +244,8 @@ CREATE TABLE parts_metrics
     (
         SELECT
             metric,
-            dictGet('parts_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('parts_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -259,8 +259,8 @@ CREATE TABLE storages3_metrics
     (
         SELECT
             metric,
-            dictGet('storages3_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('storages3_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree
@@ -274,8 +274,8 @@ CREATE TABLE temporaryfiles_metrics
     (
         SELECT
             metric,
-            dictGet('temporaryfiles_dict', 'value', metric) AS value
-        ORDER BY value
+            min(dictGet('temporaryfiles_dict', 'value', metric))
+        GROUP BY metric
     )
 )
 ENGINE = MergeTree

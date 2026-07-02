@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_LOCAL --multiquery "
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
 CREATE TABLE t_stats_time_mismatch
