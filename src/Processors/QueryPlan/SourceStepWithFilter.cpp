@@ -9,6 +9,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Common/JSONBuilder.h>
+#include <Common/Logger.h>
+#include <Common/FieldVisitorToString.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -91,6 +94,56 @@ void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     auto dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());
     filter_actions_dag = dag ? std::make_shared<const ActionsDAG>(std::move(*dag)) : nullptr;
+}
+
+size_t SourceStepWithFilterBase::updateFilterDagConstants(
+    const ConstantValueMap & old_value_to_param,
+    const std::vector<Field> & parsed_params)
+{
+    auto log = getLogger("SourceStepWithFilter");
+    size_t total_updated = 0;
+
+    for (auto & dag : filter_dags)
+    {
+        for (auto node_it = dag.getNodes().begin(); node_it != dag.getNodes().end(); ++node_it)
+        {
+            auto & dag_node = const_cast<ActionsDAG::Node &>(*node_it);
+            if (dag_node.type != ActionsDAG::ActionType::COLUMN || !dag_node.column || !isColumnConst(*dag_node.column))
+                continue;
+
+            const auto * col_const = typeid_cast<const ColumnConst *>(dag_node.column.get());
+            if (!col_const)
+                continue;
+
+            Field old_value = col_const->getField();
+            String old_key = applyVisitor(FieldVisitorToString(), old_value);
+            auto it = old_value_to_param.find(old_key);
+            if (it == old_value_to_param.end())
+                continue;
+
+            const auto & [param_index, target_type] = it->second;
+            try
+            {
+                Field raw_value = parsed_params[param_index];
+                DataTypePtr final_type = target_type ? target_type : dag_node.result_type;
+                if (final_type->getTypeId() != static_cast<TypeIndex>(raw_value.getType()))
+                    raw_value = convertFieldToType(raw_value, *final_type);
+                ColumnConstPtr new_column = final_type->createColumnConst(1, raw_value);
+                dag_node.result_type = std::move(final_type);
+                dag_node.column = std::move(new_column);
+                ++total_updated;
+                LOG_DEBUG(log, "updateFilterDagConstants: updated COLUMN node result_name='{}' to value='{}'",
+                    dag_node.result_name, applyVisitor(FieldVisitorToString(), raw_value));
+            }
+            catch (...)
+            {
+                LOG_DEBUG(log, "updateFilterDagConstants: failed to update node: {}", getCurrentExceptionMessage(false));
+            }
+        }
+    }
+
+    LOG_DEBUG(log, "updateFilterDagConstants: updated {} nodes across {} dags", total_updated, filter_dags.size());
+    return total_updated;
 }
 
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
