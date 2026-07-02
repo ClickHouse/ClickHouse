@@ -1,0 +1,15 @@
+--- ENGINE = URL('s3://...') is reported as the URL engine but keeps the s3:// URL ---
+URL
+1
+--- the s3:// URL engine is reload-safe across DETACH/ATTACH (re-dispatches on reload) ---
+1
+--- TRUNCATE on ENGINE = URL('s3://...') is rejected (URL semantics preserved, no object removed) ---
+truncate-rejected
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('http://...') is allowed (URL engine) ---
+http-allowed
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('s3://...') is denied (dispatches to S3) ---
+s3-engine-denied
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('az://...') is denied (dispatches to AzureBlobStorage) ---
+azure-engine-denied
+--- url('s3://...') table function requires the S3 source grant (dispatches to S3) ---
+s3-source-required
