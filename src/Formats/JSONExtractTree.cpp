@@ -195,7 +195,7 @@ bool tryGetNumericValueFromJSONElement(
             auto rb = ReadBufferFromMemory{element.getString()};
             if constexpr (is_floating_point<NumberType>)
             {
-                if (!tryReadFloatText(value, rb) || !rb.eof())
+                if (!tryReadFloatTextPrecise(value, rb) || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;
@@ -209,7 +209,7 @@ bool tryGetNumericValueFromJSONElement(
                 /// Try to parse float and convert it to integer.
                 Float64 tmp_float = 0;
                 rb.position() = rb.buffer().begin();
-                if (!tryReadFloatText(tmp_float, rb) || !rb.eof())
+                if (!tryReadFloatTextPrecise(tmp_float, rb) || !rb.eof())
                 {
                     error = fmt::format("cannot parse {} value here: \"{}\"", TypeName<NumberType>, element.getString());
                     return false;

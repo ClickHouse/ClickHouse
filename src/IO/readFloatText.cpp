@@ -363,7 +363,9 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         auto * const buf_end = buf.buffer().end();
         auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
 
-        if (unlikely(res.ec != std::errc()))
+        /// result_out_of_range means overflow/underflow: fast_float has already set x to +-inf or +-0,
+        /// matching strtod semantics. Only a genuine parse failure is an error.
+        if (unlikely(res.ec != std::errc() && res.ec != std::errc::result_out_of_range))
         {
             if constexpr (throw_exception)
                 throw Exception(
@@ -447,7 +449,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
 
     /// Sign was already consumed above (tracked in `negative`), so tmp_buf holds no leading sign.
     auto res = parseFloatFromRange(x, tmp_buf, tmp_buf + num_copied_chars, fast_float::chars_format::general);
-    if (unlikely(res.ec != std::errc() || res.ptr - tmp_buf != num_copied_chars))
+    if (unlikely((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr - tmp_buf != num_copied_chars))
     {
         if constexpr (throw_exception)
             throw Exception(
@@ -864,9 +866,6 @@ template <typename T> bool tryReadFloatTextSimple(T & x, ReadBuffer & in)
 }
 
 
-template <typename T> void readFloatText(T & x, ReadBuffer & in) { readFloatTextFast(x, in); }
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in) { return tryReadFloatTextFast(x, in); }
-
 template <typename T> bool tryReadFloatTextNoExponent(T & x, ReadBuffer & in)
 {
     bool has_fractional = false;
@@ -932,13 +931,6 @@ template void readFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<BFloat16>(BFloat16 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<Float32>(Float32 &, ReadBuffer &);
 template bool tryReadFloatTextSimple<Float64>(Float64 &, ReadBuffer &);
-
-template void readFloatText<BFloat16>(BFloat16 &, ReadBuffer &);
-template void readFloatText<Float32>(Float32 &, ReadBuffer &);
-template void readFloatText<Float64>(Float64 &, ReadBuffer &);
-template bool tryReadFloatText<BFloat16>(BFloat16 &, ReadBuffer &);
-template bool tryReadFloatText<Float32>(Float32 &, ReadBuffer &);
-template bool tryReadFloatText<Float64>(Float64 &, ReadBuffer &);
 
 template bool tryReadFloatTextNoExponent<BFloat16>(BFloat16 &, ReadBuffer &);
 template bool tryReadFloatTextNoExponent<Float32>(Float32 &, ReadBuffer &);
