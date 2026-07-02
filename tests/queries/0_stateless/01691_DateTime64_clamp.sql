@@ -10,7 +10,7 @@ SELECT toDateTime64(-2., 2, 'Asia/Istanbul');
 SELECT toDateTime64(toFloat32(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul');
 SELECT toDateTime64(toFloat64(bitShiftLeft(toUInt64(1),33)), 2, 'Asia/Istanbul') FORMAT Null;
 
--- These are outsize of extended range and hence clamped
+-- These are outside the fast lookup-table range but within the representable range, so they are computed via cctz (not clamped)
 SELECT toDateTime64(-1 * bitShiftLeft(toUInt64(1), 35), 2, 'Asia/Istanbul');
 SELECT CAST(-1 * bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
 SELECT CAST(bitShiftLeft(toUInt64(1), 35) AS DateTime64(3, 'Asia/Istanbul'));
