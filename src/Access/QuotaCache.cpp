@@ -289,31 +289,38 @@ void QuotaCache::ensureAllQuotasRead()
     /// `mutex` is already locked.
     if (all_quotas_read)
         return;
-    all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
-            else
-                quotaRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    quotaAddedOrChanged(change.id, typeid_cast<QuotaPtr>(change.entity));
+                else
+                    quotaRemoved(change.id);
+            }
+            chooseQuotaToConsumeIfNeeded();
         });
 
-    batch_subscription = access_control.subscribeForBatchFinished([this] { chooseQuotaToConsumeIfNeeded(); });
-
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_quotas.clear();
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_quotas_read = true;
 }
 
 
 void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_quotas.find(quota_id);
     if (it == all_quotas.end())
     {
@@ -333,7 +340,7 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
 void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_quotas.erase(quota_id);
     need_choose_quota = true;
 }
@@ -341,7 +348,7 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 
 void QuotaCache::chooseQuotaToConsumeIfNeeded()
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     if (!need_choose_quota)
         return;
     /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.

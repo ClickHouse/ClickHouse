@@ -61,6 +61,7 @@ private:
         InputPort * input_port = nullptr;
         OutputPort * output_port = nullptr;
         bool is_input_finished = false;
+        bool input_port_has_counter = false;
     };
 
     std::vector<PortsData> ports_data;
@@ -115,6 +116,7 @@ public:
     OutputPort & getOutputPort() { return outputs.front(); }
 
     void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit_at_least.swap(counter); }
+    void setInputPortHasCounter(size_t pos) { ports_data[pos].input_port_has_counter = true; }
 };
 
 }
