@@ -367,6 +367,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    String current_table_prefix; /// Table prefix set by USE db.namespace command (for DataLakeCatalog)
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -1109,13 +1110,13 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    String getCurrentDatabase() const;
+    CurrentDatabaseInfo getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
-    void setCurrentDatabase(const String & name);
+    void setCurrentDatabase(const String & name, const String & table_prefix = {});
     /// Set current_database without validating that database exists.
     /// Use during bootstrap/restore scenarios where database may not be loaded yet.
     void setCurrentDatabaseUnchecked(const String & name);

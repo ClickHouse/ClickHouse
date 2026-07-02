@@ -142,7 +142,7 @@ namespace
             if (TableFunctionFactory::instance().isTableFunctionName(func->name))
                 return;
 
-            String database_name = query_context->getCurrentDatabase();
+            String database_name = query_context->getCurrentDatabase().database;
             String table_name = func->name;
             if (func->isCompoundName())
             {

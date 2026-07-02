@@ -456,7 +456,7 @@ QueryLogElement logQueryStart(
     elem.query_start_time = timeInSeconds(query_start_time);
     elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().database;
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
         elem.formatted_query = query_ast->formatWithSecretsOneLine();
@@ -893,7 +893,7 @@ void logExceptionBeforeStart(
     elem.query_start_time_microseconds = client_info.initial_query_start_time_microseconds;
     elem.query_duration_ms = elapsed_milliseconds;
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().database;
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalized_query_hash;
 
@@ -1735,7 +1735,7 @@ static BlockIO executeQueryImpl(
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase().database, *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
 
                     if (reader.hasCacheEntryForKey())
@@ -1852,7 +1852,7 @@ static BlockIO executeQueryImpl(
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
+                                out_ast, context->getCurrentDatabase().database, *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],

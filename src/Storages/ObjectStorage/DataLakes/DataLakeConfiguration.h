@@ -360,7 +360,7 @@ public:
             || (*settings)[DataLakeStorageSetting::storage_aws_access_key_id].changed)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Don't use deprecated settings storage_catalog_type, storage_catalog_url, storage_aws_access_key_id");
-        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase();
+        const String db_name = table_id.hasDatabase() ? table_id.database_name : context->getCurrentDatabase().database;
         /// Having no associated `DataLakeDatabase` is a valid state (e.g. an `Iceberg` table in a
         /// regular `Atomic`/`Ordinary` database, or a database not currently registered during
         /// async load), so return nullptr rather than throwing. Callers treat a null catalog as

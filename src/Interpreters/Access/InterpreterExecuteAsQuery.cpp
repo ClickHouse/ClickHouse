@@ -29,8 +29,8 @@ namespace
         new_context->makeQueryContext();
         new_context->setCurrentQueryId({});
 
-        const auto & database = context->getCurrentDatabase();
-        if (!database.empty() && database != new_context->getCurrentDatabase())
+        const auto & database = context->getCurrentDatabase().database;
+        if (!database.empty() && database != new_context->getCurrentDatabase().database)
             new_context->setCurrentDatabase(database);
 
         new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
@@ -59,7 +59,7 @@ namespace
     /// Changes the session context to execute all following queries in this session as another user.
     void impersonateSessionContext(ContextMutablePtr context, const String & target_user_name)
     {
-        auto database = context->getCurrentDatabase();
+        auto database = context->getCurrentDatabase().database;
         auto changed_settings = context->getSettingsRef().changes();
 
         context->setUser(context->getAccessControl().getID<User>(target_user_name));
@@ -71,7 +71,7 @@ namespace
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
 
-        if (!database.empty() && database != context->getCurrentDatabase())
+        if (!database.empty() && database != context->getCurrentDatabase().database)
             context->setCurrentDatabase(database);
     }
 }

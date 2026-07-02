@@ -107,7 +107,7 @@ namespace DB
 
         String database_name = loop_database_name;
         if (database_name.empty())
-            database_name = context->getCurrentDatabase();
+            database_name = context->getCurrentDatabase().database;
 
         /// Reading the schema requires SHOW COLUMNS, same as a direct DESCRIBE of the table.
         context->checkAccess(AccessType::SHOW_COLUMNS, database_name, loop_table_name);
@@ -133,7 +133,7 @@ namespace DB
         {
             String database_name = loop_database_name;
             if (database_name.empty())
-                database_name = context->getCurrentDatabase();
+                database_name = context->getCurrentDatabase().database;
 
             auto database = DatabaseCatalog::instance().getDatabase(database_name);
             storage = database->tryGetTable(loop_table_name, context);

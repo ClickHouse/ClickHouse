@@ -30,7 +30,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , all_loading_dependencies("LoadingDeps")
     , async_loader(global_context->getAsyncLoader())
 {
-    metadata.default_database = global_context->getCurrentDatabase();
+    metadata.default_database = global_context->getCurrentDatabase().database;
     log = getLogger("TablesLoader");
 }
 
@@ -168,7 +168,7 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase().database, /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())

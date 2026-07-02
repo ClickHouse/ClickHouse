@@ -101,7 +101,8 @@ static NamesAndTypesList getColumnsFromTableExpression(
         if (is_create_parameterized_view)
         {
             query_context = Context::createCopy(query_context);
-            query_context->setCurrentDatabase(context->getCurrentDatabase());
+            auto current_db_info = context->getCurrentDatabase();
+            query_context->setCurrentDatabase(current_db_info.database, current_db_info.table_prefix);
         }
 
         const auto & function_storage = query_context->executeTableFunction(table_function);
@@ -136,7 +137,7 @@ TablesWithColumns getDatabaseAndTablesWithColumns(
 {
     TablesWithColumns tables_with_columns;
 
-    String current_database = context->getCurrentDatabase();
+    String current_database = context->getCurrentDatabase().database;
 
     for (const ASTTableExpression * table_expression : table_expressions)
     {

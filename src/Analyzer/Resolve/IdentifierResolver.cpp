@@ -12,6 +12,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableNameHints.h>
@@ -301,59 +302,83 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    StorageID storage_id(database_name, table_name);
-    storage_id = context->resolveStorageID(storage_id);
-    bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+    auto current_db_info = context->getCurrentDatabase();
+    const String & current_database = current_db_info.database;
+    /// Namespaced table names are specific to data lake catalogs, so check the engine name
+    /// (`isRemoteDatabase` would also cover MySQL/PostgreSQL).
+    auto current_db_ptr = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    bool is_current_db_datalake = current_db_ptr && current_db_ptr->getEngineName() == DataLake::DATABASE_ENGINE_NAME;
 
     StoragePtr storage;
     TableLockHolder storage_lock;
+    bool is_temporary_table = false;
 
-    if (is_temporary_table)
-        storage = DatabaseCatalog::instance().getTable(storage_id, context);
-    else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
+    /// for datalake context, we might need fallback resolution in case we have namespaces
+    StorageID storage_id = is_current_db_datalake
+        ? context->tryResolveStorageID(StorageID(database_name, table_name))
+        : context->resolveStorageID(StorageID(database_name, table_name));
+
+    if (storage_id)
     {
-        /// If table is the target of a refreshable materialized view, it needs additional
-        /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
-        try
+        is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
+
+        if (is_temporary_table)
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        else if (auto refresh_task = context->getRefreshSet().tryGetTaskForInnerTable(storage_id))
         {
-            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+            /// If table is the target of a refreshable materialized view, it needs additional
+            /// synchronization to make sure we see all of the data (e.g. if refresh happened on another replica).
+            try
+            {
+                std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(storage_id, context);
+            }
+            catch (const Exception & e)
+            {
+                /// `EXCHANGE TABLES` + `DROP` during refresh can race with this resolution:
+                /// `resolveStorageID` above stamps the original UUID onto `storage_id`, then the
+                /// refresh swaps the target slot and drops the old table. Inside
+                /// `getAndLockTargetTable`, `DatabaseCatalog::getTable` takes the UUID shortcut in
+                /// `getTableImpl` and either throws `UNKNOWN_TABLE` (after the old UUID is fully
+                /// removed) or `TABLE_UUID_MISMATCH` (post-EXCHANGE but pre-DROP, when the UUID
+                /// still resolves to the now-renamed old storage). Either way, the retry loop
+                /// inside `getAndLockTargetTable` never gets a chance to run.
+                ///
+                /// Mirror the established UUID -> name fallback at the if-block below: when the
+                /// original UUID is unusable, retry against the current table at the same name.
+                /// Re-entering `getAndLockTargetTable` (instead of plain `tryGetTable`) preserves
+                /// the retry loop and the `SYSTEM SYNC REPLICA` call that this path needs.
+                if ((e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::TABLE_UUID_MISMATCH)
+                    || !storage_id.hasUUID())
+                    throw;
+                StorageID name_only_id(storage_id.database_name, storage_id.table_name);
+                std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(name_only_id, context);
+            }
         }
-        catch (const Exception & e)
+        else
+            storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+
+        if (!storage && storage_id.hasUUID())
         {
-            /// `EXCHANGE TABLES` + `DROP` during refresh can race with this resolution:
-            /// `resolveStorageID` above stamps the original UUID onto `storage_id`, then the
-            /// refresh swaps the target slot and drops the old table. Inside
-            /// `getAndLockTargetTable`, `DatabaseCatalog::getTable` takes the UUID shortcut in
-            /// `getTableImpl` and either throws `UNKNOWN_TABLE` (after the old UUID is fully
-            /// removed) or `TABLE_UUID_MISMATCH` (post-EXCHANGE but pre-DROP, when the UUID
-            /// still resolves to the now-renamed old storage). Either way, the retry loop
-            /// inside `getAndLockTargetTable` never gets a chance to run.
-            ///
-            /// Mirror the established UUID -> name fallback at the if-block below: when the
-            /// original UUID is unusable, retry against the current table at the same name.
-            /// Re-entering `getAndLockTargetTable` (instead of plain `tryGetTable`) preserves
-            /// the retry loop and the `SYSTEM SYNC REPLICA` call that this path needs.
-            if ((e.code() != ErrorCodes::UNKNOWN_TABLE && e.code() != ErrorCodes::TABLE_UUID_MISMATCH)
-                || !storage_id.hasUUID())
-                throw;
-            StorageID name_only_id(storage_id.database_name, storage_id.table_name);
-            std::tie(storage, storage_lock) = refresh_task->getAndLockTargetTable(name_only_id, context);
+            // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
+            // We try to get the table with the database name and the table name.
+            auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
+            if (database)
+                storage = database->tryGetTable(table_name, context);
+            /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
+            if (storage)
+                storage_id = storage->getStorageID();
         }
     }
-    else
-        storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
 
-    if (!storage && storage_id.hasUUID())
+    /// for DataLakeCatalog databases, try fallback resolution (like "namespace.table" as table name)
+    if (!storage && is_current_db_datalake)
     {
-        // If `storage_id` has UUID, it is possible that the UUID is removed from `DatabaseCatalog` after `context->resolveStorageID(storage_id)`
-        // We try to get the table with the database name and the table name.
-        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.getDatabaseName());
-        if (database)
-            storage = database->tryGetTable(table_name, context);
-        /// Adopt the replacement's identity so TableNode stays resolvable by UUID.
+        storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
+        /// Adopt the resolved table's identity so the explicit storage_id passed to TableNode is valid.
         if (storage)
             storage_id = storage->getStorageID();
     }
+
     if (!storage)
         return {};
 
@@ -371,6 +396,29 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         result->setTemporaryTableName(table_name);
 
     return result;
+}
+
+/// Fallback resolution for DataLakeCatalog databases whose table names are namespace-qualified:
+/// `namespace.table` is a table name within the current catalog, and a bare `table` gets the
+/// namespace prefix selected by `USE catalog.namespace` (if any).
+StoragePtr IdentifierResolver::tryResolveDatalakeTable(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    const CurrentDatabaseInfo & current_db_info)
+{
+    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_db_info.database);
+    if (!current_db)
+        return nullptr;
+
+    String table_name = table_identifier.getFullName();
+    if (!table_identifier.isCompound())
+    {
+        if (current_db_info.table_prefix.empty())
+            return nullptr;
+        table_name = current_db_info.table_prefix + "." + table_name;
+    }
+
+    return current_db->tryGetTable(table_name, context);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
@@ -402,7 +450,7 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
     /// Resolve the database the same way table resolution does, so the hint search starts from
     /// the right database (the current one for a bare name) and can fall back to other databases.
     if (database_name.empty())
-        database_name = context->getCurrentDatabase();
+        database_name = context->getCurrentDatabase().database;
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     TableNameHints hints(database, context);

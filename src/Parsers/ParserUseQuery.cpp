@@ -1,5 +1,5 @@
 #include <Parsers/ParserUseQuery.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
@@ -13,6 +13,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_use(Keyword::USE);
     ParserKeyword s_database(Keyword::DATABASE);
     ParserIdentifier name_p{/*allow_query_parameter*/ true};
+    ParserToken s_dot(TokenType::Dot);
 
     if (!s_use.ignore(pos, expected))
         return false;
@@ -41,6 +42,27 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // Parse identifier directly (handles "USE database" where database is a name)
         if (!name_p.parse(pos, database, expected))
             return false;
+    }
+
+    /// `USE db.namespace` for DataLakeCatalog databases: fold the dot-separated parts into
+    /// a single database name; the interpreter splits it back into database and prefix.
+    if (s_dot.ignore(pos, expected))
+    {
+        String database_name;
+        /// A query-parameter database identifier extracts as an empty name and cannot be folded.
+        if (!tryGetIdentifierNameInto(database, database_name) || database_name.empty())
+            return false;
+
+        ParserIdentifier part_p;
+        do
+        {
+            ASTPtr part;
+            if (!part_p.parse(pos, part, expected))
+                return false;
+            database_name += "." + getIdentifierName(part);
+        } while (s_dot.ignore(pos, expected));
+
+        database = make_intrusive<ASTIdentifier>(database_name);
     }
 
     auto query = make_intrusive<ASTUseQuery>();

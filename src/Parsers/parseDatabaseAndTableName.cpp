@@ -1,11 +1,42 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB
 {
+
+bool foldNamespacesIntoTableName(IParser::Pos & pos, Expected & expected, ASTPtr & table)
+{
+    ParserToken s_dot(TokenType::Dot);
+    ParserIdentifier part_parser;
+
+    String table_name;
+    /// A query-parameter identifier extracts as an empty name.
+    bool table_has_name = tryGetIdentifierNameInto(table, table_name) && !table_name.empty();
+
+    bool folded = false;
+    while (s_dot.ignore(pos, expected))
+    {
+        /// A query-parameter table identifier cannot be folded into a namespace-qualified name.
+        if (!table_has_name)
+            return false;
+
+        ASTPtr part;
+        if (!part_parser.parse(pos, part, expected))
+            return false;
+
+        table_name += "." + getIdentifierName(part);
+        folded = true;
+    }
+
+    if (folded)
+        table = make_intrusive<ASTIdentifier>(table_name);
+
+    return true;
+}
 
 bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String & database_str, String & table_str)
 {
@@ -28,6 +59,9 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
             database_str = "";
             return false;
         }
+
+        if (!foldNamespacesIntoTableName(pos, expected, table))
+            return false;
 
         tryGetIdentifierNameInto(database, database_str);
         tryGetIdentifierNameInto(table, table_str);
@@ -53,6 +87,9 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
     {
         database = table;
         if (!table_parser.parse(pos, table, expected))
+            return false;
+
+        if (!foldNamespacesIntoTableName(pos, expected, table))
             return false;
     }
 
@@ -112,9 +149,29 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
                 }
                 if (identifier_parser.parse(pos, ast, expected))
                 {
-                    /// db.table
+                    /// db.table (or db.namespace1.namespace2...table)
                     database = std::move(first_identifier);
                     table = getIdentifierName(ast);
+
+                    /// Fold namespace parts into the table name (DataLakeCatalog databases):
+                    /// db.ns1.ns2.table -> table `ns1.ns2.table`
+                    while (ParserToken{TokenType::Dot}.ignore(pos, expected))
+                    {
+                        if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                        {
+                            /// db.namespace.* means everything inside the namespace, which is the
+                            /// `namespace.` prefix of namespace-qualified table names. Keep the
+                            /// trailing dot: a bare `namespace` prefix would also match namespaces
+                            /// that merely start with the same characters (e.g. `namespace2`).
+                            table += ".";
+                            wildcard = true;
+                            return true;
+                        }
+                        if (!identifier_parser.parse(pos, ast, expected))
+                            return false;
+                        table += "." + getIdentifierName(ast);
+                    }
+
                     if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                         wildcard = true;
 

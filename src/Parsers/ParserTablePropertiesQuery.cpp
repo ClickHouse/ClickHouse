@@ -2,6 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 
 #include <Common/typeid_cast.h>
 
@@ -123,6 +124,9 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             database = table;
             if (!name_p.parse(pos, table, expected))
+                return false;
+
+            if (!foldNamespacesIntoTableName(pos, expected, table))
                 return false;
         }
     }

@@ -483,7 +483,7 @@ struct BackupsWorker::BackupStarter
         /// For ON CLUSTER queries, access rights are checked in executeDDLQueryOnCluster() before distributing the query.
         if (!on_cluster)
         {
-            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
+            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase().database);
             auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
             query_context->checkAccess(required_access);
         }
@@ -688,7 +688,7 @@ void BackupsWorker::doBackup(
     }
     else
     {
-        backup_query->setCurrentDatabase(context->getCurrentDatabase());
+        backup_query->setCurrentDatabase(context->getCurrentDatabase().database);
 
         auto read_settings = getReadSettingsForBackup(context, backup_settings);
 
@@ -1092,7 +1092,7 @@ void BackupsWorker::doRestore(
     if (!is_on_cluster_initiator)
         setEngineSettings(restore_id, backup->getEngineSettings());
 
-    String current_database = context->getCurrentDatabase();
+    String current_database = context->getCurrentDatabase().database;
 
     /// Checks access rights if this is ON CLUSTER query.
     /// (If this isn't ON CLUSTER query RestorerFromBackup will check access rights later.)
