@@ -83,6 +83,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr source_select_settings_ast;
+    ASTPtr source_select_settings_runtime_ast;
     ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
@@ -283,6 +284,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             ParserSetQuery parser_settings(true);
             if (!parser_settings.parse(pos, source_select_settings_ast, expected))
                 return false;
+
+            source_select_settings_runtime_ast = source_select_settings_ast->clone();
         }
     }
     else if (!infile)
@@ -319,7 +322,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS.
         /// When RETURNING is present, keep source-SELECT settings in `source_select_settings_ast` so they can be
         /// applied for the source phase but excluded from RETURNING planning/limits.
-        ASTPtr & source_settings_target = returning_select ? source_select_settings_ast : settings_ast;
+        ASTPtr & source_settings_target = returning_select ? source_select_settings_runtime_ast : settings_ast;
         InsertQuerySettingsPushDownVisitor::Data visitor_data{source_settings_target};
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
 
@@ -400,6 +403,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->returning_select = returning_select;
     query->settings_ast = settings_ast;
     query->source_select_settings_ast = source_select_settings_ast;
+    query->source_select_settings_runtime_ast = source_select_settings_runtime_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
 
@@ -411,6 +415,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(returning_select);
     if (settings_ast)
         query->children.push_back(settings_ast);
+    if (source_select_settings_ast)
+        query->children.push_back(source_select_settings_ast);
 
     return true;
 }

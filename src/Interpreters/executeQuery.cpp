@@ -1556,11 +1556,11 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
-            if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_ast)
+            if (auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->source_select_settings_runtime_ast)
             {
-                rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_ast);
+                rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_runtime_ast);
                 Settings settings_before_source = context->getSettingsRef();
-                InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_ast, context);
+                InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_runtime_ast, context);
 
                 const auto & settings_after_source = context->getSettingsRef();
                 auto restore_ast = make_intrusive<ASTSetQuery>();
