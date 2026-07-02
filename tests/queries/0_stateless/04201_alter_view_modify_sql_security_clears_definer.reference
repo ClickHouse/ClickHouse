@@ -1,0 +1,8 @@
+case1_initial_has_definer	1
+case1_after_alter_invoker_has_security	1
+case1_after_alter_invoker_has_definer	0
+case2_initial_security	1
+case2_initial_has_definer	0
+case2_after_modify_definer_alone_has_definer	1
+case2_after_modify_definer_alone_has_security_definer	1
+case2_after_modify_definer_alone_no_invoker	0
