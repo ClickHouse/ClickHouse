@@ -205,6 +205,12 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
         if (table_expression_data.subcolumn_names.contains(column_name))
             continue;
 
+        /// Skip a generated internal name of a disambiguated duplicate (e.g. `n.x_1`): it is not
+        /// user-addressable, so the synthesised `nested(...)` tuple must not expose its `_1` suffix
+        /// as a field. The first (display-named) occurrence still contributes its field.
+        if (table_expression_data.isHiddenColumnName(column_name))
+            continue;
+
         Identifier column_identifier(column_name);
         IdentifierView suffix(column_identifier);
         size_t prefix_size = identifier.getPartsSize();
@@ -693,7 +699,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
     const auto & node_map = table_expression_data.getColumnNodeMap();
-    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
+    /// A generated internal name of a disambiguated duplicate subquery column (e.g. `7_1`) lives in
+    /// the column-node map only so the planner addresses each duplicate distinctly; it is not
+    /// user-addressable. Skip it here so a direct reference like `SELECT \`7_1\` FROM (...)` does not
+    /// bind to the hidden column. The original display name (`7`) still binds to the first occurrence.
+    if (auto it = node_map.find(identifier_full_name);
+        it != node_map.end() && !table_expression_data.isHiddenColumnName(identifier_full_name))
     {
         result_expression = it->second;
     }

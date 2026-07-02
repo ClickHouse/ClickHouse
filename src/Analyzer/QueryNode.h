@@ -626,6 +626,17 @@ public:
         return projection_columns;
     }
 
+    /// User-visible display name for each projection column, parallel to `getProjectionColumns()`.
+    /// Normally a projection column's `name` is both its internal identifier and its display name.
+    /// When a subquery has several output columns with the same name backed by different
+    /// expressions, the internal names are made unique (so the planner can address them
+    /// distinctly), and this list keeps the original display names. Empty when no disambiguation
+    /// was needed (the common case), in which case `projection_columns[i].name` is the display name.
+    const Names & getProjectionColumnDisplayNames() const
+    {
+        return projection_column_display_names;
+    }
+
     /// Returns true if query node is resolved, false otherwise
     bool isResolved() const
     {
@@ -635,10 +646,20 @@ public:
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
+    /// Rename a single resolved projection column's internal name (keeping its type). Used to
+    /// disambiguate duplicate names exposed by a union subquery; the column's display name is
+    /// preserved separately on the owning UnionNode.
+    void renameProjectionColumn(size_t index, const String & name)
+    {
+        projection_columns.at(index).name = name;
+    }
+
     /// Clear query node projection columns
     void clearProjectionColumns()
     {
         projection_columns.clear();
+        /// Sidecar is parallel to projection_columns; stale display names must not survive a clear.
+        projection_column_display_names.clear();
     }
 
     /// Remove unused projection columns
@@ -684,6 +705,22 @@ public:
         projection_aliases_to_override = std::move(pr_aliases);
     }
 
+    /// A pending table/CTE column alias list (`... AS s(a, b, c)`) applied by
+    /// `resolveProjectionColumns`. These aliases are unique (duplicates are rejected), so a
+    /// subquery carrying them never needs duplicate-name disambiguation.
+    bool hasProjectionAliasesToOverride() const
+    {
+        return !projection_aliases_to_override.empty();
+    }
+
+    /// Record the original display names after duplicate projection column names were made
+    /// internally unique (see `getProjectionColumnDisplayNames`). Must be parallel to
+    /// `projection_columns`.
+    void setProjectionColumnDisplayNames(Names display_names)
+    {
+        projection_column_display_names = std::move(display_names);
+    }
+
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
@@ -710,6 +747,9 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
+    /// Parallel to `projection_columns`; non-empty only when duplicate projection column names
+    /// were disambiguated into unique internal names. Holds the original display names.
+    Names projection_column_display_names;
     Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
