@@ -4628,14 +4628,29 @@ async function restoreFromHistory(state, token) {
     /// Mark the restore as in flight so a `captureActiveTab` running during the await (the debounced
     /// `persist`, or a quick second navigation) does not snapshot those stale inputs into this tab.
     params_restore_pending_token = token;
-    await updateQueryParams();
+    const params_ok = await updateQueryParams();
     if (token !== request_num) return;
     const restored_params = {};
-    for (const param of currentQueryParams)
+    if (params_ok)
     {
-        restored_params[param.name] = state.params?.[param.name] ?? '';
+        for (const param of currentQueryParams)
+        {
+            restored_params[param.name] = state.params?.[param.name] ?? '';
+        }
+        setParamValues(restored_params);
     }
-    setParamValues(restored_params);
+    else
+    {
+        /// Tokenization did not rebuild the parameter list (e.g. a query too large for the WASM
+        /// lexer, or no lexer at all), so `currentQueryParams` may still describe the PREVIOUS
+        /// tab. Deriving params from it would inject that tab's placeholder names into this one
+        /// and persist them into history / `IndexedDB`. Fall back to this tab's own saved
+        /// snapshot, and clear the stale param inputs (and the stale list) so the previous tab's
+        /// names/values cannot linger in the UI or leak through `getParamValues`.
+        queryParamsContainer.innerHTML = '';
+        currentQueryParams = [];
+        Object.assign(restored_params, state.params || {});
+    }
     const active_tab_for_params = getActiveTab();
     if (active_tab_for_params) active_tab_for_params.params = restored_params;
     /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
@@ -5102,11 +5117,15 @@ function buildHistoryParams(params, tabName, fromRun, colorModes) {
     const user = user_elem.value;
     const server_address = url_elem.value;
     if (user) out.push('user=' + encodeURIComponent(user));
-    /// Only carry `run=1` for an entry a genuine run produced (`fromRun`). Editor-only updates
-    /// (tab switch/rename, parameter edits, startup sync via `syncHistory`/
-    /// `refreshCurrentHistoryEntry`) must NOT stamp `run=1` onto a query or parameters the user
-    /// edited but never ran: otherwise reloading that URL would auto-execute the unrun edit
-    /// (e.g. a `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
+    /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
+    /// still match it (`fromRun`). `saveHistory` sets it on the run itself; the editor-only
+    /// writers (`syncHistory`/`refreshCurrentHistoryEntry`, driven by tab switch/rename,
+    /// parameter edits and startup sync) recompute it from `tabReflectsRun`, preserving the
+    /// marker while the editor is unchanged (so a shared `run=1` link whose result is not
+    /// snapshotted — an image or oversized result — stays reproducible across a tab switch or
+    /// rename), but dropping it the moment the editor diverges from the produced result. An
+    /// unrun edit must never keep `run=1`: reloading would auto-execute it (e.g. a
+    /// `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
     if (run_immediately && fromRun) out.push('run=1');
     if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
     for (const [name, value] of Object.entries(params || {})) {
@@ -5163,11 +5182,31 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
     scheduleSave();
 }
 
+/// True when the tab's editor (query + params) still exactly matches the query/params that
+/// produced its current result, i.e. re-running the editor would reproduce what is shown. The
+/// editor-only history writers use it to decide whether to keep `run=1` on the entry: a shared
+/// `run=1` link whose result is not snapshotted (an image or an oversized result) must stay
+/// re-runnable across a tab switch or rename, but the marker must be dropped the moment the
+/// editor diverges from the produced result so an unrun edit is never auto-executed on reload.
+/// `result.query` is the FULL editor text for a single "Run" and for a multi-query "Run all"
+/// (both store the editor into `tab.query` and into the snapshot), so the two are equal while
+/// the tab is clean; a "Run selected" result stores only the selected statement, so it compares
+/// unequal to the full editor and conservatively drops the marker (its URL hash is the whole
+/// editor and could not reproduce that single-statement result anyway).
+function tabReflectsRun(tab) {
+    return !!(tab && tab.result && tab.result.ran
+        && tab.query === tab.result.query
+        && JSON.stringify(tab.params || {}) === JSON.stringify(tab.result.params || {}));
+}
+
 /// Refresh the current browser-history entry in place from the given tab's captured editor
 /// state. Called when leaving a tab, and on every trusted editor edit, so a later Back/Forward
 /// to its entry (or a reload) restores the latest edit instead of the last run/URL snapshot.
 /// Without this, an edit made after the last run lives only in memory, and the next `popstate`
-/// would restore the stale entry (still holding the old query) and overwrite it.
+/// would restore the stale entry (still holding the old query) and overwrite it. The `run=1`
+/// marker is preserved while the editor still reflects the produced run (`tabReflectsRun`) and
+/// dropped once it diverges, so an unrun edit never becomes auto-runnable while a clean tab
+/// stays reproducible from a shared `run=1` link.
 ///
 /// When an entry already exists it must belong to this tab — refreshing another tab's entry
 /// would clobber it, so bail in that case. When there is NO state yet we still seed one: a
@@ -5183,7 +5222,7 @@ function refreshCurrentHistoryEntry(tab) {
     if (!tab) return;
     const cur = history.state;
     if (cur && cur.tabId !== tab.id) return;
-    writeHistoryEntry(tab, undefined, /*forceReplace=*/ true);
+    writeHistoryEntry(tab, undefined, /*forceReplace=*/ true, /*fromRun=*/ tabReflectsRun(tab));
 }
 
 /// Called after an actual run: stash the result snapshot on the active tab (this is
@@ -5218,11 +5257,14 @@ function saveHistory(stateData, titleForDoc) {
 
 /// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
 /// existing result (or none); does NOT fabricate a result, so a never-run single tab
-/// stays result-less and the tab bar stays hidden.
+/// stays result-less and the tab bar stays hidden. Keeps the entry's `run=1` marker while the
+/// editor still reflects the produced run (`tabReflectsRun`) so switching INTO a run-backed tab
+/// leaves its shared `run=1` URL as re-runnable as `saveHistory` left it; a result-less or
+/// edited tab reports false and the marker is dropped.
 function syncHistory() {
     const tab = getActiveTab();
     if (!tab) return;
-    writeHistoryEntry(tab);
+    writeHistoryEntry(tab, undefined, /*forceReplace=*/ false, /*fromRun=*/ tabReflectsRun(tab));
 }
 
 /// Resolve which tab a history state refers to. The `tabId` is the AUTHORITATIVE, stable
@@ -6832,11 +6874,19 @@ function resolveRunParams(params_restore_pending)
     return values;
 }
 
+/// Rebuild the syntax highlighting, run buttons and query-parameter inputs from the current
+/// editor text. Returns `true` when `currentQueryParams` now reflects that text (tokenized
+/// successfully, or the query is empty), and `false` when it could not be rebuilt (WASM lexer
+/// unavailable, the query too large to tokenize, or a newer generation superseded this call).
+/// Callers that then read `currentQueryParams` to restore a tab's parameters (`restoreFromHistory`
+/// and the startup URL reconciliation) MUST honor a `false` result: on failure the list may still
+/// describe the PREVIOUS tab, so deriving params from it would attach that tab's placeholder names
+/// to this one and persist them into history / `IndexedDB`.
 async function updateQueryParams()
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
     {
-        return;
+        return false;
     }
 
     /// Bump the generation up-front so that any in-flight older runs (which only
@@ -6852,7 +6902,7 @@ async function updateQueryParams()
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
-        return;
+        return true;   /// the empty list correctly reflects a query with no parameters
     }
 
     /// If tokenization or rendering throws (e.g. the query is larger than the WASM
@@ -6867,12 +6917,12 @@ async function updateQueryParams()
     }
     catch (e)
     {
-        if (generation !== updateQueryParamsGeneration) { return; }
+        if (generation !== updateQueryParamsGeneration) { return false; }
         console.error('Tokenization failed, disabling syntax highlighting:', e);
         updateQueryBackdrop('', [], []);
-        return;
+        return false;   /// `currentQueryParams` was NOT rebuilt; it may still describe another query
     }
-    if (generation !== updateQueryParamsGeneration) { return; }
+    if (generation !== updateQueryParamsGeneration) { return false; }
     const params = extractQueryParams(tokens);
 
     /// Detect multi-query mode from the same token stream.
@@ -6890,7 +6940,7 @@ async function updateQueryParams()
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
-        return;
+        return true;   /// unchanged, but `currentQueryParams` already reflects this query
     }
 
     const oldValues = getParamValues();
@@ -6947,6 +6997,7 @@ async function updateQueryParams()
         /// Trigger resize after the element is in the DOM so scrollWidth is valid.
         input.dispatchEvent(new Event('input'));
     }
+    return true;   /// `currentQueryParams` now reflects the current query
 }
 
 query_area.addEventListener('input', (e) =>
@@ -6984,8 +7035,9 @@ query_area.addEventListener('input', (e) =>
         /// must not rewrite the entry. `refreshCurrentHistoryEntry` only touches the current entry
         /// when it belongs to this tab (or seeds the page's initial entry when a fresh load has not
         /// written one yet — this first trusted edit), always via replaceState, so it never spams
-        /// new entries, and it omits `run=1` (an unrun edit must never become auto-runnable on
-        /// reload).
+        /// new entries, and it drops `run=1` once the edit diverges the editor from the produced
+        /// result (`tabReflectsRun`) — a genuine keystroke does — so an unrun edit never becomes
+        /// auto-runnable on reload.
         if (e.isTrusted) refreshCurrentHistoryEntry(tab);
         scheduleSave();
     }
@@ -7206,15 +7258,24 @@ async function reconcileStartup() {
     /// workspace during the load window (`bootstrap_dirty`): their live params are newer and
     /// must not be replaced by the URL's.
     if (url_query && !preserve_local_query && !bootstrap_dirty) {
-        await updateQueryParams();
-        const urlParamValues = {};
-        for (const param of currentQueryParams) {
-            const value = current_url.searchParams.get('param_' + param.name);
-            urlParamValues[param.name] = value !== null ? value : '';
+        const params_ok = await updateQueryParams();
+        if (params_ok) {
+            const urlParamValues = {};
+            for (const param of currentQueryParams) {
+                const value = current_url.searchParams.get('param_' + param.name);
+                urlParamValues[param.name] = value !== null ? value : '';
+            }
+            setParamValues(urlParamValues);
+            const tab = getActiveTab();
+            if (tab) tab.params = getParamValues();
+        } else {
+            /// The URL query could not be tokenized, so `currentQueryParams` may describe a
+            /// different query; rebuilding from it would attach the wrong placeholder names to
+            /// the reconciled tab (and auto-run with them). Clear the stale inputs/list and leave
+            /// the tab's own reconciled params in place rather than deriving bogus ones.
+            queryParamsContainer.innerHTML = '';
+            currentQueryParams = [];
         }
-        setParamValues(urlParamValues);
-        const tab = getActiveTab();
-        if (tab) tab.params = getParamValues();
     }
 
     /// Auto-run only when the URL is still authoritative. On a stale reload
