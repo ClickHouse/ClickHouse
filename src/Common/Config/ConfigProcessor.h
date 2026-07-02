@@ -145,9 +145,15 @@ public:
 
     /// Decrypt value
     static std::string decryptValue(const std::string & codec_name, const std::string & value);
+
+    /// Determine if there is a node starting inside config_root with a given node_name which has a descendant with a given attribute
+    bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name);
+
+    /// Determine if there is a node in loaded_config with a given node_name which has a descendant with a given attribute
+    bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name);
 #endif
 
-    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
+    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env", "from_hashicorp_vault"};
 
 private:
     const std::string path;
@@ -173,11 +179,7 @@ private:
     static void decryptEncryptedElements(LoadedConfig & loaded_config);
 
     /// Determine if there is a node starting inside config_root which has a descendant with a given attribute
-    static bool hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name);
-    /// Determine if there is a node starting inside config_root with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name);
-    /// Determine if there is a node in loaded_config with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name);
+    bool hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name);
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);

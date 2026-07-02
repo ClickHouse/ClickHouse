@@ -24,6 +24,10 @@ public:
     static constexpr auto DEFAULT_RELOAD_INTERVAL = std::chrono::milliseconds(2000);
 
     using Updater = std::function<void(ConfigurationPtr, bool)>;
+    /// Hook called after config is loaded and before the updater.
+    /// Receives the newly loaded config and returns true if the config
+    /// should be re-processed from scratch (for two-pass loading).
+    using PreUpdateHook = std::function<bool(ConfigurationPtr)>;
 
     ConfigReloader(
         std::string_view path_,
@@ -31,7 +35,8 @@ public:
         const std::string & preprocessed_dir,
         std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
         const Coordination::EventPtr & zk_changed_event,
-        Updater && updater);
+        Updater && updater,
+        PreUpdateHook && pre_update_hook_ = {});
 
     ~ConfigReloader();
 
@@ -74,6 +79,7 @@ private:
     Coordination::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
+    PreUpdateHook pre_update_hook;
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;

@@ -1,0 +1,8 @@
+<clickhouse>
+    <users>
+        <default>
+            <password from_hashicorp_vault="username" hashicorp_vault_key="password"/>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>

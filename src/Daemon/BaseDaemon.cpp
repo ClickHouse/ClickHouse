@@ -63,6 +63,10 @@
 #endif
 #include <ucontext.h>
 
+#if USE_SSL
+#    include <Common/HashiCorpVault.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -124,7 +128,17 @@ void BaseDaemon::loadConfiguration()
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+
     config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
+
+#if USE_SSL
+    if (config_processor.hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_hashicorp_vault"))
+    {
+        HashiCorpVault::instance().load(config(), "hashicorp_vault");
+        loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+        config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+#endif
 }
 
 

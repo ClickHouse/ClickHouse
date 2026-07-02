@@ -62,6 +62,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/HashiCorpVault.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
@@ -1766,6 +1767,8 @@ try
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
+
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
 
     /// We need to reload server settings because config could be updated via zookeeper.
@@ -2408,6 +2411,8 @@ try
         dns_cache_updater->start();
     }
 
+    HashiCorpVault::instance().load(config(), "hashicorp_vault");
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2802,6 +2807,15 @@ try
 
             /// Must be the last.
             latest_config = loaded_config;
+        },
+        [](ConfigurationPtr new_config) -> bool
+        {
+            if (new_config->has("hashicorp_vault"))
+            {
+                HashiCorpVault::instance().load(*new_config, "hashicorp_vault");
+                return true;
+            }
+            return false;
         });
 
     const auto listen_hosts = getListenHosts(config());

@@ -1,0 +1,9 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <cert>
+        <name>client</name>
+      </cert>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>

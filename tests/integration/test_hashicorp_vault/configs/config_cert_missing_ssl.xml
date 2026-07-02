@@ -1,0 +1,8 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>https://hashicorpvault:8210</url>
+      <cert>
+        <name>client</name>
+      </cert>
+    </hashicorp_vault>
+</clickhouse>

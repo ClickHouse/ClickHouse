@@ -2328,6 +2328,115 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 </proxy>
 ```
 
+## hashicorp_vault {#hashicorp_vault}
+
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently token, username/password and TLS certificate authentication methods are supported.
+
+The following settings can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|--------------------------------------------------------|
+| `url`                | Scheme, site, port of Vault server without path.       |
+| `secret_path`        | KV secrets engine mount path (default: `secret`).      |
+| `kv_api_version`     | KV secrets engine version, `1` or `2` (default: `2`).  |
+| `token`              | Token used for token authentication.                   |
+| `userpass`           | Section used for username and password authentication. |
+| `cert`               | Section used for TLS certificate authentication.       |
+| `ssl`                | Section used for SSL settings.       |
+
+`userpass` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                |
+|----------------------|-----------------------------------------------------------|
+| `username`           | Username for username and password authentication method. |
+| `password`           | Password for username and password authentication method. |
+
+`cert` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags         | Definition                                                        |
+|------------------|-------------------------------------------------------------------|
+| `name`           | Named certificate role for TLS certificate authentication method. |
+
+`ssl` contains the same settings as `<openSSL><client>` section. This section is obligatory for TLS certificate auth method, but it may be used with any supported auth methods.
+
+Each section in ClickHouse configuration or users configuration may have the following attributes:
+
+| Attributes             | Definition            |
+|------------------------|-----------------------|
+| `from_hashicorp_vault` | Name of secret.       |
+| `hashicorp_vault_key`  | Name of secret's key. |
+
+:::note
+The resolved secret value is written into the preprocessed config as plaintext. To prevent this, add `hide_in_preprocessed="true"` to the element:
+
+```xml
+<password from_hashicorp_vault="username" hashicorp_vault_key="password" hide_in_preprocessed="true"/>
+```
+
+This removes the entire element (and its resolved value) from the preprocessed output.
+:::
+
+**Example**
+
+ClickHouse configuration for token authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+ClickHouse configuration for username and password authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>http://hashicorpvault:8200</url>
+      <userpass>
+        <username>user1</username>
+        <password>test</password>
+      </userpass>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+ClickHouse configuration for TLS certificate authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>https://hashicorpvault:8210</url>
+      <cert>
+        <name>client</name>
+      </cert>
+      <ssl>
+        <verificationMode>strict</verificationMode>
+        <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
+        <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+        <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+      </ssl>
+    </hashicorp_vault>
+</clickhouse>
+```
+
+Only one auth method maybe specified in configuration file.
+
+Users configuration:
+
+```xml
+<clickhouse>
+    <users>
+        <default>
+            <password from_hashicorp_vault="username" hashicorp_vault_key="password"/>
+            <profile>default</profile>
+        </default>
+    </users>
+</clickhouse>
+```
+
 ## workload_path {#workload_path}
 
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
