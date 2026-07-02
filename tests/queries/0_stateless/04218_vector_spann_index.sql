@@ -201,6 +201,29 @@ SELECT (
     SETTINGS use_skip_indexes = 0
 );
 
+-- Exact-order regression for the optimized (no-rescoring) `_distance` path with `LIMIT > 1`.
+-- `dotProduct` keeps `ORDER BY ... DESC` and the index stores `1 - dot` as `_distance`; the emitted
+-- candidates must still be best-score-first, i.e. identical (ordered) to the exact scan.
+SELECT (
+    SELECT groupArray(id)
+    FROM (
+        SELECT id
+        FROM tab_spann_dot
+        ORDER BY dotProduct(vec, [0.0, 2.0]) DESC
+        LIMIT 3
+        SETTINGS use_skip_indexes = 1
+    )
+) = (
+    SELECT groupArray(id)
+    FROM (
+        SELECT id
+        FROM tab_spann_dot
+        ORDER BY dotProduct(vec, [0.0, 2.0]) DESC
+        LIMIT 3
+        SETTINGS use_skip_indexes = 0
+    )
+);
+
 DROP TABLE tab_spann_dot;
 
 SELECT '5. NaN rejected at insert';

@@ -13,6 +13,7 @@ Description: vector_spann GRANULARITY 100000000
 3
 0
 1
+1
 5. NaN rejected at insert
 6. Inf rejected at insert
 7. b1 quantization rejected
