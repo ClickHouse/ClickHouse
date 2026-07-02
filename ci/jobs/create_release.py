@@ -50,8 +50,8 @@ from typing import Iterator, List
 
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
+    ClickHouseVersion,
     VersionType,
-    get_version_from_repo,
     update_cmake_version,
 )
 from ci.praktika.gh import GH
@@ -253,7 +253,7 @@ class ReleaseInfo:
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
-                version = get_version_from_repo(git=git)
+                version = ClickHouseVersion.from_repo(git=git)
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump().with_description(VersionType.NEW)
@@ -266,7 +266,7 @@ class ReleaseInfo:
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
-                version = get_version_from_repo(git=git)
+                version = ClickHouseVersion.from_repo(git=git)
                 codename = version.get_stable_release_type()
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
@@ -369,7 +369,7 @@ class ReleaseInfo:
 
     def push_new_release_branch(self, dry_run: bool) -> None:
         git = Git()
-        version = get_version_from_repo(git=git)
+        version = ClickHouseVersion.from_repo(git=git)
         new_release_branch = self.release_branch
         version_after_release = copy(version)
         version_after_release.bump()
@@ -411,7 +411,7 @@ class ReleaseInfo:
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         with checkout(self.commit_sha):
             git = Git()
-            version = get_version_from_repo(git=git)
+            version = ClickHouseVersion.from_repo(git=git)
             if self.release_type == "patch":
                 assert version.string == self.version, (
                     f"BUG: version in release info does not match version in git commit, "
@@ -465,7 +465,7 @@ class ReleaseInfo:
             branch_upd = self.get_version_bump_branch()
             with checkout(self.commit_sha):
                 git = Git()
-                version = get_version_from_repo(git=git)
+                version = ClickHouseVersion.from_repo(git=git)
                 version.bump()
                 version.with_description(VersionType.TESTING)
             with checkout("master"):
@@ -795,7 +795,12 @@ class PackageDownloader:
 
 @contextmanager
 def checkout(ref: str) -> Iterator[None]:
-    orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
+    # Detached-safe: `symbolic-ref` fails when HEAD is already detached (e.g. a
+    # nested checkout of a commit SHA), so fall back to the commit itself and
+    # restore by re-detaching to it.
+    orig_ref = Shell.get_output(
+        f"{GIT_PREFIX} symbolic-ref --short HEAD"
+    ) or Shell.get_output_or_raise(f"{GIT_PREFIX} rev-parse HEAD")
     rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
     assert orig_ref
     if ref != orig_ref:
@@ -811,7 +816,12 @@ def checkout(ref: str) -> Iterator[None]:
 
 @contextmanager
 def checkout_new(ref: str) -> Iterator[None]:
-    orig_ref = Shell.get_output_or_raise(f"{GIT_PREFIX} symbolic-ref --short HEAD")
+    # Detached-safe: `symbolic-ref` fails when HEAD is already detached (e.g. a
+    # nested checkout of a commit SHA), so fall back to the commit itself and
+    # restore by re-detaching to it.
+    orig_ref = Shell.get_output(
+        f"{GIT_PREFIX} symbolic-ref --short HEAD"
+    ) or Shell.get_output_or_raise(f"{GIT_PREFIX} rev-parse HEAD")
     rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
     assert orig_ref
     Shell.check(f"{GIT_PREFIX} checkout -b {ref}", strict=True, verbose=True)

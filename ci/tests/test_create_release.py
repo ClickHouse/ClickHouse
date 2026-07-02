@@ -175,7 +175,7 @@ def test_version_file_roundtrips(tmp_path, monkeypatch):
     assert read["string"] == "26.6.1.42"
     assert read["describe"] == "v26.6.1.42-stable"
 
-    reloaded = chv.get_version_from_repo()
+    reloaded = chv.ClickHouseVersion.from_repo()
     assert (reloaded.major, reloaded.minor, reloaded.patch) == (26, 6, 1)
 
 
