@@ -1,0 +1,8 @@
+array-joined subcolumn type
+LowCardinality(String)
+array-joined whole-tuple type
+Tuple(\n    x LowCardinality(String),\n    y UInt32)
+array-joined values
+r1	p	1
+r1	q	2
+r2	p	3
