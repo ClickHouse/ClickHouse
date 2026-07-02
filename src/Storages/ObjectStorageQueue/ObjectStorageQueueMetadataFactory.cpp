@@ -121,7 +121,9 @@ void ObjectStorageQueueFactory::shutdown()
     {
         runner([&]()
         {
-            DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
+            /// The StorageID may remain in `StreamingStorageRegistry::storages` while the table is gone from `DatabaseCatalog`.
+            if (auto table = DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance()))
+                table->shutdown();
         });
     }
 
