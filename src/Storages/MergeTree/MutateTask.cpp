@@ -1129,36 +1129,35 @@ static NameToNameVector collectFilesForRenames(
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            MergeTreeIndexPtr index;
-            for (const auto & idx : metadata_snapshot->getSecondaryIndices())
+            /// `ALTER ... DROP INDEX` removes the index from the table metadata before the mutation runs, so on the
+            /// background mutation path `metadata_snapshot` no longer contains the dropped index (both
+            /// `StorageMergeTree::scheduleDataProcessingJob` and `MutateFromLogEntryTask::prepare` retake current
+            /// in-memory metadata). We therefore cannot look the index up in `getSecondaryIndices` to learn its
+            /// substreams. Instead, probe the source checksums directly across the union of substream suffixes and
+            /// extensions used by all skip-index types. `getStreamNameOrHash` only resolves files that actually exist
+            /// in the part, so enumerating a superset is safe. Keep this list in sync with the archive probe in
+            /// `updateIndicesToRecalculateAndDrop` and with every `IMergeTreeIndex::getSubstreams` implementation.
+            static const std::array<String, 5> known_substream_suffixes = {"", ".dct", ".pst", ".pos", ".pl"};
+            static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
+
+            for (const auto & substream : known_substream_suffixes)
             {
-                if (idx.name == command.column_name)
+                const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+                const String stream_name = index_filename + substream;
+
+                for (const auto & extension : known_index_extensions)
                 {
-                    index = MergeTreeIndexFactory::instance().get(idx, *source_part->storage.getSettings());
-                    break;
-                }
-            }
+                    /// Check for both original and hashed filenames (hashed if the index name is too long)
+                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+                    if (actual_stream_name)
+                    {
+                        add_rename(*actual_stream_name + extension, "");
 
-            if (!index)
-                continue;
-
-            const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
-            auto index_substreams = index->getSubstreams();
-
-            for (const auto & index_substream : index_substreams)
-            {
-                const String stream_name = index_filename + index_substream.suffix;
-
-                /// Check for both original and hashed filenames (hashed if the index name is too long)
-                auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums);
-                if (actual_stream_name)
-                {
-                    add_rename(*actual_stream_name + index_substream.extension, "");
-
-                    /// Also try to remove the mark file (check for both original and hashed)
-                    auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
-                    if (actual_mark_name)
-                        add_rename(*actual_mark_name + mrk_extension, "");
+                        /// Also try to remove the mark file (check for both original and hashed)
+                        auto actual_mark_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums);
+                        if (actual_mark_name)
+                            add_rename(*actual_mark_name + mrk_extension, "");
+                    }
                 }
             }
         }
@@ -3135,7 +3134,9 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
         /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
         /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
-        static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        /// Keep this list in sync with the DROP_INDEX removal in `collectFilesForRenames` and with every
+        /// `IMergeTreeIndex::getSubstreams` implementation (`.pos` = text positions, `.pl` = vector_spann posting lists).
+        static const std::array<String, 5> known_substream_suffixes = {"", ".dct", ".pst", ".pos", ".pl"};
         static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
         const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
 
