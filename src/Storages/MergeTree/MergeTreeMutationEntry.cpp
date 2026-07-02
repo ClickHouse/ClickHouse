@@ -62,8 +62,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n"
-            << "author: " << escape << author << "\n";
+            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
@@ -77,6 +76,9 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
             TransactionID::write(tid, *out);
             *out << "\n";
         }
+
+        *out << "author: " << escape << author << "\n";
+
         out->finalize();
         out->sync();
     }
@@ -134,29 +136,36 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     create_time = makeDateTime(DateLUT::serverTimezoneInstance(),
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
-    if (checkString("author: ", *buf))
-    {
-        readEscapedStringUntilEOL(author, *buf);
-        assertChar('\n', *buf);
-    }
+
     *buf >> "commands: ";
     commands->readText(*buf, false);
     *buf >> "\n";
 
-    if (buf->eof())
+    if (checkString("tid: ", *buf))
+    {
+        tid = TransactionID::read(*buf);
+        *buf >> "\n";
+    }
+    else
     {
         tid = Tx::PrehistoricTID;
         csn = Tx::PrehistoricCSN;
     }
-    else
-    {
-        *buf >> "tid: ";
-        tid = TransactionID::read(*buf);
-        *buf >> "\n";
 
-        if (!buf->eof())
+    while (!buf->eof())
+    {
+        if (checkString("author: ", *buf))
         {
-            *buf >> "csn: " >> csn >> "\n";
+            readEscapedStringUntilEOL(author, *buf);
+            *buf >> "\n";
+        }
+        else if (checkString("csn: ", *buf))
+        {
+            *buf >> csn >> "\n";
+        }
+        else
+        {
+            break;
         }
     }
 

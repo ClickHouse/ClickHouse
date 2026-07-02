@@ -14,7 +14,6 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     out << "format version: 1\n"
         << "create time: " << LocalDateTime(create_time ? create_time : time(nullptr), DateLUT::serverTimezoneInstance()) << "\n"
         << "source replica: " << source_replica << "\n"
-        << "author: " << escape << author << "\n"
         << "block numbers count: " << block_numbers.size() << "\n";
 
     for (const auto & kv : block_numbers)
@@ -29,7 +28,9 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
     out << "\n";
 
     out << "alter version: ";
-    out << alter_version;
+    out << alter_version << "\n";
+
+    out << "author: " << escape << author;
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
@@ -43,11 +44,6 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
 
     in >> "source replica: " >> source_replica >> "\n";
-    if (checkString("author: ", in))
-    {
-        readEscapedStringUntilEOL(author, in);
-        assertChar('\n', in);
-    }
 
     size_t count;
     in >> "block numbers count: " >> count >> "\n";
@@ -63,6 +59,9 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
     commands.readText(in, false);
     if (checkString("\nalter version: ", in))
         in >> alter_version;
+
+    if (checkString("\nauthor: ", in))
+        readEscapedStringUntilEOL(author, in);
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const
