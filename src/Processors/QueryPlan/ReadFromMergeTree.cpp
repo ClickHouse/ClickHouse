@@ -1217,6 +1217,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
             storage_snapshot->metadata->getPrimaryKey(),
             storage_snapshot->metadata->getSortingKey(),
+            storage_snapshot->metadata->getColumns(),
             std::move(sorting_expr),
             std::move(parts_with_ranges),
             num_streams,
@@ -1848,6 +1849,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 SplitPartsWithRangesByPrimaryKeyResult split_ranges_result = splitPartsWithRangesByPrimaryKey(
                     storage_snapshot->metadata->getPrimaryKey(),
                     storage_snapshot->metadata->getSortingKey(),
+                    storage_snapshot->metadata->getColumns(),
                     sorting_expr,
                     std::move(new_parts),
                     max_layers,
@@ -2711,7 +2713,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             if (final_second_pass)
             {
                 result.parts_with_ranges
-                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
+                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), metadata_snapshot->getColumns(), result.parts_with_ranges, log);
                 add_index_stat_row_for_pk_expand = true;
             }
         }

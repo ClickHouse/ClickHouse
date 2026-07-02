@@ -1,0 +1,24 @@
+no-inj count	14
+no-inj groupArray	14
+inj count	14
+inj groupArray	14
+final-split-0 count	14
+final-split-0 groupArray	14
+composite-inj count	14
+composite-inj groupArray	14
+composite-final-split-0 count	14
+composite-final-split-0 groupArray	14
+tuple-inj count	14
+tuple-inj groupArray	14
+tuple-final-split-0 count	14
+tuple-final-split-0 groupArray	14
+mapkeys-inj count	20
+mapkeys-inj groupArray	20
+mdotkeys-inj count	20
+mdotkeys-inj groupArray	20
+mapkeys-final-split-0 count	20
+mapkeys-final-split-0 groupArray	20
+join-map shard-off count	20
+join-map shard-on count	20
+join-mapkeys shard-off count	110
+join-mapkeys shard-on count	110

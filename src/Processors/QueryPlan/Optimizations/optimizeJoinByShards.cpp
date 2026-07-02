@@ -227,6 +227,15 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     if (data.common_prefix == 0 || data.joins.empty())
         return;
 
+    /// The layer split below is unsafe for `Map`/`Map`-derived primary keys, just like the
+    /// `splitPartsWithRangesByPrimaryKey` callers it bypasses. Skip the optimization then.
+    for (const auto & source : data.sources)
+    {
+        const auto & metadata = source->getStorageMetadata();
+        if (!isSafePrimaryKey(metadata->getPrimaryKey(), metadata->getColumns()))
+            return;
+    }
+
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;

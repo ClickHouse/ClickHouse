@@ -17,6 +17,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldAccurateComparison.h>
@@ -56,6 +57,13 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
             return false;
+        /// `Map` is unsafe as a splitter primary key: the PK index uses insertion-order
+        /// `serializeBinary` while `with_buckets` parts write data in bucket-index order,
+        /// and positional `ColumnMap::compareAt` then disagrees on equality, dropping rows.
+        /// Disabled unconditionally because the per-part serialization version is not
+        /// visible here; `Map` PKs are rare, so the cost is acceptable.
+        case TypeIndex::Map:
+            return false;
         case TypeIndex::Array:
         {
             const auto & data_type_array = static_cast<const DataTypeArray &>(data_type);
@@ -76,11 +84,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
             const auto & data_type_low_cardinality = static_cast<const DataTypeLowCardinality &>(data_type);
             return isSafePrimaryDataKeyType(*data_type_low_cardinality.getDictionaryType());
         }
-        case TypeIndex::Map:
-        {
-            const auto & data_type_map = static_cast<const DataTypeMap &>(data_type);
-            return isSafePrimaryDataKeyType(*data_type_map.getKeyType()) && isSafePrimaryDataKeyType(*data_type_map.getValueType());
-        }
         default:
         {
             break;
@@ -88,6 +91,21 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
     }
 
     return true;
+}
+
+/// True if `data_type` is or contains a `Map`. Recursive walk via `forEachChild`.
+bool typeContainsMap(const IDataType & data_type)
+{
+    if (data_type.getTypeId() == TypeIndex::Map)
+        return true;
+
+    bool found = false;
+    data_type.forEachChild([&](const IDataType & child)
+    {
+        if (!found && typeContainsMap(child))
+            found = true;
+    });
+    return found;
 }
 
 } /// end anonymous namespace
@@ -100,6 +118,26 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
     for (const auto & type : primary_key.data_types)
     {
         if (!isSafePrimaryDataKeyType(*type))
+            return false;
+    }
+
+    return true;
+}
+
+bool isSafePrimaryKey(const KeyDescription & primary_key, const ColumnsDescription & columns)
+{
+    if (!isSafePrimaryKey(primary_key))
+        return false;
+
+    /// PK is also unsafe if it derives from a `Map` storage column even when the resolved
+    /// expression type is safe (e.g. `mapKeys(m)`, `m.keys` resolve to `Array(K)`).
+    if (!primary_key.expression)
+        return true;
+
+    for (const auto & source : primary_key.expression->getRequiredColumnsWithTypes())
+    {
+        auto storage_column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, source.name);
+        if (storage_column.has_value() && typeContainsMap(*storage_column->getTypeInStorage()))
             return false;
     }
 
@@ -1136,6 +1174,7 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
+    const ColumnsDescription & storage_columns,
     ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
@@ -1165,7 +1204,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return pipe;
     };
 
-    if (!isSafePrimaryKey(primary_key))
+    if (!isSafePrimaryKey(primary_key, storage_columns))
     {
         if (!intersecting_parts_ranges.empty())
             result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
@@ -1255,11 +1294,12 @@ Pipes readByLayers(
 RangesInDataParts findPKRangesForFinalAfterSkipIndex(
     const KeyDescription & primary_key,
     const KeyDescription & sorting_key,
+    const ColumnsDescription & storage_columns,
     RangesInDataParts & ranges_in_data_parts,
     const LoggerPtr & logger)
 {
     bool cannot_sort_primary_key = false;
-    if (!isSafePrimaryKey(primary_key) || !sorting_key.reverse_flags.empty())
+    if (!isSafePrimaryKey(primary_key, storage_columns) || !sorting_key.reverse_flags.empty())
     {
         LOG_TRACE(logger, "Primary key is not sortable, expanding PK range to entire due to exact_mode.");
         cannot_sort_primary_key = true;
