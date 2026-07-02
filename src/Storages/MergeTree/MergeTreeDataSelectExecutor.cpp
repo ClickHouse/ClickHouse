@@ -941,6 +941,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool find_exact_ranges = filter_context.find_exact_ranges;
     bool is_final_query = filter_context.query_info.isFinal();
     bool has_projections = filter_context.has_projections;
+    bool load_partial_primary_key = filter_context.load_partial_primary_key;
     auto & result = filter_context.result;
 
     const auto original_num_parts = parts_with_ranges.size();
@@ -1076,7 +1077,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
                     pk_to_minmax_slot_ptr,
                     settings,
-                    log);
+                    log,
+                    load_partial_primary_key);
 
                 pk_stat.search_algorithm.store(ranges.ranges.search_algorithm, std::memory_order_relaxed);
                 pk_stat.granules_dropped.fetch_add(total_marks_count - ranges.getMarksCount(), std::memory_order_relaxed);
@@ -1121,7 +1123,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 PartialDisjunctionResult partial_eval_results;
                 if (use_skip_indexes_for_disjunctions)
-                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+                {
+                    /// The bitset is indexed by absolute mark, but marks past the last analyzed
+                    /// range are never accessed, so size to the analyzed prefix instead of the
+                    /// whole part (matters when only a mark segment of a huge part is analyzed;
+                    /// identical for a full-part range).
+                    partial_eval_results.resize(getLastMark(ranges.ranges) * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
+                }
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -1719,6 +1727,76 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     return std::max(marks, min_marks);
 }
 
+/** Maps an absolute mark number to a row index inside a primary index that was loaded only for
+  * a subset of (sorted, disjoint) mark ranges. Default-constructed means the whole index was
+  * loaded, so the mapping is the identity (row == mark) and `isPartial` returns false.
+  */
+struct IndexMarkTranslator
+{
+    /// Absolute mark ranges actually loaded into memory. Empty => identity mapping.
+    MarkRanges loaded_ranges;
+    /// local_base[i] == number of marks in loaded_ranges[0..i); the local row of loaded_ranges[i].begin.
+    std::vector<size_t> local_base;
+
+    IndexMarkTranslator() = default;
+
+    explicit IndexMarkTranslator(MarkRanges loaded_ranges_)
+        : loaded_ranges(std::move(loaded_ranges_))
+    {
+        local_base.resize(loaded_ranges.size());
+        size_t base = 0;
+        for (size_t i = 0; i < loaded_ranges.size(); ++i)
+        {
+            local_base[i] = base;
+            base += loaded_ranges[i].getNumberOfMarks();
+        }
+    }
+
+    bool isPartial() const { return !loaded_ranges.empty(); }
+
+    size_t toLocal(size_t mark) const
+    {
+        if (loaded_ranges.empty())
+            return mark;
+
+        /// A replica typically loads one contiguous segment; called per index dereference
+        /// inside the mark-range search loops.
+        if (loaded_ranges.size() == 1)
+        {
+            chassert(mark >= loaded_ranges.front().begin && mark < loaded_ranges.front().end);
+            return mark - loaded_ranges.front().begin;
+        }
+
+        /// First loaded range whose begin is greater than `mark`; the containing range is the previous one.
+        size_t lo = 0;
+        size_t hi = loaded_ranges.size();
+        while (lo < hi)
+        {
+            const size_t mid = (lo + hi) / 2;
+            if (loaded_ranges[mid].begin <= mark)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        chassert(lo > 0);
+        const size_t i = lo - 1;
+        chassert(mark >= loaded_ranges[i].begin && mark < loaded_ranges[i].end);
+        return local_base[i] + (mark - loaded_ranges[i].begin);
+    }
+};
+
+/// For each input analysis range [b, e) the search below dereferences the index up to mark e
+/// (for non-final ranges), so load marks [b, min(e+1, marks_count)). Input ranges must be
+/// sorted and non-intersecting.
+static MarkRanges computeIndexLoadRanges(const MarkRanges & ranges, size_t marks_count)
+{
+    MarkRanges load_ranges;
+    for (const auto & range : ranges)
+        load_ranges.push_back(MarkRange{range.begin, std::min(range.end + 1, marks_count)});
+    load_ranges.coalesce();
+    return load_ranges;
+}
+
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
@@ -1731,7 +1809,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     MarkRanges * exact_ranges,
     const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
-    LoggerPtr log)
+    LoggerPtr log,
+    bool load_partial_primary_key)
 {
     const auto & part = part_with_ranges.data_part;
     MarkRanges res;
@@ -1758,7 +1837,14 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
 
-    const auto index = part->getIndex();
+    /// Loading only the rows covering the input ranges makes sense only with the primary index
+    /// cache: without it a partial index would be re-read from disk on every query, while the
+    /// full index is (or can be) resident on the part.
+    IndexMarkTranslator translator;
+    if (load_partial_primary_key && part->storage.getPrimaryIndexCache())
+        translator = IndexMarkTranslator(computeIndexLoadRanges(part_with_ranges.ranges, marks_count));
+
+    const auto index = translator.isPartial() ? part->getIndex(translator.loaded_ranges) : part->getIndex();
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
@@ -1991,7 +2077,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = col->isNullAt(translator.toLocal(range.begin));
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
@@ -2001,7 +2087,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
                         auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
 
-                        create_field_ref(range.begin, key_col, left);
+                        create_field_ref(translator.toLocal(range.begin), key_col, left);
 
                         right = POSITIVE_INFINITY;
                     }
@@ -2015,7 +2101,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                         chassert(col);
 
-                        equal_boundaries_mask[i] = (col->compareAt(range.begin, range.end, *col, 1) == 0);
+                        equal_boundaries_mask[i] = (col->compareAt(translator.toLocal(range.begin), translator.toLocal(range.end), *col, 1) == 0);
                     }
 
                     /// Build left/right boundaries only for used loaded key columns. The trailing
@@ -2028,8 +2114,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
                         auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
 
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        create_field_ref(translator.toLocal(range.begin), key_col, left);
+                        create_field_ref(translator.toLocal(range.end), key_col, right);
                     }
                 }
 
@@ -2050,7 +2136,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
                     auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                        create_field_ref(translator.toLocal(range.begin), i, left);
                     else
                         left = index_bounds[i].left;
 
@@ -2065,8 +2151,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(translator.toLocal(range.begin), i, left);
+                        create_field_ref(translator.toLocal(range.end), i, right);
                     }
                     else
                     {
@@ -2203,7 +2289,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             while (searched_left + 1 < searched_right)
             {
                 const size_t middle = (searched_left + searched_right) / 2;
-                MarkRange range(0, middle);
+                /// Anchored at the range start, not mark 0: with a partially-loaded index mark 0
+                /// may not be in memory, and for a sorted key the range start is a tighter bound
+                /// (and the mirror of the right search, which anchors at part_range.end).
+                MarkRange range(part_range.begin, middle);
                 if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
                     searched_right = middle;
                 else

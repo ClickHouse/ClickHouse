@@ -95,6 +95,24 @@ bool MarkRanges::isOneRangeForWholePart(size_t num_marks_in_part) const
     return size() == 1 && front().begin == 0 && front().end == num_marks_in_part;
 }
 
+void MarkRanges::coalesce()
+{
+    size_t merged = 0;
+    for (size_t i = 1; i < size(); ++i)
+    {
+        auto & last = (*this)[merged];
+        const auto & range = (*this)[i];
+        chassert(last.begin <= range.begin);
+
+        if (range.begin <= last.end)
+            last.end = std::max(last.end, range.end);
+        else
+            (*this)[++merged] = range;
+    }
+    if (!empty())
+        resize(merged + 1);
+}
+
 void MarkRanges::serialize(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(this->size(), out);

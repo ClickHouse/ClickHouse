@@ -45,6 +45,9 @@ struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMe
     size_t getNumberOfMarks() const;
     bool isOneRangeForWholePart(size_t num_marks_in_part) const;
 
+    /// Merge adjacent and overlapping ranges in place. Requires the ranges to be sorted by `begin`.
+    void coalesce();
+
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);

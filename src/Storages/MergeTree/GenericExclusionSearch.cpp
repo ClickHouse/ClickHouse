@@ -15,11 +15,17 @@ namespace
 
 /// Appends a range to a left-to-right sequence of accepted ranges, merging it into the last range
 /// when the gap between them is at most `max_gap` marks. The caller guarantees that `range` starts
-/// at or after the end of the last appended range.
-void appendWithMaxGap(MarkRanges & ranges, MarkRange range, size_t max_gap)
+/// at or after the end of the last appended range. `analyzed_begin` is the begin of the initial
+/// range containing `range`: a gap that starts before it contains marks that were never analyzed
+/// (with per-replica mark segments they belong to other replicas), so it must never be absorbed
+/// and only touching ranges merge across initial ranges.
+void appendWithMaxGap(MarkRanges & ranges, MarkRange range, size_t max_gap, size_t analyzed_begin)
 {
     /// The left-to-right order is what makes the unsigned gap subtraction below safe.
     chassert(ranges.empty() || range.begin >= ranges.back().end);
+
+    if (!ranges.empty() && ranges.back().end < analyzed_begin)
+        max_gap = 0;
 
     if (ranges.empty() || range.begin - ranges.back().end > max_gap)
         ranges.push_back(range);
@@ -83,13 +89,13 @@ void searchUnlimited(
             bool exact = !mask.can_be_false;
             if (exact || range.end == range.begin + 1)
             {
-                appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek);
+                appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek, initial_range.begin);
 
                 /// Unlike `ranges`, exact ranges must never absorb the gap between two accepted
                 /// ranges: every mark of an exact range has to fully match the condition, while the
                 /// skipped marks in between do not.
                 if (collect_exact_ranges && exact)
-                    appendWithMaxGap(result.exact_ranges, range, 0);
+                    appendWithMaxGap(result.exact_ranges, range, 0, initial_range.begin);
             }
             else
             {
@@ -168,12 +174,19 @@ void searchLimited(
         || result.num_steps - search_settings.coarse_index_granularity <= std::max(search_settings.max_steps, initial_ranges.size()));
 
     std::sort(accepted.begin(), accepted.end());
+    /// Every accepted range is a subrange of exactly one initial range (splits never cross them),
+    /// so a single left-to-right walk finds the initial range containing each accepted one.
+    const auto * initial = initial_ranges.begin();
     for (const auto & range : accepted)
-        appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek);
+    {
+        while (initial->end < range.end)
+            ++initial;
+        appendWithMaxGap(result.ranges, range, search_settings.min_marks_for_seek, initial->begin);
+    }
 
     std::sort(accepted_exact.begin(), accepted_exact.end());
     for (const auto & range : accepted_exact)
-        appendWithMaxGap(result.exact_ranges, range, 0);
+        appendWithMaxGap(result.exact_ranges, range, 0, 0);
 }
 
 }
@@ -205,6 +218,20 @@ GenericExclusionSearchResult genericExclusionSearch(
         while (containing != result.ranges.end() && containing->end < exact_range.end)
             ++containing;
         chassert(containing != result.ranges.end() && containing->begin <= exact_range.begin && exact_range.end <= containing->end);
+    }
+
+    /// The result must stay within the initial ranges: a gap between them is never absorbed by the
+    /// seek merging (only touching initial ranges may end up bridged, hence the coalescing).
+    MarkRanges coalesced_initial = initial_ranges;
+    coalesced_initial.coalesce();
+    const auto * containing_initial = coalesced_initial.begin();
+    for (const auto & range : result.ranges)
+    {
+        while (containing_initial != coalesced_initial.end() && containing_initial->end < range.end)
+            ++containing_initial;
+        chassert(
+            containing_initial != coalesced_initial.end() && containing_initial->begin <= range.begin
+            && range.end <= containing_initial->end);
     }
 #endif
 

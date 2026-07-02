@@ -32,13 +32,16 @@ struct GenericExclusionSearchSettings
 
     /// Accepted ranges separated by a gap of at most this many marks are merged, because reading the
     /// gap sequentially is cheaper than seeking past it. Exact ranges are never merged across a gap.
+    /// A gap between two initial ranges is never absorbed either: the marks in between were not
+    /// analyzed (with per-replica mark segments they belong to other replicas), so the result stays
+    /// within the initial ranges.
     size_t min_marks_for_seek = 0;
 };
 
 struct GenericExclusionSearchResult
 {
     /// Sorted and non-intersecting. A superset of all marks within the initial ranges for which the
-    /// condition can be true.
+    /// condition can be true, and a subset of the (union of the) initial ranges.
     MarkRanges ranges;
 
     /// Sorted and non-intersecting, each range contained in some element of `ranges`. The condition

@@ -151,10 +151,11 @@ TEST(GenericExclusionSearch, MinMarksForSeekMergingForRes)
     }
 }
 
-TEST(GenericExclusionSearch, GapMergeAcrossInitialRanges)
+TEST(GenericExclusionSearch, NoGapMergeAcrossInitialRanges)
 {
-    /// The gap between two disjoint initial ranges, as the query condition cache produces them, may
-    /// be absorbed by the seek merging of the ranges to read, but never by the exact ranges.
+    /// The gap between two disjoint initial ranges is never absorbed by the seek merging: the marks
+    /// in between were not analyzed (with per-replica mark segments they belong to other replicas),
+    /// so the result must stay a subset of the initial ranges.
     std::vector<bool> matching(12, true);
     matching[5] = matching[6] = false;
 
@@ -166,7 +167,7 @@ TEST(GenericExclusionSearch, GapMergeAcrossInitialRanges)
 
         auto result = genericExclusionSearch(makeRanges({{0, 5}, {7, 12}}), oracleFromFlags(matching), settings, true);
 
-        EXPECT_EQ(result.ranges, makeRanges({{0, 12}}));
+        EXPECT_EQ(result.ranges, makeRanges({{0, 5}, {7, 12}}));
         EXPECT_EQ(result.exact_ranges, makeRanges({{0, 5}, {7, 12}}));
 
         /// Touching initial ranges that both fully match merge in both outputs, because there is no
@@ -312,7 +313,7 @@ TEST(GenericExclusionSearch, StepLimitInvariantsWithMultipleInitialRanges)
 {
     /// The budget and multiple initial input ranges (the query condition cache scenario) interact:
     /// whatever the budget, the invariants of the outputs must hold, and marks outside the initial
-    /// ranges must not reappear unless the seek merging deliberately bridges a gap.
+    /// ranges must never reappear, whatever the seek merging.
     // NOLINTNEXTLINE(cert-msc32-c,cert-msc51-cpp) — deterministic test fixture
     std::mt19937 rng(13);
     auto matching = randomFlags(300, 0.3, rng);
@@ -334,10 +335,9 @@ TEST(GenericExclusionSearch, StepLimitInvariantsWithMultipleInitialRanges)
                 if (matching[mark] && covers(initial, mark))
                     EXPECT_TRUE(covers(result.ranges, mark)) << "mark " << mark << ", budget " << max_steps;
 
-            /// Without seek merging, nothing outside the initial ranges may appear in the result.
-            if (min_marks_for_seek == 0)
-                for (const auto & range : result.ranges)
-                    EXPECT_TRUE(isContained(range, initial)) << "(" << range.begin << ", " << range.end << "), budget " << max_steps;
+            /// Nothing outside the initial ranges may appear in the result, even with seek merging.
+            for (const auto & range : result.ranges)
+                EXPECT_TRUE(isContained(range, initial)) << "(" << range.begin << ", " << range.end << "), budget " << max_steps;
 
             /// Exact ranges never bridge gaps, so they always stay inside the initial ranges and
             /// consist of matching marks only.

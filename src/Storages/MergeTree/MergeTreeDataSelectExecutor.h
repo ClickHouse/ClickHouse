@@ -84,7 +84,8 @@ public:
         MarkRanges * exact_ranges,
         const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
-        LoggerPtr log);
+        LoggerPtr log,
+        bool load_partial_primary_key = false);
 
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
@@ -230,6 +231,11 @@ public:
         bool find_exact_ranges;
         bool is_parallel_reading_from_replicas;
         bool has_projections;
+        /// Load only the primary-index rows covering each part's input ranges (index analysis
+        /// over mark segments), instead of the whole primary index. Applied only when the
+        /// primary index cache is enabled: an uncached partial index would be re-read from
+        /// disk on every query, while the full index is (or can be) resident on the part.
+        bool load_partial_primary_key = false;
         ReadFromMergeTree::AnalysisResult & result;
     };
 
