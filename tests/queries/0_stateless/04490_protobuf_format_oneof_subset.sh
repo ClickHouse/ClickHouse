@@ -12,6 +12,8 @@ set -eo pipefail
 # data_protobuf/String1 sets string1 (tag 1); data_protobuf/String2 sets string2 (tag 2).
 # The presence Enum only needs to cover the oneof cases that have a backing column (plus the
 # 'omitted' marker 0). This is the default behavior (only oneof_presence is enabled).
+# This test intentionally uses direct field-like labels so it stays focused on numeric tag
+# compatibility; label mismatches are already covered in `03447_protobuf_format_oneof.sh`.
 
 # (a) Forward compat: the Enum and columns cover only tag 1. A message setting tag 2 has no
 #     column and is not in the Enum, so it is ingested as omitted (presence = 'no'), tag-2 data
@@ -20,19 +22,19 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_subset_additive_04490;
 SELECT '>> additive_forward_compat';
-CREATE TABLE oneof_subset_additive_04490 ( string1 String, string_oneof Enum('no'=0, 'hello'=1) ) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE oneof_subset_additive_04490 ( string1 String, string_oneof Enum('no'=0, 'string1'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_subset_additive_04490 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 INSERT INTO oneof_subset_additive_04490 from INFILE '$CURDIR/data_protobuf/String2' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 SELECT string1, string_oneof FROM oneof_subset_additive_04490 ORDER BY string_oneof FORMAT TSV;
 EOF
 
 # (b) Dead values: the Enum may list values that no oneof case (and no column) produces.
-#     'world'=2 and 'ghost'=99 are never written; ingestion succeeds.
+#     Only 'ghost'=99 is dead here; ingestion still succeeds.
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_dead_values_04490;
 SELECT '>> dead_value_tolerance';
-CREATE TABLE oneof_dead_values_04490 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello'=1, 'world'=2, 'ghost'=99) ) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE oneof_dead_values_04490 ( string1 String, string2 String, string_oneof Enum('no'=0, 'string1'=1, 'string2'=2, 'ghost'=99) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_dead_values_04490 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 INSERT INTO oneof_dead_values_04490 from INFILE '$CURDIR/data_protobuf/String2' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
 SELECT string1, string2, string_oneof FROM oneof_dead_values_04490 ORDER BY string1, string2 FORMAT TSV;
@@ -44,7 +46,7 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_poison_04490;
 SELECT '>> rejected_column_tag_missing_from_enum';
-CREATE TABLE oneof_poison_04490 ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello'=1) ) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE oneof_poison_04490 ( string1 String, string2 String, string_oneof Enum('no'=0, 'string1'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_poison_04490 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
 EOF
 
@@ -53,18 +55,18 @@ $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_no_zero_04490;
 SELECT '>> rejected_missing_omitted_marker';
-CREATE TABLE oneof_no_zero_04490 ( string1 String, string_oneof Enum('hello'=1) ) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE oneof_no_zero_04490 ( string1 String, string_oneof Enum('string1'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_no_zero_04490 from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/03447_string_or_string.proto:StringOrString' FORMAT ProtobufSingle; -- { clientError DATA_TYPE_INCOMPATIBLE_WITH_PROTOBUF_FIELD }
 EOF
 
 # (e) Same relaxation through a NESTED message oneof (Inner.string_oneof { string1=1, string2=2 }).
-#     Only inner.string1 has a column and the Enum omits tag 2. InnerString1 -> presence 'hello';
+#     Only inner.string1 has a column and the Enum omits tag 2. InnerString1 -> presence 'string1';
 #     InnerString2 sets inner.string2 (no column, not in Enum) -> presence 'no' (0).
 $CLICKHOUSE_CLIENT <<EOF
 SET input_format_protobuf_oneof_presence=1;
 DROP TABLE IF EXISTS oneof_nested_subset_04490;
 SELECT '>> nested_additive_forward_compat';
-CREATE TABLE oneof_nested_subset_04490 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string.oneof\` Enum('no'=0, 'hello'=1) ) Engine=MergeTree ORDER BY tuple();
+CREATE TABLE oneof_nested_subset_04490 ( \`outer.string\` String, \`inner.string1\` String, \`inner.string.oneof\` Enum('no'=0, 'string1'=1) ) Engine=MergeTree ORDER BY tuple();
 INSERT INTO oneof_nested_subset_04490 from INFILE '$CURDIR/data_protobuf/InnerString1' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 INSERT INTO oneof_nested_subset_04490 from INFILE '$CURDIR/data_protobuf/InnerString2' SETTINGS format_schema='$SCHEMADIR/03447_inner_string_or_string.proto:InnerStringOrString' FORMAT ProtobufSingle;
 SELECT \`outer.string\`, \`inner.string1\`, \`inner.string.oneof\` FROM oneof_nested_subset_04490 ORDER BY \`outer.string\` FORMAT TSV;
