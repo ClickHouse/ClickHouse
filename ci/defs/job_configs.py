@@ -1432,6 +1432,25 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
     )
+    sqlancer_pp_jobs = Job.Config(
+        name=JobNames.SQLANCER_PP,
+        runs_on=[],  # from parametrize()
+        command="./ci/jobs/sqlancer_pp_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/docker/sqlancer-test",
+            ],
+        ),
+        run_in_docker="clickhouse/sqlancer-test",
+        timeout=3600,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
     sqltest_master_job = Job.Config(
         name=JobNames.SQL_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
