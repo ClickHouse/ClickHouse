@@ -35,6 +35,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -1558,7 +1559,8 @@ ReturnType readDateTimeTextFallback(
     const DateLUTImpl & date_lut,
     const char * allowed_date_delimiters,
     const char * allowed_time_delimiters,
-    bool saturate_on_overflow)
+    bool saturate_on_overflow,
+    DateTimeFractionPrefix * fraction_prefix)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1572,11 +1574,12 @@ ReturnType readDateTimeTextFallback(
     char s[date_time_broken_down_length];
     char * s_pos = s;
 
-    /** Read characters, that could represent unix timestamp.
-      * Only unix timestamp of at least 5 characters is supported by default, exception is thrown for a shorter one
-      * (unless parsing a string like '1.23' or '-12': there is no ambiguity, it is a DT64 timestamp).
-      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
+    /** Read characters that could represent a unix timestamp.
+      * Then look at the next character. If it is a number, treat the whole as a unix timestamp
+      * (a fractional part, if any, is handled by the caller in DateTime64 mode).
+      * If exactly 4 digits were read and the next character is not a number, the value can be
+      * a date or a date and time in YYYY-MM-DD or YYYY-MM-DD hh:mm:ss format; check the
+      * broken-down layout character by character, because the value can be split between buffers.
       */
 
     int negative_multiplier = 1;
@@ -1609,25 +1612,94 @@ ReturnType readDateTimeTextFallback(
     /// if negative, it is a timestamp with no ambiguity
     if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
-        const auto already_read_length = s_pos - s;
-        const size_t remaining_date_size = date_broken_down_length - already_read_length;
+        /// The value can be a date, or a small unix timestamp with a fractional part (e.g. 1234.5)
+        /// or with other characters after it (e.g. a field delimiter of a row-based format).
+        const char date_delimiter = *buf.position();
 
-        size_t size = buf.read(s_pos, remaining_date_size);
-        if (size != remaining_date_size)
+        /// Probe for the YYYY-MM-DD layout only if the next character can plausibly delimit the parts
+        /// of a date. Otherwise the value is a unix timestamp, and the next character belongs to the
+        /// caller, so it must not be consumed (it can be a field delimiter of a row-based format).
+        const bool may_be_date = date_delimiter == '-' || date_delimiter == '/' || date_delimiter == '.'
+            || (allowed_date_delimiters != nullptr && isSymbolIn(date_delimiter, allowed_date_delimiters));
+
+        /// Check the date layout character by character. The characters consumed while probing can be
+        /// returned to the buffer on a mismatch, unless the probe had to refill the buffer.
+        char * probe_start = buf.position();
+        bool can_rollback = true;
+
+        size_t pos = 4;
+        bool is_date = may_be_date;
+        while (is_date && pos < date_broken_down_length)
         {
+            if (!buf.hasPendingData())
+                can_rollback = false;
+
+            if (buf.eof())
+            {
+                is_date = false;
+                break;
+            }
+
+            char c = *buf.position();
+
+            bool matches_date_layout = false;
+            if (pos == 4)
+                matches_date_layout = true;
+            else if (pos == 7)
+                matches_date_layout = (c == date_delimiter);
+            else
+                matches_date_layout = isNumericASCII(c);
+
+            if (!matches_date_layout)
+            {
+                is_date = false;
+                break;
+            }
+
+            s[pos] = c;
+            ++pos;
+            ++buf.position();
+        }
+
+        if (!is_date)
+        {
+            datetime = 0;
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                datetime = datetime * 10 + *digit_pos - '0';
+
+            if (can_rollback)
+            {
+                /// The value is a small unix timestamp; return the characters consumed while probing,
+                /// and let the caller handle whatever follows the digits (a fractional part, a field
+                /// delimiter, or an error), the same as the optimistic path does.
+                buf.position() = probe_start;
+                return ReturnType(true);
+            }
+
+            /// In DateTime64 mode, a string like 1234.5 is a valid timestamp with a fractional part.
+            /// While checking for the date layout, the dot and up to two fractional digits could have
+            /// been consumed from the buffer and cannot be returned because the buffer was refilled;
+            /// pass them to the caller.
+            if (dt64_mode && date_delimiter == '.' && pos <= 7 && fraction_prefix != nullptr)
+            {
+                fraction_prefix->has_fraction = true;
+                for (size_t i = 5; i < pos; ++i)
+                {
+                    fraction_prefix->digits[fraction_prefix->count] = s[i];
+                    ++fraction_prefix->count;
+                }
+                return ReturnType(true);
+            }
+
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, already_read_length + size));
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, pos));
             else
                 return false;
         }
 
         if constexpr (!throw_exception)
         {
-            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
-                || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
-                return false;
-
-            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+            if (!isSymbolIn(s[4], allowed_date_delimiters))
                 return false;
         }
 
@@ -1642,7 +1714,7 @@ ReturnType readDateTimeTextFallback(
         if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
         {
             ++buf.position();
-            size = buf.read(s, time_broken_down_length);
+            size_t size = buf.read(s, time_broken_down_length);
 
             if (size != time_broken_down_length)
             {
@@ -1703,42 +1775,52 @@ ReturnType readDateTimeTextFallback(
     }
     else
     {
-        datetime = 0;
-        bool too_short = s_pos - s <= 4;
-
-        if (!too_short || dt64_mode)
+        if (s_pos == s)
         {
-            /// Not very efficient.
-            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            if (buf.eof())
             {
-                if constexpr (!throw_exception)
-                {
-                    if (!isNumericASCII(*digit_pos))
-                        return false;
-                }
-
-                datetime = datetime * 10 + *digit_pos - '0';
+                /// There is nothing to read.
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return false;
             }
-        }
-        datetime *= negative_multiplier;
 
-        if (too_short && negative_multiplier != -1)
-        {
+            if (negative_multiplier == -1)
+            {
+                /// Match readIntText, which throws for a sign without any digits.
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
+                else
+                    return false;
+            }
+
+            /// The value starts with a character that can be neither a date nor a timestamp.
+            /// Fail instead of leaving zero, because not every caller checks that the buffer
+            /// was fully consumed, and would silently turn garbage into the unix epoch
+            /// (e.g. the `timestamp` function or the binary formats).
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
         }
 
+        /// A unix timestamp. Not very efficient.
+        datetime = 0;
+        for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            datetime = datetime * 10 + *digit_pos - '0';
+
+        datetime *= negative_multiplier;
     }
 
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool, DateTimeFractionPrefix *);
+
 
 template <typename ReturnType, bool t64_mode>
 NO_SANITIZE_UNDEFINED
