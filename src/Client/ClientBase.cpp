@@ -3268,9 +3268,18 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// inspected, so the terminator is recognized even when followed by a
         /// comment, and independently of the highlighter (with `--highlight 0`
         /// `ReplxxLineReader` never sets its delimiter flag). Comments and
-        /// whitespace are skipped because `tokens` was built with skip_insignificant.
+        /// whitespace are skipped because the tokens are built with skip_insignificant.
         {
-            TokenIterator terminator_it(tokens);
+            /// Use a separate `Tokens` instance for this scan. Iterating to
+            /// `EndOfStream` advances `Tokens::max_pos`, and the parse loop below
+            /// relies on `token_iterator.max()` (which reads the same `max_pos`)
+            /// to tell whether a failed parse stopped at end of input. Scanning
+            /// the shared `tokens` here would poison that cursor to `EndOfStream`
+            /// and make every failed parse -- e.g. `exit` or a plain syntax error
+            /// -- look like an end-of-input failure, so Enter would keep inserting
+            /// newlines instead of submitting.
+            Tokens terminator_tokens(begin, end, 0, true);
+            TokenIterator terminator_it(terminator_tokens);
             TokenType last_significant_type = TokenType::Whitespace;
             while (terminator_it->type != TokenType::EndOfStream)
             {
