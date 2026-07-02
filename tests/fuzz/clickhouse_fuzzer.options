@@ -1,5 +1,6 @@
 [libfuzzer]
 timeout = 20
+use_value_profile = 1
 rss_limit_mb = 4096
 
 [fuzzer_arguments]
