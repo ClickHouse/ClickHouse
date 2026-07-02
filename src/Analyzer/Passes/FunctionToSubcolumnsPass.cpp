@@ -22,7 +22,6 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
@@ -55,15 +54,32 @@ struct ColumnContext
     ContextPtr context;
 };
 
+/// A column identity used as the key of the counting containers in both passes.
+/// It is an opaque token: the source `TableNode *` (stable across both passes,
+/// since the tree is not cloned and table nodes are never replaced) plus the
+/// owned column name. Keying on the pointer avoids recomputing the table's full
+/// name (and the associated allocations) for every column reference.
+using ColumnIdentifier = std::pair<const TableNode *, String>;
+
+struct ColumnIdentifierHash
+{
+    size_t operator()(const ColumnIdentifier & key) const
+    {
+        size_t h1 = std::hash<const TableNode *>{}(key.first);
+        size_t h2 = std::hash<std::string>{}(key.second);
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+};
+
 struct IdentifiersToOptimize
 {
     /// Identifiers where ALL uses are optimizable (count matches).
     /// Rewritten unconditionally in every clause.
-    std::unordered_set<Identifier> everywhere;
+    std::unordered_set<ColumnIdentifier, ColumnIdentifierHash> everywhere;
 
     /// Identifiers that also have plain column references, but have at least one
     /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
-    std::unordered_set<Identifier> filter_only;
+    std::unordered_set<ColumnIdentifier, ColumnIdentifierHash> filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
@@ -973,21 +989,21 @@ public:
     }
 
 private:
-    std::unordered_set<Identifier> all_key_columns;
-    std::unordered_map<Identifier, UInt64> identifiers_count;
-    std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
+    std::unordered_set<ColumnIdentifier, ColumnIdentifierHash> all_key_columns;
+    std::unordered_map<ColumnIdentifier, UInt64, ColumnIdentifierHash> identifiers_count;
+    std::unordered_map<ColumnIdentifier, UInt64, ColumnIdentifierHash> optimized_identifiers_count;
     /// Counts only uses of transformers from `transformers_safe_with_indexes`.
-    std::unordered_map<Identifier, UInt64> optimized_identifiers_index_safe_count;
+    std::unordered_map<ColumnIdentifier, UInt64, ColumnIdentifierHash> optimized_identifiers_index_safe_count;
     /// Identifiers that have at least one use of a transformer from
     /// `transformers_optimize_in_filter_with_full_column` inside WHERE or PREWHERE.
     /// These are optimized even when the column is also read as a full column elsewhere.
-    std::unordered_set<Identifier> identifiers_with_filter_optimization;
+    std::unordered_set<ColumnIdentifier, ColumnIdentifierHash> identifiers_with_filter_optimization;
 
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
-    NameSet processed_tables;
+    std::unordered_set<const TableNode *> processed_tables;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
@@ -998,20 +1014,17 @@ private:
 
     void enterImpl(const TableNode & table_node)
     {
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-
-        /// If table occurs in query several times (e.g., in subquery), process only once
-        /// because we collect only static properties of the table, which are the same for each occurrence.
-        if (!processed_tables.emplace(table_name).second)
+        /// Each distinct TableNode is processed once. We key on the node pointer because
+        /// the static properties we collect are recorded under that pointer; a second
+        /// occurrence of the same physical table is a different TableNode and must register
+        /// its own key columns under its own pointer.
+        if (!processed_tables.emplace(&table_node).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)
         {
             for (const auto & column_name : key_columns)
-            {
-                Identifier identifier({table_name, column_name});
-                all_key_columns.insert(identifier);
-            }
+                all_key_columns.emplace(&table_node, column_name);
         };
 
         const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
@@ -1038,10 +1051,7 @@ private:
         if (!table_node)
             return;
 
-        auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-        Identifier qualified_name({table_name, column_node.getColumnName()});
-
-        ++identifiers_count[qualified_name];
+        ++identifiers_count[ColumnIdentifier{table_node, column_node.getColumnName()}];
     }
 
     void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
@@ -1052,8 +1062,7 @@ private:
             return;
 
         const auto & column = first_argument_column_node.getColumn();
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-        Identifier qualified_name({table_name, column.name});
+        ColumnIdentifier qualified_name{&table_node, column.name};
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
@@ -1078,14 +1087,13 @@ private:
             return;
 
         const auto & column = first_argument_column_node.getColumn();
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
-            Identifier qualified_name({table_name, column.name});
+            ColumnIdentifier qualified_name{&table_node, column.name};
             ++optimized_identifiers_count[qualified_name];
 
             /// Mark intermediate nodes to prevent double-counting.
@@ -1154,9 +1162,7 @@ public:
         if (function_node && first_argument_column_node && table_node)
         {
             auto column = first_argument_column_node->getColumn();
-            auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-
-            Identifier qualified_name({table_name, column.name});
+            ColumnIdentifier qualified_name{table_node, column.name};
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
@@ -1188,8 +1194,7 @@ public:
         if (chain_func && chain_col && chain_table)
         {
             auto column = chain_col->getColumn();
-            auto table_name = chain_table->getStorage()->getStorageID().getFullTableName();
-            Identifier qualified_name({table_name, column.name});
+            ColumnIdentifier qualified_name{chain_table, column.name};
 
             if (!identifiers_to_optimize.everywhere.contains(qualified_name))
                 return;
