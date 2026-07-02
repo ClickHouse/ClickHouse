@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/parseGlobs.h>
@@ -60,6 +61,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char iceberg_drop_data_cleanup_fail[];
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -720,11 +727,6 @@ void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) cons
 
 void StorageObjectStorage::drop()
 {
-    if (catalog)
-    {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
-    }
     /// drop() runs in a background pool without the query context, so build a context from the global
     /// one carrying the iceberg_delete_data_on_drop value captured in checkTableCanBeDropped.
     auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
@@ -738,7 +740,24 @@ void StorageObjectStorage::drop()
     /// pay an unnecessary init that could fail on metadata/object-storage errors.
     if (delete_data_on_drop && configuration->isIcebergConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+
+    /// Models an object-storage failure during data cleanup, to check it happens before the
+    /// catalog entry is removed.
+    fiu_do_on(FailPoints::iceberg_drop_data_cleanup_fail, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop data cleanup");
+    });
+
     configuration->drop(drop_context);
+
+    /// Remove the catalog entry last: it is the commit point of the drop. The cleanup above can
+    /// throw (metadata init, listFiles, or an object-storage delete), so doing it while the table
+    /// is still registered keeps DROP atomic and retryable instead of orphaning the files under a
+    /// removed catalog entry.
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+        catalog->dropTable(namespace_name, table_name);
+    }
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

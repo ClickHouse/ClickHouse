@@ -857,6 +857,46 @@ def test_drop_table_delete_data_parallel_replicas(started_cluster):
     assert len(list_s3_objects(minio, bucket, prefix=f"{table_name}/")) == 0
 
 
+def test_drop_table_delete_data_cleanup_failure_keeps_catalog_entry(started_cluster):
+    # The file cleanup on DROP (metadata init + listFiles + object-storage deletes) can throw.
+    # It must run before the catalog entry is removed, so a cleanup failure leaves the table
+    # registered and the DROP retryable instead of orphaning the files under a removed entry.
+    # A failpoint injects the cleanup failure that a flaky object storage would produce.
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    test_ref = f"test_drop_delete_data_fail_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_tbl"
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 1
+
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_data_cleanup_fail")
+    try:
+        error = node.query_and_get_error(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": 1},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_data_cleanup_fail")
+    assert "FAULT_INJECTED" in error
+    # The catalog entry must survive the failed cleanup so the DROP can be retried.
+    assert len(catalog.list_tables(root_namespace)) == 1
+
+    # Retry without the injected failure: the DROP now succeeds and removes the entry.
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 0
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
