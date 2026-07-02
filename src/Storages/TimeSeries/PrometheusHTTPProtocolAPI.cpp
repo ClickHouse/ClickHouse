@@ -45,6 +45,7 @@ namespace ErrorCodes
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
 }
 
@@ -372,6 +373,26 @@ void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
 {
     if (start_param.empty() && end_param.empty())
         return;
+
+    /// `/api/v1/query` and `/api/v1/query_range` only use the tags-table `min_time`/`max_time` prefilter when
+    /// `filter_by_min_time_and_max_time` is enabled (see `StorageTimeSeriesSelector::readImpl`, which gates the
+    /// prefilter on `filter_by_min_time_and_max_time && store_min_time_and_max_time`); otherwise they scope the
+    /// result by exact filtering from the samples table. The metadata endpoints query only the tags table and
+    /// have no exact samples-table fallback, so the `min_time`/`max_time` overlap predicate is their only way to
+    /// honor `start`/`end`. When the setting is disabled we must not apply that predicate — doing so would
+    /// diverge from the real query path and contradict the operator's decision not to trust those columns — and
+    /// since no exact fallback exists we reject `start`/`end` rather than silently ignoring the requested range.
+    auto time_series_settings = time_series_storage->getStorageSettings();
+    if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot apply the 'start'/'end' time range on the Prometheus metadata endpoints because the "
+            "'filter_by_min_time_and_max_time' setting of the TimeSeries table is disabled. The metadata endpoints "
+            "can only scope by the '{}'/'{}' columns of the 'tags' table, which this setting turns off; unlike "
+            "'/api/v1/query' and '/api/v1/query_range', they have no exact samples-table fallback. Enable "
+            "'filter_by_min_time_and_max_time' to use time range filtering, or omit 'start'/'end'",
+            TimeSeriesColumnNames::MinTime,
+            TimeSeriesColumnNames::MaxTime);
 
     auto tags_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
     if (!tags_metadata->columns.has(TimeSeriesColumnNames::MinTime) || !tags_metadata->columns.has(TimeSeriesColumnNames::MaxTime))
