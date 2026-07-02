@@ -337,6 +337,7 @@ void listFilesWithRegexpMatchingOnDisk(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     std::vector<std::string> & result,
+    std::unordered_set<std::string> & matched_paths,
     bool recursive,
     size_t depth)
 {
@@ -353,6 +354,31 @@ void listFilesWithRegexpMatchingOnDisk(
     /// because each recursion frame can be large. Probe the remaining stack periodically.
     if (depth % 16 == 0)
         checkStackSize();
+
+    /// Appends a matched disk-relative path to the result and counts its bytes, deduplicating by
+    /// its normalized form. Mirrors `add_matched_path` in `listFilesWithRegexpMatchingImpl`:
+    /// adjacent globstars (e.g. `**/**/*.tsv`) can reach the same entry through both the
+    /// zero-level branch and the recursive descent, so without this guard the query would return
+    /// duplicate rows and double-count `total_bytes_to_read`.
+    auto add_matched_path = [&](const std::string & path)
+    {
+        const std::string key = fs::path(path).lexically_normal().string();
+        if (!matched_paths.emplace(key).second)
+            return;
+        try
+        {
+            total_bytes_to_read += disk->getFileSize(path);
+            result.push_back(path);
+        }
+        catch (const Exception & e)
+        {
+            /// The entry can disappear between the existence check and `getFileSize` under
+            /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            matched_paths.erase(key);
+        }
+    };
 
     const size_t first_glob_pos = for_match.find_first_of("*?{");
 
@@ -372,21 +398,10 @@ void listFilesWithRegexpMatchingOnDisk(
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                 "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
                 full_path, disk->getPath());
+        /// This exact-match branch is reached for suffixes without globs, including the
+        /// zero-level `**/` case (e.g. `dir/**/data.csv` matching `dir/data.csv`).
         if (disk->existsFile(full_path))
-        {
-            try
-            {
-                total_bytes_to_read += disk->getFileSize(full_path);
-                result.push_back(full_path);
-            }
-            catch (const Exception & e)
-            {
-                /// File can disappear between `existsFile` and `getFileSize` under
-                /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
-                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                    throw;
-            }
-        }
+            add_matched_path(full_path);
         return;
     }
 
@@ -434,6 +449,31 @@ void listFilesWithRegexpMatchingOnDisk(
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
 
+    /// `**/` matches zero or more directory components, so it must also match the current
+    /// directory (zero levels): apply the remaining suffix to `prefix_without_globs` itself, in
+    /// addition to the recursive descent into subdirectories performed by the loop below. This
+    /// mirrors the zero-level branch in `listFilesWithRegexpMatchingImpl`; without it a
+    /// policy-backed disk returns different rows from the local `user_files_path` walker for
+    /// ordinary recursive globs (`file('dir/**/data.csv', ...)` would skip `dir/data.csv`).
+    /// The descent below covers one or more directory levels, so this call must not recurse
+    /// (`recursive` is `false`) to avoid producing the same results twice.
+    if (current_glob == "/**" && looking_for_directory)
+    {
+        /// The post-`**` suffix always begins with '/'; the recursion joins it as
+        /// `dir_path + for_match`. `prefix_without_globs` ends with '/' (or is empty at the disk
+        /// root), so pass its trailing-slash-stripped form as `dir_path` to avoid a `//` key that
+        /// object-storage disks treat as distinct. At the disk root (`prefix_without_globs == ""`)
+        /// there is no trailing slash to strip, so drop the suffix's leading '/' instead to keep
+        /// the child path relative.
+        const std::string zero_level_suffix = suffix_with_globs.substr(next_slash_after_glob_pos);
+        if (prefix_without_globs.empty())
+            listFilesWithRegexpMatchingOnDisk(disk, "", zero_level_suffix.substr(1),
+                total_bytes_to_read, result, matched_paths, false, depth + 1);
+        else
+            listFilesWithRegexpMatchingOnDisk(disk, prefix_without_globs.substr(0, prefix_without_globs.size() - 1), zero_level_suffix,
+                total_bytes_to_read, result, matched_paths, false, depth + 1);
+    }
+
     for (auto it = disk->iterateDirectory(prefix_without_globs); it->isValid(); it->next())
     {
         const String entry_name = it->name();
@@ -452,21 +492,7 @@ void listFilesWithRegexpMatchingOnDisk(
         if (!is_dir && !looking_for_directory)
         {
             if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
-            {
-                try
-                {
-                    total_bytes_to_read += disk->getFileSize(full_entry_path);
-                    result.push_back(full_entry_path);
-                }
-                catch (const Exception & e)
-                {
-                    /// Concurrent deletion/rotation can race with the directory iterator:
-                    /// the entry was reported by `iterateDirectory` but disappeared before
-                    /// `getFileSize`. Skip vanished entries; rethrow other errors.
-                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                        throw;
-                }
-            }
+                add_matched_path(full_entry_path);
         }
         else if (is_dir)
         {
@@ -479,15 +505,27 @@ void listFilesWithRegexpMatchingOnDisk(
             /// `dirA/data.csv` and would silently miss the matching object.
             if (recursive)
             {
+                /// When the current segment is the globstar `**` followed by a suffix (e.g.
+                /// `**/data.csv`), descend into subdirectories keeping the whole `**/...` pattern,
+                /// so the globstar keeps matching at every deeper level. The zero-level branch
+                /// above applies the post-`**` suffix at the current level, so the combination
+                /// matches zero, one, or more directory components. Without this, a literal suffix
+                /// (e.g. `data.csv`) would short-circuit at the no-glob exact-match branch after a
+                /// single level, and only a glob suffix (e.g. `*.csv`) would keep descending. For a
+                /// trailing `**` (no suffix), keep re-applying `current_glob` (`/**`) to list all
+                /// files recursively. Mirrors the `descent_pattern` in `listFilesWithRegexpMatchingImpl`.
+                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
                 listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
-                    looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob,
-                    total_bytes_to_read, result, recursive, depth + 1);
+                    descent_pattern,
+                    total_bytes_to_read, result, matched_paths, recursive, depth + 1);
             }
             else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
             {
                 listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
                     suffix_with_globs.substr(next_slash_after_glob_pos),
-                    total_bytes_to_read, result, false, depth + 1);
+                    total_bytes_to_read, result, matched_paths, false, depth + 1);
             }
         }
     }
@@ -836,7 +874,15 @@ Strings getPathsListOnDisk(
             const Strings expanded_patterns = expandSelectionGlob(relative_pattern);
             Strings relative_matches;
             for (const auto & pattern : expanded_patterns)
-                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, false, 0);
+            {
+                /// Deduplicate matches within a single expanded pattern so adjacent globstars
+                /// (`**/**/*.csv`) do not emit the same entry twice. Scoped per expanded pattern
+                /// on purpose: brace-expanded alternatives keep their pre-existing behavior of
+                /// reading the same concrete file once per alternative. Mirrors
+                /// `listFilesWithRegexpMatching`.
+                std::unordered_set<std::string> matched_paths;
+                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, matched_paths, false, 0);
+            }
 
             const String disk_prefix = getDiskPathWithSlash(disk);
             for (const auto & rel : relative_matches)

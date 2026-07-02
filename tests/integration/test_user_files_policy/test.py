@@ -673,6 +673,82 @@ def test_s3_recursive_glob_nested_object():
     assert result.strip() == "30", result
 
 
+def test_s3_recursive_glob_middle_literal_suffix():
+    """A `**` between literal components (`dir/**/data.csv`) must match the same set of
+    objects on an S3-backed `user_files_policy` disk as it does on the local
+    `user_files_path` walker: `**/` stands for *zero or more* directory levels.
+
+    Regression for two divergences of `listFilesWithRegexpMatchingOnDisk` from
+    `listFilesWithRegexpMatchingImpl`: it lacked the zero-directory branch (so the
+    globstar-adjacent file `gmid_root/data.csv` was skipped) and it dropped the `**`
+    when descending (so only the *single* level `gmid_root/one/data.csv` matched, while
+    deeper `gmid_root/one/two/data.csv` was missed). With the fix all three depths match
+    and the non-matching sibling `gmid_root/one/other.csv` is excluded."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/two/data.csv', 'CSV', 'x UInt64') SELECT 4"
+    )
+    # A file whose name does not match the literal suffix must be excluded.
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gmid_root/one/other.csv', 'CSV', 'x UInt64') SELECT 8"
+    )
+
+    result = node_s3.query(
+        "SELECT x FROM file('gmid_root/**/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2\n4", result
+
+
+def test_s3_recursive_glob_adjacent_globstars_no_duplicates():
+    """Adjacent globstars (`**/**/data.csv`) can reach the same object through both the
+    zero-level branch and the recursive descent, so the disk walker must deduplicate its
+    matches - otherwise a single object is returned multiple times and its bytes are
+    counted more than once in the read progress.
+
+    `gadj_root/data.csv` is reachable with both globstars empty, and
+    `gadj_root/one/data.csv` is reachable two ways (`one`+empty and empty+`one`); each
+    must appear exactly once."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gadj_root/data.csv', 'CSV', 'x UInt64') SELECT 100"
+    )
+    node_s3.query(
+        "INSERT INTO FUNCTION file('gadj_root/one/data.csv', 'CSV', 'x UInt64') SELECT 200"
+    )
+
+    # Each matching object must be counted once: two rows, summing to 300 (not 500+,
+    # which is what the un-deduplicated walker would return for the twice-reachable file).
+    result = node_s3.query(
+        "SELECT count(), sum(x) FROM file('gadj_root/**/**/data.csv', 'CSV', 'x UInt64')"
+    )
+    assert result.strip() == "2\t300", result
+
+
+def test_local_recursive_glob_middle_literal_suffix():
+    """Parity check on a local `user_files_policy` disk: `dir/**/data.csv` must match the
+    globstar-adjacent file and every deeper level, exactly like the plain
+    `user_files_path` walker. Locks `listFilesWithRegexpMatchingOnDisk` to the semantics
+    of `listFilesWithRegexpMatchingImpl` for the disk-backed local case too."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/data.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/one/data.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    node_local.query(
+        "INSERT INTO FUNCTION file('lmid_root/one/two/data.csv', 'CSV', 'x UInt64') SELECT 4"
+    )
+
+    result = node_local.query(
+        "SELECT x FROM file('lmid_root/**/data.csv', 'CSV', 'x UInt64') ORDER BY x"
+    )
+    assert result.strip() == "1\n2\n4", result
+
+
 def test_user_files_policy_precedence_over_bad_local_path():
     """`user_files_policy` must take precedence over `user_files_path` during startup.
 
