@@ -425,17 +425,24 @@ void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
     if (start_time && end_time && *start_time > *end_time)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "start_time must not be greater than end_time");
 
-    /// A series overlaps the requested range [start, end] when its `min_time <= end` and `max_time >= start`.
-    /// NULL bounds mean "unknown", so such rows are kept to avoid hiding series whose time bounds are not set.
+    /// A series overlaps the requested range [start, end] when its `max_time >= start` and `min_time <= end`.
+    /// This mirrors `StorageTimeSeriesSelector::makeWhereFilterForTagsTable`, which the real query path
+    /// (`/api/v1/query`, `/api/v1/query_range`) uses on the `tags` table. There the comparisons are plain, so a
+    /// `NULL` `min_time`/`max_time` makes the predicate evaluate to `NULL` and the row is dropped. An empty
+    /// `time_series` row (a series with no samples) is stored with `NULL` bounds by
+    /// `TimeSeriesSink::fillMinMaxTimeColumns`, and such a series never contributes to a ranged query. The
+    /// metadata endpoints must fail closed the same way: keeping those rows with an `IS NULL OR ...` branch
+    /// would let `/api/v1/series`, `/api/v1/labels`, and `/api/v1/label/<name>/values` report series and labels
+    /// for an interval where `/api/v1/query` returns no data.
     if (start_time)
         conditions.push_back(fmt::format(
-            "({0} IS NULL OR {0} >= {1})",
+            "{0} >= {1}",
             TimeSeriesColumnNames::MaxTime,
             timeSeriesTimestampToAST(*start_time, timestamp_data_type)->formatWithSecretsOneLine()));
 
     if (end_time)
         conditions.push_back(fmt::format(
-            "({0} IS NULL OR {0} <= {1})",
+            "{0} <= {1}",
             TimeSeriesColumnNames::MinTime,
             timeSeriesTimestampToAST(*end_time, timestamp_data_type)->formatWithSecretsOneLine()));
 }
