@@ -476,7 +476,7 @@ hasAnyTokens(input, needles)
     {
         "Basic usage with a string needle",
         R"(
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -484,9 +484,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
         )",
         R"(
 ┌─count()─┐
@@ -497,7 +497,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -508,7 +518,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -539,6 +559,21 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
         )",
         R"(
@@ -550,6 +585,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
         )",
         R"(
@@ -561,6 +611,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
         )",
         R"(
@@ -619,7 +684,7 @@ hasAllTokens(input, needles)
     {
         "Basic usage with a string needle",
         R"(
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -627,9 +692,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
         )",
         R"(
 ┌─count()─┐
@@ -640,7 +705,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
     {
         "Specify needles to be searched for AS-IS (no tokenization) in an array",
         R"(
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
         )",
         R"(
 ┌─count()─┐
@@ -651,7 +726,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
     {
         "Generate needles using the `tokens` function",
         R"(
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
         )",
         R"(
 ┌─count()─┐
@@ -665,9 +750,9 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
         )",
         R"(
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     },
     {
@@ -693,6 +778,21 @@ INSERT INTO log VALUES
     {
         "Example with an array column",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
         )",
         R"(
@@ -704,6 +804,21 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
     {
         "Example with mapKeys",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
         )",
         R"(
@@ -715,6 +830,21 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
     {
         "Example with mapValues",
         R"(
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
         )",
         R"(

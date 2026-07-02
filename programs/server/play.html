@@ -48,6 +48,10 @@
             --element-background-color-fail: #FEE;
             --bar-color: #FF8; /* Light bar in background of table cells. */
             --bar-color-negative: #FEE;
+            /* Lightness and chroma for the heatmap/categorical cell coloring; only the hue varies.
+               Light theme: a high lightness so the dark cell text stays readable on top. */
+            --viz-cell-lightness: 88%;
+            --viz-cell-chroma: 0.09;
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -63,6 +67,7 @@
             --logo-color: #FFF;
             --border-color-selected: #F80;
             --menu-toggle-color: #000;
+            --menu-icon-color: #24292f; /* Match the GitHub logo's color. */
 
             --progress-color: #0C4;
             --table-size-bar-color: #FFF;
@@ -96,6 +101,9 @@
             --element-background-color-fail: #300;
             --bar-color: #320;
             --bar-color-negative: #311;
+            /* Dark theme: a low lightness so the light cell text stays readable on top. */
+            --viz-cell-lightness: 38%;
+            --viz-cell-chroma: 0.08;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -112,6 +120,7 @@
             --logo-color: #444;
             --border-color-selected: #FF0;
             --menu-toggle-color: #FF0;
+            --menu-icon-color: #FFF; /* Match the GitHub logo's color. */
 
             --progress-color: #FF0;
             --table-size-bar-color: #104050;
@@ -186,7 +195,7 @@
             border-right: 1px solid var(--border-color);
             display: grid;
             grid-template-rows: auto 1fr auto;
-            grid-template-areas: "databases-icon" "contents" "terminal-icon" "github-icon";
+            grid-template-areas: "databases-icon" "contents" "terminal-icon" "docs-icon" "github-icon";
             cursor: e-resize;
             min-height: 0;
             overflow-x: visible;
@@ -194,12 +203,13 @@
         }
 
         /* When the databases list is expanded, lay out the bottom icons (Web
-           Terminal, GitHub) side by side instead of stacked, so the list of
+           Terminal, Documentation, GitHub) side by side instead of stacked, so the list of
            databases/tables gets more vertical space. */
         #menu.databases-opened
         {
-            grid-template-columns: auto 1fr;
-            grid-template-areas: "databases-icon databases-hide" "contents contents" "terminal-icon github-icon";
+            grid-template-columns: auto auto 1fr;
+            grid-template-areas: "databases-icon databases-hide databases-hide" "contents contents contents" "terminal-icon docs-icon github-icon";
+            column-gap: 0.25rem;
         }
 
         #menu.databases-opened #github-icon
@@ -222,6 +232,9 @@
             cursor: pointer;
             user-select: none;
             fill: var(--menu-toggle-color);
+            /* Stroke-based icons (Web Terminal, Documentation) draw with `currentColor`;
+               pin it to the GitHub logo's color so all three icons match. */
+            color: var(--menu-icon-color);
         }
 
         .menu-icon:hover
@@ -356,6 +369,22 @@
             background-color: var(--border-color);
         }
 
+        #docs-icon
+        {
+            grid-area: docs-icon;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        /* This is an `<a>` whose SVG draws with `currentColor`. Pin the color across all link
+           states (including `:visited`, which the generic `a:visited` rule would otherwise tint
+           with `--link-color`) so the icon always matches the other menu icons. */
+        #docs-icon:link, #docs-icon:visited, #docs-icon:hover, #docs-icon:active
+        {
+            color: var(--menu-icon-color);
+        }
+
         #github-icon
         {
             grid-area: github-icon;
@@ -421,6 +450,26 @@
                clickable while tables load (otherwise a click here is treated as a menu
                background click and would close the whole panel). */
             pointer-events: none;
+        }
+
+        /* `.database button.database-refresh` (not just `.database-refresh`) so it
+           outranks the `.database button` rule that forces `display: block; width: 100%`,
+           which would otherwise stretch the button full width and push the icon to the left. */
+        .database button.database-refresh
+        {
+            /* Pinned to the top-right of the database row, in the same spot as the
+               loading hourglass (only one of them is shown at a time). */
+            position: absolute;
+            top: 0;
+            right: 0.25rem;
+            display: inline-block;
+            width: auto;
+            color: var(--misc-text-color);
+            line-height: 1;
+            &:hover {
+                text-decoration: none;
+                color: var(--text-color);
+            }
         }
 
         .no-tables
@@ -516,6 +565,15 @@
             transition: opacity 0s 0.1s;
         }
 
+        /* Show the balloon when the row (or one of its links) is focused via
+           keyboard navigation, mirroring the hover behaviour above. */
+        .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0s 0.1s;
+        }
+
         /* While suppress-balloons is set on the body (set on scroll, cleared on the
            next mousemove), no balloon may appear from a :hover state. This prevents
            a different table button from scrolling under a stationary cursor and
@@ -527,12 +585,27 @@
             pointer-events: none;
         }
 
+        /* The keyboard-focused row's balloon is repositioned explicitly on scroll,
+           so it must stay visible even while `suppress-balloons` hides hover-opened
+           balloons (e.g. when the stationary cursor also happens to be over the
+           focused row). Placed after the suppress rule so it wins the specificity
+           tie. */
+        body.suppress-balloons .table:focus-within .table-addendum
+        {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .table-addendum-elem
         {
             display: block;
             cursor: pointer;
             &:hover {
                 text-decoration: 1px underline dotted var(--element-background-color);
+            }
+            &:focus {
+                outline: none;
+                text-decoration: 1px underline solid var(--element-background-color);
             }
         }
 
@@ -549,6 +622,17 @@
             outline: none;
             border: none;
             color: var(--text-color);
+        }
+
+        /* The rule above removes the default outline; re-add a clear one for
+           keyboard focus only (Tab), so the controls show where focus is while a
+           mouse click does not draw a ring. Covers the real <button>s (Run, Run
+           all, Download) and the icon "buttons" (copy, download, theme switcher). */
+        button:focus-visible,
+        [role="button"]:focus-visible
+        {
+            outline: 2px solid var(--link-color);
+            outline-offset: 2px;
         }
 
         .monospace
@@ -1065,6 +1149,9 @@
         <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
+        <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 4a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2V4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="8" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </a>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
             <a href="https://github.com/ClickHouse/ClickHouse/">
@@ -1086,7 +1173,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
+                <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1287,6 +1374,11 @@ class QueryProgressElement extends HTMLElement
 customElements.define('query-progress', QueryProgressElement);
 
 
+/// Per-column color coding modes chosen by the user, keyed by column name.
+/// Only columns with an explicit (non-default) choice are stored here. It is the single source
+/// of truth shared across result tables and is persisted in the URL and browser history.
+let column_color_modes = {};
+
 class QueryResultElement extends HTMLElement
 {
     static _loadVizPromise = null;
@@ -1307,6 +1399,15 @@ class QueryResultElement extends HTMLElement
                 :host
                 {
                     display: block;
+                    outline: none;
+                }
+
+                /* Show a focus ring only for keyboard focus (Tab), not when a cell
+                   click programmatically focuses the table. */
+                :host(:focus-visible)
+                {
+                    outline: 2px solid var(--link-color);
+                    outline-offset: -2px;
                 }
 
                 .monospace
@@ -1465,6 +1566,45 @@ class QueryResultElement extends HTMLElement
                 {
                     border-radius: 0.25rem;
                     background-color: var(--border-color-selected);
+                }
+
+                /* Icon at the right side of a column header to switch the color coding mode.
+                   On devices with a hovering pointer it appears only while the header is hovered,
+                   so it stays out of the way otherwise. Sits just left of the resizer. */
+                .colorize-toggle
+                {
+                    display: none;
+                    position: absolute;
+                    top: 50%;
+                    right: 0.35rem;
+                    transform: translateY(-50%);
+                    cursor: pointer;
+                    font-size: 0.9em;
+                    line-height: 1;
+                    user-select: none;
+                }
+
+                th:hover .colorize-toggle
+                {
+                    display: inline-block;
+                }
+
+                /* Touch / coarse-pointer devices have no hover, and a hidden (display: none) icon is
+                   not hit-testable: a tap would land on the th, never reaching the icon's click
+                   handler, so the color switch could not be activated at all. Keep the icon always
+                   visible there, which makes it directly tappable. */
+                @media (hover: none), (pointer: coarse)
+                {
+                    .colorize-toggle
+                    {
+                        display: inline-block;
+                    }
+                }
+
+                /* A faint dimming on hover, since the colorful emoji cannot take a text color. */
+                .colorize-toggle:hover
+                {
+                    opacity: 0.7;
                 }
 
                 /* Apply hover/selection filter per-cell, excluding the active cell,
@@ -1662,10 +1802,20 @@ class QueryResultElement extends HTMLElement
         this._is_explain_graph = false;
         this._explain_graph = '';
         this._column_is_number = {};
+        /// Date/DateTime columns are colorable by their numeric (time) value, but are kept
+        /// separate from `_column_is_number` so they stay left-aligned and unformatted.
+        this._column_is_date = {};
         this._extremes = {};
         this._totals = null;
         this._header = {};
         this._current_selected_cell = null;
+        /// State of the categorical same-value emphasis, cached to avoid recomputing it when the
+        /// active cell moves but its value (and column) is unchanged.
+        this._emphasized_col_idx = null;
+        this._emphasized_value = null;
+        this._emphasized_active_cell = null;
+        /// Debounce timer for the categorical emphasis, so rapid selection changes recompute once.
+        this._emphasis_timer = null;
         this._uplot = null;
         this._queryText = '';
         /// Object URL backing the displayed image, kept so it can be revoked when the result is cleared.
@@ -1686,8 +1836,10 @@ class QueryResultElement extends HTMLElement
 
     connectedCallback()
     {
+        /// Make the result table part of the Tab navigation sequence: the user can
+        /// Tab to it, navigate cells with the arrow keys, then Tab on to the next
+        /// element. The focus ring is handled via `:host(:focus-visible)` in the CSS.
         if (!this.hasAttribute('tabindex')) this.setAttribute('tabindex', '0');
-        this.style.outline = 'none';
     }
 
     disconnectedCallback()
@@ -1737,6 +1889,10 @@ class QueryResultElement extends HTMLElement
         this._is_explain_graph = false;
         this._explain_graph = '';
         this._current_selected_cell = null;
+        this._emphasized_col_idx = null;
+        this._emphasized_value = null;
+        this._emphasized_active_cell = null;
+        clearTimeout(this._emphasis_timer);
     }
 
     /// Select a cell and move keyboard focus to it. We focus the cell itself rather than
@@ -1759,6 +1915,7 @@ class QueryResultElement extends HTMLElement
         (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
         td.tabIndex = -1;
         td.focus({ preventScroll: true });
+        this._scheduleCategoricalEmphasis();
     }
 
     clearSelection()
@@ -1770,6 +1927,7 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.removeAttribute('tabindex');
         }
         this._current_selected_cell = null;
+        this._scheduleCategoricalEmphasis();
     }
 
     clearError()
@@ -1879,12 +2037,15 @@ class QueryResultElement extends HTMLElement
             type_hint.className = 'type-hint';
             type_hint.appendChild(document.createTextNode(elem.type));
             th.appendChild(type_hint);
+
+            this._column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
+            this._column_is_date[elem.name] = !!elem.type.match(/^(Nullable\()?Date/);
+            this._appendColorizeToggle(th, elem.name);
+
             this._appendHeaderResizer(th);
             th.style.zIndex = zIndex;
             --zIndex;
             thead.appendChild(th);
-
-            this._column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
         });
 
         let table = this._dataTable;
@@ -1942,76 +2103,452 @@ class QueryResultElement extends HTMLElement
         }
     }
 
-    renderExtremes()
+    /// Add the icon at the right of a column header that cycles the column's color coding mode.
+    _appendColorizeToggle(th, name)
     {
+        const toggle = document.createElement('span');
+        toggle.className = 'colorize-toggle';
+        /// A rainbow emoji, conveying "change the coloring".
+        toggle.textContent = '\u{1F308}';
+        this._updateColorizeToggleTitle(toggle, name);
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._cycleColorMode(name);
+        });
+        /// Do not let pressing the icon start a column-resize drag or a text selection.
+        toggle.addEventListener('mousedown', (e) => e.stopPropagation());
+        th.appendChild(toggle);
+    }
+
+    _updateColorizeToggleTitle(toggle, name)
+    {
+        toggle.title = 'Color coding: ' + this._effectiveColorMode(name) + ' (click to change)';
+    }
+
+    /// The sequence of color coding modes available for a column, in cycling order. Value columns
+    /// (numbers, Date/DateTime) support all four modes; other columns only none <-> categorical.
+    _colorModeCycle(name)
+    {
+        return this._columnSupportsValueColoring(name)
+            ? ['bar', 'heatmap', 'categorical', 'none']
+            : ['none', 'categorical'];
+    }
+
+    /// Switch a column to the next color coding mode. Numeric columns cycle through
+    /// bar -> heatmap -> categorical -> none; non-numeric columns toggle none <-> categorical.
+    _cycleColorMode(name)
+    {
+        const cycle = this._colorModeCycle(name);
+        const idx = cycle.indexOf(this._effectiveColorMode(name));
+        const next = cycle[(idx + 1) % cycle.length];
+
+        /// Store only non-default choices, to keep the URL and history state compact.
+        if (next === this._defaultColorMode(name))
+        {
+            delete column_color_modes[name];
+        }
+        else
+        {
+            column_color_modes[name] = next;
+        }
+
+        /// The modes are shared by column name, so every visible result table that has this
+        /// column must be repainted (not just the clicked one) to stay in sync with the URL.
+        for (const el of document.querySelectorAll('query-result'))
+        {
+            el.refreshColumnColor(name);
+        }
+        persistColorModes();
+    }
+
+    /// Repaint one column for the current (shared) mode and refresh its header toggle title.
+    /// A no-op for tables that do not have this column, or that are not in normal tabular layout
+    /// (raw/chart/image results, or the vertical transposed layout, which has no header row).
+    refreshColumnColor(name)
+    {
+        if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
+        const col_idx = this._columnIndex(name);
+        if (col_idx < 0) { return; }
+
+        this._applyColumnColor(name, col_idx);
+        /// Keep the active-cell categorical emphasis consistent with the new mode.
+        this._scheduleCategoricalEmphasis();
+
+        /// The header cells are direct `<th>` children of `<thead>` (not wrapped in a `<tr>`),
+        /// with the row-number header at index 0, so the column's header is `children[col_idx]`.
+        const toggle = this._dataTable.tHead.children[col_idx]?.querySelector('.colorize-toggle');
+        if (toggle) { this._updateColorizeToggleTitle(toggle, name); }
+    }
+
+    /// Per-type default color mode: `bar` for plain numbers, `none` for everything else
+    /// (including Date/DateTime, which are colorable but show no visualization by default).
+    _defaultColorMode(name)
+    {
+        return this._column_is_number[name] ? 'bar' : 'none';
+    }
+
+    /// Effective color coding mode for a column: an explicit user choice if present and supported
+    /// by this column's type, otherwise the per-type default. The support check matters in
+    /// multi-query mode, where the mode is shared by column name across tables: e.g. a numeric
+    /// column's `heatmap` must not leak into a string column of the same name (which would also
+    /// break its none <-> categorical cycle), so it falls back to the default there.
+    _effectiveColorMode(name)
+    {
+        if (Object.prototype.hasOwnProperty.call(column_color_modes, name))
+        {
+            const stored = column_color_modes[name];
+            if (this._colorModeCycle(name).includes(stored)) { return stored; }
+        }
+        return this._defaultColorMode(name);
+    }
+
+    /// Columns whose value can drive the bar/heatmap modes: plain numbers and Date/DateTime.
+    _columnSupportsValueColoring(name)
+    {
+        return this._column_is_number[name] || this._column_is_date[name];
+    }
+
+    /// Numeric value of a cell's displayed text. Date/DateTime text is parsed into a timestamp
+    /// so it can be ordered and scaled like a number; everything else is parsed as a plain number.
+    _parseNumeric(name, text)
+    {
+        if (this._column_is_date[name])
+        {
+            /// Parse the calendar components and combine them with `Date.UTC`, so the value is
+            /// independent of the viewer's browser timezone and DST (`Date.parse` would apply the
+            /// local zone, which can make the color scale non-monotonic). Accepts `YYYY-MM-DD` and
+            /// `YYYY-MM-DD HH:MM:SS[.fff]` (the time part and fractional seconds are optional).
+            const m = String(text).match(/^(\d+)-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?)?/);
+            if (!m) { return NaN; }
+            const base = Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+            /// Add the fractional seconds OUTSIDE `Date.UTC`, whose millisecond argument is truncated
+            /// to an integer, as a fractional number of milliseconds. The result is a JS double, so
+            /// it is exact to roughly microsecond precision near modern timestamps (the ULP of a
+            /// ~1.7e12 ms value is ~2e-4 ms). That covers `Date`, `DateTime` and `DateTime64` up to
+            /// microseconds; `DateTime64(9)` differences below a microsecond are not distinguished
+            /// in the color scale, which is acceptable for a visualization (such a span is not
+            /// visually meaningful) and would otherwise require BigInt arithmetic throughout.
+            const frac_ms = m[7] ? Number('0.' + m[7]) * 1000 : 0;
+            return base + frac_ms;
+        }
+        return +text;
+    }
+
+    _columnIndex(name)
+    {
+        for (let i = 0; i < this._header.length; ++i)
+        {
+            if (this._header[i].name === name) { return i + 1; }
+        }
+        return -1;
+    }
+
+    /// Rows whose data cells participate in coloring: the body rows and the totals row,
+    /// but not the header (so a categorical column does not tint its own header cell).
+    _colorTargetRows()
+    {
+        let rows = [];
+        for (const tbody of this._dataTable.tBodies)
+        {
+            for (const row of tbody.rows) { rows.push(row); }
+        }
+        if (this._dataTable.tFoot)
+        {
+            for (const row of this._dataTable.tFoot.rows) { rows.push(row); }
+        }
+        return rows;
+    }
+
+    /// Min/max for a numeric column. Prefers the server-provided extremes (computed over the
+    /// whole result), falling back to the displayed values when the extremes are unavailable.
+    _numericColumnRange(name, col_idx)
+    {
+        if (this._extremes.min && this._extremes.max
+            && this._extremes.min[name] !== undefined && this._extremes.max[name] !== undefined)
+        {
+            const min = this._parseNumeric(name, this._extremes.min[name]);
+            const max = this._parseNumeric(name, this._extremes.max[name]);
+            if (Number.isFinite(min) && Number.isFinite(max) && max > min) { return { min, max }; }
+        }
+
+        let min = Infinity;
+        let max = -Infinity;
+        for (const row of this._colorTargetRows())
+        {
+            const cell = row.cells[col_idx];
+            if (!cell) { continue; }
+            const value = this._parseNumeric(name, (cell.querySelector('.cell-content') || cell).innerText);
+            if (!Number.isFinite(value)) { continue; }
+            if (value < min) { min = value; }
+            if (value > max) { max = value; }
+        }
+        return max > min ? { min, max } : null;
+    }
+
+    /// Deterministic hue in [0, 360) from a string, using an FNV-1a hash. Only the hue varies;
+    /// the lightness and chroma are fixed (see the `--viz-cell-*` variables). The full 32-bit
+    /// hash is mapped across the hue circle (not reduced modulo 360) to minimize collisions.
+    _hashHue(str)
+    {
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < str.length; ++i)
+        {
+            hash ^= str.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        return (hash >>> 0) / 4294967296 * 360;
+    }
+
+    /// Reset coloring on both layers of every cell in a column: the inner `.cell-content` div
+    /// (used by bar mode) and the `<td>` itself (used by heatmap/categorical to fill the whole cell).
+    /// Also drops any categorical same-value font-weight emphasis.
+    _clearColumnColor(col_idx)
+    {
+        for (const row of this._colorTargetRows())
+        {
+            const cell = row.cells[col_idx];
+            if (!cell) { continue; }
+            cell.style.background = '';
+            const div = cell.querySelector('.cell-content');
+            if (div) { div.style.background = ''; div.style.fontWeight = ''; div.style.color = ''; }
+        }
+    }
+
+    /// Apply the current color coding mode to every cell of one column.
+    _applyColumnColor(name, col_idx)
+    {
+        if (col_idx < 0) { return; }
+        const mode = this._effectiveColorMode(name);
+        const rows = this._colorTargetRows();
+
+        /// Reset both layers first, so switching modes never leaves stale coloring behind.
+        this._clearColumnColor(col_idx);
+
+        if (mode === 'none')
+        {
+            return;
+        }
+
+        /// Heatmap and categorical color the whole cell: the background goes on the `<td>` (which
+        /// spans the full row height) rather than the inner div, so a cell shorter than a taller
+        /// neighbour in the same row is still fully filled.
+        if (mode === 'categorical')
+        {
+            for (const row of rows)
+            {
+                const cell = row.cells[col_idx];
+                if (!cell) { continue; }
+                const hue = this._hashHue((cell.querySelector('.cell-content') || cell).innerText);
+                cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
+            }
+            return;
+        }
+
+        /// The remaining modes (bar, heatmap) need a numeric range; for non-numeric columns
+        /// (other than Date/DateTime) there is nothing to scale, so leave the cleared coloring.
+        const range = this._columnSupportsValueColoring(name) ? this._numericColumnRange(name, col_idx) : null;
+        if (!range)
+        {
+            return;
+        }
+
+        if (mode === 'heatmap')
+        {
+            const span = range.max - range.min;
+            for (const row of rows)
+            {
+                const cell = row.cells[col_idx];
+                if (!cell) { continue; }
+                const value = this._parseNumeric(name, (cell.querySelector('.cell-content') || cell).innerText);
+                if (!Number.isFinite(value)) { continue; }
+                const t = Math.min(1, Math.max(0, (value - range.min) / span));
+                /// Map low -> high values to a blue -> red hue sweep.
+                const hue = 260 - 235 * t;
+                cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
+            }
+            return;
+        }
+
+        /// mode === 'bar' for Date/DateTime: a zero baseline is meaningless for timestamps,
+        /// so the bar spans the column's min..max range, with min rendered as an empty bar.
+        if (this._column_is_date[name])
+        {
+            const span = range.max - range.min;
+            for (const row of rows)
+            {
+                const cell = row.cells[col_idx];
+                if (!cell) { continue; }
+                const div = cell.querySelector('.cell-content') || cell;
+                const value = this._parseNumeric(name, div.innerText);
+                if (!Number.isFinite(value)) { div.style.background = ''; continue; }
+                const ratio = Math.min(1, Math.max(0, (value - range.min) / span));
+                div.style.background = `linear-gradient(to right,
+                    var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
+                    var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
+            }
+            return;
+        }
+
+        /// mode === 'bar': a horizontal bar whose length is proportional to the value,
+        /// two-sided when the column has negative values.
+        const double_sided = range.min < 0;
+        const ratio_positive = range.max / (range.max - range.min);
+        const ratio_negative = 1 - ratio_positive;
+
+        for (const row of rows)
+        {
+            const cell = row.cells[col_idx];
+            if (!cell) { continue; }
+            const div = cell.querySelector('.cell-content') || cell;
+            const value = this._parseNumeric(name, div.innerText);
+
+            if (!double_sided)
+            {
+                if (value > 0)
+                {
+                    const ratio = value / range.max;
+                    div.style.background = `linear-gradient(to right,
+                        var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
+                        var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
+                }
+                else
+                {
+                    div.style.background = '';
+                }
+            }
+            else if (value > 0)
+            {
+                const ratio = value / range.max;
+                div.style.background = `linear-gradient(to right,
+                    var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
+                    var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
+                    var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
+            }
+            else if (value < 0)
+            {
+                const ratio = value / range.min;
+                div.style.background = `linear-gradient(to right,
+                    var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
+                    var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
+                    var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
+            }
+            else
+            {
+                div.style.background = '';
+            }
+        }
+    }
+
+    /// Re-apply color coding for every column (after rendering or restoring a result).
+    applyColumnColors()
+    {
+        /// Only tabular results have a column header array; raw/chart/image results do not.
+        if (!Array.isArray(this._header)) { return; }
+        /// Vertical (transposed) single-row results do not show per-column color coding.
+        if (this._willTranspose()) { return; }
         let col_idx = 0;
         for (const column of this._header)
         {
-            const name = column.name;
             ++col_idx;
-            if (this._column_is_number[name]
-                && this._extremes.min[name] !== undefined && this._extremes.max[name] !== undefined
-                && Number(this._extremes.max[name]) > Number(this._extremes.min[name]))
+            this._applyColumnColor(column.name, col_idx);
+        }
+        this._scheduleCategoricalEmphasis();
+    }
+
+    /// Recompute the categorical emphasis after a 100 ms quiet period. Coalesces bursts of
+    /// selection changes (e.g. holding an arrow key) into a single recomputation.
+    _scheduleCategoricalEmphasis()
+    {
+        clearTimeout(this._emphasis_timer);
+        this._emphasis_timer = setTimeout(() => this._refreshCategoricalEmphasis(), 100);
+    }
+
+    /// Apply (or remove) the same-value emphasis on a single cell: a heavier font and a
+    /// full-contrast text color (`--text-color-active` is pure black in the light theme and pure
+    /// white in the dark theme). The background color is left unchanged.
+    _setCellEmphasis(cell, on)
+    {
+        const target = cell.querySelector('.cell-content') || cell;
+        target.style.fontWeight = on ? '600' : '';
+        target.style.color = on ? 'var(--text-color-active)' : '';
+    }
+
+    /// Remove the emphasis from the previously emphasized column, if any, and reset the
+    /// emphasis-tracking state.
+    _clearCategoricalEmphasis()
+    {
+        if (this._emphasized_col_idx === null) { return; }
+        for (const row of this._colorTargetRows())
+        {
+            const c = row.cells[this._emphasized_col_idx];
+            if (c) { this._setCellEmphasis(c, false); }
+        }
+        this._emphasized_col_idx = null;
+        this._emphasized_value = null;
+        this._emphasized_active_cell = null;
+    }
+
+    /// In categorical mode, emphasize the other cells that share the active cell's value (the
+    /// background colors stay unchanged). The active cell itself is left unemphasized. A no-op for
+    /// any other mode. Called whenever the selection changes.
+    _refreshCategoricalEmphasis()
+    {
+        /// The vertical (transposed) single-row layout shows no color coding (`applyColumnColors`
+        /// skips it), so it must not participate in categorical emphasis either. A transposed table
+        /// has no `tHead` (dropped by `transposeIfNeeded`), and every value cell there has
+        /// `cellIndex == 1`, which would otherwise be matched against the first column's stored
+        /// mode. Clear any leftover emphasis and bail out.
+        if (!this._dataTable.tHead)
+        {
+            this._clearCategoricalEmphasis();
+            return;
+        }
+
+        /// Identify the new emphasis target: the active cell's column and value, but only when it
+        /// is a categorical column. Otherwise there is nothing to emphasize.
+        const cell = this._current_selected_cell;
+        let col_idx = null;
+        let active_text = null;
+        if (cell && Array.isArray(this._header))
+        {
+            const idx = cell.cellIndex;
+            const name = this._header[idx - 1]?.name;
+            if (name !== undefined && this._effectiveColorMode(name) === 'categorical')
             {
-                let table = this._dataTable;
-
-                const double_sided = this._extremes.min[name] < 0;
-                const ratio_positive = this._extremes.max[name] / (this._extremes.max[name] - this._extremes.min[name]);
-                const ratio_negative = 1 - ratio_positive;
-
-                for (let row of table.rows)
-                {
-                    let cell = row.cells[col_idx];
-                    let div = cell.querySelector('.cell-content') || cell; /* Apply bars to the inner div */
-                    let value = +cell.innerText;
-
-                    if (!double_sided)
-                    {
-                        if (value > 0)
-                        {
-                            const ratio = value / this._extremes.max[name];
-
-                            div.style.cssText = `
-                                background-size: 100% 50%;
-                                background-position: center;
-                                background-repeat: no-repeat;
-                                background: linear-gradient(to right,
-                                    var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
-                                    var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
-                        }
-                    }
-                    else
-                    {
-                        if (value > 0)
-                        {
-                            const ratio = value / this._extremes.max[name];
-
-                            div.style.cssText = `
-                                background-size: 100% 50%;
-                                background-position: center;
-                                background-repeat: no-repeat;
-                                background: linear-gradient(to right,
-                                    var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
-                                    var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
-                                    var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
-                        }
-                        else if (value < 0)
-                        {
-                            const ratio = value / this._extremes.min[name];
-
-                            div.style.cssText = `
-                                background-size: 100% 50%;
-                                background-position: center;
-                                background-repeat: no-repeat;
-                                background: linear-gradient(to right,
-                                    var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
-                                    var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
-                                    var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
-                        }
-                    }
-                }
+                col_idx = idx;
+                active_text = (cell.querySelector('.cell-content') || cell).innerText;
             }
         }
+
+        /// Fast path: same column and same value as before, so the set of same-value cells is
+        /// unchanged and only the active cell moved within it. The old active cell becomes an
+        /// emphasized peer, the new active cell drops back to normal — no full re-scan.
+        if (col_idx !== null && col_idx === this._emphasized_col_idx && active_text === this._emphasized_value)
+        {
+            if (this._emphasized_active_cell && this._emphasized_active_cell !== cell)
+            {
+                this._setCellEmphasis(this._emphasized_active_cell, true);
+            }
+            this._setCellEmphasis(cell, false);
+            this._emphasized_active_cell = cell;
+            return;
+        }
+
+        /// Clear the emphasis on the previously emphasized column.
+        this._clearCategoricalEmphasis();
+
+        if (col_idx === null) { return; }
+
+        for (const row of this._colorTargetRows())
+        {
+            const c = row.cells[col_idx];
+            if (!c) { continue; }
+            const target = c.querySelector('.cell-content') || c;
+            this._setCellEmphasis(c, c !== cell && target.innerText === active_text);
+        }
+        this._emphasized_col_idx = col_idx;
+        this._emphasized_value = active_text;
+        this._emphasized_active_cell = cell;
     }
 
     renderTotals()
@@ -2037,11 +2574,27 @@ class QueryResultElement extends HTMLElement
         table.appendChild(tfoot);
     }
 
+    /// A single wide row is displayed vertically (each column becomes its own row). The condition
+    /// is evaluated before `renderTotals`/`transposeIfNeeded`, where the DOM is identical, so
+    /// `applyColumnColors` can rely on it to skip coloring in this mode.
+    _willTranspose()
+    {
+        const table = this._dataTable;
+        if (this._totals) { return false; }
+        if (!Array.isArray(this._header) || this._header.length == 0) { return false; }
+        if (table.rows.length > 1) { return false; }
+        /// An empty result (no data rows) is shown vertically too, so `transposeIfNeeded` can
+        /// render its `empty result` marker; this does not depend on the column count.
+        if (table.rows.length == 0) { return true; }
+        /// A single row is shown vertically only when it is wide: more than five cells, counting
+        /// the leading row-number cell.
+        return table.rows[0].cells.length > 5;
+    }
+
     transposeIfNeeded()
     {
+        if (!this._willTranspose()) { return; }
         let table = this._dataTable;
-        if (this._totals) return;
-        if (Object.keys(this._header).length == 0 || table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
 
         let heads = table.tHead.childNodes;
         let values = table.rows[0]?.cells;
@@ -2055,6 +2608,9 @@ class QueryResultElement extends HTMLElement
             th.className = 'right';
             th.style.width = '0';
             th.removeChild(th.querySelector('.resizer'));
+            /// No per-column color coding in vertical mode, so drop the colorize toggle too.
+            const toggle = th.querySelector('.colorize-toggle');
+            if (toggle) { th.removeChild(toggle); }
             tr.appendChild(th);
             if (values)
             {
@@ -2255,8 +2811,26 @@ class QueryResultElement extends HTMLElement
 
     _handleKeyDown(e)
     {
+        const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
         let cell = this._current_selected_cell;
-        if (!cell) { return; }
+
+        if (!cell)
+        {
+            /// The table is focused (e.g. via Tab) but nothing is selected yet:
+            /// the first arrow key selects the first data cell so keyboard
+            /// navigation can begin. Other keys (including Tab) are left alone so
+            /// focus can move on to the next element.
+            if (arrows.includes(e.key))
+            {
+                const first_cell = this._dataTable.querySelector('td:not(.row-number)');
+                if (first_cell)
+                {
+                    e.preventDefault();
+                    this._selectCell(first_cell);
+                }
+            }
+            return;
+        }
 
         if (e.key === 'Escape')
         {
@@ -2268,7 +2842,10 @@ class QueryResultElement extends HTMLElement
         const row = cell.parentElement;
         const table = row.parentElement;
         let cell_index = cell.cellIndex;
-        let row_index = row.rowIndex;
+        /// `table` is the `<tbody>`, so `table.rows` is indexed within the section;
+        /// use `sectionRowIndex` (not table-wide `rowIndex`, which counts the header)
+        /// so both sides share the same coordinate system.
+        let row_index = row.sectionRowIndex;
 
         switch(e.key)
         {
@@ -2515,6 +3092,12 @@ const opened_locally = location.protocol == 'file:';
 /// Run query instantly after page is loaded if the run parameter is present.
 const run_immediately = current_url.searchParams.has("run");
 
+/// Restore per-column color coding modes from the URL, so a shared/bookmarked link keeps them.
+const color_modes_from_url = current_url.searchParams.get('color_modes');
+if (color_modes_from_url) {
+    try { column_color_modes = JSON.parse(color_modes_from_url) || {}; } catch (e) { /* ignore malformed */ }
+}
+
 let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
@@ -2587,6 +3170,23 @@ function checkURL() {
 
 url_elem.addEventListener('input', checkURL);
 checkURL();
+
+/// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
+/// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
+/// Resolve the Documentation link against that configured server (like `getTerminalURL` does for the Web
+/// Terminal) instead of leaving it hardcoded to `/docs`, and keep it in sync as the URL input changes.
+{
+    const docs_icon = document.getElementById('docs-icon');
+    function updateDocsURL() {
+        try {
+            docs_icon.href = new URL('/docs', url_elem.value).href;
+        } catch (e) {
+            /// Leave the previous href in place while the configured URL is not parsable.
+        }
+    }
+    url_elem.addEventListener('input', updateDocsURL);
+    updateDocsURL();
+}
 
 async function auxiliaryQuery(server_address, user, password, query, url_params = '') {
     let url = server_address +
@@ -2679,18 +3279,65 @@ async function loadDatabases(server_address, user, password) {
         database.appendChild(tables);
         databases_elem.appendChild(database);
 
+        /// Refresh button shown to the right of the database name while it is open.
+        /// Clicking it reloads the list of tables without collapsing the database.
+        let refresh_button = document.createElement('button');
+        refresh_button.className = 'database-refresh';
+        refresh_button.type = 'button';
+        refresh_button.title = 'Refresh the list of tables';
+        refresh_button.textContent = '\u21BB';
+
+        /// A per-row generation counter, bumped on every refresh and on collapse. An in-flight
+        /// load captures the current value and, once its query returns, checks whether the row's
+        /// state changed in the meantime (it was collapsed, a newer refresh superseded it, or the
+        /// whole panel was closed) so it can bail out before mutating the DOM. This invariant is
+        /// local to one database row, unlike the global `load_tables_request_num` (which only
+        /// tracks the latest load across all rows and would wrongly cancel a concurrent open of a
+        /// different row).
+        let row_load_generation = 0;
+
+        /// Reload tables, showing the hourglass (and hiding the refresh button) while loading.
+        const refreshTables = () => {
+            const generation = ++row_load_generation;
+            /// A load stays relevant only while its generation is still the latest for this row
+            /// and the row is still attached to the document. Closing the whole database panel
+            /// (or reloading the database list) detaches the row without bumping the generation,
+            /// so the `isConnected` check is what makes such a stale load drop quietly instead of
+            /// dereferencing a now-detached parent when its query returns.
+            const is_current = () => generation == row_load_generation && database.isConnected;
+            refresh_button.style.visibility = 'hidden';
+            let hourglass = document.createElement('span');
+            hourglass.className = 'loading-hourglass';
+            hourglass.textContent = '\u29D7';
+            database_link.after(hourglass);
+            return loadTables(server_address, user, password, elem.database, database, is_current).then(ok => {
+                hourglass.remove();
+                /// Only restore the button while this load is still the current one for the row;
+                /// otherwise the row was collapsed (the button is detached) or a newer refresh owns it.
+                if (is_current()) refresh_button.style.visibility = '';
+                return ok;
+            });
+        };
+
+        refresh_button.addEventListener('click', e => {
+            e.stopPropagation();
+            if (database.dataset['opened']) refreshTables();
+        });
+
         database_link.addEventListener('click', e => {
             if (!database.dataset['opened']) {
-                let hourglass = document.createElement('span');
-                hourglass.className = 'loading-hourglass';
-                hourglass.textContent = '\u29D7';
-                database_link.after(hourglass);
-                loadTables(server_address, user, password, elem.database, database).then(ok => {
-                    hourglass.remove();
-                    if (ok !== false) database.dataset['opened'] = 1;
+                refreshTables().then(ok => {
+                    if (ok !== false) {
+                        database.dataset['opened'] = 1;
+                        database_link.after(refresh_button);
+                    }
                 });
             } else {
+                /// Collapse: invalidate any in-flight refresh so its late result cannot
+                /// repopulate the table list of this now-closed row.
+                ++row_load_generation;
                 delete database.dataset['opened'];
+                refresh_button.remove();
                 while (tables.firstChild) tables.removeChild(tables.firstChild);
                 let count_elem = database_link.querySelector('.database-table-count');
                 if (count_elem) count_elem.remove();
@@ -2818,7 +3465,7 @@ function getTableIcon(engine)
 }
 
 let load_tables_request_num = 0;
-async function loadTables(server_address, user, password, database, container) {
+async function loadTables(server_address, user, password, database, container, is_current) {
     ++load_tables_request_num;
     const current_load_tables_request_num = load_tables_request_num;
 
@@ -2829,6 +3476,10 @@ async function loadTables(server_address, user, password, database, container) {
     if (!json) return false;
 
     if (current_load_tables_request_num != load_tables_request_num) return false;
+    /// The row this load targets may have been collapsed or superseded by a newer refresh while
+    /// the query was in flight; if so, bail out before touching the DOM so we never repopulate
+    /// the table list of a row that is no longer open.
+    if (is_current && !is_current()) return false;
 
     container.parentElement.querySelector('.current').classList.remove('current');
     container.firstChild.classList.add('current');
@@ -2908,16 +3559,12 @@ async function loadTables(server_address, user, password, database, container) {
         engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
         table_addendum.append(engine_elem);
 
-        table_name.addEventListener('mouseenter', function() {
-            /// Anchor the balloon to the end of the name (clamped to the button when the name
-            /// is truncated), so it stays next to the text rather than the far-right edge.
-            const rect = this.getBoundingClientRect();
-            const btn = table_link.getBoundingClientRect();
-            table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
-            table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
-            table_addendum.style.visibility = '';
-            visible_balloon = table_addendum;
-        });
+        /// Make the balloon links reachable from the keyboard (Right arrow from the row).
+        for (const link of table_addendum.querySelectorAll('.table-addendum-elem')) link.tabIndex = -1;
+
+        table_name.addEventListener('mouseenter', () => positionTableBalloon(table));
+        /// Show the balloon when the row is focused via keyboard navigation, too.
+        table_link.addEventListener('focus', () => positionTableBalloon(table));
 
         /// Keep the addendum inside the button so the `.table-name ~ .table-addendum` hover
         /// selector works; it is position:fixed, so it is not clipped by the button overflow.
@@ -2957,7 +3604,39 @@ function hideTableBalloons() {
     }
     document.body.classList.add('suppress-balloons');
 }
-document.addEventListener('scroll', hideTableBalloons, { capture: true, passive: true });
+
+/// Anchor a table's balloon to the end of its name (clamped to the button when the
+/// name is truncated), so it sits next to the text rather than the far-right edge.
+/// Used on hover, on keyboard focus, and to keep it glued to the row across scrolls.
+function positionTableBalloon(table) {
+    const table_name = table.querySelector('.table-name');
+    const table_link = table.querySelector('button');
+    const table_addendum = table.querySelector('.table-addendum');
+    if (!table_name || !table_addendum) return;
+    const rect = table_name.getBoundingClientRect();
+    const btn = table_link.getBoundingClientRect();
+    table_addendum.style.left = Math.min(rect.right, btn.right) + 'px';
+    table_addendum.style.top = (rect.top + rect.height / 2) + 'px';
+    table_addendum.style.visibility = '';
+    visible_balloon = table_addendum;
+}
+
+document.addEventListener('scroll', () => {
+    /// When a table row (or one of its balloon links) is focused via the keyboard,
+    /// keep its balloon glued to the row across the scroll instead of hiding it.
+    const focused_table = document.activeElement?.closest?.('.table');
+    if (focused_table && document.getElementById('databases').contains(focused_table)) {
+        /// Still suppress hover-opened balloons on *other* rows: a different table
+        /// button scrolled under a stationary cursor would otherwise reveal its
+        /// balloon at an unset position via the CSS `:hover` rule (`mouseenter` does
+        /// not fire without mouse movement). The focused row's balloon is exempted
+        /// from `suppress-balloons` in CSS, so it stays glued to the row.
+        document.body.classList.add('suppress-balloons');
+        positionTableBalloon(focused_table);
+    } else {
+        hideTableBalloons();
+    }
+}, { capture: true, passive: true });
 document.addEventListener('mousemove', () => {
     /// Guard so the no-op case does not touch classList on every mouse pixel.
     if (document.body.classList.contains('suppress-balloons')) {
@@ -2999,10 +3678,62 @@ databases_toggle.addEventListener('click', e => {
     toggleDatabases();
 });
 
+/// The icon is an <a>, which the browser activates with Enter (following the
+/// link) but not with Space. Handle both keys here so it can be toggled from the
+/// keyboard once focused via Tab, instead of navigating away.
+document.getElementById('databases-icon').addEventListener('keydown', e => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault();
+    toggleDatabases();
+});
+
 /// The "hide panel" button is only visible while the panel is open, so it always closes it.
 document.getElementById('databases-hide').addEventListener('click', e => {
     e.stopPropagation();
     toggleDatabases();
+});
+
+/// Keyboard navigation inside the database panel. The event bubbles here from the
+/// focused element.
+///   - Up/Down move focus between the rows (databases and expanded tables),
+///     mirroring Tab/Shift+Tab but staying within the panel.
+///   - Right enters the focused table's balloon (its size/rows/engine links);
+///     inside the balloon Up/Down move between links, Left returns to the row,
+///     and Enter/Space activate the focused link.
+document.getElementById('databases').addEventListener('keydown', e => {
+    const active = document.activeElement;
+
+    /// Within a table's balloon.
+    if (active.classList && active.classList.contains('table-addendum-elem')) {
+        const links = [...active.parentElement.querySelectorAll('.table-addendum-elem')];
+        const i = links.indexOf(active);
+        if (e.key === 'ArrowDown') { e.preventDefault(); links[Math.min(i + 1, links.length - 1)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); links[Math.max(i - 1, 0)].focus({ preventScroll: true }); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); active.closest('.table').querySelector('button').focus(); }
+        else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); active.click(); }
+        return;
+    }
+
+    /// Right arrow on a table row jumps into its balloon links.
+    if (e.key === 'ArrowRight') {
+        const link = active.querySelector && active.querySelector('.table-addendum-elem');
+        if (link) { e.preventDefault(); link.focus({ preventScroll: true }); }
+        return;
+    }
+
+    /// Up/Down move focus between the rows.
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    const buttons = [...document.getElementById('databases').querySelectorAll('button')];
+    if (buttons.length === 0) return;
+    e.preventDefault();
+    let index = buttons.indexOf(active);
+    if (e.key === 'ArrowDown') {
+        index = index < 0 ? 0 : Math.min(index + 1, buttons.length - 1);
+    } else {
+        index = index < 0 ? buttons.length - 1 : Math.max(index - 1, 0);
+    }
+    buttons[index].focus();
 });
 
 document.getElementById('menu').addEventListener('click', e => {
@@ -3225,8 +3956,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     if (targetResultEl.isExplainGraph) {
         await targetResultEl.renderGraph();
     } else {
-        if (targetResultEl._extremes['min'] && targetResultEl._extremes['max']) targetResultEl.renderExtremes();
+        /// Render totals before coloring, so the totals row (which `_colorTargetRows` includes)
+        /// is colored on the first paint, exactly as it would be after a later toggle.
         if (is_table) targetResultEl.renderTotals();
+        targetResultEl.applyColumnColors();
         if (is_table) targetResultEl.transposeIfNeeded();
     }
 
@@ -3260,7 +3993,7 @@ async function postSingle(posted_request_num, query, history_query_text)
         return;
     }
 
-    /// `postImpl` already performed `renderGraph`/`renderExtremes`/`renderTotals`/`transposeIfNeeded`;
+    /// `postImpl` already performed `renderGraph`/`applyColumnColors`/`renderTotals`/`transposeIfNeeded`;
     /// the only step specific to the single-query path is the final table layout pass.
     if (result.is_table) resultEl._changeTableLayout();
 
@@ -3296,6 +4029,7 @@ async function postSingle(posted_request_num, query, history_query_text)
             data: result.reply.length > 100000 ? null : result.reply,
             elapsed_ns: elapsed_ns,
             params: paramValuesSnapshot,
+            color_modes: column_color_modes,
         };
         const title = "ClickHouse Query: " + saved_query;
 
@@ -3314,6 +4048,9 @@ async function postSingle(posted_request_num, query, history_query_text)
         for (const [name, value] of Object.entries(paramValuesSnapshot))
         {
             history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+        }
+        if (Object.keys(column_color_modes).length > 0) {
+            history_params.push('color_modes=' + encodeURIComponent(JSON.stringify(column_color_modes)));
         }
         let history_url = window.location.pathname;
         if (history_params.length > 0) {
@@ -3476,6 +4213,7 @@ async function postMulti(posted_request_num, parsed)
             data: null,
             elapsed_ns: elapsed_ns,
             params: paramValuesSnapshot,
+            color_modes: column_color_modes,
         };
         const title = "ClickHouse Query: " + parsed[0].query;
 
@@ -3495,6 +4233,9 @@ async function postMulti(posted_request_num, parsed)
         {
             history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
         }
+        if (Object.keys(column_color_modes).length > 0) {
+            history_params.push('color_modes=' + encodeURIComponent(JSON.stringify(column_color_modes)));
+        }
         let history_url = window.location.pathname;
         if (history_params.length > 0) {
             history_url += '?' + history_params.join('&');
@@ -3511,8 +4252,27 @@ async function postMulti(posted_request_num, parsed)
     }
 }
 
+/// Persist the per-column color coding modes into the current history entry and the URL,
+/// without creating a new history record, so reloads, shares, and back/forward keep them.
+function persistColorModes() {
+    const url = new URL(window.location);
+    if (Object.keys(column_color_modes).length > 0) {
+        url.searchParams.set('color_modes', JSON.stringify(column_color_modes));
+    } else {
+        url.searchParams.delete('color_modes');
+    }
+    const state = Object.assign({}, history.state || {}, { color_modes: column_color_modes });
+    try {
+        history.replaceState(state, document.title, url.toString());
+    } catch (e) {
+        /// History manipulation is not allowed for the 'file:' protocol.
+    }
+}
+
 async function restoreFromHistory(state) {
     clear();
+    /// Restore the color coding modes saved alongside this history entry before re-rendering.
+    column_color_modes = state.color_modes || {};
     query_area.value = state.query;
     query_area.dispatchEvent(new Event('input'));
     resultEl.queryText = state.query;
@@ -3574,8 +4334,9 @@ async function restoreFromHistory(state) {
     if (resultEl.isExplainGraph) {
         await resultEl.renderGraph();
     } else {
-        if (resultEl._extremes['min'] && resultEl._extremes['max']) resultEl.renderExtremes();
+        /// Render totals before coloring, so the totals row is colored on first paint too.
         if (is_table) resultEl.renderTotals();
+        resultEl.applyColumnColors();
         if (is_table) resultEl.transposeIfNeeded();
         if (is_table) resultEl._changeTableLayout();
     }
@@ -3736,6 +4497,12 @@ document.getElementById('run-all').addEventListener('click', e =>
         storeCredentials();
     }
 });
+
+/// On Mac, the shortcut is Cmd+Enter; elsewhere it is Ctrl+Enter. Show only the relevant modifier in the hint.
+/// Match case-insensitively: UA Client Hints reports macOS as "macOS" and iOS as "iOS",
+/// while the legacy navigator.platform reports "MacIntel", "iPhone", "iPad", etc.
+const isMac = /mac|iphone|ipad|ipod|ios/i.test(navigator.userAgentData?.platform || navigator.platform || '');
+document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
@@ -5250,6 +6017,25 @@ document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
 
+/// Make the icon "buttons" (copy, download) and the theme switcher reachable and
+/// operable from the keyboard: Tab focuses them, Enter/Space activates them.
+/// (Real <button> elements like Run already get this for free.)
+function makeButtonLike(elem, action)
+{
+    elem.setAttribute('tabindex', '0');
+    elem.setAttribute('role', 'button');
+    elem.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            action();
+        }
+    });
+}
+
+makeButtonLike(document.getElementById('copy-div'), () => document.getElementById('copy-div').click());
+makeButtonLike(document.getElementById('download-div'), () => document.getElementById('download-div').click());
+makeButtonLike(document.getElementById('theme'), () => setColorTheme(theme === 'dark' ? 'light' : 'dark', true));
+
 // Copy raw result to clipboard
 document.getElementById('copy-div').addEventListener('click', function() {
     let text = resultEl.rawText;
@@ -5295,6 +6081,9 @@ document.getElementById('download-div').addEventListener('click', function(e) {
 
         dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
         dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+
+        // Move focus into the menu so keyboard users land on the format selection.
+        document.getElementById('download-format').focus();
     }
 });
 
@@ -5307,6 +6096,58 @@ document.getElementById('download-dropdown').addEventListener('click', function(
 document.addEventListener('click', function() {
     const dropdown = document.getElementById('download-dropdown');
     dropdown.classList.remove('show');
+});
+
+/// Keep the open download menu contiguous with the download button in the tab
+/// order. The dropdown lives at the end of the DOM (so it is positioned without
+/// being clipped), so without this its controls would otherwise land at the very
+/// end of the tab sequence. Tab/Shift+Tab flow:
+///   download button -> format select -> [other format] -> Download button
+/// and leaving either end closes the menu. Escape also closes it.
+function downloadTabSequence() {
+    const seq = [document.getElementById('download-div'), document.getElementById('download-format')];
+    const other = document.getElementById('download-format-other');
+    if (other.classList.contains('show')) seq.push(other);
+    seq.push(document.getElementById('download-button'));
+    return seq;
+}
+
+document.getElementById('main').addEventListener('keydown', e => {
+    const dropdown = document.getElementById('download-dropdown');
+    if (!dropdown.classList.contains('show')) return;
+
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        dropdown.classList.remove('show');
+        document.getElementById('download-div').focus();
+        return;
+    }
+
+    if (e.key !== 'Tab') return;
+
+    const seq = downloadTabSequence();
+    const idx = seq.indexOf(document.activeElement);
+    if (idx < 0) return;
+
+    if (!e.shiftKey) {
+        if (idx < seq.length - 1) {
+            e.preventDefault();
+            seq[idx + 1].focus();
+        } else {
+            /// Past the last item: close the menu and continue to the next toolbar control.
+            dropdown.classList.remove('show');
+            e.preventDefault();
+            document.getElementById('theme').focus();
+        }
+    } else {
+        if (idx > 0) {
+            e.preventDefault();
+            seq[idx - 1].focus();
+        } else {
+            /// Before the download button: close the menu and let focus move naturally.
+            dropdown.classList.remove('show');
+        }
+    }
 });
 
 // Handle "Other" format selection
