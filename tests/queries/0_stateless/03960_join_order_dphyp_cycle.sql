@@ -12,6 +12,11 @@ SET explain_query_plan_default = 'legacy';
 SET enable_join_runtime_filters = 0;
 -- The EXPLAINs below pin equal-cost plans, so the choice must not be randomized.
 SET query_plan_optimize_join_order_randomize = 0;
+-- The tables declare auto_statistics_types='uniq'. If those stats are materialized
+-- on insert, the optimizer gets real cardinalities and the plans are no longer
+-- equal-cost, so the join order changes. Pin insert-time materialization off (the
+-- default) to keep the reference plan deterministic under settings randomization.
+SET materialize_statistics_on_insert = 0;
 
 -- A has a foreign key to D to close the cycle.
 CREATE TABLE cy4_a (id UInt32, d_id UInt32) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

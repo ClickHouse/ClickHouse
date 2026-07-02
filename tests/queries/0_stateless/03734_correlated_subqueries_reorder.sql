@@ -3,6 +3,9 @@ SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
+-- Keep uniq auto-stats un-materialized on insert so the join order stays
+-- deterministic under settings randomization (materialize_statistics_on_insert).
+SET materialize_statistics_on_insert = 0;
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;

@@ -24,7 +24,11 @@ run() {
 # Create a MergeTree part.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS rc_test"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE rc_test (k UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS disk = 'default'"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO rc_test SELECT number, toString(number) FROM numbers(3)"
+# materialize_statistics_on_insert is a regular (non-MergeTree) setting, so the
+# no-random-merge-tree-settings tag above does not cover it. With it enabled, the
+# build-default auto-statistics are materialized on insert and add a
+# statistics.packed file to the part, breaking the exact file-set assertion below.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO rc_test SELECT number, toString(number) FROM numbers(3) SETTINGS materialize_statistics_on_insert = 0"
 path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts \
     WHERE database = currentDatabase() AND table = 'rc_test' AND active LIMIT 1")
 

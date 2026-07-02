@@ -4,6 +4,7 @@ SET explain_query_plan_default = 'legacy';
 
 set enable_analyzer=1;
 set serialize_query_plan = 0;
+set materialize_statistics_on_insert = 0;
 set enable_parallel_replicas = 0;
 set optimize_on_insert = 1;
 set prefer_localhost_replica=1;

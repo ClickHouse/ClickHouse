@@ -15,6 +15,9 @@
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
+-- Keep uniq auto-stats un-materialized on insert so dphyp's join order stays
+-- deterministic under settings randomization (materialize_statistics_on_insert).
+SET materialize_statistics_on_insert = 0;
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_merge_filter_into_join_condition = 1;

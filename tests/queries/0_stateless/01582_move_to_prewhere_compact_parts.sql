@@ -4,6 +4,7 @@ SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET convert_query_to_cnf = 0;
+SET materialize_statistics_on_insert = 0;
 
 DROP TABLE IF EXISTS prewhere_move;
 CREATE TABLE prewhere_move (x Int, y String) ENGINE = MergeTree ORDER BY tuple();

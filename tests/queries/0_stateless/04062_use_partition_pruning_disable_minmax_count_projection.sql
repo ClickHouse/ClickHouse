@@ -4,6 +4,7 @@
 SET explain_query_plan_default = 'legacy';
 
 -- { echo }
+SET materialize_statistics_on_insert = 0;
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x Int32) ENGINE = MergeTree PARTITION BY x ORDER BY tuple();

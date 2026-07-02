@@ -36,7 +36,10 @@ SELECT id, arrayJoin(a) AS v FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS max_
 -- The `LIMIT BY` pushdown is still applied when the expression above the
 -- sort does not contain `arrayJoin`. Verify the optimization still fires by
 -- looking for the "Per-stream LIMIT BY" marker on the `SortingStep`.
+-- Pin the optimization on: it is the feature under test, and settings
+-- randomization may inject query_plan_push_limit_by_into_sort=0, which removes
+-- the marker and makes this assertion spuriously return 0.
 SELECT '-- Plain expression: pushdown still applied';
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id, pos + 1 AS s FROM t ORDER BY id, pos LIMIT 1 BY id) WHERE explain LIKE '%Per-stream LIMIT BY%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id, pos + 1 AS s FROM t ORDER BY id, pos LIMIT 1 BY id SETTINGS query_plan_push_limit_by_into_sort = 1) WHERE explain LIKE '%Per-stream LIMIT BY%';
 
 DROP TABLE t;
