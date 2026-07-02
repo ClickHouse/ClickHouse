@@ -132,6 +132,7 @@ The supported formats are:
 | [Regexp](./formats/Regexp.md)                                                                              | ✔   | ✗     |
 | [RawBLOB](./formats/RawBLOB.md)                                                                            | ✔   | ✔     |
 | [MsgPack](./formats/MsgPack.md)                                                                            | ✔   | ✔     |
+| [Flatbuffers](./formats/Flatbuffers.md)                                                                    | ✗   | ✔     |
 | [MySQLDump](./formats/MySQLDump.md)                                                                        | ✔   | ✗     |
 | [GeoJSON](./formats/GeoJSON.md)                                                                            | ✔   | ✔     |
 | [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |

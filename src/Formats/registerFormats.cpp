@@ -78,6 +78,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerOutputFormatFlatbuffers(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
@@ -235,6 +236,7 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+    registerOutputFormatFlatbuffers(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
 

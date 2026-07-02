@@ -96,9 +96,11 @@ set(FLATBUFFERS_SRCS
   ${FLATBUFFERS_SRC_DIR}/src/util.cpp)
 
 add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
-target_include_directories(_flatbuffers PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
+# Expose the headers as SYSTEM so that the (header-only) flexbuffers.h does not trip ClickHouse's
+# strict -Werror when included from clickhouse_common_io consumers (e.g. the Flatbuffers format).
+target_include_directories(_flatbuffers SYSTEM PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
 target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
-
+add_library (ch_contrib::flatbuffers ALIAS _flatbuffers)
 
 # ===  hdfs
 # NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
