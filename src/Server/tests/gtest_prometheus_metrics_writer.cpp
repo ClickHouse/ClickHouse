@@ -35,6 +35,30 @@ TEST(PrometheusMetricsWriter, HistogramBasic)
     EXPECT_EQ(expected, output);
 }
 
+TEST(PrometheusMetricsWriter, HistogramEscapesLabelValues)
+{
+    HistogramMetrics::MetricFamily family("test_histogram_escaped_labels_gtest", "Test histogram", {1}, {"database", "table"});
+
+    auto & metric = family.withLabels({"db\"1", "users\\active\nall"});
+    metric.observe(0);
+
+    std::string output;
+    {
+        WriteBufferFromString buffer(output);
+        PrometheusMetricsWriter::writeHistogramMetric(buffer, family);
+    }
+
+    static constexpr const char * expected =
+        "# HELP ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest Test histogram\n"
+        "# TYPE ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest histogram\n"
+        "ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest_bucket{database=\"db\\\"1\",table=\"users\\\\active\\nall\",le=\"1\"} 1\n"
+        "ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest_bucket{database=\"db\\\"1\",table=\"users\\\\active\\nall\",le=\"+Inf\"} 1\n"
+        "ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest_count{database=\"db\\\"1\",table=\"users\\\\active\\nall\"} 1\n"
+        "ClickHouseHistogramMetrics_test_histogram_escaped_labels_gtest_sum{database=\"db\\\"1\",table=\"users\\\\active\\nall\"} 0\n";
+
+    EXPECT_EQ(expected, output);
+}
+
 TEST(PrometheusMetricsWriter, DimensionalBasic)
 {
     DimensionalMetrics::MetricFamily family("test_dimensional_gtest", "Test dimensional metrics", {"database", "table"});
@@ -52,6 +76,53 @@ TEST(PrometheusMetricsWriter, DimensionalBasic)
         "# HELP ClickHouseDimensionalMetrics_test_dimensional_gtest Test dimensional metrics\n"
         "# TYPE ClickHouseDimensionalMetrics_test_dimensional_gtest gauge\n"
         "ClickHouseDimensionalMetrics_test_dimensional_gtest{database=\"db1\",table=\"users\"} 42\n";
+
+    EXPECT_EQ(expected, output);
+}
+
+TEST(PrometheusMetricsWriter, DimensionalEscapesLabelValues)
+{
+    DimensionalMetrics::MetricFamily family("test_dimensional_escaped_labels_gtest", "Test dimensional metrics", {"database", "table"});
+
+    auto & metric = family.withLabels({"db\"1", "users\\active\nall"});
+    metric.set(42.0);
+
+    std::string output;
+    {
+        WriteBufferFromString buffer(output);
+        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family);
+    }
+
+    static constexpr const char * expected =
+        "# HELP ClickHouseDimensionalMetrics_test_dimensional_escaped_labels_gtest Test dimensional metrics\n"
+        "# TYPE ClickHouseDimensionalMetrics_test_dimensional_escaped_labels_gtest gauge\n"
+        "ClickHouseDimensionalMetrics_test_dimensional_escaped_labels_gtest{database=\"db\\\"1\",table=\"users\\\\active\\nall\"} 42\n";
+
+    EXPECT_EQ(expected, output);
+}
+
+TEST(PrometheusMetricsWriter, DimensionalCounter)
+{
+    DimensionalMetrics::MetricFamily family(
+        "test_dimensional_counter_gtest",
+        "Test dimensional counter",
+        {"database", "table"},
+        {},
+        DimensionalMetrics::MetricType::Counter);
+
+    auto & metric = family.withLabels({"db1", "users"});
+    metric.increment(42.0);
+
+    std::string output;
+    {
+        WriteBufferFromString buffer(output);
+        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family);
+    }
+
+    static constexpr const char * expected =
+        "# HELP ClickHouseDimensionalMetrics_test_dimensional_counter_gtest Test dimensional counter\n"
+        "# TYPE ClickHouseDimensionalMetrics_test_dimensional_counter_gtest counter\n"
+        "ClickHouseDimensionalMetrics_test_dimensional_counter_gtest{database=\"db1\",table=\"users\"} 42\n";
 
     EXPECT_EQ(expected, output);
 }

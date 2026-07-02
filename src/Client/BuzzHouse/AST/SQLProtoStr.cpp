@@ -894,6 +894,11 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += FloatingPoints_Name(qq.subtype());
             ret += ", ";
             ret += std::to_string(qq.dimension());
+            if (qq.has_stride())
+            {
+                ret += ", ";
+                ret += std::to_string(qq.stride());
+            }
             ret += ")";
         }
         break;
@@ -1211,27 +1216,9 @@ CONV_FN(ExprBetween, ebetween)
 
 CONV_FN(ExplainQuery, explain);
 
-CONV_FN(ExprIn, ein)
+CONV_FN(ExprInType, ein)
 {
-    const ExprList & elist = ein.expr();
-
-    if (elist.extra_exprs_size() == 0)
-    {
-        ExprToString(ret, elist.expr());
-    }
-    else
-    {
-        ret += "(";
-        ExprListToString(ret, ein.expr());
-        ret += ")";
-    }
-    ret += " ";
-    if (ein.global())
-        ret += "GLOBAL ";
-    if (ein.not_())
-        ret += "NOT ";
-    ret += "IN ";
-    using InType = ExprIn::InOneofCase;
+    using InType = ExprInType::InOneofCase;
     switch (ein.in_oneof_case())
     {
         case InType::kSingleExpr: ExprToString(ret, ein.single_expr()); break;
@@ -1254,13 +1241,36 @@ CONV_FN(ExprIn, ein)
     }
 }
 
+CONV_FN(ExprIn, ein)
+{
+    const ExprList & elist = ein.expr();
+
+    if (elist.extra_exprs_size() == 0)
+    {
+        ExprToString(ret, elist.expr());
+    }
+    else
+    {
+        ret += "(";
+        ExprListToString(ret, ein.expr());
+        ret += ")";
+    }
+    ret += " ";
+    if (ein.global())
+        ret += "GLOBAL ";
+    if (ein.not_())
+        ret += "NOT ";
+    ret += "IN ";
+    ExprInTypeToString(ret, ein.in_type());
+}
+
 CONV_FN(ExprAny, eany)
 {
     ExprToString(ret, eany.expr());
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
-    ret += eany.anyall() == AnyAllSome::AAS_ALL ? "ALL" : eany.anyall() == AnyAllSome::AAS_SOME ? "SOME" : "ANY";
+    ret += ExprAny_AnyAllSome_Name(eany.anyall()).substr(4);
     ret += "(";
-    ExplainQueryToString(ret, eany.sel());
+    ExprInTypeToString(ret, eany.in_type());
     ret += ")";
 }
 
@@ -1628,7 +1638,7 @@ CONV_FN(WindowDef, wdef)
 
 CONV_FN(IntervalExpr, ie)
 {
-    if (ie.interval() <= IntervalExpr::YEAR)
+    if (!ie.use_extract() && ie.interval() <= IntervalExpr::YEAR)
     {
         ret += "INTERVAL (";
         ExprToString(ret, ie.expr());
