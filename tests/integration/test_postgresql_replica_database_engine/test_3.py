@@ -1261,6 +1261,89 @@ def test_backup_table_partitions(started_cluster):
     pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
 
+def test_backup_table_engine_partitions(started_cluster):
+    # Regression for an AI-review finding: this exercises StorageMaterializedPostgreSQL::supportsBackupPartition
+    # directly, on the wrapper storage. The database-engine partition backup (test_backup_table_partitions)
+    # does not: BACKUP TABLE test_database.<table> enumerates the database through getTablesIterator (the nested
+    # context), so BackupEntriesCollector sees the inner ReplacingMergeTree and checks supportsBackupPartition on
+    # *it*, never on the MaterializedPostgreSQL wrapper. Here the table is a standalone table-engine table, so
+    # BACKUP TABLE <table> resolves the storage to the StorageMaterializedPostgreSQL wrapper and the gate in
+    # BackupEntriesCollector calls the wrapper's supportsBackupPartition override. If that override regresses to
+    # the IStorage default (no partition support), the backup is rejected with "doesn't support partitions"
+    # before backupData can delegate to the nested table, and this test fails.
+    #
+    # The standalone table engine does not propagate PARTITION BY, so the nested ReplacingMergeTree has a single
+    # partition. We read its id from system.parts (the nested table is named "<wrapper_uuid>_nested" in the same
+    # database, mirroring StorageMaterializedPostgreSQL::getNestedTableName) and back up that partition by id.
+    table = "test_backup_te_part"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+    pg_manager.create_postgres_table(table)
+    instance.query(
+        f"INSERT INTO postgres_database.{table} SELECT number, number FROM numbers(50)"
+    )
+
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    instance.query(
+        f"""
+        SET allow_experimental_materialized_postgresql_table=1;
+        CREATE TABLE {table} (key Int32, value Int32)
+        ENGINE=MaterializedPostgreSQL('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres_database', '{table}', 'postgres', '{pg_pass}') ORDER BY key
+        """
+    )
+    check_tables_are_synchronized(
+        instance,
+        table,
+        postgres_database=pg_manager.get_default_database(),
+        materialized_database="default",
+    )
+
+    partition_id = instance.query(
+        f"""
+        SELECT DISTINCT partition_id FROM system.parts
+        WHERE database = 'default'
+          AND table = (SELECT toString(uuid) || '_nested' FROM system.tables WHERE database = 'default' AND name = '{table}')
+          AND active
+        LIMIT 1
+        """
+    ).strip()
+    assert partition_id, "expected a single nested-table partition to back up"
+
+    backup_name = "Disk('backups', 'mpg_te_partitions_backup')"
+    # Must succeed. This is the check the AI-review finding is about: BackupEntriesCollector calls
+    # supportsBackupPartition on the StorageMaterializedPostgreSQL wrapper (not the nested table), and a
+    # regression to the IStorage default would reject this with "doesn't support partitions".
+    instance.query(
+        f"BACKUP TABLE {table} PARTITIONS ID '{partition_id}' TO {backup_name}"
+    )
+
+    # The backed-up partition (delegated to the nested ReplacingMergeTree by backupData) can be restored into a
+    # standalone ReplacingMergeTree. `allow_different_table_def` is required because the definition stored in the
+    # backup is the MaterializedPostgreSQL engine, which we intentionally restore as a plain ReplacingMergeTree;
+    # only the data has to match. The single partition holds all rows, so all 50 are restored.
+    instance.query("DROP TABLE IF EXISTS restored_te_part SYNC")
+    instance.query(
+        """
+        CREATE TABLE restored_te_part
+        (
+            key Int32,
+            value Int32,
+            _sign Int8 MATERIALIZED 1,
+            _version UInt64 MATERIALIZED 1
+        )
+        ENGINE = ReplacingMergeTree(_version) ORDER BY key
+        """
+    )
+    instance.query(
+        f"RESTORE TABLE {table} AS restored_te_part FROM {backup_name} SETTINGS allow_different_table_def = 1"
+    )
+    assert 50 == int(instance.query("SELECT count() FROM restored_te_part"))
+    assert "1225" == instance.query("SELECT sum(key) FROM restored_te_part").strip()
+
+    instance.query("DROP TABLE IF EXISTS restored_te_part SYNC")
+    instance.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {table}")
+
+
 def test_backup_database_fails_closed_on_unsynchronized_table(started_cluster):
     # Regression for an AI-review finding: BACKUP DATABASE of a MaterializedPostgreSQL database used to
     # succeed while silently omitting a table whose nested ReplacingMergeTree was never created. The
