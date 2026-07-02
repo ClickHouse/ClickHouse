@@ -2224,6 +2224,12 @@ Minimal number of parts to activated distributed index analysis
     DECLARE(UInt64, distributed_index_analysis_min_indexes_bytes_to_activate, 1_GiB, R"(
 Minimal index sizes (data skipping and primary key) on disk (but uncompressed) to activated distributed index analysis
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_index_analysis_mark_segment_size, 0, R"(
+If non-zero, distributed index analysis splits a part's marks into segments of this size and spreads them across replicas (per-segment consistent hashing), instead of assigning each whole part to a single replica. Requires all replicas to be upgraded.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_index_analysis_min_marks_to_split_part, 0, R"(
+Only split a part across replicas during distributed index analysis if it has more marks than this. Applies only when `distributed_index_analysis_mark_segment_size` is non-zero.
+)", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, clone_replica_zookeeper_create_get_part_batch_size, zkutil::MULTI_BATCH_SIZE, R"(
 Batch size for ZooKeeper multi-create get-part requests when cloning replica.
 )", 0) \

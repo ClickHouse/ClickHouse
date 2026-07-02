@@ -94,6 +94,15 @@ size_t partReplica(const std::string & part_name, size_t replicas_count)
     return ConsistentHashing(hash.get64(), replicas_count);
 }
 
+/// Consistent hash of an individual mark segment, so segments of one part spread across replicas.
+size_t partReplicaSegment(const std::string & part_name, size_t segment_index, size_t replicas_count)
+{
+    auto hash = SipHash();
+    hash.update(part_name);
+    hash.update(segment_index);
+    return ConsistentHashing(hash.get64(), replicas_count);
+}
+
 using ShuffledPool = ConnectionPoolWithFailover::Base::ShuffledPool;
 
 /// Find and remove the local replica from the pools.
@@ -128,12 +137,35 @@ GetPriorityForLoadBalancing::Func replicaIndexPriorityFunc()
 
 std::string buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
                                    const OptionalVectorSearchParameters & vector_search_parameters,
-                                   const std::vector<std::string_view> & parts)
+                                   const AssignedPartsRanges & parts, bool with_ranges)
 {
-    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, ['{}']",
+    /// Without ranges: the plain Array(String) form (backward-compatible wire format).
+    /// With ranges: array(('part', [(begin, end), ...]), ...) understood by upgraded replicas.
+    std::string parts_arg;
+    if (!with_ranges)
+    {
+        std::vector<std::string_view> names;
+        names.reserve(parts.size());
+        for (const auto & [name, _] : parts)
+            names.push_back(name);
+        parts_arg = fmt::format("['{}']", fmt::join(names, "','"));
+    }
+    else
+    {
+        parts_arg = "array(";
+        for (size_t i = 0; i < parts.size(); ++i)
+        {
+            if (i)
+                parts_arg += ", ";
+            parts_arg += fmt::format("('{}', [{}])", parts[i].first, fmt::join(parts[i].second, ", "));
+        }
+        parts_arg += ")";
+    }
+
+    std::string query = fmt::format("SELECT * FROM mergeTreeAnalyzeIndexesUUID('{}', {}, {}",
         storage_id.uuid,
         filter.value_or("true"),
-        fmt::join(parts, "','"));
+        parts_arg);
 
     if (vector_search_parameters)
     {
@@ -185,9 +217,9 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, Connection & connection)
+                                                     const AssignedPartsRanges & parts, bool with_ranges, Connection & connection)
 {
-    auto query = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
+    auto query = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts, with_ranges);
     auto sample_block = indexAnalysisSampleBlock();
 
     auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(connection, query, sample_block, context, ThrottlerPtr{}, Scalars{}, external_tables);
@@ -228,11 +260,18 @@ public:
         const NameSet & indexes_column_names,
         const RangesInDataParts & parts_with_ranges_,
         const OptionalVectorSearchParameters & vector_search_parameters_,
+        size_t mark_segment_size_,
+        size_t min_marks_to_split_part_,
         LocalIndexAnalysisCallback local_index_analysis_callback_,
         ContextPtr context_)
         : storage_id(storage_id_)
         , parts_with_ranges(parts_with_ranges_)
         , vector_search_parameters(vector_search_parameters_)
+        , mark_segment_size(mark_segment_size_)
+        , min_marks_to_split_part(min_marks_to_split_part_)
+        /// Vector similarity index analysis requires whole-part ranges (the `all_match` guard in
+        /// `filterMarksUsingIndex`), so splitting would silently disable it on every replica.
+        , split_segments(mark_segment_size_ > 0 && !vector_search_parameters_.has_value())
         , local_index_analysis_callback(std::move(local_index_analysis_callback_))
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
@@ -280,20 +319,25 @@ public:
 
         auto active_remote_indexes = selectActiveRemoteReplicas(connections);
 
-        auto [local_parts, local_marks, local_rows, remote_parts, remote_marks, remote_rows] = distributePartsToReplicas(active_remote_indexes);
+        auto distributed_parts = distributePartsToReplicas(active_remote_indexes);
 
         /// Remote results indexed by remote_pools index.
         DistributedIndexAnalysisPartsRanges res(remote_replicas);
         for (const auto i : active_remote_indexes)
-            res[i].first = replica_addresses[i];
+        {
+            res[i].address = replica_addresses[i];
+            res[i].assigned_parts = distributed_parts.remote_parts[i].size();
+            res[i].assigned_marks = distributed_parts.remote_marks[i];
+        }
 
         /// Local result stored separately.
-        std::pair<std::string, IndexAnalysisPartsRanges> local_result{local_address, {}};
+        DistributedIndexAnalysisReplicaResult local_result{
+            local_address, distributed_parts.local_parts.size(), distributed_parts.local_marks, {}};
 
-        auto [local_thread, local_exception] = executeLocalAnalysis(local_parts, local_marks, local_rows, local_result);
+        auto [local_thread, local_exception] = executeLocalAnalysis(distributed_parts.local_parts, distributed_parts.local_marks, distributed_parts.local_rows, local_result);
         try
         {
-            executeRemoteAnalysis(active_remote_indexes, connections, remote_parts, remote_marks, remote_rows, res);
+            executeRemoteAnalysis(active_remote_indexes, connections, distributed_parts.remote_parts, distributed_parts.remote_marks, distributed_parts.remote_rows, res);
         }
         catch (...)
         {
@@ -313,7 +357,7 @@ public:
         if (*local_exception)
             std::rethrow_exception(*local_exception);
 
-        resolveMissingParts(local_result, res);
+        resolveMissingParts(distributed_parts, local_result, res);
 
         res.push_back(std::move(local_result));
         return res;
@@ -468,10 +512,10 @@ private:
 
     struct DistributedParts
     {
-        std::vector<std::string_view> local_parts;
+        AssignedPartsRanges local_parts;
         size_t local_marks = 0;
         size_t local_rows = 0;
-        std::vector<std::vector<std::string_view>> remote_parts;
+        std::vector<AssignedPartsRanges> remote_parts;
         std::vector<size_t> remote_marks;
         std::vector<size_t> remote_rows;
     };
@@ -497,26 +541,91 @@ private:
         for (const auto i : active_remote_indexes)
             original_to_remote[remote_pools[i].index] = i;
 
+        const bool split = split_segments;
+
+        /// Accumulate ranges per (destination, part) so each part appears once per replica, and
+        /// keep a lookup for computing marks/rows of the final assignment.
+        std::unordered_map<std::string_view, MarkRanges> local_map;
+        std::vector<std::unordered_map<std::string_view, MarkRanges>> remote_maps(remote_replicas);
+        std::unordered_map<std::string_view, const RangesInDataPart *> part_by_name;
+
+        auto destination = [&](size_t original_index) -> std::unordered_map<std::string_view, MarkRanges> &
+        {
+            if (original_index == local_original_index)
+                return local_map;
+            return remote_maps[original_to_remote[original_index]];
+        };
+
         for (const auto & part_ranges : parts_with_ranges)
         {
             chassert(part_ranges.exact_ranges.empty());
 
-            const auto & part_name = part_ranges.data_part->name;
-            const auto hash_slot = partReplica(part_name, active_original_indexes.size());
-            const auto original_index = active_original_indexes[hash_slot];
-            if (original_index == local_original_index)
+            const std::string & part_name = part_ranges.data_part->name;
+            part_by_name[part_name] = &part_ranges;
+
+            if (!split || part_ranges.getMarksCount() <= min_marks_to_split_part)
             {
-                result.local_parts.push_back(part_name);
-                result.local_marks += part_ranges.getMarksCount();
-                result.local_rows += part_ranges.getRowsCount();
+                /// Whole part on a single replica. Without splitting we send a bare name (empty
+                /// ranges marker); with splitting the tuple wire form requires explicit ranges, and
+                /// the full range keeps the remote on the whole-part path (stable full-index cache),
+                /// same as the non-split behavior.
+                const auto original_index = active_original_indexes[partReplica(part_name, active_original_indexes.size())];
+                auto & ranges = destination(original_index)[part_name];
+                if (split)
+                    ranges.push_back(MarkRange{0, part_ranges.data_part->index_granularity->getMarksCountWithoutFinal()});
             }
             else
             {
-                const auto remote_index = original_to_remote[original_index];
-                result.remote_parts[remote_index].push_back(part_name);
-                result.remote_marks[remote_index] += part_ranges.getMarksCount();
-                result.remote_rows[remote_index] += part_ranges.getRowsCount();
+                /// Split the part's ranges into mark segments aligned to the absolute grid
+                /// (segment k covers [k*S, (k+1)*S) intersected with the input ranges) and hash each
+                /// grid index independently. Grid alignment keeps the segment -> replica mapping
+                /// stable across queries even when the input ranges differ (e.g. trimmed by the
+                /// query condition cache). The partial primary-index cache key on the replica is
+                /// built from the exact range boundaries though, so trimmed inputs produce
+                /// distinct cache entries.
+                for (const auto & range : part_ranges.ranges)
+                {
+                    for (size_t begin = range.begin; begin < range.end;)
+                    {
+                        const size_t segment_index = begin / mark_segment_size;
+                        MarkRange segment{begin, std::min((segment_index + 1) * mark_segment_size, range.end)};
+                        const auto original_index = active_original_indexes[partReplicaSegment(part_name, segment_index, active_original_indexes.size())];
+                        destination(original_index)[part_name].push_back(segment);
+                        begin = segment.end;
+                    }
+                }
             }
+        }
+
+        auto flatten = [&](std::unordered_map<std::string_view, MarkRanges> & map, AssignedPartsRanges & out, size_t & marks, size_t & rows)
+        {
+            for (auto & [name, ranges] : map)
+            {
+                const auto & part = *part_by_name.at(name);
+                if (ranges.empty())
+                {
+                    marks += part.getMarksCount();
+                    rows += part.getRowsCount();
+                }
+                else
+                {
+                    /// Segments are appended in increasing mark order; adjacent grid cells hashed
+                    /// to the same replica merge into one range - the assignment is unchanged,
+                    /// only the wire form shrinks (the replica coalesces its load ranges anyway).
+                    ranges.coalesce();
+                    marks += ranges.getNumberOfMarks();
+                    rows += part.data_part->index_granularity->getRowsCountInRanges(ranges);
+                }
+                out.emplace_back(name, std::move(ranges));
+            }
+        };
+
+        flatten(local_map, result.local_parts, result.local_marks, result.local_rows);
+        for (size_t i = 0; i < remote_replicas; ++i)
+        {
+            size_t rows = 0;
+            flatten(remote_maps[i], result.remote_parts[i], result.remote_marks[i], rows);
+            result.remote_rows[i] = rows;
         }
 
         return result;
@@ -529,10 +638,10 @@ private:
     };
 
     LocalAnalysisResult executeLocalAnalysis(
-        const std::vector<std::string_view> & local_parts,
+        const AssignedPartsRanges & local_parts,
         size_t local_marks,
         size_t local_rows,
-        std::pair<std::string, IndexAnalysisPartsRanges> & local_result)
+        DistributedIndexAnalysisReplicaResult & local_result)
     {
         LocalAnalysisResult result;
         if (!local_parts.empty())
@@ -549,7 +658,7 @@ private:
                     auto parts_ranges = local_index_analysis_callback(local_parts);
                     LOG_TRACE(logger, "Received {} parts from local replica {}: {}",
                         parts_ranges.size(), local_address, parts_ranges);
-                    local_result.second = std::move(parts_ranges);
+                    local_result.parts_ranges = std::move(parts_ranges);
                 }
                 catch (...)
                 {
@@ -563,7 +672,7 @@ private:
     void executeRemoteAnalysis(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<AssignedPartsRanges> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -578,7 +687,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<AssignedPartsRanges> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -602,7 +711,7 @@ private:
                 continue;
 
             ProfileEvents::increment(ProfileEvents::DistributedIndexAnalysisScheduledReplicas);
-            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i]);
+            auto query = buildAnalyzeIndexQuery(storage_id, filter_query, vector_search_parameters, remote_parts[i], split_segments);
             auto executor = std::make_shared<RemoteQueryExecutor>(*connection, query, sample_block, execution_context, ThrottlerPtr{}, Scalars{}, external_tables);
             executor->setLogger(logger);
 
@@ -660,14 +769,14 @@ private:
                         auto block = result.getBlock();
                         if (block.empty())
                             break;
-                        parseIndexAnalysisBlock(std::move(block), res[i].second);
+                        parseIndexAnalysisBlock(std::move(block), res[i].parts_ranges);
                         continue;
                     }
 
                     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER, "Unexpected result type: {}", static_cast<int>(result.getType()));
                 }
 
-                LOG_TRACE(logger, "Received {} parts from {}: {}", res[i].second.size(), replica_addresses[i], res[i].second);
+                LOG_TRACE(logger, "Received {} parts from {}: {}", res[i].parts_ranges.size(), replica_addresses[i], res[i].parts_ranges);
             }
             catch (const Exception & e)
             {
@@ -717,7 +826,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,
         const std::vector<Connection *> &,
-        const std::vector<std::vector<std::string_view>> &,
+        const std::vector<AssignedPartsRanges> &,
         const std::vector<size_t> &,
         const std::vector<size_t> &,
         DistributedIndexAnalysisPartsRanges &)
@@ -729,7 +838,7 @@ private:
     void executeRemoteAnalysisSync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<AssignedPartsRanges> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -748,9 +857,9 @@ private:
                 {
                     LOG_TRACE(logger, "Sending {} parts ({} marks, {} rows) to {}: {}",
                         remote_parts[i].size(), remote_marks[i], remote_rows[i], replica_addresses[i], remote_parts[i]);
-                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, remote_parts[i], *connection);
+                    auto parts_ranges = getIndexAnalysisFromReplicaSync(logger, storage_id, filter_query, vector_search_parameters, execution_context, external_tables, remote_parts[i], split_segments, *connection);
                     LOG_TRACE(logger, "Received {} parts from {}: {}", parts_ranges.size(), replica_addresses[i], parts_ranges);
-                    res[i].second = std::move(parts_ranges);
+                    res[i].parts_ranges = std::move(parts_ranges);
                 }
                 catch (const Exception & e)
                 {
@@ -770,28 +879,62 @@ private:
     }
 
     void resolveMissingParts(
-        std::pair<std::string, IndexAnalysisPartsRanges> & local_result,
+        const DistributedParts & distributed_parts,
+        DistributedIndexAnalysisReplicaResult & local_result,
         const DistributedIndexAnalysisPartsRanges & remote_results) const
     {
-        std::unordered_set<std::string_view> resolved_parts;
-        for (const auto & [part, _] : local_result.second)
-            resolved_parts.insert(part);
-        for (const auto & [_, parts_ranges] : remote_results)
+        /// Detection must be per (replica, part), not per part: with segment splitting one part is
+        /// assigned to several replicas, and a successful replica returns every part it was
+        /// assigned (even with empty ranges). A part absent from its replica's result therefore
+        /// means that replica failed, and exactly its assigned ranges must be re-analyzed locally
+        /// (empty assigned ranges denote the whole part).
+        std::unordered_map<std::string_view, MarkRanges> missing;
+        for (size_t i = 0; i < remote_replicas; ++i)
         {
-            for (const auto & [part, replica_ranges] : parts_ranges)
-                resolved_parts.insert(part);
+            const auto & replica_result = remote_results[i].parts_ranges;
+            for (const auto & [part, assigned_ranges] : distributed_parts.remote_parts[i])
+            {
+                if (replica_result.contains(std::string(part)))
+                    continue;
+
+                auto [it, inserted] = missing.try_emplace(part, assigned_ranges);
+                if (!inserted)
+                {
+                    /// Whole-part (empty) assignment subsumes any concrete ranges.
+                    if (assigned_ranges.empty() || it->second.empty())
+                        it->second.clear();
+                    else
+                        it->second.insert(it->second.end(), assigned_ranges.begin(), assigned_ranges.end());
+                }
+            }
         }
-        std::vector<std::string_view> missing_parts;
+
+        AssignedPartsRanges missing_parts;
         size_t missing_parts_marks = 0;
         size_t missing_parts_rows = 0;
+        std::unordered_map<std::string_view, const RangesInDataPart *> part_by_name;
         for (const auto & part_ranges : parts_with_ranges)
+            part_by_name[part_ranges.data_part->name] = &part_ranges;
+
+        for (auto & [part, ranges] : missing)
         {
-            const auto & part_name = part_ranges.data_part->name;
-            if (resolved_parts.contains(part_name))
-                continue;
-            missing_parts.push_back(part_name);
-            missing_parts_marks += part_ranges.getMarksCount();
-            missing_parts_rows += part_ranges.getRowsCount();
+            /// Segments collected from different failed replicas are disjoint but unordered
+            /// (MarkRange::operator< also validates the disjointness).
+            std::sort(ranges.begin(), ranges.end());
+            ranges.coalesce();
+
+            const auto & part_info = *part_by_name.at(part);
+            if (ranges.empty())
+            {
+                missing_parts_marks += part_info.getMarksCount();
+                missing_parts_rows += part_info.getRowsCount();
+            }
+            else
+            {
+                missing_parts_marks += ranges.getNumberOfMarks();
+                missing_parts_rows += part_info.data_part->index_granularity->getRowsCountInRanges(ranges);
+            }
+            missing_parts.emplace_back(part, std::move(ranges));
         }
 
         if (!missing_parts.empty())
@@ -801,13 +944,26 @@ private:
             LOG_TRACE(logger, "Resolving {} missing parts ({} marks, {} rows) from local replica {}: {}", missing_parts.size(), missing_parts_marks, missing_parts_rows, local_address, missing_parts);
             auto parts_ranges = local_index_analysis_callback(missing_parts);
             LOG_TRACE(logger, "Received {} missing parts from local replica {}: {}", parts_ranges.size(), local_address, parts_ranges);
-            local_result.second.insert_range(std::move(parts_ranges));
+
+            local_result.assigned_parts += missing_parts.size();
+            local_result.assigned_marks += missing_parts_marks;
+
+            /// A failed replica may hold only SOME segments of a part while another replica already
+            /// returned the rest, so merge ranges per part instead of insert (which skips existing keys).
+            for (auto & [part_name, ranges] : parts_ranges)
+            {
+                auto & dst = local_result.parts_ranges[part_name];
+                dst.insert(dst.end(), std::make_move_iterator(ranges.begin()), std::make_move_iterator(ranges.end()));
+            }
         }
     }
 
     const StorageID & storage_id;
     const RangesInDataParts & parts_with_ranges;
     const OptionalVectorSearchParameters & vector_search_parameters;
+    size_t mark_segment_size;
+    size_t min_marks_to_split_part;
+    bool split_segments;
     LocalIndexAnalysisCallback local_index_analysis_callback;
     ContextPtr context;
 
@@ -857,6 +1013,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
+    size_t mark_segment_size,
+    size_t min_marks_to_split_part,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context)
 {
@@ -874,6 +1032,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
         indexes_column_names,
         parts_with_ranges,
         vector_search_parameters,
+        mark_segment_size,
+        min_marks_to_split_part,
         std::move(local_index_analysis_callback),
         std::move(context_copy));
 

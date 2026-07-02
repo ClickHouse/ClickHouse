@@ -295,6 +295,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_bytes_to_activate;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_mark_segment_size;
+    extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_marks_to_split_part;
 }
 
 namespace ErrorCodes
@@ -2540,17 +2542,20 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
-static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const std::vector<std::string_view> & parts_to_analyze)
+static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const AssignedPartsRanges & parts_to_analyze)
 {
-    /// Resolve part names to RangesInDataParts
+    /// Resolve part names to RangesInDataParts, restricting to the assigned ranges (empty => whole part).
     RangesInDataParts parts_ranges_to_analyze;
-    for (const auto & part : parts_to_analyze)
-        parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
+    for (const auto & [part, ranges] : parts_to_analyze)
+    {
+        RangesInDataPart part_ranges = *parts_ranges_map.at(std::string(part));
+        if (!ranges.empty())
+            part_ranges.ranges = ranges;
+        parts_ranges_to_analyze.push_back(std::move(part_ranges));
+    }
 
     ReadFromMergeTree::IndexStats ignore_stats;
     auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
-
-    std::unordered_set<std::string_view> processed_parts;
 
     /// Convert RangesInDataParts to IndexAnalysisPartsRanges
     IndexAnalysisPartsRanges res;
@@ -2561,12 +2566,8 @@ static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(Merge
     }
 
     /// Add empty parts back, to take it into account in "Parts send"
-    for (const auto & part_name : parts_to_analyze)
-    {
-        if (processed_parts.contains(part_name))
-            continue;
+    for (const auto & [part_name, _] : parts_to_analyze)
         res.emplace(part_name, MarkRanges{});
-    }
 
     return res;
 }
@@ -2783,6 +2784,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
         UInt64 distributed_index_analysis_min_parts_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_parts_to_activate];
         UInt64 distributed_index_analysis_min_indexes_bytes_to_activate = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_indexes_bytes_to_activate];
+        UInt64 distributed_index_analysis_mark_segment_size = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_mark_segment_size];
+        UInt64 distributed_index_analysis_min_marks_to_split_part = (*data_settings_)[MergeTreeSetting::distributed_index_analysis_min_marks_to_split_part];
         bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
         bool distributed_index_analysis_enabled = !final_second_pass
@@ -2811,7 +2814,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & part_ranges : res_parts)
                 parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
 
-            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
+            /// Only the local replica also loads the primary index by ranges when splitting is on.
+            filter_context.load_partial_primary_key = distributed_index_analysis_mark_segment_size > 0;
+
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const AssignedPartsRanges & parts_to_analyze) -> IndexAnalysisPartsRanges
             {
                 return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
             };
@@ -2822,6 +2828,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 indexes_column_names,
                 res_parts,
                 vector_search_parameters,
+                distributed_index_analysis_mark_segment_size,
+                distributed_index_analysis_min_marks_to_split_part,
                 local_index_analysis_callback,
                 context_);
 
@@ -2832,32 +2840,40 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                 std::vector<DistributedIndexStat> distributed_index_stats;
 
                 size_t received_granules = 0;
-                size_t received_parts = 0;
-                for (auto & [replica_address, parts_on_replica] : distributed_index_analysis)
+                for (auto & [replica_address, assigned_parts, assigned_marks, parts_on_replica] : distributed_index_analysis)
                 {
                     size_t replica_granules_received = 0;
                     for (const auto & [_, marks] : parts_on_replica)
                         replica_granules_received += marks.getNumberOfMarks();
 
-                    size_t replica_granules_send = 0;
-                    for (const auto & [part, _] : parts_on_replica)
-                        replica_granules_send += parts_ranges_map.at(std::string(part))->getMarksCount();
-
-                    size_t num_parts_send = parts_on_replica.size();
                     std::erase_if(parts_on_replica, [&](const auto & ranges) { return ranges.second.empty(); });
 
+                    /// "send" stats are assignment-based so a failed replica still reports what
+                    /// was sent to it (its result, and thus the received stats, are empty).
                     distributed_index_stats.emplace_back(DistributedIndexStat{
                         .address = replica_address,
-                        .num_parts_send = num_parts_send,
+                        .num_parts_send = assigned_parts,
                         .num_parts_received = parts_on_replica.size(),
-                        .num_granules_send = replica_granules_send,
+                        .num_granules_send = assigned_marks,
                         .num_granules_received = replica_granules_received,
                     });
 
                     received_granules += replica_granules_received;
-                    received_parts += parts_on_replica.size();
 
-                    analyzed_parts_ranges.insert_range(std::move(parts_on_replica));
+                    /// A split part is analyzed on several replicas, so merge (do not skip-insert) its ranges.
+                    for (auto & [part_name, ranges] : parts_on_replica)
+                    {
+                        auto & dst = analyzed_parts_ranges[part_name];
+                        dst.insert(dst.end(), std::make_move_iterator(ranges.begin()), std::make_move_iterator(ranges.end()));
+                    }
+                }
+
+                /// Ranges collected from different replicas' segments are disjoint but unordered;
+                /// sort (MarkRange::operator< also validates the disjointness) and coalesce.
+                for (auto & [part_name, ranges] : analyzed_parts_ranges)
+                {
+                    std::sort(ranges.begin(), ranges.end());
+                    ranges.coalesce();
                 }
 
                 auto index_description = indexes->key_condition->generateUnsubstituted().getDescription();
@@ -2865,7 +2881,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     .type = IndexType::PrimaryKey,
                     .condition = index_description.condition,
                     .used_keys = index_description.used_keys,
-                    .num_parts_after = received_parts,
+                    /// Distinct parts: a split part is received from several replicas.
+                    .num_parts_after = analyzed_parts_ranges.size(),
                     .num_granules_after = received_granules,
                     .distributed = std::move(distributed_index_stats),
                 });

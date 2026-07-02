@@ -1298,6 +1298,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
+            {"distributed_index_analysis_mark_segment_size", 0, 0, "New setting"},
+            {"distributed_index_analysis_min_marks_to_split_part", 0, 0, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

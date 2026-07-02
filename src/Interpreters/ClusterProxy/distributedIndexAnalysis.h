@@ -17,10 +17,23 @@ class ActionsDAG;
 
 /// <part_name, ranges>
 using IndexAnalysisPartsRanges = std::unordered_map<std::string, MarkRanges>;
-/// <replica index, <replica address, parts ranges>>
-using DistributedIndexAnalysisPartsRanges = std::vector<std::pair<std::string, IndexAnalysisPartsRanges>>;
 
-using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const std::vector<std::string_view> & parts)>;
+/// Analysis result of one replica, with the number of parts and marks assigned to it for
+/// analysis (a part split into segments contributes only its assigned segments per replica,
+/// and counts once per replica it is assigned to).
+struct DistributedIndexAnalysisReplicaResult
+{
+    std::string address;
+    size_t assigned_parts = 0;
+    size_t assigned_marks = 0;
+    IndexAnalysisPartsRanges parts_ranges;
+};
+/// Indexed by replica.
+using DistributedIndexAnalysisPartsRanges = std::vector<DistributedIndexAnalysisReplicaResult>;
+
+/// Parts assigned to a replica, each with the mark ranges to analyze (empty => the whole part).
+using AssignedPartsRanges = std::vector<std::pair<std::string_view, MarkRanges>>;
+using LocalIndexAnalysisCallback = std::function<IndexAnalysisPartsRanges(const AssignedPartsRanges & parts)>;
 
 /// Do index analysis on replicas from the cluster_for_parallel_replicas
 /// by sending mergeTreeAnalyzeIndexesUUID() to each replica with list of assigned parts,
@@ -34,6 +47,8 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
     const NameSet & indexes_column_names,
     const RangesInDataParts & parts_with_ranges,
     const OptionalVectorSearchParameters & vector_search_parameters,
+    size_t mark_segment_size,
+    size_t min_marks_to_split_part,
     LocalIndexAnalysisCallback local_index_analysis_callback,
     ContextPtr context);
 
