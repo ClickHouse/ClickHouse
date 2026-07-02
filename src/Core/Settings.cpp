@@ -7953,6 +7953,11 @@ Internal processes include dictionary reloads, refreshable materialized view rel
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
+    DECLARE(String, query_rules, "", R"(
+A list of the names of the globally-defined query rewrite rules (`CREATE RULE`) that are active for the query, applied in the listed order before normal processing: matching queries can be rewritten or rejected. The value is a comma-separated list of rule names (identifiers or string literals), for example `query_rules = 'rule_1, rule_2'`. By default no rules are active. If a listed rule does not exist, the query throws an exception.
+
+This is a session/profile-level setting: because the rules are applied before a query's own `SETTINGS` clause is interpreted, changing it with `SELECT ... SETTINGS query_rules = ...` has no effect on that query.
+)", EXPERIMENTAL) \
     DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
 If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.

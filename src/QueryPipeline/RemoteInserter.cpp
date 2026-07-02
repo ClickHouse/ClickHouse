@@ -17,6 +17,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString query_rules;
 }
 
 namespace ErrorCodes
@@ -60,6 +61,18 @@ void RemoteInserter::initialize()
     ///
     /// So that is why send_logs_level had been disabled here.
     settings[Setting::send_logs_level] = "none";
+
+    /// Rewrite rules are applied once, on the initiator, before the query is distributed.
+    /// Strip `query_rules` from the settings sent to the shard for this secondary INSERT: the
+    /// fragment was already produced from the rewritten query on the initiator, a rule named here
+    /// may not even exist on the shard (rule storage is local by default), and re-applying it
+    /// would rewrite/reject the fragment a second time. Send an explicit empty override (kept
+    /// `changed`) so it also overrides any shard-side profile default for `query_rules`; an older
+    /// shard that does not know the setting safely ignores it. This mirrors the read-path strip in
+    /// `MultiplexedConnections::sendQuery` / `HedgedConnections::sendQuery`, and — like there — does
+    /// not rely on the client-controlled `query_kind`, which can be spoofed.
+    settings[Setting::query_rules] = "";
+
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */

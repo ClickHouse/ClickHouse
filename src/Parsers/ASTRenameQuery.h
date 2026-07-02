@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <IO/Operators.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -89,6 +90,33 @@ public:
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
+
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
+    {
+        IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+        /// `getID` is the constant `"Rename"` for every RENAME / EXCHANGE variant, and the flags
+        /// and element structure below are kept outside `children` (only the database / table
+        /// identifier ASTs are children, hashed through the child recursion). Fold them in so that
+        /// e.g. `RENAME TABLE a TO b` and `EXCHANGE TABLES a AND b` (differ only in `exchange`), or
+        /// `RENAME TABLE a.b TO c.d` and `RENAME TABLE a TO b, c TO d` (same flat child list, but a
+        /// different element grouping), no longer share a tree hash. The rewrite-rule matcher treats
+        /// an equal `getTreeHash(true)` as semantic equality, so an incomplete hash here would let a
+        /// rule over-match an unrelated statement.
+        hash_state.update(exchange);
+        hash_state.update(database);
+        hash_state.update(dictionary);
+        hash_state.update(rename_if_cannot_exchange);
+        hash_state.update(cluster);
+        hash_state.update(elements.size());
+        for (const auto & elem : elements)
+        {
+            hash_state.update(elem.if_exists);
+            hash_state.update(elem.from.database != nullptr);
+            hash_state.update(elem.from.table != nullptr);
+            hash_state.update(elem.to.database != nullptr);
+            hash_state.update(elem.to.table != nullptr);
+        }
+    }
 
     ASTPtr clone() const override
     {

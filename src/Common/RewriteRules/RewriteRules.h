@@ -1,0 +1,74 @@
+#pragma once
+
+#include <Common/logger_useful.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <boost/noncopyable.hpp>
+
+#include <Common/RewriteRules/RewriteRulesStorage.h>
+#include <Common/RewriteRules/RewriteRuleObject.h>
+
+namespace DB
+{
+
+class RewriteRules : boost::noncopyable
+{
+public:
+    static RewriteRules & instance();
+
+    ~RewriteRules();
+
+    bool exists(const std::string & rule_name) const;
+
+    RewriteRuleObjectPtr get(const std::string & rule_name) const;
+
+    RewriteRuleObjectPtr tryGet(const std::string & rule_name) const;
+
+    RewriteRuleObjectsList getAll() const;
+
+    void createRule(const ASTCreateRewriteRuleQuery & query);
+
+    void removeRule(const ASTDropRewriteRuleQuery & query);
+
+    void updateRule(const ASTAlterRewriteRuleQuery & query);
+
+    bool usesReplicatedStorage();
+
+    bool loadIfNot();
+
+    void reload();
+
+    void shutdown();
+
+protected:
+    mutable RewriteRuleObjectsList loaded_rewrite_rules;
+    mutable std::mutex mutex;
+
+    bool loadIfNot(std::lock_guard<std::mutex> & lock) const;
+
+    void reloadImpl(std::lock_guard<std::mutex> & lock);
+
+    const LoggerPtr log = getLogger("RewriteRule");
+
+    mutable bool loaded = false;
+    std::atomic<bool> shutdown_called = false;
+    mutable std::unique_ptr<RewriteRulesStorage> storage;
+    mutable BackgroundSchedulePoolTaskHolder update_task;
+
+    bool exists(
+        const std::string & rule_name,
+        std::lock_guard<std::mutex> & lock) const;
+
+    MutableRewriteRuleObjectPtr getMutable(const std::string & rule_name, std::lock_guard<std::mutex> & lock) const;
+
+    void add(const std::string & rule_name, MutableRewriteRuleObjectPtr rule, std::lock_guard<std::mutex> & lock);
+
+    void add(RewriteRuleObjectsList rules, std::lock_guard<std::mutex> & lock);
+
+    void remove(const std::string & rule_name, std::lock_guard<std::mutex> & lock);
+
+    MutableRewriteRuleObjectPtr tryGet(const std::string & rule_name, std::lock_guard<std::mutex> & lock) const;
+
+    void updateFunc();
+};
+
+}

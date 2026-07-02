@@ -66,6 +66,9 @@ void registerInterpreterDeleteQuery(InterpreterFactory & factory);
 void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
+void registerInterpreterCreateRewriteRuleQuery(InterpreterFactory & factory);
+void registerInterpreterAlterRewriteRuleQuery(InterpreterFactory & factory);
+void registerInterpreterDropRewriteRuleQuery(InterpreterFactory & factory);
 
 void registerInterpreters();
 void registerInterpreters()
@@ -135,6 +138,9 @@ void registerInterpreters()
     registerInterpreterUpdateQuery(factory);
     registerInterpreterParallelWithQuery(factory);
     registerInterpreterExecuteAsQuery(factory);
+    registerInterpreterCreateRewriteRuleQuery(factory);
+    registerInterpreterAlterRewriteRuleQuery(factory);
+    registerInterpreterDropRewriteRuleQuery(factory);
 }
 
 }

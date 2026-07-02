@@ -40,6 +40,15 @@ public:
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
+    /// `getID` is the same string for every `SHOW` variant, and the fields that actually
+    /// distinguish them — the `databases` / `clusters` / ... selector flags, `like` with its
+    /// `not_like` / `case_insensitive_like` modifiers, `cluster_str`, and the `where_expression`
+    /// / `limit_length` clauses — are plain members, not part of `children`. Without folding them
+    /// into the hash, `SHOW TABLES LIKE 'a'`, `SHOW TABLES LIKE 'b'` and even `SHOW DATABASES`
+    /// would share one tree hash. The rewrite-rule matcher treats an equal tree hash as semantic
+    /// equality, so a rule template for one `SHOW` would over-match an unrelated `SHOW`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     String getFrom() const;
 
 protected:

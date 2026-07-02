@@ -31,6 +31,7 @@
 #include <Common/SharedLockGuard.h>
 #include <Common/PageCache.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
@@ -1000,6 +1001,7 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
+        RewriteRules::instance().shutdown();
 
         delete_async_insert_queue.reset();
 

@@ -46,6 +46,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/Jemalloc.h>
 #include <Common/StackTrace.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
@@ -1591,6 +1592,7 @@ void LocalServer::processConfig()
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    RewriteRules::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// NOTE: it is important to apply any overrides before

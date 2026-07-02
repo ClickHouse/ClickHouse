@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -19,6 +20,34 @@ ASTPtr ASTShowTablesQuery::clone() const
     return res;
 }
 
+void ASTShowTablesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold in the semantic fields that are not part of `children` (the base implementation only
+    /// hashes `getID`, and `from` is hashed through `children`). Two `SHOW` queries that differ
+    /// only in these fields must not share a tree hash — see the header comment.
+    hash_state.update(databases);
+    hash_state.update(clusters);
+    hash_state.update(cluster);
+    hash_state.update(dictionaries);
+    hash_state.update(m_settings);
+    hash_state.update(merges);
+    hash_state.update(changed);
+    hash_state.update(temporary);
+    hash_state.update(caches);
+    hash_state.update(full);
+    hash_state.update(cluster_str);
+    hash_state.update(like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(where_expression != nullptr);
+    if (where_expression)
+        where_expression->updateTreeHash(hash_state, ignore_aliases);
+    hash_state.update(limit_length != nullptr);
+    if (limit_length)
+        limit_length->updateTreeHash(hash_state, ignore_aliases);
+}
+
 String ASTShowTablesQuery::getFrom() const
 {
     String name;
@@ -28,7 +57,10 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
-    if (!like.empty())
+    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `SHOW TABLES NOT
+    /// LIKE ''` / `SHOW TABLES ILIKE ''` set `not_like` / `case_insensitive_like` while leaving
+    /// `like` empty, and dropping the clause would lose those flags on a format -> parse round-trip.
+    if (!like.empty() || not_like || case_insensitive_like)
     {
         ostr << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
@@ -47,45 +79,49 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
 
 void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// The `FULL` modifier is parsed for every `SHOW` variant (before the selector keyword), so it
+    /// must be emitted here for every variant. Otherwise `SHOW FULL TABLES` formats as `SHOW TABLES`
+    /// and re-parses with `full = false`, which both loses semantics (`full` changes the result
+    /// columns) and breaks the format -> parse tree-hash round-trip the rewrite-rule matcher relies on.
+    ostr << "SHOW " << (full ? "FULL " : "");
+
     if (databases)
     {
-        ostr << "SHOW DATABASES";
+        ostr << "DATABASES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (clusters)
     {
-        ostr << "SHOW CLUSTERS";
+        ostr << "CLUSTERS";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
-
     }
     else if (cluster)
     {
-        ostr << "SHOW CLUSTER";
+        ostr << "CLUSTER";
         ostr << " " << backQuoteIfNeed(cluster_str);
     }
     else if (caches)
     {
-        ostr << "SHOW FILESYSTEM CACHES";
+        ostr << "FILESYSTEM CACHES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else if (m_settings)
     {
-        ostr << "SHOW " << (changed ? "CHANGED " : "") << "SETTINGS";
+        ostr << (changed ? "CHANGED " : "") << "SETTINGS";
         formatLike(ostr, settings);
     }
     else if (merges)
     {
-        ostr << "SHOW MERGES";
+        ostr << "MERGES";
         formatLike(ostr, settings);
         formatLimit(ostr, settings, state, frame);
     }
     else
     {
-        ostr << "SHOW " << (temporary ? "TEMPORARY " : "") <<
+        ostr << (temporary ? "TEMPORARY " : "") <<
              (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)

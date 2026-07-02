@@ -1498,6 +1498,16 @@ arrow::Status ArrowFlightServer::DoAction(
             query_context->setCurrentQueryId("");
             QueryScope query_scope = QueryScope::create(query_context);
 
+            /// This context is used only to validate syntax and infer the result schema by
+            /// executing the NULL-substituted query below; preparing a statement must have no side
+            /// effects. Query rewrite rules must therefore not be applied here: a `REWRITE` rule
+            /// could turn the parsed `SELECT` into a side-effecting statement (`CREATE` / `DROP` /
+            /// `INSERT SELECT`) that `executeQuery` would then execute during schema inference.
+            /// The rules still apply normally when the prepared statement is actually executed.
+            /// Clearing the setting is sufficient because this context is private to schema
+            /// inference and is discarded afterwards.
+            query_context->setSetting("query_rules", String{});
+
             /// Parse the substituted query to validate syntax and determine query type.
             /// We only call executeQuery for SELECT-like queries (to infer the result schema).
             /// For other queries (INSERT, SET, DDL, etc.), parsing is sufficient — executing

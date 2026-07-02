@@ -703,7 +703,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         /*internal*/ false,
         /*database*/ "",
         /*table*/ "",
-        /*async_insert*/ false);
+        /*async_insert*/ false,
+        /*applied_rewrite_rules*/ {});
 
     try
     {

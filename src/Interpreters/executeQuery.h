@@ -112,7 +112,12 @@ QueryLogElement logQueryStart(
     bool internal,
     const String & query_database,
     const String & query_table,
-    bool async_insert);
+    bool async_insert,
+    const std::vector<String> & applied_rewrite_rules,
+    /// The AST to use for the `formatted_query` column. Defaults to `query_ast`. When a rewrite
+    /// rule changed the query, pass the original (pre-rewrite) AST so `formatted_query` matches
+    /// the original `query` column and does not expose secrets from the result template.
+    const ASTPtr & ast_for_formatted_query = {});
 
 void logQueryFinish(
     QueryLogElement & elem,
@@ -140,7 +145,12 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal);
+    bool internal,
+    const std::vector<String> & applied_rewrite_rules,
+    /// The AST to use for the `formatted_query` column. Defaults to `ast`. When a rewrite rule
+    /// changed the query, pass the original (pre-rewrite) AST so `formatted_query` matches the
+    /// original `query` column and does not expose secrets from the result template.
+    const ASTPtr & ast_for_formatted_query = {});
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();

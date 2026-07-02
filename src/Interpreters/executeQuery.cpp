@@ -11,6 +11,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/RewriteRules/RewriteRules.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
 
@@ -67,6 +68,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/RewriteRulesASTTraversal.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -248,6 +250,13 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
         ast.checkDepth(settings[Setting::max_ast_depth]);
     if (settings[Setting::max_ast_elements])
         ast.checkSize(settings[Setting::max_ast_elements]);
+
+    /// `CREATE RULE` / `ALTER RULE` keep their source/result templates outside
+    /// `IAST::children`, so the walks above do not reach them — including when the rule DDL is
+    /// nested below a wrapper such as `EXPLAIN AST CREATE RULE ...`. Enforce the same limits on
+    /// those template fields here, as part of the same pre-execution gate (before access checks
+    /// and interpreter dispatch), so a huge or very deep template cannot bypass them.
+    checkRewriteRuleTemplateLimits(ast, settings);
 }
 
 
@@ -444,12 +453,15 @@ QueryLogElement logQueryStart(
     bool internal,
     const String & query_database,
     const String & query_table,
-    bool async_insert)
+    bool async_insert,
+    const std::vector<String> & applied_rewrite_rules,
+    const ASTPtr & ast_for_formatted_query)
 {
     const Settings & settings = context->getSettingsRef();
 
     QueryLogElement elem;
 
+    elem.applied_rules = applied_rewrite_rules;
     elem.type = QueryLogElementType::QUERY_START;
     elem.event_time = timeInSeconds(query_start_time);
     elem.event_time_microseconds = timeInMicroseconds(query_start_time);
@@ -458,8 +470,13 @@ QueryLogElement logQueryStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+    /// `formatted_query` describes the same query as the `query` column above. When a rewrite
+    /// rule changed the query, the caller passes the original (pre-rewrite) AST here so the two
+    /// columns stay consistent and the rewritten query (which may carry result-template secrets)
+    /// is not surfaced. Falls back to `query_ast` when no override is given.
+    const ASTPtr & formatted_query_ast = ast_for_formatted_query ? ast_for_formatted_query : query_ast;
+    if (formatted_query_ast && settings[Setting::log_formatted_queries])
+        elem.formatted_query = formatted_query_ast->formatWithSecretsOneLine();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -871,7 +888,9 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal)
+    bool internal,
+    const std::vector<String> & applied_rewrite_rules,
+    const ASTPtr & ast_for_formatted_query)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -896,13 +915,17 @@ void logExceptionBeforeStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalized_query_hash;
+    elem.applied_rules = applied_rewrite_rules;
 
     // Log query_kind if ast is valid
     if (ast)
     {
         elem.query_kind = ast->getQueryKind();
+        /// Use the pre-rewrite AST for `formatted_query` when provided, so it matches the
+        /// original `query` column and does not expose result-template secrets (see logQueryStart).
+        const ASTPtr & formatted_query_ast = ast_for_formatted_query ? ast_for_formatted_query : ast;
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = formatted_query_ast->formatWithSecretsOneLine();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1176,6 +1199,14 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
+    /// Names of the rewrite rules applied to the query (filled by `astTraversal`), recorded in
+    /// the `applied_rules` column of `system.query_log`.
+    std::vector<String> applied_rewrite_rules;
+    /// The original (pre-rewrite) AST, kept so `system.query_log.formatted_query` can describe
+    /// the query as submitted — consistent with the `query` column — even when a rewrite rule
+    /// replaced `out_ast`. This avoids surfacing the rewritten query (and any result-template
+    /// secrets) in `formatted_query`. Empty when the query was not (or not yet) parsed.
+    ASTPtr ast_for_formatted_query;
     UInt64 normalized_query_hash = 0;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
@@ -1420,6 +1451,35 @@ static BlockIO executeQueryImpl(
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
+        /// Apply query rewrite rules: matching queries are rewritten in place or rejected.
+        /// This runs AFTER `ASTQueryParameter`s were substituted above, so a value supplied
+        /// through a query parameter is matched as the literal it became — a `REJECT` rule
+        /// cannot be bypassed by parameterizing the matched value. It still runs before the
+        /// query's own `SETTINGS` clause is interpreted (`InterpreterSetQuery::applySettingsFromQuery`
+        /// below), so `query_rules` is a session/profile-level setting: `SELECT ... SETTINGS
+        /// query_rules = ...` does not affect whether rules are applied to that query.
+        ///
+        /// `query_for_logging` and `normalized_query_hash` were computed above from the
+        /// original (pre-rewrite) query, so `system.query_log` records the query as the user
+        /// submitted it; the applied rule names are recorded separately in `applied_rules`.
+        ///
+        /// `astTraversal` rewrites `out_ast` in place (replacing the pointer with the result
+        /// template), so keep the original AST first for consistent `formatted_query` logging.
+        ast_for_formatted_query = out_ast;
+        /// Apply rules only to the initial user query, never to an internal helper query.
+        /// Several user-facing statements are implemented by copying the user's context and
+        /// re-entering `executeQuery(..., QueryFlags{ .internal = true })` with a different SQL
+        /// body — e.g. `SHOW PRIVILEGES` runs `SELECT * FROM system.privileges` and `SHOW TABLES`
+        /// runs a `SELECT` over `system.tables`. Such helper queries inherit the session's
+        /// `query_rules`, so without this guard a rule matching the implementation SQL could
+        /// rewrite or reject a `SHOW` even though the query the user actually submitted did not
+        /// match the rule, breaking the "apply once to the initial user query" contract. Unlike
+        /// the client-supplied `query_kind` (which is deliberately not trusted above for the
+        /// secondary-query case), `internal` is a server-side flag and cannot be spoofed, so it
+        /// is safe to skip rule application on it.
+        if (!internal)
+            astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)
     {
@@ -1427,11 +1487,29 @@ static BlockIO executeQueryImpl(
         if (query.empty())
             query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
 
-        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
+        /// Mask secrets via the AST when it parsed and carries secret parts (e.g. table-function
+        /// credentials), matching the non-exception branch above. Plain
+        /// `wipeSensitiveDataAndCutToLength` only applies regex masking and would leave such
+        /// secrets visible — in particular for a query rejected by a `REJECT` rule, whose
+        /// `query_for_logging` was already computed with AST masking before `astTraversal` threw.
+        ///
+        /// Prefer the pre-rewrite AST (`ast_for_formatted_query`, saved just before `astTraversal`)
+        /// over `out_ast`: a `REWRITE` rule replaces `out_ast` with its result template in place, so
+        /// if a later rule then rejects the query, formatting `out_ast` here would record the
+        /// rewritten rule output (its structure, with masked secrets) in `system.query_log.query`
+        /// and `normalized_query_hash` instead of the query the user submitted. This keeps the
+        /// exception path consistent with the success path, which logs the original query.
+        /// `ast_for_formatted_query` is null only when parsing failed before the rewrite step, in
+        /// which case `out_ast` is the right (and only) AST to mask.
+        const ASTPtr & ast_for_query_logging = ast_for_formatted_query ? ast_for_formatted_query : out_ast;
+        if (ast_for_query_logging && ast_for_query_logging->hasSecretParts())
+            query_for_logging = ast_for_query_logging->formatForLogging(log_queries_cut_to_length);
+        else
+            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, applied_rewrite_rules, ast_for_formatted_query);
         throw;
     }
 
@@ -1951,7 +2029,9 @@ static BlockIO executeQueryImpl(
                 internal,
                 query_database,
                 query_table,
-                async_insert);
+                async_insert,
+                applied_rewrite_rules,
+                ast_for_formatted_query);
 
             /// Also make possible for caller to log successful query finish and exception during execution.
 
@@ -2021,7 +2101,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, applied_rewrite_rules, ast_for_formatted_query);
 
         throw;
     }
