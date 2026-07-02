@@ -841,6 +841,7 @@ private:
     size_t fillColumns(const Map & map, MutableColumns & columns)
     {
         size_t rows_added = 0;
+        const StoredBlock * const * stored_columns = join->getJoinedData()->stored_columns_index->blocksData();
 
         if (!position)
             position = decltype(position)(
@@ -854,32 +855,32 @@ private:
         {
             if constexpr (STRICTNESS == JoinStrictness::RightAny)
             {
-                fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
+                fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::All)
             {
-                fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
+                fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Any)
             {
                 if constexpr (KIND == JoinKind::Left || KIND == JoinKind::Inner)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Semi)
             {
                 if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
             }
             else if constexpr (STRICTNESS == JoinStrictness::Anti)
             {
                 if constexpr (KIND == JoinKind::Left)
-                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillOne<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
                 else if constexpr (KIND == JoinKind::Right)
-                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added);
+                    fillAll<Map>(columns, column_indices, it, key_pos, rows_added, stored_columns);
             }
             else
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This JOIN is not implemented yet");
@@ -896,27 +897,33 @@ private:
 
     template <typename Map>
     static void fillOne(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
+                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
+        /// The mapped value of MapsOne is a single encoded ref; the mapped value of MapsAll
+        /// (RightAny under preferUseMapsAll) is a tagged ref list whose first element is taken.
+        const UInt64 ref_word = firstRefWord(it->getMapped());
+        const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
         for (size_t j = 0; j < columns.size(); ++j)
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*it->getMapped().columns_info->columns[column_indices[j]], it->getMapped().row_num);
+                columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
         ++rows_added;
     }
 
     template <typename Map>
     static void fillAll(MutableColumns & columns, const ColumnNumbers & column_indices, typename Map::const_iterator & it,
-                        const std::optional<size_t> & key_pos, size_t & rows_added)
+                        const std::optional<size_t> & key_pos, size_t & rows_added, const StoredBlock * const * stored_columns)
     {
         for (auto ref_it = it->getMapped().begin(); ref_it.ok(); ++ref_it)
         {
+            const UInt64 ref_word = *ref_it;
+            const StoredBlock * block = stored_columns[refWordBlockNo(ref_word)];
             for (size_t j = 0; j < columns.size(); ++j)
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*ref_it->columns_info->columns[column_indices[j]], ref_it->row_num);
+                    columns[j]->insertFrom(*block->columns[column_indices[j]], refWordRowNo(ref_word));
             ++rows_added;
         }
     }
