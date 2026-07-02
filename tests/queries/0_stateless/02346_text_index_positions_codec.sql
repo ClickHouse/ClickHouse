@@ -105,3 +105,52 @@ SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'haystack needle');
 
 DROP TABLE tab_none;
 DROP TABLE tab_pfor;
+
+SELECT 'Merge path re-encodes positions';
+
+CREATE TABLE tab_none (
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'none')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+CREATE TABLE tab_pfor (
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1, positions_codec = 'pfor')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+-- Stop background merges so the separate INSERTs stay as separate parts until the explicit OPTIMIZE.
+SYSTEM STOP MERGES tab_pfor;
+
+-- One part per INSERT; positions span multiple pfor blocks so the merge re-encodes real block streams.
+INSERT INTO tab_pfor(id, message) VALUES (1, 'abc def foo'), (2, 'abc def bar'), (3, 'zzz foo bar');
+INSERT INTO tab_pfor SELECT number + 10, 'hello clickhouse world' FROM numbers(2048);
+INSERT INTO tab_pfor SELECT number + 3000, 'hello world clickhouse' FROM numbers(2048);
+INSERT INTO tab_none SELECT id, message FROM tab_pfor;
+
+-- At least two active pfor parts before the merge.
+SELECT count() >= 2 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_pfor' AND active;
+
+-- Phrase results across the multiple pfor parts match the 'none' ground truth (pre-merge).
+SELECT (SELECT arraySort(groupArray(id)) FROM tab_none WHERE hasPhrase(message, 'abc def'))   = (SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasPhrase(message, 'abc def'));
+SELECT (SELECT count() FROM tab_none WHERE hasPhrase(message, 'hello clickhouse'))            = (SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse'));
+
+OPTIMIZE TABLE tab_pfor FINAL;
+
+-- Merged into a single part; the merge decoded and re-encoded the pfor positions.
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'tab_pfor' AND active;
+
+-- Same phrase results after the merge re-encoded the positions on the merged part.
+SELECT (SELECT arraySort(groupArray(id)) FROM tab_none WHERE hasPhrase(message, 'abc def'))   = (SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasPhrase(message, 'abc def'));
+SELECT (SELECT count() FROM tab_none WHERE hasPhrase(message, 'hello clickhouse'))            = (SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse'));
+SELECT (SELECT count() FROM tab_none WHERE hasPhrase(message, 'world clickhouse'))            = (SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'world clickhouse'));
+
+DROP TABLE tab_none;
+DROP TABLE tab_pfor;

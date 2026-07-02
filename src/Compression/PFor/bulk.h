@@ -36,6 +36,24 @@ inline ALWAYS_INLINE size_t getVarint(const uint8_t * p, uint64_t & v) noexcept
     return n;
 }
 
+/// Bounded LEB128 read: returns the position past the varint, or nullptr on truncation or an
+/// overlong (> 64-bit) encoding. Fail-closed analogue of CH readVarUInt(x, istr, size).
+inline ALWAYS_INLINE const uint8_t * getVarintChecked(const uint8_t * p, const uint8_t * end, uint64_t & v) noexcept
+{
+    v = 0;
+    unsigned shift = 0;
+    while (true)
+    {
+        if (p >= end || shift >= 64)
+            return nullptr;
+        const uint8_t b = *p++;
+        v |= static_cast<uint64_t>(b & 0x7Fu) << shift;
+        if (!(b & 0x80u))
+            return p;
+        shift += 7;
+    }
+}
+
 template <typename T>
 inline size_t bulkEncode(const T * in, size_t n, Delta mode, uint8_t * out) noexcept
 {

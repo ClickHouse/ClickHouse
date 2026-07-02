@@ -256,3 +256,49 @@ TYPED_TEST(PForRoundTrip, U64CrossBoundaryAndFullWidth)
         checkRoundTrip<T>(w, PFor::Delta::none);
     }
 }
+
+/// Malformed self-describing buffers must fail closed (return {} / 0), never over-read or report a partial decode as success.
+TEST(PForSelfDescribing, FailClosed)
+{
+    std::vector<uint32_t> values(500);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<uint32_t>(i * 7 + 3);
+
+    std::vector<uint8_t> good(PFor::maxCompressedBytes<uint32_t>(values.size()) + 64, 0);
+    const size_t good_size = PFor::compressInto<uint32_t>(std::span<const uint32_t>(values), PFor::Delta::d0, good.data());
+    auto span_of = [&](size_t n) { return std::span<const uint8_t>(good.data(), n); };
+
+    std::vector<uint32_t> out(values.size() + 64, 0);
+
+    /// Sanity: the intact buffer still decodes.
+    EXPECT_EQ(PFor::decompress<uint32_t>(span_of(good_size)), values);
+    EXPECT_EQ(PFor::decompressInto<uint32_t>(span_of(good_size), out.data()), values.size());
+
+    /// Empty input: no header at all.
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>()).empty());
+    EXPECT_EQ(PFor::decompressInto<uint32_t>(std::span<const uint8_t>(), out.data()), 0u);
+    EXPECT_EQ(PFor::decompressedCount(std::span<const uint8_t>()), 0u);
+
+    /// Truncated varint (lone continuation byte) and a count with no following flag byte.
+    const std::vector<uint8_t> lone_cont = {0x80};
+    EXPECT_EQ(PFor::decompressedCount(std::span<const uint8_t>(lone_cont)), 0u);
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(lone_cont)).empty());
+    const std::vector<uint8_t> count_only = {0x05};
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(count_only)).empty());
+
+    /// Invalid flag byte: reserved mode 3, and an undefined high bit set.
+    const std::vector<uint8_t> mode3 = {0x01, 0x03, 0x00};
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(mode3)).empty());
+    const std::vector<uint8_t> undef_bit = {0x01, 0x08, 0x00};
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(undef_bit)).empty());
+
+    /// Truncated body: header intact, block stream cut short.
+    EXPECT_TRUE(PFor::decompress<uint32_t>(span_of(good_size - 1)).empty());
+    EXPECT_EQ(PFor::decompressInto<uint32_t>(span_of(good_size - 1), out.data()), 0u);
+
+    /// Element-width mismatch: a uint64-tagged buffer decoded as uint32, and the reverse.
+    std::vector<uint64_t> values64(values.begin(), values.end());
+    std::vector<uint8_t> wide = PFor::compress<uint64_t>(std::span<const uint64_t>(values64), PFor::Delta::d0);
+    EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(wide)).empty());
+    EXPECT_TRUE(PFor::decompress<uint64_t>(span_of(good_size)).empty());
+}

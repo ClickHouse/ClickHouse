@@ -127,13 +127,13 @@ void encodePfor(std::span<const RoaringishEntry> entries, WriteBuffer & out)
     out.write(reinterpret_cast<const char *>(payload.data()), off);
 }
 
-/// Decode one PFor lane fail-closed: throw CORRUPTED_DATA if truncated or malformed (decodeBlocks returns 0). Advances `p`.
-void decodePforLane(const uint8_t *& p, const uint8_t * end, UInt64 count, PFor::Delta mode, UInt32 * out)
+/// Decode one PFor lane fail-closed: throw CORRUPTED_DATA if truncated or malformed (decodeBlocks returns 0); returns the position past the lane.
+const uint8_t * decodePforLane(const uint8_t * p, const uint8_t * end, UInt64 count, PFor::Delta mode, UInt32 * out)
 {
     const size_t consumed = PFor::decodeBlocks<UInt32>(p, count, mode, out, end);
     if (consumed == 0)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (pfor): truncated or malformed lane");
-    p += consumed;
+    return p + consumed;
 }
 
 void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexPositionCodec::DecodeScratch & scratch)
@@ -158,9 +158,9 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexP
     const uint8_t * const start = reinterpret_cast<const uint8_t *>(scratch.payload.data());
     const uint8_t * const end = start + payload_bytes;
     const uint8_t * p = start;
-    decodePforLane(p, end, count, PFor::Delta::d0, scratch.doc.data());
-    decodePforLane(p, end, count, PFor::Delta::none, scratch.group.data());
-    decodePforLane(p, end, count, PFor::Delta::none, scratch.bitmap.data());
+    p = decodePforLane(p, end, count, PFor::Delta::d0, scratch.doc.data());
+    p = decodePforLane(p, end, count, PFor::Delta::none, scratch.group.data());
+    p = decodePforLane(p, end, count, PFor::Delta::none, scratch.bitmap.data());
     if (p != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
@@ -190,9 +190,9 @@ void decodePforSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & pa
     const uint8_t * const start = reinterpret_cast<const uint8_t *>(payload.data());
     const uint8_t * const end = start + payload_bytes;
     const uint8_t * p = start;
-    decodePforLane(p, end, count, PFor::Delta::d0, pl.doc.data());
-    decodePforLane(p, end, count, PFor::Delta::none, pl.group.data());
-    decodePforLane(p, end, count, PFor::Delta::none, pl.bitmap.data());
+    p = decodePforLane(p, end, count, PFor::Delta::d0, pl.doc.data());
+    p = decodePforLane(p, end, count, PFor::Delta::none, pl.group.data());
+    p = decodePforLane(p, end, count, PFor::Delta::none, pl.bitmap.data());
     if (p != end)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupt text index positions (pfor): payload not fully consumed ({} of {} bytes)",
