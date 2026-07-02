@@ -73,6 +73,12 @@ struct TopKFilterInfo
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
     TopKThresholdTrackerPtr threshold_tracker;
+
+    /// Deterministic hash over the parameters that describe the TopK filter at planning time:
+    /// `(column_name, type_name, limit_n, direction, num_sort_columns)`. Used as part of the
+    /// query condition cache key so that QCC entries written under a TopK plan are partitioned
+    /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
+    UInt64 condition_hash = 0;
 };
 
 struct LazyMaterializingRows;
@@ -264,6 +270,11 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Direct reads from a text index (see `createReadTasksForTextIndex`). The tasks are self-contained,
+    /// so the get/set pair lets another step reading the same table (e.g. one built by lazy FINAL) reproduce them.
+    const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }
+    void setIndexReadTasks(IndexReadTasks index_read_tasks_) { index_read_tasks = std::move(index_read_tasks_); }
+
     /// True if a coordinator-side snapshot boundary is pinned (e.g. select_sequential_consistency).
     /// Such a read cannot be distributed: a worker reads from its own snapshot and cannot reproduce it.
     bool hasPinnedBlockNumbers() const { return max_block_numbers_to_read != nullptr; }
@@ -404,6 +415,7 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
+    const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -494,7 +506,10 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit);
+        UInt64 limit,
+        /// Index of this split when reading in-order with parallel replicas; nullopt means
+        /// a single pool reads the whole table (no splitting).
+        std::optional<size_t> split_index = std::nullopt);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
@@ -551,6 +566,7 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
