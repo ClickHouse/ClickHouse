@@ -84,6 +84,9 @@ ASTPtr ASTIndexDeclaration::clone() const
 
     auto res = make_intrusive<ASTIndexDeclaration>(expr, type, name);
     res->granularity = granularity;
+    /// The flag selects the `CREATE INDEX` formatting; a clone must keep it so it formats identically
+    /// to the original (otherwise `clone()->format()` diverges from `format()`).
+    res->part_of_create_index_query = part_of_create_index_query;
 
     return res;
 }

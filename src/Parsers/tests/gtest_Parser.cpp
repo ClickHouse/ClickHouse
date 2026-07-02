@@ -144,6 +144,45 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+/// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
+/// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
+/// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
+/// that flag over, otherwise `clone()->format()` diverges from `format()`. Assert on the formatted
+/// string rather than `getTreeHash`, because the tree hash does not include the flag.
+TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
+{
+    const std::vector<String> queries = {
+        "CREATE INDEX i ON t ((a())) TYPE a GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a, b) -> a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((a + b) * a) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t (a, b) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((a, b).1) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE HYPOTHETICAL INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        /// A clone must format identically to the original (this is what the distributed-DDL clone
+        /// path relies on). The tree hash omits the flag, so compare the rendered text.
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->formatWithSecretsOneLine(), cloned->formatWithSecretsOneLine()) << "clone of: " << query;
+
+        /// And the original must survive a format+reparse+format round trip.
+        String formatted = ast->formatWithSecretsOneLine();
+        ParserQuery reparse_parser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparse_parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
+    }
+}
+
 TEST_P(ParserTest, parseQuery)
 {
     const auto & parser = std::get<0>(GetParam());
