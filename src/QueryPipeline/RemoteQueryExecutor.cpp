@@ -787,7 +787,14 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    /// Followers only block on the response when they actually need it (in-order modes pin
+    /// per-split parts via the response). In `Default` mode the caller discards the response,
+    /// so the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default;
+
+    auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    if (send_response)
+        connections->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 void RemoteQueryExecutor::finish()
