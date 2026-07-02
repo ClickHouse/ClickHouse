@@ -1,0 +1,10 @@
+default disabled
+0
+explicitly enabled
+1
+bounded by max limit
+0
+unbounded max enables with ties
+1
+result check
+5	10
