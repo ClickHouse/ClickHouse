@@ -16,6 +16,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
+#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -457,11 +458,12 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
+                const Int64 untracked = DB::UntrackedMemoryRegistry::instance().sum();
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
                     "would use {} (attempt to allocate chunk of {}){}{}, maximum: {}."
-                    "{}{}",
+                    "{} Untracked memory across all threads: {}.",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
@@ -469,8 +471,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                     (level == VariableContext::Global) ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
                     (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
-                    overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
-                    overcommit_result_ignore ? "" : toDescription(overcommit_result));
+                    overcommit_result_ignore ? "" : fmt::format(" OvercommitTracker decision: {}.", toDescription(overcommit_result)),
+                    formatReadableSizeWithBinarySuffix(untracked));
             }
 
             // If OvercommitTracker::needToStopQuery returned false, it guarantees that enough memory is freed.
