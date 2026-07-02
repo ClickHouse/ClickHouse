@@ -267,6 +267,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_hyperscan", trueOrFalseSetting},
        {"allow_key_condition_coalesce_rewrite", trueOrFalseSetting},
        {"allow_experimental_join_right_table_sorting", trueOrFalseSetting},
+       {"allow_experimental_text_index_lazy_apply", trueOrFalseSetting},
        {"allow_limit_by_partitions_independently", trueOrFalseSetting},
        {"allow_push_predicate_ast_for_distributed_subqueries", trueOrFalseSetting},
        {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
@@ -1557,7 +1558,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"table_function_remote_max_addresses",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.2, 1, 100)); }, {}, false)},
-    {"text_index_lazy_intersection_density_threshold", probRangeSetting},
+    {"text_index_density_threshold", probRangeSetting},
     {"text_index_hint_max_selectivity", probRangeSetting},
     {"text_index_like_max_postings_to_read",
      CHSetting(
