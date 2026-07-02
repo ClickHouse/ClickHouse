@@ -2469,12 +2469,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
             result_projection_names.push_back(column_name);
 
+        String apply_column_name_prefix;
+
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
+                apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
@@ -2577,7 +2580,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
 
-                result_projection_names.back() = std::move(node_projection_names[0]);
+                /// `APPLY (expr, 'prefix')` names the result `prefix` + the accumulated column name
+                /// before this transformer (chained prefixes accumulate: `q_` + `p_` + `a`).
+                if (execute_apply_transformer && !apply_column_name_prefix.empty())
+                    result_projection_names.back() = apply_column_name_prefix + result_projection_names.back();
+                else
+                    result_projection_names.back() = std::move(node_projection_names[0]);
                 node_to_projection_name.emplace(node, result_projection_names.back());
                 node_projection_names.clear();
             }
