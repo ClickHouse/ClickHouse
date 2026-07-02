@@ -80,6 +80,47 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     return *this;
 }
 
+namespace
+{
+
+/// Replace ALIAS column references inside index TYPE arguments with their underlying
+/// expressions -- the same substitution initExpressionInfo applies to the index key
+/// expression, but for the arguments (e.g. a text index `preprocessor = lower(col)`).
+///
+/// Arguments are a list of key=value pairs, parsed as `equals(ASTIdentifier key, value)`:
+///
+///   arguments (ASTExpressionList)
+///   +-- equals( "tokenizer",    'asciiCJK'        )   value: children[1]
+///   +-- equals( "preprocessor", lower(alias_col)  )   value: children[1]   <- alias lives here
+///
+/// We must visit ONLY the value side (children[1]) of each pair. Visiting the whole list
+/// would let the aliasing visitor (which rewrites any ASTIdentifier whose name is an alias)
+/// clobber a parameter NAME on children[0] -- e.g. if a column named `tokenizer` were an
+/// alias, the key identifier `tokenizer` would be wrongly rewritten and argument parsing
+/// would break. Non key=value argument forms are left untouched.
+void replaceAliasesInIndexArguments(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    if (!arguments)
+        return;
+
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    ReplaceAliasToExprVisitor::Data data{columns};
+
+    for (auto & child : arguments->children)
+    {
+        auto * equals_function = child->as<ASTFunction>();
+        if (!equals_function || equals_function->name != "equals" || !equals_function->arguments
+            || equals_function->arguments->children.size() != 2)
+            continue;
+
+        /// children[0] is the parameter name (key) -- never substitute it.
+        /// children[1] is the value expression -- substitute aliases there.
+        ReplaceAliasToExprVisitor{data}.visit(equals_function->arguments->children[1]);
+    }
+}
+
+}
+
 IndexDescription IndexDescription::getIndexFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -128,7 +169,18 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+        /// Only the `text` index has expression-valued arguments (`preprocessor` / `postprocessor`)
+        /// that may reference ALIAS columns -- e.g. `preprocessor = lower(alias_col)`. Other index
+        /// types take positional literal arguments, where an identifier is a value rather than a
+        /// column reference, so alias substitution must not run for them. The index key expression
+        /// is alias-substituted in initExpressionInfo; do the same for the argument VALUES here so
+        /// an argument expression over an ALIAS resolves to the underlying physical columns instead
+        /// of failing later with "Missing columns" during argument validation.
+        if (result.type == "text")
+            replaceAliasesInIndexArguments(result.arguments, columns);
+    }
 
     return result;
 }
