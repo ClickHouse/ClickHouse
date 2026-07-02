@@ -333,6 +333,9 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+            /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
+            /// tables look nearly free to move over the network.
+            statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
 
             LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
             return statistics;

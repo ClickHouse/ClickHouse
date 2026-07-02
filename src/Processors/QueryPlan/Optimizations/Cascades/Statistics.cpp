@@ -214,6 +214,12 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
                 ? *relation_stats.avg_row_bytes
                 : estimateReadBytesPerRowFromStep(*read_step);
+            /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
+            /// hints can deliberately claim more rows than the table physically has (tiny tables
+            /// standing in for big ones in tests), so never put the bound below the estimate.
+            stats->max_row_count = std::max(stats->estimated_row_count,
+                Float64(read_step->getStorageSnapshot()->storage.totalRows(nullptr)
+                    .value_or(std::numeric_limits<UInt64>::max())));
         }
     }
 
