@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/FunctionParameterValuesVisitor.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -29,7 +31,17 @@
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/IStorage.h>
+#include <Storages/StorageView.h>
+#include <Storages/checkAndGetLiteralArgument.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <base/defines.h> /// chassert
+
+#include <optional>
+#include <unordered_set>
 
 
 namespace ProfileEvents
@@ -71,6 +83,472 @@ namespace ErrorCodes
 namespace
 {
 
+bool astOrViewDependenciesHaveLimitShuffle(
+    const ASTPtr & ast, const ContextPtr & context, std::unordered_set<String> & visited_views, bool fail_on_missing_dependency = false);
+bool storageHasLimitShuffle(const StoragePtr & storage, const ContextPtr & context, std::unordered_set<String> & visited_views);
+bool tableFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views);
+StoragePtr tryGetTableFromDatabaseAndTableName(const String & database_name, const String & table_name, const ContextPtr & context);
+
+bool tryParseDatabaseAndTableName(const String & database_table, String & database, String & table)
+{
+    Tokens tokens(database_table.c_str(), database_table.c_str() + database_table.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
+    IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
+    Expected expected;
+    return parseDatabaseAndTableName(pos, expected, database, table);
+}
+
+bool isPredefinedDatabaseTableName(const String & database_table)
+{
+    String database;
+    String table;
+    return tryParseDatabaseAndTableName(database_table, database, table) && DatabaseCatalog::isPredefinedDatabase(database);
+}
+
+std::optional<String> tryGetIdentifierOrStringLiteral(const ASTPtr & ast)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+        return identifier->name();
+
+    if (const auto * literal = ast->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+        return literal->value.safeGet<String>();
+
+    return std::nullopt;
+}
+
+bool remoteTableFunctionTargetIsPredefinedDatabase(const ASTFunction & function)
+{
+    const bool is_cluster_function = function.name == "cluster" || function.name == "clusterAllReplicas";
+    const bool is_remote_function = function.name == "remote" || function.name == "remoteSecure";
+    if (!is_cluster_function && !is_remote_function)
+        return false;
+
+    const ASTs & function_children = function.children;
+    if (function_children.size() != 1)
+        return false;
+
+    const auto * expression_list = function_children[0]->as<ASTExpressionList>();
+    if (!expression_list)
+        return false;
+
+    const ASTs & args = expression_list->children;
+    if ((!is_cluster_function && args.empty()) || args.size() < 2)
+        return false;
+
+    constexpr size_t arg_num = 1;
+    if (const auto * nested_function = args[arg_num]->as<ASTFunction>();
+        nested_function && TableFunctionFactory::instance().isTableFunctionName(nested_function->name))
+        return false;
+
+    const auto database_or_qualified_table = tryGetIdentifierOrStringLiteral(args[arg_num]);
+    if (!database_or_qualified_table)
+        return false;
+
+    if (isPredefinedDatabaseTableName(*database_or_qualified_table))
+        return true;
+
+    if (arg_num + 1 >= args.size())
+        return false;
+
+    const auto table_name = tryGetIdentifierOrStringLiteral(args[arg_num + 1]);
+    return table_name && !table_name->empty() && DatabaseCatalog::isPredefinedDatabase(*database_or_qualified_table);
+}
+
+bool remoteTableTargetHasLimitShuffle(ASTs & args, size_t arg_num, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (arg_num >= args.size())
+        return true;
+
+    if (const auto * nested_function = args[arg_num]->as<ASTFunction>();
+        nested_function && TableFunctionFactory::instance().isTableFunctionName(nested_function->name))
+    {
+        if (nested_function->name == "numbers" || nested_function->name == "numbers_mt")
+            return false;
+
+        if (nested_function->name == "view" || nested_function->name == "viewIfPermitted")
+        {
+            const auto * query = nested_function->tryGetQueryArgument();
+            return !query || astOrViewDependenciesHaveLimitShuffle(
+                query->clone(), context, visited_views, /*fail_on_missing_dependency*/ true);
+        }
+
+        return true;
+    }
+
+    args[arg_num] = evaluateConstantExpressionForDatabaseName(args[arg_num], context);
+    const auto database_or_qualified_table = checkAndGetLiteralArgument<String>(args[arg_num], "database");
+
+    String database_name;
+    String table_name;
+    if (tryParseDatabaseAndTableName(database_or_qualified_table, database_name, table_name) && !database_name.empty())
+    {
+        if (DatabaseCatalog::isPredefinedDatabase(database_name))
+            return false;
+
+        const auto storage = tryGetTableFromDatabaseAndTableName(database_name, table_name, context);
+        return storage ? storageHasLimitShuffle(storage, context, visited_views) : true;
+    }
+
+    if (arg_num + 1 >= args.size())
+        return true;
+
+    args[arg_num + 1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num + 1], context);
+    table_name = checkAndGetLiteralArgument<String>(args[arg_num + 1], "table");
+    database_name = database_or_qualified_table;
+
+    if (DatabaseCatalog::isPredefinedDatabase(database_name))
+        return false;
+
+    const auto storage = tryGetTableFromDatabaseAndTableName(database_name, table_name, context);
+    return storage ? storageHasLimitShuffle(storage, context, visited_views) : true;
+}
+
+StoragePtr tryGetTableFromDatabaseAndTableName(const String & database_name, const String & table_name, const ContextPtr & context)
+{
+    return DatabaseCatalog::instance().tryGetTable({database_name, table_name}, context->getQueryContext());
+}
+
+StoragePtr tryGetTableFromTableName(const String & table_name, const ContextPtr & context)
+{
+    String database_name = context->getCurrentDatabase();
+    String resolved_table_name = table_name;
+
+    String parsed_database;
+    String parsed_table;
+    Tokens tokens(table_name.c_str(), table_name.c_str() + table_name.size(), /*max_query_size*/ 2048, /*skip_insignificant*/ true);
+    IParser::Pos pos(tokens, /*max_depth*/ 42, /*max_backtracks*/ 42);
+    Expected expected;
+    if (parseDatabaseAndTableName(pos, expected, parsed_database, parsed_table) && !parsed_database.empty())
+    {
+        database_name = std::move(parsed_database);
+        resolved_table_name = std::move(parsed_table);
+    }
+
+    return tryGetTableFromDatabaseAndTableName(database_name, resolved_table_name, context);
+}
+
+bool viewStorageHasLimitShuffle(const StoragePtr & storage, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+    if (!storage_view)
+        return false;
+
+    const auto table_id = storage->getStorageID();
+    const auto table_name_for_visit = table_id.getFullTableName();
+    if (!visited_views.insert(table_name_for_visit).second)
+        return false;
+
+    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    const auto & view_select = metadata->getSelectQuery();
+    return astOrViewDependenciesHaveLimitShuffle(view_select.inner_query, context, visited_views)
+        || astOrViewDependenciesHaveLimitShuffle(view_select.select_query, context, visited_views);
+}
+
+bool distributedStorageHasLimitShuffle(const StoragePtr & storage, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    const auto * storage_distributed = storage ? storage->as<StorageDistributed>() : nullptr;
+    if (!storage_distributed)
+        return false;
+
+    const auto table_id = storage->getStorageID();
+    const auto table_name_for_visit = table_id.getFullTableName();
+    if (!visited_views.insert(table_name_for_visit).second)
+        return false;
+
+    String remote_database_name = storage_distributed->getRemoteDatabaseName();
+    const String remote_table_name = storage_distributed->getRemoteTableName();
+    if (remote_database_name.empty())
+        remote_database_name = context->getCurrentDatabase();
+
+    if (remote_table_name.empty())
+        return true;
+
+    if (DatabaseCatalog::isPredefinedDatabase(remote_database_name))
+        return false;
+
+    const auto remote_storage = tryGetTableFromDatabaseAndTableName(remote_database_name, remote_table_name, context);
+    return remote_storage ? storageHasLimitShuffle(remote_storage, context, visited_views) : true;
+}
+
+bool storageHasLimitShuffle(const StoragePtr & storage, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (viewStorageHasLimitShuffle(storage, context, visited_views))
+        return true;
+
+    const auto * storage_alias = storage ? storage->as<StorageAlias>() : nullptr;
+    if (storage_alias)
+    {
+        const auto table_id = storage->getStorageID();
+        const auto table_name_for_visit = table_id.getFullTableName();
+        if (!visited_views.insert(table_name_for_visit).second)
+            return false;
+
+        return storageHasLimitShuffle(storage_alias->tryGetTargetTable(), context, visited_views);
+    }
+
+    if (distributedStorageHasLimitShuffle(storage, context, visited_views))
+        return true;
+
+    const auto * storage_merge = storage ? storage->as<StorageMerge>() : nullptr;
+    if (!storage_merge)
+        return false;
+
+    const auto table_id = storage->getStorageID();
+    const auto table_name_for_visit = table_id.getFullTableName();
+    if (!visited_views.insert(table_name_for_visit).second)
+        return false;
+
+    return storage_merge->hasChildTable(
+        [&](const StoragePtr & child_storage)
+        {
+            return storageHasLimitShuffle(child_storage, context, visited_views);
+        });
+}
+
+bool parameterizedViewFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (TableFunctionFactory::instance().isTableFunctionName(function.name))
+        return false;
+
+    String database_name = context->getCurrentDatabase();
+    String table_name = function.name;
+
+    if (function.isCompoundName())
+    {
+        std::vector<std::string> parts;
+        splitInto<'.'>(parts, function.name);
+
+        if (parts.size() == 2)
+        {
+            database_name = std::move(parts[0]);
+            table_name = std::move(parts[1]);
+        }
+    }
+
+    const auto storage = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, context->getQueryContext());
+    const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
+    if (!storage_view || !storage_view->isParameterizedView())
+        return false;
+
+    const auto table_id = storage->getStorageID();
+    const auto table_name_for_visit = table_id.getFullTableName() + "(" + function.getColumnName() + ")";
+    if (!visited_views.insert(table_name_for_visit).second)
+        return false;
+
+    const auto parameter_values = analyzeFunctionParamValues(function.clone(), context->getQueryContext());
+    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    const auto & view_select = metadata->getSelectQuery();
+
+    auto queryHasLimitShuffle = [&](const ASTPtr & query)
+    {
+        if (!query)
+            return false;
+
+        auto substituted_query = query->clone();
+        StorageView::replaceQueryParametersIfParameterizedView(substituted_query, parameter_values);
+        return astOrViewDependenciesHaveLimitShuffle(substituted_query, context, visited_views);
+    };
+
+    return queryHasLimitShuffle(view_select.inner_query) || queryHasLimitShuffle(view_select.select_query);
+}
+
+bool selectedMergeTableViewsHaveLimitShuffle(
+    const String & source_database_name_or_regexp,
+    bool database_is_regexp,
+    const String & source_table_regexp,
+    const ContextPtr & context,
+    std::unordered_set<String> & visited_views)
+{
+    OptimizedRegularExpression table_regexp(source_table_regexp);
+    std::optional<OptimizedRegularExpression> database_regexp;
+    if (database_is_regexp)
+        database_regexp.emplace(source_database_name_or_regexp);
+
+    auto inspect_database = [&](const String & database_name) -> bool
+    {
+        const auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        const auto iterator = database->getTablesIterator(
+            context,
+            [&](const String & table_name) { return table_regexp.match(table_name); });
+
+        while (iterator->isValid())
+        {
+            if (storageHasLimitShuffle(iterator->table(), context, visited_views))
+                return true;
+            iterator->next();
+        }
+
+        return false;
+    };
+
+    if (!database_is_regexp)
+        return inspect_database(source_database_name_or_regexp);
+
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+    for (const auto & [database_name, _] : databases)
+    {
+        if (database_regexp->match(database_name) && inspect_database(database_name))
+            return true;
+    }
+
+    return false;
+}
+
+bool mergeTableFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (function.name != "merge")
+        return false;
+
+    const auto cloned_function = function.clone();
+    const auto & function_children = cloned_function->children;
+    if (function_children.size() != 1)
+        return false;
+
+    auto & args = function_children.at(0)->children;
+    if (args.size() == 1)
+    {
+        args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
+        const auto source_table_regexp = checkAndGetLiteralArgument<String>(args[0], "table_name_regexp");
+        return selectedMergeTableViewsHaveLimitShuffle(context->getCurrentDatabase(), false, source_table_regexp, context, visited_views);
+    }
+
+    if (args.size() == 2)
+    {
+        auto [database_is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
+        const auto source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
+        const auto source_table_regexp = checkAndGetLiteralArgument<String>(args[1], "table_name_regexp");
+        return selectedMergeTableViewsHaveLimitShuffle(
+            source_database_name_or_regexp, database_is_regexp, source_table_regexp, context, visited_views);
+    }
+
+    return false;
+}
+
+bool loopTableFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (function.name != "loop")
+        return false;
+
+    const auto cloned_function = function.clone();
+    const auto & function_children = cloned_function->children;
+    if (function_children.size() != 1)
+        return false;
+
+    auto & args = function_children.at(0)->children;
+    if (args.size() == 1)
+    {
+        if (const auto * identifier = args[0]->as<ASTIdentifier>())
+        {
+            const auto storage = tryGetTableFromTableName(identifier->name(), context);
+            return storageHasLimitShuffle(storage, context, visited_views);
+        }
+
+        if (const auto * nested_function = args[0]->as<ASTFunction>();
+            nested_function && TableFunctionFactory::instance().isTableFunctionName(nested_function->name))
+            return tableFunctionHasLimitShuffle(*nested_function, context, visited_views);
+
+        return false;
+    }
+
+    if (args.size() == 2)
+    {
+        args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
+        args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
+
+        const auto database_name = checkAndGetLiteralArgument<String>(args[0], "database");
+        const auto table_name = checkAndGetLiteralArgument<String>(args[1], "table");
+        const auto storage = tryGetTableFromDatabaseAndTableName(database_name, table_name, context);
+        return storageHasLimitShuffle(storage, context, visited_views);
+    }
+
+    return false;
+}
+
+bool remoteTableFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    const bool is_cluster_function = function.name == "cluster" || function.name == "clusterAllReplicas";
+    const bool is_remote_function = function.name == "remote" || function.name == "remoteSecure";
+    if (!is_cluster_function && !is_remote_function)
+        return false;
+
+    const auto cloned_function = function.clone();
+    const auto & function_children = cloned_function->children;
+    if (function_children.size() != 1)
+        return false;
+
+    auto & args = function_children.at(0)->children;
+    if ((!is_cluster_function && args.empty()) || args.size() < 2)
+        return false;
+
+    size_t arg_num = 1;
+    return remoteTableTargetHasLimitShuffle(args, arg_num, context, visited_views);
+}
+
+bool tableFunctionHasLimitShuffle(const ASTFunction & function, const ContextPtr & context, std::unordered_set<String> & visited_views)
+{
+    if (!TableFunctionFactory::instance().isTableFunctionName(function.name))
+        return false;
+
+    return mergeTableFunctionHasLimitShuffle(function, context, visited_views)
+        || remoteTableFunctionHasLimitShuffle(function, context, visited_views)
+        || loopTableFunctionHasLimitShuffle(function, context, visited_views);
+}
+
+bool astOrViewDependenciesHaveLimitShuffle(
+    const ASTPtr & ast, const ContextPtr & context, std::unordered_set<String> & visited_views, bool fail_on_missing_dependency)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    if (const auto * table_identifier = ast->as<ASTTableIdentifier>())
+    {
+        const auto table_id = context->tryResolveStorageID(table_identifier->getTableId());
+        if (table_id)
+        {
+            const auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+            if (storageHasLimitShuffle(storage, context, visited_views))
+                return true;
+
+            return fail_on_missing_dependency && !storage;
+        }
+
+        return fail_on_missing_dependency;
+    }
+    else if (const auto * table_expression = ast->as<ASTTableExpression>())
+    {
+        if (const auto * function = table_expression->table_function ? table_expression->table_function->as<ASTFunction>() : nullptr)
+        {
+            if (parameterizedViewFunctionHasLimitShuffle(*function, context, visited_views))
+                return true;
+            if (tableFunctionHasLimitShuffle(*function, context, visited_views))
+                return true;
+        }
+    }
+    else if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (tableFunctionHasLimitShuffle(*function, context, visited_views))
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astOrViewDependenciesHaveLimitShuffle(child, context, visited_views, fail_on_missing_dependency))
+            return true;
+    }
+
+    return false;
+}
+
+bool astOrViewDependenciesHaveLimitShuffle(const ASTPtr & ast, const ContextPtr & context)
+{
+    std::unordered_set<String> visited_views;
+    return astOrViewDependenciesHaveLimitShuffle(ast, context, visited_views);
+}
+
 struct HasNonDeterministicFunctionsMatcher
 {
     struct Data
@@ -111,6 +589,13 @@ struct HasNonDeterministicFunctionsMatcher
                     data.has_non_deterministic_functions = true;
                 return;
             }
+        }
+        else if (const auto * select = node->as<ASTSelectQuery>(); select && select->limit_shuffle)
+            data.has_non_deterministic_functions = true;
+        else if (node->as<ASTTableIdentifier>() || node->as<ASTTableExpression>())
+        {
+            if (astOrViewDependenciesHaveLimitShuffle(node, data.context))
+                data.has_non_deterministic_functions = true;
         }
     }
 };
@@ -157,6 +642,12 @@ struct HasSystemTablesMatcher
         ///     [...]
         else if (const auto * function = node->as<ASTFunction>())
         {
+            if (remoteTableFunctionTargetIsPredefinedDatabase(*function))
+            {
+                data.has_system_tables = true;
+                return;
+            }
+
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;

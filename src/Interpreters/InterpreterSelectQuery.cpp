@@ -13,6 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -401,6 +402,23 @@ ContextPtr getSubqueryContext(const ContextPtr & context)
     return subquery_context;
 }
 
+bool hasLimitShuffle(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffle(child))
+            return true;
+    }
+
+    return false;
+}
+
 void rewriteMultipleJoins(ASTPtr & query, const TablesWithColumns & tables, const String & database, const Settings & settings)
 {
     ASTSelectQuery & select = query->as<ASTSelectQuery &>();
@@ -557,6 +575,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , prepared_sets(prepared_sets_)
 {
     checkStackSize();
+
+    if (hasLimitShuffle(query_ptr))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE requires the query analyzer. Set `enable_analyzer = 1`");
 
     if (!prepared_sets)
         prepared_sets = std::make_shared<PreparedSets>();

@@ -72,6 +72,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
@@ -92,6 +93,7 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
+#include <Functions/FunctionFactory.h>
 #include <base/types.h>
 
 
@@ -191,6 +193,31 @@ namespace ErrorCodes
 
 namespace
 {
+
+void addRandomOrderBy(ListNode & order_by_list_node, ContextPtr context)
+{
+    auto & function_factory = FunctionFactory::instance();
+    auto resolver = function_factory.get("rand", context);
+    auto rand_function_node = std::make_shared<FunctionNode>("rand");
+    rand_function_node->resolveAsFunction(resolver);
+
+    auto sort_node = std::make_shared<SortNode>(rand_function_node);
+    order_by_list_node.getNodes().push_back(std::move(sort_node));
+}
+
+QueryTreeNodePtr rewriteLimitShuffleAsOrderByRand(const QueryTreeNodePtr & query_tree)
+{
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node || !query_node->isLimitShuffle())
+        return query_tree;
+
+    auto rewritten_query_tree = query_tree->clone();
+    auto & rewritten_query_node = rewritten_query_tree->as<QueryNode &>();
+    rewritten_query_node.setIsLimitShuffle(false);
+    rewritten_query_node.setIsLimitShuffleForUnorderedOutput(true);
+    addRandomOrderBy(rewritten_query_node.getOrderBy(), rewritten_query_node.getContext());
+    return rewritten_query_tree;
+}
 
 /** Check that table and table function table expressions from planner context support transactions.
   *
@@ -563,6 +590,16 @@ public:
     bool is_limit_by_length_negative = false;
     bool is_limit_by_offset_negative = false;
 };
+
+bool canAllowUnorderedOutputForLimitShuffle(const QueryAnalysisResult & query_analysis_result, const QueryNode & query_node)
+{
+    return query_node.isLimitShuffleForUnorderedOutput()
+        && query_analysis_result.partial_sorting_limit != 0
+        && query_analysis_result.limit_offset == 0
+        && query_analysis_result.fractional_offset == 0
+        && query_analysis_result.sort_description.size() == 1
+        && query_analysis_result.sort_description[0].column_name == "rand()";
+}
 
 template <size_t size>
 ALWAYS_INLINE void addExpressionStep(
@@ -938,7 +975,8 @@ void addDistinctStep(QueryPlan & query_plan,
 
 void addSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    bool allow_unordered_output = false)
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
@@ -949,6 +987,8 @@ void addSortingStep(QueryPlan & query_plan,
         sort_description,
         query_analysis_result.partial_sorting_limit,
         sort_settings);
+    if (allow_unordered_output)
+        sorting_step->setAllowUnorderedOutput();
     sorting_step->setStepDescription("Sorting for ORDER BY");
     query_plan.addStep(std::move(sorting_step));
 }
@@ -957,7 +997,8 @@ template<size_t size>
 ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const char (&description)[size])
+    const char (&description)[size],
+    bool allow_unordered_output = false)
 {
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
@@ -972,6 +1013,8 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
         sort_settings,
         query_analysis_result.partial_sorting_limit,
         settings[Setting::exact_rows_before_limit]);
+    if (allow_unordered_output)
+        merging_sorted->setAllowUnorderedOutput();
     merging_sorted->setStepDescription(description);
 
     /// Buffer incoming pre-sorted streams to decouple the readers from the merger.
@@ -1298,7 +1341,11 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         return;
 
     if (expressions_analysis_result.hasSort())
-        addSortingStep(query_plan, query_analysis_result, planner_context);
+        addSortingStep(
+            query_plan,
+            query_analysis_result,
+            planner_context,
+            /*allow_unordered_output=*/ false);
 
     /** For DISTINCT step, pre_distinct = false, because if we have limit and distinct,
       * we need to merge streams to one and calculate overall distinct.
@@ -1895,7 +1942,7 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
     const ActionsDAG * post_filter_)
-    : query_tree(query_tree_)
+    : query_tree(rewriteLimitShuffleAsOrderByRand(query_tree_))
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
@@ -1909,16 +1956,16 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
     GlobalPlannerContextPtr global_planner_context_)
-    : query_tree(query_tree_)
+    : query_tree(rewriteLimitShuffleAsOrderByRand(query_tree_))
     , select_query_options(select_query_options_)
-    , planner_context(buildPlannerContext(query_tree_, select_query_options, std::move(global_planner_context_)))
+    , planner_context(buildPlannerContext(query_tree, select_query_options, std::move(global_planner_context_)))
 {
 }
 
 Planner::Planner(const QueryTreeNodePtr & query_tree_,
     SelectQueryOptions & select_query_options_,
     PlannerContextPtr planner_context_)
-    : query_tree(query_tree_)
+    : query_tree(rewriteLimitShuffleAsOrderByRand(query_tree_))
     , select_query_options(select_query_options_)
     , planner_context(std::move(planner_context_))
 {
@@ -2551,6 +2598,8 @@ void Planner::buildPlanForQueryNode()
 
         if (expression_analysis_result.hasSort())
         {
+            const bool allow_unordered_output = canAllowUnorderedOutputForLimitShuffle(query_analysis_result, query_node);
+
             /** If there is an ORDER BY for distributed query processing,
               * but there is no aggregation, then on the remote servers ORDER BY was made
               * and we merge the sorted streams from remote servers.
@@ -2560,14 +2609,24 @@ void Planner::buildPlanForQueryNode()
               * then merge the sorted streams is enough, since remote servers already did full ORDER BY.
               */
             if (query_processing_info.isFromAggregationState())
-                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams after aggregation stage for ORDER BY");
+                addMergeSortingStep(
+                    query_plan,
+                    query_analysis_result,
+                    planner_context,
+                    "Merge sorted streams after aggregation stage for ORDER BY",
+                    allow_unordered_output);
             else if (!query_processing_info.isFirstStage() &&
                 !expression_analysis_result.hasAggregation() &&
                 !expression_analysis_result.hasWindow() &&
                 !(query_node.isGroupByWithTotals() && !query_analysis_result.aggregate_final))
-                addMergeSortingStep(query_plan, query_analysis_result, planner_context, "Merge sorted streams for ORDER BY, without aggregation");
+                addMergeSortingStep(
+                    query_plan,
+                    query_analysis_result,
+                    planner_context,
+                    "Merge sorted streams for ORDER BY, without aggregation",
+                    allow_unordered_output);
             else
-                addSortingStep(query_plan, query_analysis_result, planner_context);
+                addSortingStep(query_plan, query_analysis_result, planner_context, allow_unordered_output);
         }
 
         /** Optimization if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
