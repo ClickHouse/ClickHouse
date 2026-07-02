@@ -3,11 +3,15 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 
 #include <Common/FieldAccurateComparison.h>
+#include <Common/NaNUtils.h>
 #include <Common/quoteString.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <IO/ReadHelpers.h>
+
+#include <limits>
 
 namespace DB
 {
@@ -18,6 +22,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// Returns true if the float column slice [start, end) contains at least one non-NULL NaN.
+/// getExtremes skips NaN, so the aggregator needs this to detect a NaN the stored [min, max] hides.
+/// Special representations (Sparse, LowCardinality, Const, ...) are materialized so the nested float
+/// is visible to the type checks below; the top-level Nullable wrapper is preserved.
+bool columnSliceHasNaN(const IColumn & column, size_t start, size_t end)
+{
+    auto full_column = column.convertToFullIfNeeded();
+    const IColumn * nested = full_column.get();
+    const NullMap * null_map = nullptr;
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(nested))
+    {
+        null_map = &column_nullable->getNullMapData();
+        nested = &column_nullable->getNestedColumn();
+    }
+
+    auto check = [&](const auto & typed_column) -> bool
+    {
+        const auto & data = typed_column.getData();
+        for (size_t i = start; i < end; ++i)
+        {
+            if (null_map && (*null_map)[i])
+                continue;
+            if (isNaN(data[i]))
+                return true;
+        }
+        return false;
+    };
+
+    if (const auto * col_f64 = typeid_cast<const ColumnFloat64 *>(nested))
+        return check(*col_f64);
+    if (const auto * col_f32 = typeid_cast<const ColumnFloat32 *>(nested))
+        return check(*col_f32);
+    if (const auto * col_bf16 = typeid_cast<const ColumnBFloat16 *>(nested))
+        return check(*col_bf16);
+    return false;
+}
+
+}
+
+void getMinMaxIndexExtremes(const IColumn & column, size_t start, size_t end, FieldRef & min_value, FieldRef & max_value)
+{
+    /// Materialize special representations (Sparse, LowCardinality, Const, ...) so getExtremesNullLast
+    /// and the NaN check below see the nested float; the top-level Nullable wrapper is preserved.
+    /// The part-level minmax (IMergeTreeDataPart::MinMaxIndex::update) runs before sparse removal, so a
+    /// sparse float block would otherwise hide its NaN behind a finite [min, max].
+    auto column_full = column.convertToFullIfNeeded();
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column_full.get()))
+        column_nullable->getExtremesNullLast(min_value, max_value, start, end);
+    else
+        column_full->getExtremes(min_value, max_value, start, end);
+
+    /// Widen the stored max to NaN so the NaN guard in KeyCondition::checkInHyperrectangle keeps the
+    /// granule under a negated range. Keep the NULLS_LAST +inf sentinel getExtremesNullLast sets for a
+    /// NULL in the slice: it already keeps the granule under negated ranges, and overwriting it with NaN
+    /// would let isNull(val) wrongly prune the granule. isPositiveInfinity() matches only that sentinel.
+    if (!max_value.isPositiveInfinity() && columnSliceHasNaN(*column_full, start, end))
+        max_value = std::numeric_limits<Float64>::quiet_NaN();
+}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_name_, const Block & index_sample_block_)
     : index_name(index_name_)
@@ -167,10 +232,7 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
     {
         auto index_column_name = index_sample_block.getByPosition(i).name;
         const auto & column = block.getByName(index_column_name).column;
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-            column_nullable->getExtremesNullLast(field_min, field_max, range_start, range_end);
-        else
-            column->getExtremes(field_min, field_max, range_start, range_end);
+        getMinMaxIndexExtremes(*column, range_start, range_end, field_min, field_max);
 
         if (hyperrectangle.size() <= i)
         {
