@@ -504,6 +504,14 @@ void WriteBufferFromS3::abortMultipartUpload()
 
 std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecksumAlgorithm() const
 {
+    /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`):
+    /// with `HMAC`/`SigV4` they are folded into the signed canonical request and `GCS` rejects the request with
+    /// `SignatureDoesNotMatch`. Fall back to the SDK's `Content-MD5` path, which `GCS` accepts (and which is silently
+    /// dropped under FIPS, leaving the upload with no checksum header - the safe pre-flexible-checksum behavior).
+    /// `GCS` is never an `S3Express` bucket, so this check can short-circuit before the `S3Express` handling.
+    if (client_ptr->isClientForGCS())
+        return std::nullopt;
+
     if (client_ptr->isChecksumDisabled() && !client_ptr->isS3ExpressBucket())
         return std::nullopt;
 

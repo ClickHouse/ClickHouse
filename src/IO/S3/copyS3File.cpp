@@ -91,8 +91,12 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
+            /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
+            /// and rejects `SigV4`-signed requests that carry them with `SignatureDoesNotMatch`, so never enable them for
+            /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
             , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_ && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
+                use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
+                        && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
                     ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
                     : std::nullopt)
             , num_parts(0)
