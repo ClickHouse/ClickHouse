@@ -192,7 +192,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     const CacheStateGuard::Lock * state_lock,
     bool is_initial_load)
 {
-    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    const auto type = getPriorityType(key_metadata->origin->segment_type);
     return getPriority(type).add(
         key_metadata, offset, size, write_lock, state_lock, is_initial_load);
 }
@@ -205,7 +205,7 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLIN
     const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock)
 {
-    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    const auto type = getPriorityType(key_metadata->origin->segment_type);
     return getPriority(type).addForRestore(
         key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
@@ -268,7 +268,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     EvictionCandidates & res,
     InvalidatedEntriesInfos & invalidated_entries,
     IFileCachePriority::IteratorPtr reservee,
-    bool continue_from_last_eviction_pos,
+    EvictionCursor eviction_cursor,
     size_t max_candidates_size,
     bool is_total_space_cleanup,
     const OriginInfo & origin_info,
@@ -284,14 +284,14 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
         FileCacheReserveStat data_stat;
         bool success = getPriority(SegmentType::Data).collectCandidatesForEviction(
             eviction_info, data_stat, res, invalidated_entries, /* reservee */nullptr,
-            continue_from_last_eviction_pos, max_candidates_size,
+            eviction_cursor, max_candidates_size,
             is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
         /// Collect candidates even if success == false, we will process them anyway.
         FileCacheReserveStat system_stat;
         success &= getPriority(SegmentType::System).collectCandidatesForEviction(
             eviction_info, system_stat, res, invalidated_entries, /* reservee */nullptr,
-            continue_from_last_eviction_pos, max_candidates_size,
+            eviction_cursor, max_candidates_size,
             is_total_space_cleanup, origin_info, priority_guard, state_guard);
 
         stat += data_stat;
@@ -302,7 +302,7 @@ bool SplitFileCachePriority::collectCandidatesForEviction(
     const auto type = getPriorityType(origin_info.segment_type);
     return getPriority(type).collectCandidatesForEviction(
         eviction_info, stat, res, invalidated_entries, reservee,
-        continue_from_last_eviction_pos, max_candidates_size,
+        eviction_cursor, max_candidates_size,
         is_total_space_cleanup, origin_info, priority_guard, state_guard);
 }
 
@@ -312,14 +312,14 @@ bool SplitFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard & state_guard)
 {
-    const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin.segment_type);
+    const auto type = getPriorityType(iterator.getEntry()->getKeyMetadata()->origin->segment_type);
     return getPriority(type).tryIncreasePriority(iterator, is_space_reservation_complete, queue_guard, state_guard);
 }
 
-void SplitFileCachePriority::resetEvictionPos()
+void SplitFileCachePriority::resetEvictionPos(EvictionCursor cursor)
 {
-    getPriority(SegmentType::Data).resetEvictionPos();
-    getPriority(SegmentType::System).resetEvictionPos();
+    getPriority(SegmentType::Data).resetEvictionPos(cursor);
+    getPriority(SegmentType::System).resetEvictionPos(cursor);
 }
 
 size_t SplitFileCachePriority::getHoldSize()

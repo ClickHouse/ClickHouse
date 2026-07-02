@@ -630,12 +630,13 @@ This is achieved by storing data in a bit-grouped format (meaning all i-th bits 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Where:
-* `element_type` – the type of each vector element. Supported types are `BFloat16`, `Float32`, and `Float64`
+* `element_type` – the type of each vector element. Supported types are `Int8`, `BFloat16`, `Float32`, and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. A divisor of `dimension` that partitions the dimensions into `dimension / stride` contiguous groups stored in separate streams, so a search over only the leading dimensions reads fewer streams (useful for Matryoshka embeddings). Defaults to `dimension`, in which case the type is byte-identical to a non-strided `QBit`. See the [`QBit` data type page](/sql-reference/data-types/qbit) for details.
 
 #### Creating a `QBit` Table and Adding Data {#qbit-create}
 

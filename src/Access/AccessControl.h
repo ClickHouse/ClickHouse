@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
@@ -49,7 +50,6 @@ class SettingsProfilesCache;
 class SettingsProfileElements;
 class ClientInfo;
 class ExternalAuthenticators;
-class AccessChangesNotifier;
 struct Settings;
 
 
@@ -114,24 +114,17 @@ public:
     /// Reloads and updates all access entities.
     void reload(ReloadMode reload_mode) override;
 
-    using OnChangedHandler = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
+    using OnChangedHandler = AccessChangesNotifier::OnChangedHandler;
 
-    /// Subscribes for all changes.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
+    /// Subscribes for all changes of entities of a given type (see AccessChangesNotifier::subscribeForChanges).
     scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
 
     template <typename EntityClassT>
     scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
 
     /// Subscribes for changes of a specific entry.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
-
-    using OnBatchFinishedHandler = std::function<void()>;
-
-    /// Subscribes for the end of a notification batch (see AccessChangesNotifier::subscribeForBatchFinished).
-    scope_guard subscribeForBatchFinished(const OnBatchFinishedHandler & handler) const;
 
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ClientInfo & client_info) const;
 
