@@ -117,6 +117,100 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
+/// Pick a non-virtual column to read for a query that selects no columns (e.g. SELECT count() or
+/// SELECT isNullable(x), where x constant-folds away). We must read something just to learn the
+/// row count, so prefer the column that is cheapest to read off disk. `parts` are the parts that
+/// will actually be read, with `part.ranges` already trimmed to the marks this pipeline reads.
+String chooseColumnToReadForNoColumnsQuery(const RangesInDataParts & parts, const StorageMetadataPtr & metadata_snapshot)
+{
+    NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    /// Carrier candidates: columns physically present in every part. Reading such a column never
+    /// forces the reader to materialise a DEFAULT, which could otherwise pull a large dependency
+    /// column on a part where the carrier is missing. The carrier is global to the read, so a
+    /// column present in only some parts (e.g. one just added by ALTER and stored only in a new
+    /// part) is unsafe and excluded.
+    NamesAndTypesList carrier_candidates;
+    for (const auto & column : available_real_columns)
+    {
+        bool present_in_all = !parts.empty();
+        for (const auto & part : parts)
+            if (!part.data_part->hasColumnFiles(column))
+            {
+                present_in_all = false;
+                break;
+            }
+        if (present_in_all)
+            carrier_candidates.push_back(column);
+    }
+
+    /// Among the candidates, pick the one cheapest to read from disk. getSmallestColumn() ranks by
+    /// the in-memory value size, which mis-ranks compactly stored columns (a LowCardinality(String)
+    /// reads far fewer bytes than a UInt64 yet looks "larger" in memory), so prefer the on-disk size.
+    ///
+    /// getColumnSize().data_compressed is a WHOLE-PART figure: part metadata holds no per-mark-range
+    /// compressed sizes. It is therefore only meaningful when every selected part is read in full. A
+    /// distributed bucket read (filterMarkRangesForBucket) trims a part to a subset of its mark ranges
+    /// per worker; the whole-part size then says nothing about which column is cheapest in the marks
+    /// this worker actually reads, and scaling it by the selected/total mark fraction is a per-part
+    /// constant that cannot reorder columns within a part. So when any selected part is range-trimmed,
+    /// distrust the on-disk numbers and fall back to the in-memory heuristic below, which does not
+    /// depend on how many marks are read. A true no-columns query has no predicate, so a non-distributed
+    /// read is never trimmed and keeps the on-disk ranking; only bucketed/parallel-replicas reads fall
+    /// back.
+    bool any_part_range_trimmed = false;
+    for (const auto & part : parts)
+        if (part.ranges.getNumberOfMarks() < part.data_part->index_granularity->getMarksCountWithoutFinal())
+        {
+            any_part_range_trimmed = true;
+            break;
+        }
+
+    /// A compact part keeps every column in one file and reports a per-column size of 0, so it
+    /// contributes nothing while its real read cost may dominate the table; the aggregate is therefore
+    /// only trustworthy when *every* part reports a positive size for the column. A candidate with a
+    /// zero-size part is left unranked here and handled by the fallback below. Iterate candidates (a
+    /// stable order) so ties are deterministic.
+    String carrier;
+    if (!any_part_range_trimmed)
+    {
+        size_t smallest_size = std::numeric_limits<size_t>::max();
+        for (const auto & column : carrier_candidates)
+        {
+            size_t size = 0;
+            bool measurable_in_all_parts = true;
+            for (const auto & part : parts)
+            {
+                size_t part_size = part.data_part->getColumnSize(column.name).data_compressed;
+                if (part_size == 0)
+                {
+                    measurable_in_all_parts = false;
+                    break;
+                }
+                size += part_size;
+            }
+            if (measurable_in_all_parts && size < smallest_size)
+            {
+                smallest_size = size;
+                carrier = column.name;
+            }
+        }
+    }
+
+    /// No candidate has a trustworthy on-disk size (every part is compact, or a mixed compact/wide
+    /// layout where no column is measurable in every part), or a selected part is read with trimmed
+    /// mark ranges (whole-part sizes do not reflect the per-bucket read), or no column is present in
+    /// every part (heavily schema-evolved): fall back to the in-memory heuristic over the safe
+    /// candidates, or over all physical columns when there is none. The carrier stays a current
+    /// metadata column so it resolves against the StorageSnapshot; the per-part read setup
+    /// substitutes columns missing from a given part as before.
+    if (carrier.empty())
+        carrier = ExpressionActions::getSmallestColumn(
+            carrier_candidates.empty() ? available_real_columns : carrier_candidates).name;
+
+    return carrier;
+}
+
 /// check if a DAG node only depends on sorting key columns
 /// (ActionsDAG version of isExpressionOverSortingKey)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
@@ -2511,22 +2605,23 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     result.column_names_to_read = all_column_names;
 
-    /// If there are only virtual columns in the query, you must request at least one non-virtual one.
-    if (result.column_names_to_read.empty())
-    {
-        NamesAndTypesList available_real_columns = metadata_snapshot->getColumns().getAllPhysical();
-        result.column_names_to_read.push_back(ExpressionActions::getSmallestColumn(available_real_columns).name);
-    }
+    const bool needs_no_columns_carrier = result.column_names_to_read.empty();
 
     /// Streaming queries do index analysis in MergeTreeCommitOrderSequentialSource
     /// and return here, bypassing the UNIQUE KEY snapshot/pin + delete-bitmap
     /// filter below. Fail closed rather than serve logically-deleted rows.
     /// TODO(unique-key): wire the delete-bitmap filter into the streaming source.
+    ///
+    /// They also return before partition/PK pruning, so the no-columns carrier
+    /// can only be chosen over the pre-pruned parts here. If there are only
+    /// virtual columns in the query, you must request at least one non-virtual one.
     if (query_info_.isStream())
     {
         if (metadata_snapshot->hasUniqueKey())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Streaming reads (FROM ... STREAM) are not supported on tables with UNIQUE KEY.");
+        if (needs_no_columns_carrier)
+            result.column_names_to_read.push_back(chooseColumnToReadForNoColumnsQuery(parts, metadata_snapshot));
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
@@ -2919,6 +3014,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             }
         }
     }
+
+    /// If there are only virtual columns in the query, you must request at least one non-virtual
+    /// one. Defer that choice to read time (initializePipeline): pruning here populates
+    /// result.parts_with_ranges, but the projection optimizations run later still mutate it via
+    /// filterPartsByProjection, so the carrier must be ranked over the parts that ultimately
+    /// survive. Just record that a carrier is needed.
+    result.needs_no_columns_carrier = needs_no_columns_carrier;
 
     size_t sum_marks_pk = total_marks_pk;
     for (const auto & stat : result.index_stats)
@@ -3668,6 +3770,19 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// Cannot cache PREWHERE results when ranges are filtered by bucket_id.
         reader_settings.use_query_condition_cache = false;
     }
+
+    /// A no-columns query (e.g. SELECT count()) must read one cheap "carrier" column just to learn
+    /// the row count. Choose it here, the last point before the read, once parts_with_ranges is
+    /// final: the projection optimizations (optimizeUseNormalProjection / optimizeUseAggregateProjection)
+    /// shrink it via filterPartsByProjection, and the distributed-read bucket filter above drops whole
+    /// parts or trims ranges per worker, so a carrier chosen earlier could be ranked over parts this
+    /// pipeline does not read. When no part survives, the read becomes a NullSource (handled below)
+    /// that reads nothing, so no carrier is needed. When the bucket filter leaves only a subset of a
+    /// part's mark ranges, chooseColumnToReadForNoColumnsQuery cannot trust the whole-part on-disk size
+    /// and falls back to the in-memory heuristic for that read.
+    if (result.needs_no_columns_carrier && result.column_names_to_read.empty() && !result.parts_with_ranges.empty())
+        result.column_names_to_read.push_back(
+            chooseColumnToReadForNoColumnsQuery(result.parts_with_ranges, storage_snapshot->metadata));
 
     if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
     {
