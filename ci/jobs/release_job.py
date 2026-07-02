@@ -313,6 +313,22 @@ def main():
         with open(RELEASE_INFO_FILE) as f:
             create_new_release = json.load(f)["create_new_release"]
 
+    # only-repo / only-docker only re-publish artifacts for an already-created
+    # release (repo/Docker recovery). If the ref resolves to a new release, they
+    # would otherwise fall through to the creation steps below (push tag, bump
+    # version, PRs) and produce a partial new release, so reject that misuse and
+    # require the release tag instead.
+    if ok and create_new_release and (args.only_repo or args.only_docker):
+
+        def _require_recovery_ref():
+            raise RuntimeError(
+                "only-repo/only-docker re-publish an existing release and must be "
+                "run against its release tag (recovery); the given ref resolves to "
+                "a new release. Pass the release tag as the ref."
+            )
+
+        step(name="Validate Recovery Ref", command=_require_recovery_ref)
+
     if args.release_type == "patch" and not args.only_docker:
         step(
             name="Download All Release Artifacts",
