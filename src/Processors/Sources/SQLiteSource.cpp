@@ -32,7 +32,7 @@ SQLiteSource::SQLiteSource(
     if (status != SQLITE_OK)
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot prepare sqlite statement. Status: {}. Message: {}",
-                        status, sqlite3_errstr(status));
+                        status, sqlite_db ? sqlite3_errmsg(sqlite_db.get()) : sqlite3_errstr(status));
 
     compiled_statement = std::unique_ptr<sqlite3_stmt, StatementDeleter>(compiled_stmt, StatementDeleter());
 }

@@ -49,7 +49,11 @@ ContextPtr makeSQLiteWriteContext(ContextPtr context)
 /// a persisted table is attached), the declared classification is kept rather than failing the whole
 /// `CREATE`/`ATTACH` - `StorageSQLite::reclassifyGeneratedColumnsFromRemote` then re-applies the marking on
 /// the first successful open in `read`/`write`.
-void markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, ColumnsDescription & columns, LoggerPtr log)
+///
+/// Returns whether the remote table schema was actually observed. `false` means the schema could not be read
+/// (an error, or a database that does not contain the table - e.g. an empty database created in place of a
+/// missing file), so the caller must not treat the classification as finalized.
+bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, ColumnsDescription & columns, LoggerPtr log)
 {
     std::optional<ColumnsDescription> remote_columns;
     try
@@ -59,11 +63,11 @@ void markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
     catch (...)
     {
         tryLogCurrentException(log, "Failed to read the SQLite schema of " + table_name + " while classifying generated columns");
-        return;
+        return false;
     }
 
     if (!remote_columns)
-        return;
+        return false;
 
     for (const auto & generated : remote_columns->getMaterialized())
     {
@@ -81,6 +85,8 @@ void markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
             column.default_desc.kind = ColumnDefaultKind::Materialized;
         });
     }
+
+    return true;
 }
 
 }
@@ -159,7 +165,13 @@ void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_contex
     /// in-memory metadata, where subsequent reads and writes pick it up.
     auto old_metadata = getInMemoryMetadataPtr(query_context, false);
     ColumnsDescription columns = old_metadata->getColumns();
-    markRemoteGeneratedColumns(sqlite_db.get(), remote_table_or_query.getTableName(), columns, log);
+
+    /// Only treat the classification as repaired once the remote schema was actually observed. Opening a
+    /// database that does not contain the table (e.g. an empty database that would be created in place of a
+    /// still-missing file) must leave the flag set, otherwise the repair would be lost permanently once the
+    /// real file becomes reachable.
+    if (!markRemoteGeneratedColumns(sqlite_db.get(), remote_table_or_query.getTableName(), columns, log))
+        return;
 
     StorageInMemoryMetadata new_metadata = *old_metadata;
     new_metadata.setColumns(std::move(columns));
@@ -185,7 +197,10 @@ void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_conte
     /// operation runs on a stale classification silently.
     if (!sqlite_db)
     {
-        auto reopened_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false);
+        /// Non-creating probe: if the database file is still missing, keep the classification pending rather
+        /// than opening a freshly created empty database (which contains no table and would otherwise mark the
+        /// repair as done). The real file becoming reachable later then still repairs the classification.
+        auto reopened_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false, /* allow_create */ false);
         if (!reopened_db)
             return;
         sqlite_db = reopened_db;
@@ -230,7 +245,8 @@ Pipe StorageSQLite::read(
     size_t /*num_streams*/)
 {
     if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true,
+                                 /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -355,7 +371,8 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
     if (!sqlite_db)
-        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
+        sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true,
+                                 /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.

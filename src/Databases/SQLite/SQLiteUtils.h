@@ -13,7 +13,10 @@ namespace DB
 
 using SQLitePtr = std::shared_ptr<sqlite3>;
 
-SQLitePtr openSQLiteDB(const String & database_path, ContextPtr context, bool throw_on_error = true);
+/// `allow_create` controls whether a missing database file is implicitly created (as `sqlite3_open` does).
+/// Pass `false` when reopening a persisted table whose file was unavailable at load time, so that a still-missing
+/// file surfaces an error instead of silently fabricating an empty database.
+SQLitePtr openSQLiteDB(const String & database_path, ContextPtr context, bool throw_on_error = true, bool allow_create = true);
 
 }
 

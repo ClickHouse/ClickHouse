@@ -41,7 +41,7 @@ static String validateSQLiteDatabasePath(const String & path, const String & use
     return absolute_path;
 }
 
-SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error)
+SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_error, bool allow_create)
 {
     // If run in Local mode, no need for path checking.
     bool need_check = context->getApplicationType() != Context::ApplicationType::LOCAL;
@@ -53,19 +53,25 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
     if (database_path.empty())
         return nullptr;
 
-    if (!fs::exists(database_path))
+    if (allow_create && !fs::exists(database_path))
         LOG_DEBUG(getLogger("SQLite"), "SQLite database path {} does not exist, will create an empty SQLite database", database_path);
+
+    /// Do not implicitly create a new empty database when `allow_create` is off. This is used when reopening a
+    /// persisted table whose file was unavailable at load time: fabricating an empty database would hide the
+    /// still-missing file and, worse, mark the deferred generated-column reclassification as complete against a
+    /// database that does not contain the table yet.
+    const int open_flags = SQLITE_OPEN_READWRITE | (allow_create ? SQLITE_OPEN_CREATE : 0);
 
     sqlite3 * tmp_sqlite_db = nullptr;
     int status = 0;
     {
         std::lock_guard lock(init_sqlite_db_mutex);
-        status = sqlite3_open(database_path.c_str(), &tmp_sqlite_db);
+        status = sqlite3_open_v2(database_path.c_str(), &tmp_sqlite_db, open_flags, nullptr);
     }
 
     if (status != SQLITE_OK)
     {
-        /// `sqlite3_open` allocates the connection handle even when it fails to open the database file
+        /// `sqlite3_open_v2` allocates the connection handle even when it fails to open the database file
         /// (the only exception being an out-of-memory condition, in which case the handle is left null).
         /// The handle must be closed to avoid a memory leak, see https://www.sqlite.org/c3ref/open.html.
         /// `sqlite3_close` is a harmless no-op when passed a null pointer.
@@ -75,7 +81,28 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         return nullptr;
     }
 
-    return std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+    auto sqlite_db = std::shared_ptr<sqlite3>(tmp_sqlite_db, sqlite3_close);
+
+    /// Disable SQLite's double-quoted-string compatibility misfeature (https://www.sqlite.org/quirks.html#dblquote)
+    /// on every connection. The storage and database engines quote identifiers with double quotes; without this a
+    /// double-quoted identifier that does not resolve to a column - e.g. a stale local metadata column, or a column
+    /// named by an explicit `ENGINE = SQLite(...)` that the remote table no longer has - would be silently
+    /// reinterpreted as a string literal and return wrong data instead of raising an error. Fail closed, matching
+    /// the `SQLite` format reader.
+    if (int config_status = sqlite3_db_config(sqlite_db.get(), SQLITE_DBCONFIG_DQS_DDL, 0, nullptr); config_status != SQLITE_OK)
+    {
+        processSQLiteError(fmt::format("Cannot disable SQLite double-quoted string literals in DDL statements. Error status: {}. Message: {}",
+                                       config_status, sqlite3_errstr(config_status)), throw_on_error);
+        return nullptr;
+    }
+    if (int config_status = sqlite3_db_config(sqlite_db.get(), SQLITE_DBCONFIG_DQS_DML, 0, nullptr); config_status != SQLITE_OK)
+    {
+        processSQLiteError(fmt::format("Cannot disable SQLite double-quoted string literals in DML statements. Error status: {}. Message: {}",
+                                       config_status, sqlite3_errstr(config_status)), throw_on_error);
+        return nullptr;
+    }
+
+    return sqlite_db;
 }
 
 }
