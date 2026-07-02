@@ -1209,6 +1209,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            /// No cache stage is added in this case, so clear the flag: downstream decisions
+            /// (e.g. whether to issue the initial small-object prefetch) must reflect that the
+            /// read is a plain remote read, not a cached one.
+            use_filesystem_cache = false;
         }
         else
         {
@@ -1270,7 +1274,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
-    if (use_prefetch && impl && !impl->supportsReadAt())
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// Skip it when the filesystem cache is in use: the cache manages its own read-ahead and segment
+    /// ranges, so an extra initial prefetch over it is redundant and interferes with that handling.
+    if (use_prefetch && impl && !use_filesystem_cache)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
