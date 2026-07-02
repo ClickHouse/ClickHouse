@@ -3,7 +3,6 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
-#include <Common/HashTable/HashMap.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 
 
@@ -39,8 +38,8 @@ private:
     std::optional<SetVariants> data;
     Sizes key_sizes;
 
-    /// For ALL variants: tracks row occurrence counts instead of just presence.
-    HashMap<UInt128, UInt64, UInt128TrivialHash> counts;
+    /// For ALL variants: a multiset keyed on the row value, tracking occurrence counts.
+    std::optional<CountingSetVariants> counts_data;
 
     Chunk current_input_chunk;
     Chunk current_output_chunk;
@@ -63,8 +62,6 @@ private:
             || current_operator == Operator::INTERSECT_DISTINCT;
     }
 
-    static UInt128 hashRow(const ColumnRawPtrs & columns, size_t row);
-
     void accumulate(Chunk chunk);
 
     void filter(Chunk & chunk);
@@ -75,6 +72,13 @@ private:
     template <typename Method>
     size_t buildFilter(Method & method, const ColumnRawPtrs & columns,
         IColumn::Filter & filter, size_t rows, SetVariants & variants) const;
+
+    template <typename Method>
+    void addToCounts(Method & method, const ColumnRawPtrs & columns, size_t rows, CountingSetVariants & variants) const;
+
+    template <typename Method>
+    size_t filterWithCounts(Method & method, const ColumnRawPtrs & columns,
+        IColumn::Filter & filter, size_t rows, CountingSetVariants & variants) const;
 };
 
 }
