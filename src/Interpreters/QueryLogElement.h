@@ -95,6 +95,11 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query, if any.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query, if any.
+    String http_request_url;
+
     String log_comment;
 
     std::vector<UInt64> thread_ids;
