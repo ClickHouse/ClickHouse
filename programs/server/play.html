@@ -5110,13 +5110,15 @@ const BRACKET_PAIR = {
 /// Number of distinct rainbow colors before the cycle repeats (see the --syntax-bracket-* vars).
 const RAINBOW_BRACKET_COUNT = 7;
 
-/// Compute, for every token, its rainbow-bracket depth (or -1 for non-brackets) and the
-/// set of bracket tokens to embolden as the matched pair around the cursor.
+/// Compute, for every token, its rainbow-bracket depth (-1 for non-brackets and for
+/// unmatched brackets) and the set of bracket tokens to embolden as the matched pair around
+/// the cursor.
 ///
-/// Depth is assigned with a type-aware stack: an opening bracket takes the current stack
-/// depth, and the matching closing bracket takes the same depth so the pair shares a color.
-/// A closing bracket that does not match the innermost opening bracket is left unmatched
-/// (depth 0) and cannot be part of a highlighted pair.
+/// Depth is assigned with a type-aware stack, but only once a bracket has a real mate: the
+/// matching opening and closing brackets both take the pair's nesting depth so they share a
+/// color. A bracket without a counterpart — a lone `(`, a stray `)`, or a mismatched pair —
+/// is left at depth -1 so it keeps the default color instead of a rainbow one, mirroring
+/// `clickhouse-client`, which colors a bracket only after it finds its match.
 ///
 /// The matched pair is the bracket adjacent to the cursor (preferring the one immediately
 /// before the caret, as most editors do) together with its counterpart.
@@ -5132,7 +5134,7 @@ function computeBracketInfo(tokens, cursor, focused) {
         offset += tokens[i].token.length;
         const type = tokens[i].type;
         if (OPENING_BRACKETS.has(type)) {
-            depth[i] = stack.length;
+            /// Depth stays -1 until a matching closing bracket is found below.
             stack.push(i);
         } else if (CLOSING_BRACKETS.has(type)) {
             const top = stack.length ? stack[stack.length - 1] : -1;
@@ -5140,10 +5142,11 @@ function computeBracketInfo(tokens, cursor, focused) {
                 stack.pop();
                 matchOf[i] = top;
                 matchOf[top] = i;
-                depth[i] = depth[top];
-            } else {
-                depth[i] = 0; /// Unmatched closing bracket.
+                /// The pair's nesting depth is the stack size after popping; the opening and
+                /// closing brackets share it so they render with the same rainbow color.
+                depth[top] = depth[i] = stack.length;
             }
+            /// A closing bracket with no match keeps depth -1 (rendered with the default color).
         }
     }
 
@@ -5174,8 +5177,10 @@ function computeBracketInfo(tokens, cursor, focused) {
 }
 
 /// Map a single token to a CSS class. For BareWords we also peek at the next
-/// non-whitespace token to distinguish a function call (`foo(`) from a plain
-/// identifier — the lexer alone cannot tell them apart.
+/// non-whitespace, non-comment token to distinguish a function call (`foo(`) from a plain
+/// identifier — the lexer alone cannot tell them apart. Skipping comments as well as
+/// whitespace matches `highlightWithLexer` in `src/Client/ClientBaseHelpers.cpp`, so
+/// `sum/*c*/(x)` is a function name here too.
 function tokenClass(tokens, i) {
     const elem = tokens[i];
     switch (elem.type) {
@@ -5187,7 +5192,7 @@ function tokenClass(tokens, i) {
         case TT.BareWord: {
             if (SQL_KEYWORDS.has(elem.token.toUpperCase())) return 'q-kw';
             for (let j = i + 1; j < tokens.length; ++j) {
-                if (tokens[j].type === TT.Whitespace) continue;
+                if (tokens[j].type === TT.Whitespace || tokens[j].type === TT.Comment) continue;
                 return tokens[j].type === TT.OpeningRoundBracket ? 'q-fn' : 'q-id';
             }
             return 'q-id';
