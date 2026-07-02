@@ -1,0 +1,6 @@
+-- mv reports the new enum after the upstream alter
+id	UInt64
+status	Enum8(\'A\' = 0, \'B\' = 1, \'C\' = 2)
+cnt	UInt64
+-- reading the mv with the new enum value works
+1	C	1

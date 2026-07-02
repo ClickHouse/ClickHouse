@@ -1,0 +1,17 @@
+-- before alter
+id	UInt64
+status	Enum8(\'A\' = 0, \'B\' = 1)
+cnt	UInt64
+-- after alter (mv must report the new enum)
+id	UInt64
+status	Enum8(\'A\' = 0, \'B\' = 1, \'C\' = 2)
+cnt	UInt64
+-- reading the mv must not fail on the new enum value
+1	C	1
+-- explicit mv before alter (declared String)
+n	String
+-- explicit mv after alter (must stay String, not refreshed)
+n	String
+-- modify-query mv keeps SELECT-output types (v2 UInt8, not target UInt64)
+v	UInt64
+v2	UInt8
