@@ -1802,8 +1802,6 @@ static size_t entryBytes(const LogEntryPtr & entry)
     return entry ? entry->get_buf().size() : 0;
 }
 
-// ===== PerPeerReader method definitions =====
-
 void PerPeerReader::setReaderStateLocked(ReaderState s)
 {
     state = s;
@@ -1935,12 +1933,8 @@ void PerPeerReader::waitForCursor(uint64_t local_generation)
         });
 }
 
-// ===== anonymous-namespace fill/serve helpers =====
-
 namespace
 {
-
-// ===== fillTask helper types and functions =====
 
 enum class AppendChunkResult : uint8_t
 {
@@ -2006,7 +2000,6 @@ bool openHeldBuffer(PerPeerReader & reader, const LogReadPlan::FileSpan & cursor
 OpenResult ensureOpenAt(PerPeerReader & reader, const LogReadPlan::FileSpan & cursor, LoggerPtr log)
 {
     bool cursor_compacted = false;
-    bool need_reopen = false;
     bool need_seek = false;
 
     cursor.file_description->withLock(
@@ -2024,32 +2017,23 @@ OpenResult ensureOpenAt(PerPeerReader & reader, const LogReadPlan::FileSpan & cu
                 const DiskPtr cur_disk = cursor.file_description->disk;
                 const std::string & cur_path = cursor.file_description->path;
                 if (reader.opened_disk != cur_disk || reader.opened_path != cur_path)
-                {
                     reader.closeHeld();
-                    need_reopen = true;
-                }
                 else if (static_cast<size_t>(reader.held_buf->getPosition()) != cursor.position)
-                {
                     need_seek = true;
-                }
-            }
-            else
-            {
-                need_reopen = true;
             }
         });
 
     if (cursor_compacted)
         return OpenResult::Compacted;
 
-    if (!need_reopen && !need_seek)
+    if (reader.held_buf && !need_seek)
         return OpenResult::Ready;
 
     ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadFillReopens);
 
     try
     {
-        if (need_reopen && !openHeldBuffer(reader, cursor))
+        if (!reader.held_buf && !openHeldBuffer(reader, cursor))
             return OpenResult::Compacted;
 
         if (!reader.held_buf)
@@ -2224,7 +2208,10 @@ CursorOutcome fillFromCursor(
 
         switch (decoded.status)
         {
-            case DecodeChunkStatus::Compacted: reader.markCompacted(); return CursorOutcome::Terminal;
+            case DecodeChunkStatus::Compacted: {
+                reader.markCompacted();
+                return CursorOutcome::Terminal;
+            }
             case DecodeChunkStatus::Error: {
                 std::lock_guard dq_lock(reader.deque_mutex);
                 reader.setReaderStateLocked(ReaderState::Error);
