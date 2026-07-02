@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-async-insert
 # no-parallel: rewrite rules are global server state
+# no-async-insert: this test observes the synchronous distributed foreground INSERT (through
+# `RemoteInserter`) in `system.query_log`. With async inserts forced on, the shard fragment is sent
+# from a background async-insert flush that is decoupled from the initiator's query, so it is not
+# linked by `initial_query_id` and the secondary fragment cannot be observed here.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
