@@ -152,17 +152,11 @@ void QueryGraph::buildColumnEquivalences()
         /// for all rows and the transitive equivalence would be invalid.
         auto lhs_it = join_kinds.find(*lhs_rel);
         auto rhs_it = join_kinds.find(*rhs_rel);
-        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.kind))
-            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.kind)))
+        if ((lhs_it != join_kinds.end() && !isInner(lhs_it->second.second))
+            || (rhs_it != join_kinds.end() && !isInner(rhs_it->second.second)))
             continue;
 
-        /// Skip pinned predicates: they're conditionally applicable (only when the
-        /// pin relations are joined first), so the equality doesn't hold unconditionally
-        /// and the transitive equivalence cannot bypass the pin's constraint. Without
-        /// this skip, `areTransitivelyConnected` would consider `(A,C)` connected via
-        /// `a.w=c.w` even when that edge is pinned to require B, letting greedy commit
-        /// to a dead-end first pair.
-        if (auto pin_it = pinned.find(edge); pin_it != pinned.end() && pin_it->second.any())
+        if (outer_join_conditions.contains(edge))
             continue;
 
         column_equivalences.add(*lhs_resolved, *rhs_resolved);
@@ -417,7 +411,6 @@ private:
         struct Restriction
         {
             TUInt required = 0;
-            TUInt forbidden = 0;
             JoinKind kind = JoinKind::Inner;
             bool present = false;
         };
@@ -708,19 +701,14 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         if (!isSubsetOf(edge_sources, joined_rels))
             continue;
 
-        auto pin_it = query_graph.pinned.find(edge);
-        if (pin_it != query_graph.pinned.end())
+        auto pin_it = query_graph.outer_join_conditions.find(edge);
+        if (pin_it != query_graph.outer_join_conditions.end())
         {
-            /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause — pinned to the
-              *    NULL-supplying side.
-              * 2. The expression of an INNER join sits above a child outer-join
-              *    boundary it cannot legally be pushed past — pinned to the
-              *    null-supplying relations of every such boundary it crosses.
-              * The pin set is the relations that MUST all be in `joined_rels`
-              * before the edge is applicable, so check subset.
-              */
-            if (!isSubsetOf(pin_it->second, joined_rels))
+            /// ON-clause predicates of an outer join can be applied only when the
+            /// null-supplying relation is joined. That relation appears as a singleton
+            /// on one side of the join step (enforced by isValidJoinOrder), so the
+            /// predicate becomes applicable exactly at that step.
+            if (!joined_rels.test(pin_it->second))
                 continue;
         }
 
@@ -747,10 +735,12 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (!edge)
             continue;
         dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
-        if (auto pin_it = query_graph.pinned.find(edge); pin_it != query_graph.pinned.end())
+        /// ON-clause predicates of an outer join are pinned to the single null-supplying
+        /// relation; the pin becomes applicable exactly when that relation is joined.
+        if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
+            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
         }
     }
 
@@ -761,9 +751,8 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (rel >= num_relations)
             continue;
         auto & native = dpsub_data.restriction_by_rel[rel];
-        native.required = toMask(restriction.required_partners);
-        native.forbidden = toMask(restriction.forbidden_partners);
-        native.kind = restriction.kind;
+        native.required = toMask(restriction.first);
+        native.kind = restriction.second;
         native.present = true;
     }
 
@@ -801,8 +790,6 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
                 /// If there are any bits set in `restriction.required`
                 /// that are not set in `rhs`, the bitwise AND (&) results in a non-zero value
                 if (restriction.required & ~rhs)
-                    return {};
-                if (restriction.forbidden & rhs)
                     return {};
                 return restriction.kind;
             }
@@ -933,7 +920,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
-    std::vector<JoinActionRef *> applied_edge;
+    std::vector<JoinActionRef *> applied_edges;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {
@@ -953,27 +940,33 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                 if (!join_kind)
                     continue;
 
-                auto edge = getApplicableExpressions(left->relations, right->relations);
-                bool connected = !edge.empty()
+                auto edges = getApplicableExpressions(left->relations, right->relations);
+                bool connected = !edges.empty()
                     || query_graph.areTransitivelyConnected(left->relations, right->relations);
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(edge, left->relations, right->relations);
+                auto selectivity = computeSelectivity(edges, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    /// Derive the cartesian distinction from actual connectivity:
-                    /// an Inner pair with no connecting predicate is a Cross join.
-                    /// This keeps Cross/Comma semantics without storing a marker in
-                    /// join_kinds, so outer-join restrictions on relation 0 survive.
                     if (join_kind == JoinKind::Inner && !connected)
                         join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                    JoinOperator join_operator(
-                        join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
-                        std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
-                    applied_edge = std::move(edge);
+                    JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
+                    bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
+                    for (const auto * e : edges)
+                    {
+                        /// A filter predicate applied at an outer join step must not go to the
+                        /// ON clause, where it would affect matching instead of filtering and
+                        /// let non-matching rows of the preserved side survive NULL-extended.
+                        /// Apply it after the join instead.
+                        if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
+                            join_operator.expression.push_back(*e);
+                        else
+                            join_operator.residual_filter.push_back(*e);
+                    }
+                    applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
                     best_i = i;
                     best_j = j;
@@ -981,46 +974,16 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             }
         }
 
-        /// If no valid join was found, add a cross product between smallest relations
+        /// The loop above accepts any pair passing isValidJoinOrder, even an unconnected
+        /// one (which becomes a cross product), as long as no best plan exists yet. So
+        /// reaching this point means no pair of components can be joined at all: the
+        /// outer join restrictions are stuck. This cannot happen for a query graph built
+        /// from a well-formed join tree: required partner sets follow the original tree's
+        /// scoping, so the original join order always remains valid.
         if (!best_plan)
-        {
-            /// Find two smallest components
-            UInt64 first_best = std::numeric_limits<UInt64>::max();
-            best_i = 0;
-            UInt64 second_best = std::numeric_limits<UInt64>::max();
-            best_j = 0;
-
-            for (size_t idx = 0; idx < components.size(); idx++)
-            {
-                auto & component = components[idx];
-                UInt64 estimated_rows = component->estimated_rows.value_or(std::numeric_limits<UInt64>::max() - 1);
-                if (estimated_rows < first_best)
-                {
-                    std::tie(second_best, best_j) = std::tie(first_best, best_i);
-                    std::tie(first_best, best_i) = std::tie(estimated_rows, idx);
-                }
-                else if (estimated_rows < second_best)
-                {
-                    std::tie(second_best, best_j) = std::tie(estimated_rows, idx);
-                }
-            }
-
-            if (best_i == best_j)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find two smallest components");
-            if (!isValidJoinOrder(components[best_i]->relations, components[best_j]->relations))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Join restriction violated");
-
-            auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
-            auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
-            JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
-            /// Use left: min idx, right: max idx to keep original order order of joins
-            /// We will swap tables later if needed
-            best_plan = std::make_shared<DPJoinEntry>(components[std::min(best_i, best_j)], components[std::max(best_i, best_j)], cost, cardinality, join_operator);
-            applied_edge.clear();
-        }
-
-        if (best_i == best_j)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find components to join");
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "No valid join pair found among components [{}], the outer join restrictions cannot be satisfied",
+                fmt::join(components | std::views::transform([](const auto & c) { return c->dump(); }), ", "));
 
         LOG_TEST(log, "Best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, join operator: {}",
             best_plan->dump(), best_plan->left->dump(), best_plan->right->dump(),
@@ -1033,11 +996,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         components.push_front(best_plan);
         dp_table[best_plan->relations] = best_plan;
 
-        for (auto * edge : applied_edge)
+        for (auto * edge : applied_edges)
             *edge = nullptr;
     }
 
-    for (auto * edge : applied_edge)
+    for (auto * edge : applied_edges)
         *edge = nullptr;
 
     auto non_applied_edges = std::views::filter(query_graph.edges, [](auto & edge) { return bool(edge); });
@@ -1063,11 +1026,18 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
     if (!entry.left && !entry.right)
         return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
 
-    JoinOperator join_operator(
-        entry.kind,
-        JoinStrictness::All,
-        JoinLocality::Unspecified,
-        std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
+    JoinOperator join_operator(entry.kind, JoinStrictness::All, JoinLocality::Unspecified);
+    /// A filter predicate applied at an outer join step must not go to the ON clause, where it
+    /// would affect matching instead of filtering and let non-matching rows of the preserved side
+    /// survive NULL-extended. Apply it after the join instead (see `solveGreedy`).
+    bool is_inner_step = isInner(entry.kind) || isCrossOrComma(entry.kind);
+    for (const auto * e : entry.edges)
+    {
+        if (is_inner_step || query_graph.outer_join_conditions.contains(*e))
+            join_operator.expression.push_back(*e);
+        else
+            join_operator.residual_filter.push_back(*e);
+    }
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
@@ -1753,12 +1723,9 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
             auto it = query_graph.join_kinds.find(rel_id.value());
             if (it != query_graph.join_kinds.end())
             {
-                const auto & restriction = it->second;
-                if (!isSubsetOf(restriction.required_partners, rhs))
-                    return {};
-                if ((rhs & restriction.forbidden_partners).any())
-                    return {};
-                return restriction.kind;
+                if (isSubsetOf(it->second.first, rhs))
+                    return it->second.second;
+                return {};
             }
         }
         return JoinKind::Inner;
