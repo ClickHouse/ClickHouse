@@ -109,7 +109,7 @@ struct RUsageCounters
 private:
     static UInt64 getClockMonotonic()
     {
-        struct timespec ts;
+        struct timespec ts{};
         if (0 != clock_gettime(CLOCK_MONOTONIC, &ts))
             throw std::system_error(std::error_code(errno, std::system_category()));
         return ts.tv_sec * 1000000000ULL + ts.tv_nsec;

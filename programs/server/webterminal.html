@@ -77,7 +77,8 @@
     // because URLs end up in browser history, referrer headers, server access logs, and proxy logs.
     // The password is collected interactively or, when embedded in an iframe, sent in via postMessage.
     var params = new URLSearchParams(window.location.search);
-    var currentUser = params.get('user') || 'default';
+    /// Empty user means "let the server pick its configured default user", which is not necessarily named "default".
+    var currentUser = params.get('user') || '';
     var currentPassword = '';
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
@@ -217,7 +218,7 @@
                 inputBuffer = '';
 
                 if (state === 'prompt_user') {
-                    currentUser = value || 'default';
+                    currentUser = value;
                     promptPassword();
                 } else if (state === 'prompt_password') {
                     currentPassword = value;
@@ -299,12 +300,14 @@
 
         ws.onopen = function() {
             opened = true;
-            // Send credentials as the first message (avoids leaking password in URL)
-            ws.send(JSON.stringify({
-                type: 'auth',
-                user: currentUser,
-                password: currentPassword
-            }));
+            // Send credentials as the first message (avoids leaking password in URL).
+            // The "user" field is omitted when empty so the server falls back to
+            // its default user (which is not necessarily named "default").
+            const authMessage = { type: 'auth', password: currentPassword };
+            if (currentUser) {
+                authMessage.user = currentUser;
+            }
+            ws.send(JSON.stringify(authMessage));
             state = 'active';
             // Erase the "Connecting..." message so PTY output starts on a clean line
             term.write('\r\x1b[2K');
@@ -373,7 +376,7 @@
             // Parent-supplied credentials are explicit; subsequent failures should prompt
             // interactively rather than wait for another (one-shot) parent message.
             initialAutoAuth = false;
-            currentUser = e.data.user || 'default';
+            currentUser = e.data.user || '';
             currentPassword = e.data.password || '';
             userFromURL = true;
             attemptConnect();

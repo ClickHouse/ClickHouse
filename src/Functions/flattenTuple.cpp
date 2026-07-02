@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionFlattenTuple : public IFunction
+class FunctionFlattenTuple final : public IFunction
 {
 public:
     static constexpr auto name = "flattenTuple";

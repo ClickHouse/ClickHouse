@@ -811,11 +811,11 @@ static void processFileChanges(
             skipWhitespaceIfAny(in);
         }
 
-        char change_type;
+        char change_type = {};
         readChar(change_type, in);
 
         /// For rename and copy there is a number called "score". We ignore it.
-        int score;
+        int score = {};
 
         switch (change_type)
         {
@@ -1069,7 +1069,7 @@ static void processCommit(
     Commit commit;
     commit.hash = hash;
 
-    time_t commit_time;
+    time_t commit_time = {};
     readText(commit_time, in);
     commit.time = LocalDateTime(commit_time);
     assertChar('\0', in);
@@ -1198,6 +1198,7 @@ static void processLog(const Options & options)
 
 }
 
+int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv)
 try
 {

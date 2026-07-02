@@ -276,7 +276,7 @@ private:
         }
     }
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <bool check_overflow, bool scale_left, bool scale_right> static void NO_INLINE
     ), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
@@ -302,12 +302,6 @@ private:
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4<check_overflow, scale_left, scale_right>(a, b, c, scale);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::x86_64_v3))
-        {
-            vectorConstantImpl_x86_64_v3<check_overflow, scale_left, scale_right>(a, b, c, scale);
             return;
         }
 #endif

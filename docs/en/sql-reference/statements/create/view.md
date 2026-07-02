@@ -146,9 +146,11 @@ Materialized views in ClickHouse are implemented more like insert triggers. If t
 
 Materialized views in ClickHouse do not have deterministic behaviour in case of errors. This means that blocks that had been already written will be preserved in the destination table, but all blocks after error will not.
 
-By default if pushing to one of views fails, then the INSERT query will fail too, and some blocks may not be written to the destination table. This can be changed using `materialized_views_ignore_errors` setting (you should set it for `INSERT` query), if you will set `materialized_views_ignore_errors=true`, then any errors while pushing to views will be ignored and all blocks will be written to the destination table.
+By default, if pushing to one of the views throws, the `INSERT` query fails. Whether the block has already reached the source table by that point is not guaranteed — it depends on insert pipeline timing, not on the view error. Retry the failed `INSERT` with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) to get exactly-once delivery to the source table and all dependent views.
 
-Also note, that `materialized_views_ignore_errors` set to `true` by default for `system.*_log` tables.
+Setting `materialized_views_ignore_errors=true` on the `INSERT` query only changes error reporting: each view error is logged as a warning and the `INSERT` query succeeds. Delivery to the failing view's destination is partial — blocks processed before the exception are kept, and the failing block plus any subsequent blocks are dropped from that view. Views downstream of that destination see only the blocks that did arrive, so their delivery is partial too. Sibling views (and their downstream chains) that did not throw are written to in full, and the source table is written to as usual. Because the `INSERT` reports success, the client gets no failure signal and no automatic retry is triggered; use this setting only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables).
+
+`materialized_views_ignore_errors` is `true` by default for `system.*_log` tables.
 :::
 
 If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
@@ -226,7 +228,7 @@ For your convenience, the old documentation is located [here](https://pastila.nl
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-REFRESH EVERY|AFTER interval [OFFSET interval]
+REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
@@ -241,6 +243,8 @@ where `interval` is a sequence of simple intervals:
 ```sql
 number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
 ```
+
+The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS ON`. Bare `REFRESH` (with none of these) is rejected. `REFRESH DEPENDS ON ...` without `EVERY`/`AFTER` is shorthand for `REFRESH AFTER 0 SECOND DEPENDS ON ...`; see [Refresh Dependencies](#refresh-dependencies) below.
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
@@ -278,7 +282,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 At most one refresh may be running at a time, for a given view. E.g. if a view with `REFRESH EVERY 1 MINUTE` takes 2 minutes to refresh, it'll just be refreshing every 2 minutes. If it then becomes faster and starts refreshing in 10 seconds, it'll go back to refreshing every minute. (In particular, it won't refresh every 10 seconds to catch up with a backlog of missed refreshes - there's no such backlog.)
 
-Additionally, a refresh is started immediately after the materialized view is created, unless `EMPTY` is specified in the `CREATE` query. If `EMPTY` is specified, the first refresh happens according to schedule.
+Typically the first refresh is started immediately after the materialized view is created: time since last refresh is infinity, so any schedule says it's time to refresh now. If `EMPTY` is specified, this initial refresh is skipped, and the first refresh happens at the next scheduled time; e.g. for `EVERY 1 HOUR` the first refresh will happen at the end of current hour.
 
 ### In Replicated DB {#in-replicated-db}
 
@@ -292,40 +296,92 @@ The coordination is done through Keeper. The znode path is determined by [defaul
 
 ### Refresh Dependencies {#refresh-dependencies}
 
-`DEPENDS ON` synchronizes refreshes of different tables. By way of example, suppose there's a chain of two refreshable materialized views:
+`DEPENDS ON` synchronizes refreshes of different tables:
 ```sql
-CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
-CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
+CREATE MATERIALIZED VIEW dependent REFRESH EVERY 1 HOUR DEPENDS ON dependency [...]
 ```
-Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
-```sql
-CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
-```
-then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
+Dependent view's refresh will start only after all dependency views' refreshes complete.
 
-Alternatively, the same result can be achieved with:
+To refresh immediately after another view's refresh:
 ```sql
-CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
+CREATE MATERIALIZED VIEW dependent REFRESH AFTER 0 SECOND DEPENDS ON dependency [...]
 ```
-where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
-
-A few more examples:
-* `REFRESH EVERY 1 DAY OFFSET 10 MINUTE` (`destination`) depends on `REFRESH EVERY 1 DAY` (`source`)<br/>
-  If `source` refresh takes more than 10 minutes, `destination` will wait for it.
-* `REFRESH EVERY 1 DAY OFFSET 1 HOUR` depends on `REFRESH EVERY 1 DAY OFFSET 23 HOUR`<br/>
-  Similar to the above, even though the corresponding refreshes happen on different calendar days.
-  `destination`'s refresh on day `X+1` will wait for `source`'s refresh on day `X` (if it takes more than 2 hours).
-* `REFRESH EVERY 2 HOUR` depends on `REFRESH EVERY 1 HOUR`<br/>
-  The `2 HOUR` refresh happens after the `1 HOUR` refresh for every other hour, e.g. after the midnight
-  refresh, then after the 2am refresh, etc.
-* `REFRESH EVERY 1 MINUTE` depends on `REFRESH EVERY 2 HOUR`<br/>
-  `destination` is refreshed once after every `source` refresh, i.e. every 2 hours. The `1 MINUTE` is effectively ignored.
-* `REFRESH AFTER 1 HOUR` depends on `REFRESH AFTER 1 HOUR`<br/>
-  Currently this is not recommended.
+Or equivalently:
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
+```
 
 :::note
-`DEPENDS ON` only works between refreshable materialized views. Listing a regular table in the `DEPENDS ON` list will prevent the view from ever refreshing (dependencies can be removed with `ALTER`, see [Changing Refresh Parameters](#changing-refresh-parameters)).
+`DEPENDS ON` only works between refreshable materialized views. In particular, if the dependency view uses `TO <table>`, make sure to use the name of the view rather than the table. If the `DEPENDS ON` list contains a regular table or non-refreshable view or has a typo, the view will never refresh and will show state `MissingDependencies` in `system.view_refreshes`. Dependencies can be changed or removed using `ALTER`, see [Changing Refresh Parameters](#changing-refresh-parameters).
 :::
+
+#### Using DEPENDS ON for consistent propagation latency {#using-depends-on-for-consistent-propagation-latency}
+
+If both views use `REFRESH EVERY` with the same period, the dependency applies in each timeslot.
+
+E.g. suppose views X and Y both use `REFRESH EVERY 1 HOUR`, and Y reads from X's output table. Without dependencies, Y would usually see X's data from previous hour's refresh. With `DEPENDS ON X`, Y's 11:00 refresh will start only after the X's 11:00 refresh completes.
+
+```text
+           10:00            11:00            12:00
+           │                │                │
+  X:        [run]┐           [run]┐           [run]┐
+                 │                │                │
+  Y:             └►[run]          └►[run]          └►[run]
+```
+
+Both dependency and dependent may independently skip timeslots if refreshes run for longer than the refresh period. There's no guarantee that the dependent refreshes exactly once for each dependency refresh.
+
+```text
+           10:00          11:00          12:00          13:00
+           │              │              │              |
+  X:        [run]┐         [run]┐         [run]┐         [run]┐
+                 │              └────┐    (Y skips 12:00)     └───┐
+  Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
+```
+
+#### Using DEPENDS ON for batched stream processing {#using-depends-on-for-batched-stream-processing}
+
+If `REFRESH EVERY` is not used, the dependent view X refreshes if all its dependencies refreshed at least once since X's last refresh. `REFRESH AFTER T` adds a delay: the dependent will start refresh T time after the dependency completes a refresh.
+
+Circular dependencies are allowed and useful. Consider this graph of refreshable materialized views:
+ 1. X takes a batch of rows from some stream and puts them in a table.
+ 2. Then Y and Z both read from that table, do different aggregation, and append results to other tables.
+ 3. After the batch is fully processed, X takes the next batch, and the cycle repeats.
+
+```text
+            source
+               │
+               ▼
+          ┌─────────┐
+     ┌───►│    X    │◄───┐
+     │    └──┬───┬──┘    │
+  DEPENDS    │   │    DEPENDS
+    ON       ▼   ▼      ON
+     │      ┌─┐ ┌─┐      │
+     └──────┤Y│ │Z├──────┘
+            └─┘ └─┘
+```
+
+Complete example:
+```sql
+CREATE TABLE current_batch (t UInt64, v Int64) ENGINE ReplicatedMergeTree ORDER BY t;
+CREATE TABLE batch_log (max_t UInt64, n Int64, v_sum Int64, processed_at DateTime64) ENGINE ReplicatedMergeTree ORDER BY max_t;
+CREATE TABLE stats (h UInt64, n UInt64) ENGINE ReplicatedSummingMergeTree ORDER BY h;
+
+-- (system.numbers stands in for a data source with monotonically increasing timestamps or sequence numbers)
+CREATE MATERIALIZED VIEW current_batch_v REFRESH EVERY 10 SECOND DEPENDS ON batch_log_v, stats_v TO current_batch AS SELECT number as t, number * 10 as v FROM system.numbers WHERE number > (SELECT max(max_t) FROM batch_log) LIMIT 100;
+
+CREATE MATERIALIZED VIEW batch_log_v REFRESH DEPENDS ON current_batch_v APPEND TO batch_log AS SELECT max(t) as max_t, count() as n, sum(v) as v_sum, now64() as processed_at FROM current_batch;
+
+CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO stats AS SELECT cityHash64(v) % 20 as h, count() as n FROM current_batch GROUP BY h;
+
+-- Must trigger initial refresh manually.
+SYSTEM REFRESH VIEW current_batch_v;
+```
+
+Longer chains work as well.
+
+This only works well when refresh coordination is enabled, i.e. the views are in Replicated or Shared database. Without coordination, server restart breaks the cycle, requiring a manual `SYSTEM REFRESH VIEW` after each restart rather than once after creating the views.
 
 ### Refresh Settings {#refresh-settings}
 
@@ -334,8 +390,6 @@ Available refresh settings:
 * `refresh_retry_initial_backoff_ms` - Delay before the first retry, if `refresh_retries` is not zero. Each subsequent retry doubles the delay, up to `refresh_retry_max_backoff_ms`. Default: 100 ms.
 * `refresh_retry_max_backoff_ms` - Limit on the exponential growth of delay between refresh attempts. Default: 60000 ms (1 minute).
 * `all_replicas` - In a [Replicated database](../../../engines/database-engines/replicated.md) with `APPEND`, controls whether all replicas refresh independently or only one replica refreshes at each scheduled time. Cannot be changed after the view is created. Default: `false`.
-* `prefer_dependency_replica` - When the view has `DEPENDS ON`, the replica that ran the parent refresh gets priority for running the dependent refresh; other replicas delay their attempt by `prefer_dependency_replica_delay_ms`. Useful with `SharedMergeTree` to avoid replication lag causing missing data in dependent refresh chains. Default: `false`.
-* `prefer_dependency_replica_delay_ms` - How long non-preferred replicas wait before attempting to run a dependent refresh when `prefer_dependency_replica` is enabled. Default: 2000 ms.
 
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 

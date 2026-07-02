@@ -31,6 +31,8 @@ struct SerializationInfoSettings
         MergeTreeMapSerializationVersion map_serialization_version_,
         bool propagate_types_serialization_versions_to_nested_types_);
 
+    bool operator==(const SerializationInfoSettings & other) const = default;
+
     /// Downgrade `version` to BASIC when all type-level serialization versions are still at their defaults.
     void tryDowngradeToBasic();
 

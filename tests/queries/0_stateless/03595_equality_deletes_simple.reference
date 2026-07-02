@@ -1,3 +1,37 @@
 448755
 448755
 448755	881
+--- file counts by content type ---
+DATA	4
+POSITION_DELETE	1
+EQUALITY_DELETE	3
+--- equality delete files ---
+Row 1:
+──────
+content:                     EQUALITY_DELETE
+sequence_number:             2
+record_count:                1
+equality_ids:                [1]
+file_format:                 PARQUET
+file_path_ends_with_parquet: 1
+file_size_positive:          1
+
+Row 2:
+──────
+content:                     EQUALITY_DELETE
+sequence_number:             7
+record_count:                2
+equality_ids:                [1,2]
+file_format:                 PARQUET
+file_path_ends_with_parquet: 1
+file_size_positive:          1
+
+Row 3:
+──────
+content:                     EQUALITY_DELETE
+sequence_number:             4
+record_count:                1
+equality_ids:                [2]
+file_format:                 PARQUET
+file_path_ends_with_parquet: 1
+file_size_positive:          1

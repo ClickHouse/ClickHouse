@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Formats/FormatFilterInfo.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Interpreters/ActionsDAG.h>
@@ -26,6 +25,9 @@ class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class PullingPipelineExecutor;
+
+struct FormatParserSharedResources;
+using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
 class StorageFile final : public IStorage
 {
@@ -215,7 +217,7 @@ private:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
-class StorageFileSource : public ISource, WithContext
+class StorageFileSource final : public ISource, WithContext
 {
 public:
     class FilesIterator : WithContext
@@ -288,7 +290,7 @@ private:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
@@ -305,7 +307,7 @@ private:
     /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
     /// for in-place rewrites within the same wall-clock second.
     std::optional<String> current_file_cache_version;
-    struct stat current_archive_stat;
+    struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;
     std::unique_ptr<ReadBuffer> read_buf;

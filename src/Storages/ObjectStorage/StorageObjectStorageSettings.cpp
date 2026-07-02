@@ -23,10 +23,7 @@ StorageObjectStorageSettings::StorageObjectStorageSettings(const StorageObjectSt
 {
 }
 
-StorageObjectStorageSettings::StorageObjectStorageSettings(StorageObjectStorageSettings && settings) noexcept
-    : impl(std::make_unique<StorageObjectStorageSettingsImpl>(std::move(*settings.impl)))
-{
-}
+StorageObjectStorageSettings::StorageObjectStorageSettings(StorageObjectStorageSettings && settings) noexcept = default;
 
 
 StorageObjectStorageSettings::~StorageObjectStorageSettings() = default;

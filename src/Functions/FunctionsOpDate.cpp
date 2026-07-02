@@ -15,7 +15,7 @@ namespace ErrorCodes
 namespace
 {
 template <typename Op>
-class FunctionOpDate : public IFunction
+class FunctionOpDate final : public IFunction
 {
 public:
     static constexpr auto name = Op::name;
