@@ -8,6 +8,8 @@
 
 
 #include <algorithm>
+#include <atomic>
+#include <random>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -42,6 +44,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Disks/IO/CachedOnDiskWriteBufferFromFile.h>
@@ -77,6 +80,7 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
+    extern const int LOGICAL_ERROR;
 }
 namespace DB::FileCacheSetting
 {
@@ -2077,6 +2081,719 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
         ASSERT_EQ(total_loaded, num_keys * segments_per_key)
             << "load_metadata_threads=" << thread_count;
     }
+}
+
+/// ----- ReaderExecutor + DiskCacheProvider tests -----
+
+#include <IO/BufferSourceReader.h>
+#include <IO/DiskCacheProvider.h>
+#include <IO/LocalSourceReader.h>
+#include <IO/ReaderExecutor.h>
+#include <IO/PipelineReadBuffer.h>
+#include <IO/ChainedBuffers.h>
+
+TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_1", settings);
+    cache->initialize();
+
+    /// Write a 30-byte test file.
+    std::string file_path = fs::current_path() / "test_dc_provider";
+    std::string data(30, 'A');
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// First read: cache miss, populates cache.
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Verify cache segments are populated (30 bytes / 10 segment size = 3 segments).
+    assertEqual(cache->dumpQueue(), {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+
+    /// Second read: should hit cache. Use a broken source to prove data comes from cache.
+    auto broken_source = std::make_shared<BufferSourceReader>(
+        [](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source should not be called on cache hit");
+        },
+        "BrokenSource");
+
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(broken_source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderHonoursFullRangeWhenBatchSizeIsOne)
+{
+    /// Regression: with `filesystem_cache_segments_batch_size = 1`, an earlier
+    /// provider version forwarded that limit to `FileCache::getOrSet` and only saw
+    /// the FIRST segment of the requested range, so it under-reported misses and
+    /// `ReaderExecutor` returned short data (off-by-one row in
+    /// `00009_uniq_distributed` / `00060_move_to_prewhere_and_sets`, 41/41
+    /// reproducibility). The provider must always get full coverage.
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;  /// → 3 segments for the 30-byte file
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_batch_1", settings);
+    cache->initialize();
+
+    const std::string file_path = fs::current_path() / "test_dc_provider_batch_1";
+    const std::string data(30, 'Z');
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    /// The trigger: tells the provider it may only see ONE segment per call.
+    /// The provider must ignore this (it is a one-shot lookup, not a streaming
+    /// reader); otherwise the read returns only the first 10 bytes.
+    cache_settings.segments_batch_size = 1;
+
+    auto provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 30;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{provider}, executor_options);
+
+    PipelineReadBuffer buf(std::move(executor));
+    WriteBufferFromOwnString result;
+    copyData(buf, result);
+    ASSERT_EQ(result.str(), data);
+
+    /// All 3 segments must end up populated, not just the first.
+    assertEqual(
+        cache->dumpQueue(),
+        {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+}
+
+TEST_F(FileCacheTest, DiskCacheProviderPartialRead)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_provider_2", settings);
+    cache->initialize();
+
+    /// Write a 30-byte test file with distinct content per segment.
+    std::string file_path = fs::current_path() / "test_dc_provider_partial";
+    std::string data = "AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// Read with small window to exercise multiple readNextWindow calls.
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 10;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    assertEqual(cache->dumpQueue(), {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+
+    /// Seek read: read only the middle segment.
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 10;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        buf.seek(10, SEEK_SET);
+
+        char tmp[10];
+        size_t n = buf.read(tmp, 10);
+        ASSERT_EQ(n, 10u);
+        ASSERT_EQ(std::string(tmp, 10), "BBBBBBBBBB");
+    }
+}
+
+/// End-to-end version of the partial-segment scenario, exercising the
+/// full unknown-size path through `ReaderExecutor` + `DiskCacheProvider`.
+///
+/// With `StoredObject::UnknownSize`, `OffsetMap` cannot clamp fetch ranges
+/// to the file's true size, so the source EOFs mid-segment (5 of 10 bytes
+/// delivered). Before Full B, the executor's `put` would have either
+/// zero-padded the segment (silent cache poisoning) or thrown on the
+/// `PARTIALLY_DOWNLOADED` continuation. After Full B, the partial fill
+/// is committed correctly and the second read serves the real bytes
+/// from cache.
+TEST_F(FileCacheTest, DiskCacheProviderUnknownSizeShortReadIsCacheable)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 20;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("dc_unknown_size", settings);
+    cache->initialize();
+
+    /// Tiny file — 5 bytes, less than one segment. Real on-disk file so
+    /// the source delivers the real content; the executor's view of it
+    /// is `UnknownSize`, so it can't pre-clamp the read range.
+    std::string file_path = fs::current_path() / "test_dc_unknown_size";
+    std::string data = "HELLO";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+
+    /// Counting source factory — to confirm the second read gets the
+    /// prefix from cache rather than re-fetching it.
+    auto source_open_count = std::make_shared<std::atomic<size_t>>(0);
+    auto source = std::make_shared<BufferSourceReader>(
+        [file_path, source_open_count](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            source_open_count->fetch_add(1);
+            return std::make_unique<ReadBufferFromFile>(file_path);
+        },
+        "CountingSource");
+
+    StoredObjects objects;
+    /// UnknownSize forces the executor through the unknown-size code path.
+    objects.emplace_back(file_path, "", StoredObject::UnknownSize);
+
+    /// First read: source delivers 5 bytes, EOF latched, cache populated
+    /// with a partial segment. The executor's new contiguity check would
+    /// throw LOGICAL_ERROR if the assembled chain had a hole here.
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 20;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+    ASSERT_GE(source_open_count->load(), 1u);
+
+    /// Second read: a fresh executor with the same source. The prefix
+    /// `[0, 5)` lives in the cache as a partial fill — `status()` must
+    /// report it as a hit and `get()` must serve the real bytes, not
+    /// zero-padding. The source still gets opened to verify there are
+    /// no more bytes past EOF (UnknownSize ⇒ executor doesn't know
+    /// where to stop without asking), but the 5 cached bytes must
+    /// match the original data.
+    source_open_count->store(0);
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 20;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        /// If the partial segment had been zero-padded by `put`, this
+        /// assertion would catch the corruption (would see "\0\0\0\0\0"
+        /// or some hybrid instead of "HELLO").
+        ASSERT_EQ(result.str(), data);
+    }
+}
+
+/// Stacked `CachedObjectStorage` over `CachedObjectStorage`: each layer's
+/// `prepareRead` delegates to the wrapped storage first and then appends
+/// its own cache stage, so `ReadPipeline::filesystem_caches` ends up
+/// inner-to-outer (`[inner, outer]`). The legacy single-object builder
+/// wraps caches inside-out, which makes the OUTER layer the FIRST one a
+/// read traverses: outer hit serves directly, miss falls through to inner,
+/// then to source. Mirror that order on the executor path —
+/// `ReadPipeline::tryBuildReaderExecutor` reverse-iterates so the
+/// outermost provider lands at `caches[0]`, which is what the executor
+/// queries first.
+///
+/// This test exercises the contract directly at the executor level: pass
+/// `{outer, inner}` in the cache vector with the outer pre-populated, and
+/// confirm the inner is never touched. A broken source asserts no source
+/// read occurs (would mean the outer hit was missed and the request
+/// fell through).
+TEST_F(FileCacheTest, DiskCacheProviderStackedQueryOrderOuterFirst)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    auto make_cache = [](const String & name, const String & path)
+    {
+        DB::FileCacheSettings settings;
+        settings[FileCacheSetting::path] = path;
+        settings[FileCacheSetting::max_file_segment_size] = 10;
+        settings[FileCacheSetting::max_size] = 100;
+        settings[FileCacheSetting::max_elements] = 20;
+        settings[FileCacheSetting::boundary_alignment] = 1;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
+        settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+        auto cache = std::make_shared<DB::FileCache>(name, settings);
+        cache->initialize();
+        return cache;
+    };
+
+    auto outer_cache = make_cache("dc_outer", cache_base_path);
+    auto inner_cache = make_cache("dc_inner", cache_base_path2);
+
+    /// Set up a 30-byte source file. Used only for the warm-up read; the
+    /// real test runs with a broken source.
+    const std::string file_path = fs::current_path() / "test_dc_stacked_order";
+    const std::string data = "AAAAAAAAAA" "BBBBBBBBBB" "CCCCCCCCCC";  /// 3 x 10
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// Warm-up: populate the outer cache (only) with all three segments.
+    {
+        auto outer_provider = std::make_shared<DiskCacheProvider>(outer_cache, cache_settings);
+        auto source_reader = std::make_shared<LocalSourceReader>();
+
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Sanity: outer has 3 segments, inner has none.
+    assertEqual(outer_cache->dumpQueue(),
+        {FileSegment::Range(0, 9), FileSegment::Range(10, 19), FileSegment::Range(20, 29)});
+    assertEqual(inner_cache->dumpQueue(), {});
+
+    /// Real test: stack `{outer, inner}` — the executor must query outer
+    /// first. A broken source asserts no source read happens; an empty
+    /// inner cache after the read asserts inner was never consulted as
+    /// the next layer either.
+    auto outer_provider = std::make_shared<DiskCacheProvider>(outer_cache, cache_settings);
+    auto inner_provider = std::make_shared<DiskCacheProvider>(inner_cache, cache_settings);
+    auto broken_source = std::make_shared<BufferSourceReader>(
+        [](const StoredObject &) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Source must not be called when outer cache covers the range");
+        },
+        "BrokenSource");
+
+    {
+        ReaderExecutor::Options executor_options;
+        executor_options.window_size = 30;
+        executor_options.min_bytes_for_seek = 0;
+        executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+        executor_options.log_file_path = file_path;
+        auto executor = std::make_unique<ReaderExecutor>(broken_source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{outer_provider, inner_provider}, executor_options);
+
+        PipelineReadBuffer buf(std::move(executor));
+        WriteBufferFromOwnString result;
+        copyData(buf, result);
+        ASSERT_EQ(result.str(), data);
+    }
+
+    /// Inner stays empty: outer hit fully served the read, the inner
+    /// layer (which would have populated if it had seen a miss) was
+    /// never consulted.
+    /// Inner must still be empty: outer hit fully served the read; the
+    /// inner layer (which would have populated if it had seen a miss)
+    /// was never consulted.
+    assertEqual(inner_cache->dumpQueue(), {});
+}
+
+TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
+{
+    /// Regression-guard for `03988_cached_read_big_at`: PipelineReadBuffer must
+    /// implement `supportsReadAt`/`readBigAt`, otherwise Parquet's prefetcher
+    /// serializes every read under one mutex.
+
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 30;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("read_big_at", settings);
+    cache->initialize();
+
+    /// 256-byte file with one distinct character per nibble — gives us a
+    /// deterministic expected value for any slice we read.
+    std::string file_path = fs::current_path() / "test_read_big_at";
+    constexpr size_t file_size = 256;
+    std::string data(file_size, '\0');
+    for (size_t i = 0; i < file_size; ++i)
+        data[i] = static_cast<char>(i);
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = ReaderExecutor::DEFAULT_WINDOW_SIZE;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+
+    PipelineReadBuffer buf(std::move(executor));
+
+    ASSERT_TRUE(buf.supportsReadAt());
+
+    /// 8 threads doing random readBigAt calls. Each thread compares its
+    /// returned bytes against the expected slice. TSan / ASan should stay
+    /// quiet because readAt only touches caches/source/immutable state.
+    constexpr size_t threads = 8;
+    constexpr size_t calls_per_thread = 200;
+    std::atomic<size_t> failures{0};
+    std::vector<std::thread> workers;
+    workers.reserve(threads);
+    for (size_t t = 0; t < threads; ++t)
+    {
+        workers.emplace_back([&, t]()
+        {
+            std::mt19937 rng(static_cast<uint32_t>(t * 1009 + 17));
+            std::vector<char> tmp(file_size);
+            for (size_t i = 0; i < calls_per_thread; ++i)
+            {
+                size_t offset = rng() % file_size;
+                size_t want = 1 + (rng() % (file_size - offset));
+                size_t got = buf.readBigAt(tmp.data(), want, offset, nullptr);
+                if (got != want)
+                {
+                    ++failures;
+                    return;
+                }
+                if (std::memcmp(tmp.data(), data.data() + offset, want) != 0)
+                {
+                    ++failures;
+                    return;
+                }
+            }
+        });
+    }
+    for (auto & w : workers)
+        w.join();
+
+    ASSERT_EQ(failures.load(), 0u) << "readBigAt returned wrong bytes or short read under concurrency";
+}
+
+TEST_F(FileCacheTest, PipelineReadBufferReadBigAtPreservesMainCursor)
+{
+    /// Sanity: readBigAt must NOT disturb the main read cursor or buffered
+    /// data. Mix sequential reads with random readBigAt calls and verify the
+    /// sequential side keeps returning correct bytes.
+
+    ServerUUID::setRandomForUnitTests();
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_base_path2;
+    settings[FileCacheSetting::max_file_segment_size] = 10;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 30;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("read_big_at_cursor", settings);
+    cache->initialize();
+
+    std::string file_path = fs::current_path() / "test_read_big_at_cursor";
+    constexpr size_t file_size = 128;
+    std::string data(file_size, '\0');
+    for (size_t i = 0; i < file_size; ++i)
+        data[i] = static_cast<char>(i);
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto disk_cache_provider = std::make_shared<DiskCacheProvider>(cache, cache_settings);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 16;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{disk_cache_provider}, executor_options);
+    PipelineReadBuffer buf(std::move(executor));
+
+    /// Read first 32 bytes sequentially.
+    std::vector<char> seq(32);
+    ASSERT_EQ(buf.read(seq.data(), 32), 32u);
+    ASSERT_EQ(std::string(seq.begin(), seq.end()), std::string(data.begin(), data.begin() + 32));
+
+    /// Random readBigAt in between.
+    char rnd[20];
+    ASSERT_EQ(buf.readBigAt(rnd, 20, /*offset=*/60, nullptr), 20u);
+    ASSERT_EQ(std::string(rnd, 20), std::string(data.begin() + 60, data.begin() + 80));
+
+    /// Continue sequential reads — must pick up where we left off.
+    std::vector<char> seq2(32);
+    ASSERT_EQ(buf.read(seq2.data(), 32), 32u);
+    ASSERT_EQ(std::string(seq2.begin(), seq2.end()), std::string(data.begin() + 32, data.begin() + 64));
+}
+
+/// Recording ICacheProvider: reports a configurable hit range and records the
+/// exact range passed to handle->get. Used to verify ReaderExecutor clamps the
+/// cache-hit range to the requested window before calling get().
+namespace
+{
+    /// Held read buffer over an in-memory string that records every `read(sub)`. The
+    /// executor clamps `sub` to its window before calling, so recorded ranges verify the
+    /// clamp (mirrors the old `RecordingHandle::get` recording under the new API).
+    struct RecordingReadBuffer : public CacheReader
+    {
+        ByteRange hit_range;
+        std::vector<ByteRange> & recorded;
+        std::string data;
+
+        RecordingReadBuffer(ByteRange hit_, std::vector<ByteRange> & rec_, std::string data_)
+            : hit_range(hit_), recorded(rec_), data(std::move(data_)) {}
+
+        ByteRange range() const override { return hit_range; }
+        size_t readable() const override { return hit_range.end(); }
+
+        ChainedBuffers read(ByteRange sub) override
+        {
+            recorded.push_back(sub);
+            size_t lo = std::max(hit_range.offset, sub.offset);
+            size_t hi = std::min(hit_range.end(), sub.end());
+            if (lo >= hi)
+                return {};
+            auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
+            std::memcpy(buf->data(), data.data() + (lo - hit_range.offset), hi - lo);
+            ChainedBuffers r;
+            r.append(ChainedBufferNode{std::move(buf), 0, hi - lo, lo});
+            return r;
+        }
+    };
+
+    struct RecordingCacheProvider : public ICacheProvider
+    {
+        ByteRange hit_range;
+        std::vector<ByteRange> recorded_gets;
+        std::string data;
+
+        RecordingCacheProvider(ByteRange hit_, std::string data_)
+            : hit_range(hit_), data(std::move(data_)) {}
+
+        CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange) override
+        {
+            auto view = std::make_unique<CacheView>();
+            view->hit_entries.push_back(HitEntry{
+                hit_range,
+                std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});
+            return view;
+        }
+        VectorWithMemoryTracking<MissEntry> openWriteBuffers(
+            const StoredObject &, size_t, const VectorWithMemoryTracking<ByteRange> &) override
+        {
+            return {};  /// the configured range is fully resident
+        }
+        String name() const override { return "Recording"; }
+        CacheTier tier() const override { return CacheTier::FilesystemCache; }
+    };
+}
+
+TEST_F(FileCacheTest, ReaderExecutorClampsHitToRequestedWindow)
+{
+    /// Regression: `readPhysicalWindow` used to read a cache hit at the cache's
+    /// full segment range. With large segments (default `max_file_segment_size`
+    /// = 4 MiB) and many concurrent readers, the segment-sized allocations blew
+    /// past per-query memory limits — `INSERT INTO test.hits_s3 SELECT *
+    /// FROM test.hits` hit `MEMORY_LIMIT_EXCEEDED` at 27.94 GiB on master.
+    ///
+    /// After the fix, `readPhysicalWindow` clamps the hit range to the
+    /// requested window before calling `CacheReader::read`, so the allocation is
+    /// at most `window_size` regardless of segment size.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// File content is 30 bytes of distinct values; the recording provider
+    /// pretends the whole [0, 30) range is one cached segment.
+    std::string data(30, 'X');
+    std::string file_path = fs::current_path() / "test_clamp_dummy";
+    {
+        auto wb = std::make_unique<WriteBufferFromFile>(file_path, DBMS_DEFAULT_BUFFER_SIZE);
+        wb->write(data.data(), data.size());
+        wb->next();
+        wb->finalize();
+    }
+    SCOPE_EXIT({ fs::remove(file_path); });
+
+    auto recording = std::make_shared<RecordingCacheProvider>(ByteRange{0, 30}, data);
+    auto source_reader = std::make_shared<LocalSourceReader>();
+
+    StoredObjects objects;
+    objects.emplace_back(file_path, "", data.size());
+
+    /// window_size = 10, segment "hit" size = 30. Each readNextWindow should
+    /// trigger get() with a range no larger than the window, not the segment.
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 10;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.block_size = ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
+    executor_options.log_file_path = file_path;
+    auto executor = std::make_unique<ReaderExecutor>(source_reader, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{recording}, executor_options);
+
+    PipelineReadBuffer buf(std::move(executor));
+    WriteBufferFromOwnString result;
+    copyData(buf, result);
+    ASSERT_EQ(result.str(), data);
+
+    /// Verify every recorded get() asked for at most window_size bytes.
+    ASSERT_FALSE(recording->recorded_gets.empty());
+    for (const auto & rg : recording->recorded_gets)
+        ASSERT_LE(rg.size, 10u)
+            << "ReaderExecutor passed an unclamped segment range to handle->get: "
+            << "[" << rg.offset << ", " << rg.end() << "), size " << rg.size;
 }
 
 TEST_F(FileCacheTest, PartiallyDownloadedDynamicResizeAssertion)

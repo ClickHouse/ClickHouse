@@ -141,12 +141,6 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
-    /// Experimental pipeline read executor (`use_reader_executor`). When set,
-    /// `ReadPipeline::build` routes supported reads through `ReaderExecutor`
-    /// instead of the legacy matryoshka of read buffers. The executor reads in
-    /// blocks of `buffer_size` bytes.
-    bool use_reader_executor = false;
-
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
@@ -158,6 +152,16 @@ struct ReadSettings
 
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
+
+    /// Use ReaderExecutor-based pipeline instead of matryoshka ReadBuffer assembly.
+    bool use_reader_executor = false;
+    bool enable_reader_executor_log = false;
+    size_t reader_executor_window_size = 8388608;
+    size_t reader_executor_plan_look_ahead_max_window = 8388608;
+    size_t reader_executor_block_size = 1048576;
+    size_t reader_executor_min_bytes_for_seek = 2097152;
+    size_t reader_executor_max_tail_for_drain = 1048576;
+    bool reader_executor_use_long_connections = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 

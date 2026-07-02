@@ -1,8 +1,9 @@
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReaderExecutor.h>
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
+#include <cstring>
 
 namespace DB
 {
@@ -20,51 +21,13 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
-PipelineReadBuffer::~PipelineReadBuffer() = default;
-
-bool PipelineReadBuffer::nextImpl()
+String PipelineReadBuffer::getFileName() const
 {
-    std::optional<Stopwatch> watch;
-    if (profile_callback)
-        watch.emplace(clock_type);
-
-    /// Detach first: `advance` can free the buffer `working_buffer` / `pos` point into.
-    const size_t consumed = working_buffer.size();
-    detachBuffer();
-    chain.advance(consumed);
-    if (chain.atEnd())
-    {
-        chain = executor->readNextWindow();
-        if (chain.atEnd())
-        {
-            LOG_TEST(log, "nextImpl: EOF at {}", read_position);
-            return false;
-        }
-    }
-
-    auto span = chain.peek();
-
-    /// Report the read so `MergeTreeReadPool`'s slow-read backoff still sees it.
-    if (profile_callback)
-    {
-        ProfileInfo info{};
-        info.bytes_requested = span.size;
-        info.bytes_read = span.size;
-        info.nanoseconds = watch->elapsed();
-        profile_callback(info);
-    }
-
-    internal_buffer = Buffer(span.data, span.data + span.size);
-    working_buffer = internal_buffer;
-    pos = working_buffer.begin();
-    read_position = span.logical_offset + span.size;
-    return true;
-}
-
-void PipelineReadBuffer::detachBuffer()
-{
-    internal_buffer = working_buffer = Buffer(nullptr, nullptr);
-    pos = nullptr;
+    /// Surface the object path so format/decompression diagnostics
+    /// (`getFileNameFromReadBuffer`) name the failing object instead of this
+    /// wrapper. Falls back to the wrapper name only when no path is known.
+    String name = executor->getFileName();
+    return name.empty() ? "PipelineReadBuffer" : name;
 }
 
 off_t PipelineReadBuffer::seek(off_t off, int whence)
@@ -91,9 +54,22 @@ off_t PipelineReadBuffer::seek(off_t off, int whence)
 
     LOG_DEBUG(log, "seek to {}", new_pos);
 
-    detachBuffer();
-    chain = ChainedBuffers{};
+    /// Reset `working_buffer` BEFORE asking the chain to rewind. This makes
+    /// the next `nextImpl` advance by 0 (instead of by the size of the
+    /// partially-consumed previous span), so the rewind position is
+    /// preserved.
+    resetWorkingBuffer();
+
+    if (chain.tryRewind(new_pos))
+    {
+        LOG_TRACE(log, "seek: rewound inside chain");
+        read_position = new_pos;
+        return new_pos;
+    }
+
+    LOG_TRACE(log, "seek: delegating to executor");
     executor->seek(new_pos);
+    chain = ChainedBuffers{};
     read_position = new_pos;
     return new_pos;
 }
@@ -103,51 +79,137 @@ off_t PipelineReadBuffer::getPosition()
     return read_position - available();
 }
 
-void PipelineReadBuffer::setReadUntilPosition(size_t position)
-{
-    executor->setReadUntil(position);
-
-    /// If the new bound is below what's already buffered, drop the buffer and
-    /// re-anchor the executor at the exposed position. Otherwise the executor
-    /// stays at the end of the already-read chunk, and a later bound extension
-    /// would resume there, skipping the bytes in between.
-    if (position < read_position)
-    {
-        const size_t current = read_position - available();
-        detachBuffer();
-        chain = ChainedBuffers{};
-        executor->seek(current);
-        read_position = current;
-    }
-}
-
-void PipelineReadBuffer::setReadUntilEnd()
-{
-    executor->setReadUntil(std::nullopt);
-}
-
 std::optional<size_t> PipelineReadBuffer::tryGetFileSize()
 {
     /// Unknown-size sources (S3 HEAD without Content-Length) must surface as
-    /// `nullopt`, not a meaningless `~uint64_t::max()` byte count.
+    /// `nullopt`, not as `executor->totalSize()` (which returns
+    /// `UnknownSize - data_start_offset ≈ uint64_t::max`). The downstream
+    /// `FormatFactory::wrapReadBufferIfNeeded` compares this to
+    /// `max_download_buffer_size` to decide whether to wrap with
+    /// `ParallelReadBuffer`; a max-valued size enables parallel reads that
+    /// can't be satisfied and trip `UNEXPECTED_END_OF_FILE`.
     if (executor->hasUnknownSize())
         return std::nullopt;
     return executor->totalSize();
 }
 
+void PipelineReadBuffer::setReadUntilPosition(size_t position)
+{
+    /// `position` is in this buffer's coordinates - the executor's logical file
+    /// offset (the post-decryption .bin offset that marks address). Advertise it
+    /// as the read extent so the executor bounds its long connection there.
+    executor->setReadExtent(position);
+}
+
+void PipelineReadBuffer::setReadUntilEnd()
+{
+    /// Read to the file end: clear the extent. A read that runs to EOF drains its
+    /// connection naturally, so no explicit bound is needed.
+    executor->setReadExtent(std::nullopt);
+}
+
+bool PipelineReadBuffer::supportsReadAt()
+{
+    /// A `true` answer tells random-read formats (Parquet/ORC/Arrow) the source
+    /// is randomly addressable; their first move is to locate the footer at the
+    /// end via `getFileSizeFromReadBuffer`, which throws `UNKNOWN_FILE_SIZE` when
+    /// the size is unknown. Don't advertise random reads for unknown-size sources
+    /// - they stream through `nextImpl` instead.
+    return !executor->hasUnknownSize() && executor->canReadAt();
+}
+
+size_t PipelineReadBuffer::readBigAt(
+    char * to, size_t n, size_t offset,
+    const std::function<bool(size_t)> & progress_callback) const
+{
+    if (n == 0)
+        return 0;
+
+    const size_t total = executor->totalSize();
+    if (offset >= total)
+        return 0;
+    const size_t want = std::min(n, total - offset);
+
+    /// Drive a fresh, isolated `ReaderExecutor` through the regular
+    /// `readNextWindow` path. The transient owns its own position / live_buffer
+    /// / prefetch state so concurrent `readBigAt` calls don't interfere with
+    /// each other or with the main reader. Reusing the existing pipeline avoids
+    /// duplicating the cache-walk + source-read logic.
+    auto sub = executor->makeTransientForReadAt(offset, want);
+    /// Roll the transient's I/O stats into the parent on every exit path so the
+    /// random-access read shows up in the parent's reader_executor_log row /
+    /// ProfileEvents (the transient does not emit its own). Runs before `sub` is
+    /// destroyed (reverse declaration order).
+    SCOPE_EXIT_SAFE(executor->mergeTransientStats(*sub));
+
+    size_t total_copied = 0;
+    while (total_copied < want)
+    {
+        ChainedBuffers window = sub->readNextWindow();
+        if (window.empty())
+            break;
+        for (const auto & node : window.getNodes())
+        {
+            if (total_copied >= want)
+                break;
+            const size_t copy = std::min(node.size, want - total_copied);
+            std::memcpy(to + total_copied, node.data(), copy);
+            total_copied += copy;
+        }
+
+        /// `progress_callback(m)` publishes bytes-so-far and returns
+        /// true to ask us to stop — typically from `ParallelReadBuffer`
+        /// when another worker fulfilled the request or an emergency
+        /// stop fired. Call once per window (8 MiB at the default
+        /// `DEFAULT_WINDOW_SIZE`) so cancellation interrupts before
+        /// committing to the next source/cache walk without paying for
+        /// a callback per copied node.
+        if (progress_callback && progress_callback(total_copied))
+            return total_copied;
+    }
+    return total_copied;
+}
+
 bool PipelineReadBuffer::checkIfActuallySeekable()
 {
-    /// Unknown-size sources are streamed through `nextImpl`, not seeked: a `true`
-    /// answer leads formats to `getFileSizeFromReadBuffer`, which throws.
+    /// Same reason as `supportsReadAt`: a seekable probe also leads formats to
+    /// `getFileSizeFromReadBuffer`. Unknown-size sources are not seekable here.
     return !executor->hasUnknownSize();
 }
 
-String PipelineReadBuffer::getFileName() const
+bool PipelineReadBuffer::nextImpl()
 {
-    /// Surface the object path so format/decompression diagnostics name the
-    /// failing object instead of this wrapper.
-    String name = executor->getFileName();
-    return name.empty() ? "PipelineReadBuffer" : name;
+    /// Tell the chain that the bytes we exposed last time are now fully
+    /// consumed (the caller would not have called us otherwise). This is
+    /// where the chain releases nodes whose data we no longer need.
+    /// `working_buffer.size()` is 0 right after construction or right
+    /// after `seek` — so the first call and post-seek calls don't
+    /// over-advance.
+    chain.advance(working_buffer.size());
+
+    if (chain.atEnd())
+    {
+        LOG_TRACE(log, "nextImpl: chain exhausted, requesting next window at position {}", read_position);
+        chain = executor->readNextWindow();
+        if (chain.atEnd())
+        {
+            LOG_TRACE(log, "nextImpl: EOF");
+            return false;
+        }
+        LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
+            chain.range().offset, chain.range().end(), chain.getNodes().size());
+    }
+
+    /// The executor serves plaintext (it decrypts each window in `readNextWindow`),
+    /// so the span is exposed directly - no copy, no decrypt on the read path.
+    auto span = chain.peek();
+    internal_buffer = Buffer(span.data, span.data + span.size);
+    working_buffer = internal_buffer;
+    pos = working_buffer.begin();
+    read_position = span.logical_offset + span.size;
+    LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
+        span.size, span.logical_offset, read_position);
+    return true;
 }
 
 }

@@ -45,6 +45,12 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
+    /// Whether this buffer's nextImpl honors the external-buffer pointer set via
+    /// set() — i.e., reads into the caller-provided memory. Synchronous impls do;
+    /// asynchronous impls (which prefetch into their own internal allocation) do not.
+    /// Callers that want zero-copy via set()+next() must check this first.
+    virtual bool supportsExternalBufferMode() const { return true; }
+
     /** read next data and fill a buffer with it; set position to the beginning of the new data
       * (but not necessarily to the beginning of working_buffer!);
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;

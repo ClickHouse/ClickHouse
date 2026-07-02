@@ -871,6 +871,27 @@ void DiskObjectStorage::prepareRead(
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
     }
+
+    if (read_settings.use_reader_executor)
+    {
+        /// Match the legacy async/prefetch stage above, which is installed only
+        /// for `RemoteFSReadMethod::threadpool`: attach the prefetch pool only when
+        /// the read method is threadpool AND prefetch is enabled. Otherwise
+        /// `remote_filesystem_read_method='read'` (or `remote_filesystem_read_prefetch=0`)
+        /// keeps reads synchronous instead of the executor scheduling background
+        /// object-storage reads, preserving the user's requested I/O scheduling
+        /// (`ReaderExecutor::maybeTriggerPrefetch` no-ops without a pool). The
+        /// buffer limit (connection reuse) is independent of prefetch.
+        if (read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
+            && read_settings.remote_fs_settings.prefetch)
+        {
+            pipeline.needPrefetchPool(global_context->getPrefetchThreadPool());
+        }
+        /// Without a buffer limit the executor takes the stateless (one-shot per
+        /// window) path; `reader_executor_use_long_connections=0` selects it.
+        if (read_settings.reader_executor_use_long_connections)
+            pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFileIfExists(

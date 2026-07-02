@@ -1,4 +1,8 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-flaky-check
+
+-- this test checks I/O counters (CreatedReadBufferMMap) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
+
 DROP TABLE IF EXISTS test_01344;
 -- packed_skip_index_max_bytes=0: this test measures the number of read buffers created when
 -- reading per-file skip-index substreams via mmap. Packing routes those bytes through the

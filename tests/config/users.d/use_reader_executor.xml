@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <use_reader_executor>1</use_reader_executor>
+        </default>
+    </profiles>
+</clickhouse>

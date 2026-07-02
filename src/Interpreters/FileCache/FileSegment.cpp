@@ -283,9 +283,12 @@ String FileSegment::getOrSetDownloader()
     return current_downloader;
 }
 
-void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock)
+void FileSegment::resetDownloadingStateUnlocked(const FileSegmentGuard::Lock & lock, bool allow_non_downloader)
 {
-    chassert(isDownloaderUnlocked(lock));
+    /// Normally only the downloader resets its own in-flight download. The LAST holder may
+    /// also reset an ABANDONED one: being the last holder means no other holder - hence no
+    /// concurrent downloader - remains, so the reset is safe.
+    chassert(allow_non_downloader || isDownloaderUnlocked(lock));
     chassert(download_state == State::DOWNLOADING);
 
     size_t current_downloaded_size = getDownloadedSize();
@@ -727,6 +730,16 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
     }
 }
 
+void FileSegment::notifyDownloadProgress()
+{
+    /// Keep the downloader role and the DOWNLOADING state; only wake waiters so a reader
+    /// streaming the committed prefix re-checks `offset < getCurrentWriteOffset()` and proceeds.
+    auto lk = lock();
+    assertNotDetachedUnlocked(lk);
+    assertIsDownloaderUnlocked("notifyDownloadProgress", lk);
+    cv.notify_all();
+}
+
 void FileSegment::completePartAndResetDownloader()
 {
     auto lk = lock();
@@ -892,6 +905,19 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
     {
         if (download_state == State::DOWNLOADING)
             resetDownloadingStateUnlocked(segment_lock);
+        resetDownloaderUnlocked(segment_lock);
+    }
+    else if (is_last_holder && download_state == State::DOWNLOADING)
+    {
+        /// A non-downloader is the LAST holder of a still-DOWNLOADING segment. This happens
+        /// when a reader credits a being-written segment's committed prefix as a cache hit
+        /// (which is fine - the committed bytes are durable) and outlives the downloader,
+        /// whose holder was dropped without resetting the state (e.g. on another thread,
+        /// which cannot reset a foreign downloader). Reading the committed prefix is allowed,
+        /// so the reader must not abort here; the download is abandoned, so reset it - keeping
+        /// the committed bytes (-> PARTIALLY_DOWNLOADED), or dropping an empty/whole segment
+        /// via the cases below, exactly as the downloader's own completion would.
+        resetDownloadingStateUnlocked(segment_lock, /*allow_non_downloader=*/true);
         resetDownloaderUnlocked(segment_lock);
     }
 

@@ -307,25 +307,6 @@ size_t ChainedBuffers::totalBytes() const
     return total - front_offset;
 }
 
-size_t ChainedBuffers::coveredBytes(ByteRange req) const
-{
-    if (req.size == 0)
-        return 0;
-    size_t total = 0;
-    /// First interval whose `end > req.offset` — the first one that could
-    /// contribute coverage.
-    auto it = std::lower_bound(intervals.begin(), intervals.end(), req.offset,
-        [](const ByteRange & ex, size_t v) { return ex.end() <= v; });
-    for (; it != intervals.end() && it->offset < req.end(); ++it)
-    {
-        size_t lo = std::max(it->offset, req.offset);
-        size_t hi = std::min(it->end(), req.end());
-        if (lo < hi)
-            total += hi - lo;
-    }
-    return total;
-}
-
 VectorWithMemoryTracking<ByteRange> ChainedBuffers::gaps(ByteRange req) const
 {
     VectorWithMemoryTracking<ByteRange> result;
@@ -358,12 +339,6 @@ bool ChainedBuffers::covers(ByteRange req) const
     return it != intervals.end() && it->offset <= req.offset && it->end() >= req.end();
 }
 
-ChainedBuffers ChainedBuffers::extract(ByteRange req) const
-{
-    chassert(covers(req)); /// caller's invariant
-    return slice(req);
-}
-
 void ChainedBuffers::shift(ssize_t delta)
 {
     for (auto & node : nodes)
@@ -378,8 +353,15 @@ void ChainedBuffers::shift(ssize_t delta)
 size_t ChainedBuffers::copyTo(char * dst, ByteRange req) const
 {
     chassert(covers(req));
+#ifndef NDEBUG
     /// Flatten assumes non-overlapping nodes; overlap would double-write `dst` / over-count.
-    chassert(coveredBytes(range()) == totalBytes());
+    /// The unique covered-byte count is the sum of the disjoint intervals (which together
+    /// span exactly `range()`); it must equal the raw node-size sum iff nothing overlaps.
+    size_t unique_bytes = 0;
+    for (const auto & iv : intervals)
+        unique_bytes += iv.size;
+    chassert(unique_bytes == totalBytes());
+#endif
     /// Nodes are sorted by logical_offset (invariant). The first node's
     /// `front_offset` bytes are already consumed — they're not part of
     /// the reachable bytes and `covers(req)` must have ruled them out.

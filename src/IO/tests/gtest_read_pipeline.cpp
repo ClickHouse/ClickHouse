@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <optional>
 
 
 using namespace DB;
@@ -95,6 +96,31 @@ ReadPipeline::BufferCreator perObjectCreator(std::map<String, String> object_dat
         if (it == data.end())
             throw std::runtime_error("No data for object " + object.remote_path);
         return std::make_unique<TestReadBuffer>(it->second);
+    };
+}
+
+/// Reports right-bounded reads and records the requested upper bound, so a test
+/// can assert a non-live source read is issued as a bounded range.
+class BoundRecordingReadBuffer : public TestReadBuffer
+{
+public:
+    BoundRecordingReadBuffer(String data_, std::shared_ptr<std::optional<size_t>> recorded_)
+        : TestReadBuffer(std::move(data_)), recorded(std::move(recorded_)) {}
+
+    bool supportsRightBoundedReads() const override { return true; }
+    void setReadUntilPosition(size_t position) override { *recorded = position; }
+
+private:
+    std::shared_ptr<std::optional<size_t>> recorded;
+};
+
+ReadPipeline::BufferCreator boundRecordingCreator(const std::string & data, std::shared_ptr<std::optional<size_t>> recorded)
+{
+    return [data, recorded](const StoredObject & /* object */, const ReadSettings & /* settings */,
+        bool /* use_external_buffer */, bool /* restrict_seek */)
+        -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<BoundRecordingReadBuffer>(data, recorded);
     };
 }
 
@@ -266,6 +292,170 @@ try
     String result;
     readStringUntilEOF(result, *buf);
     EXPECT_EQ(result, "");
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, UnknownSizeReadsToEofViaExecutor)
+try
+{
+    /// `StoredObject::UnknownSize` callers (S3 `HEAD` without
+    /// `Content-Length`, local `stat()` failure) put the sentinel into
+    /// `bytes_size` instead of `0` so consumers can distinguish from a
+    /// truly empty file. The executor recognises the sentinel via
+    /// `OffsetMap::hasUnknownSize` and switches to streaming-until-EOF
+    /// — it reads window-sized chunks from the source and detects EOF
+    /// when the source returns short. No fall back to the legacy
+    /// pipeline.
+    std::string data = "actually-not-empty";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(StoredObject::UnknownSize)},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data)
+        << "ReaderExecutor must stream unknown-size sources to EOF without "
+           "needing bytes_size up front";
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, KnownSizeUsesReaderExecutor)
+try
+{
+    /// Sanity check the other side: when the size IS known (default), the
+    /// executor path runs and produces the same bytes.
+    std::string data = "executor-path-ok";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, UnknownSizeDeniesRandomReadProbes)
+try
+{
+    /// An unknown-size source must NOT advertise random reads or seekability.
+    /// Random-read formats (Parquet/ORC/Arrow) react to a positive answer by
+    /// calling `getFileSizeFromReadBuffer`, which throws `UNKNOWN_FILE_SIZE`
+    /// because `tryGetFileSize` is `nullopt` here — making the object unreadable
+    /// even though the executor can stream it to EOF. So both probes (and the
+    /// file size) must be denied, and the format falls back to streaming.
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator("actually-not-empty"),
+        StoredObjects{testObject(StoredObject::UnknownSize)},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    EXPECT_FALSE(buf->supportsReadAt());
+    EXPECT_FALSE(buf->checkIfActuallySeekable());
+    EXPECT_FALSE(buf->tryGetFileSize().has_value());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, KnownSizeAllowsRandomReadProbes)
+try
+{
+    /// With a known size the executor advertises random reads and seekability,
+    /// so formats can take the fast `readBigAt` path, and reports the real size.
+    std::string data = "known-size-data";
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        memoryCreator(data),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    EXPECT_TRUE(buf->supportsReadAt());
+    EXPECT_TRUE(buf->checkIfActuallySeekable());
+    ASSERT_TRUE(buf->tryGetFileSize().has_value());
+    EXPECT_EQ(*buf->tryGetFileSize(), data.size());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, NonLiveSourceReadIsRightBounded)
+try
+{
+    /// With no long_connection_limit there is no live-connection slot, so readFromSource
+    /// takes the one-shot (non-live) path. For a right-bounded source it must
+    /// issue a bounded range [offset, offset+want) - setReadUntilPosition called
+    /// with the window end - so the underlying connection is fully consumed and
+    /// can be pooled/reused, rather than an open-ended GET abandoned mid-stream.
+    auto recorded = std::make_shared<std::optional<size_t>>();
+    std::string data(4096, 'x');
+
+    ReadSettings rs;
+    rs.use_reader_executor = true;
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        boundRecordingCreator(data, recorded),
+        StoredObjects{testObject(data.size())},
+        rs);
+
+    auto buf = pipeline.build();
+    ASSERT_TRUE(buf != nullptr);
+
+    String result;
+    readStringUntilEOF(result, *buf);
+    EXPECT_EQ(result, data);
+
+    ASSERT_TRUE(recorded->has_value()) << "non-live source read was left open-ended, not right-bounded";
+    EXPECT_GT(*recorded, 0u);
+    EXPECT_LE(*recorded, data.size());
 }
 catch (...)
 {

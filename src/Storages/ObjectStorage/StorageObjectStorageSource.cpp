@@ -1287,6 +1287,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// unreliable to use these features (file might exist and have contents)
     if (!is_size_known)
     {
+        use_distributed_cache = false;
         use_filesystem_cache = false;
         use_page_cache = false;
     }
@@ -1336,9 +1337,28 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
+    ///
+    /// When HEAD didn't return Content-Length we don't know the real size. Pass
+    /// `UnknownSize` as a sentinel — `bytes_size = 0` would conflate with "really
+    /// empty file". All consumers (`OffsetMap`, `S3ObjectStorage::readObject`,
+    /// `HDFSObjectStorage::readObject`, `WebObjectStorage::readObject`,
+    /// `PipelineReadBuffer::tryGetFileSize`, `getTotalSize`) explicitly compare
+    /// against `UnknownSize` and route to the unknown-size / EOF-streaming path.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
+
+    /// Qualify the cache keys with the store's identity (type, endpoint,
+    /// namespace) so two independent object stores exposing the same relative
+    /// path and ETag cannot read each other's cached bytes (cf. DiskObjectStorage).
+    auto storage_cache_identity = [&]
+    {
+        return fmt::format(
+            "{}:{}:{}",
+            magic_enum::enum_name(object_storage->getType()),
+            object_storage->getDescription(),
+            object_storage->getObjectsNamespace());
+    };
 
     /// Filesystem cache
     if (use_filesystem_cache)
@@ -1351,6 +1371,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         else
         {
             SipHash hash;
+            hash.update(storage_cache_identity());
             hash.update(object_info.getPath());
             hash.update(object_info.metadata->etag);
 
@@ -1399,6 +1420,26 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             reader,
             context_->getAsyncReadCounters(),
             context_->getFilesystemReadPrefetchesLog());
+    }
+
+    if (effective_read_settings.use_reader_executor)
+    {
+        /// Match the legacy async/prefetch stage (installed only for
+        /// `RemoteFSReadMethod::threadpool`): attach the prefetch pool only when
+        /// the read method is threadpool AND prefetch is enabled, so
+        /// `remote_filesystem_read_method='read'` keeps reads synchronous instead
+        /// of the executor scheduling background reads.
+        if (effective_read_settings.remote_fs_settings.method == RemoteFSReadMethod::threadpool
+            && effective_read_settings.remote_fs_settings.prefetch)
+        {
+            pipeline.needPrefetchPool(context_->getPrefetchThreadPool());
+        }
+        /// Without a buffer limit the executor takes the stateless (one-shot per
+        /// window) path; `reader_executor_use_long_connections=0` selects it. Gate
+        /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the
+        /// object-storage table-engine path too.
+        if (effective_read_settings.reader_executor_use_long_connections)
+            pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
     }
 
     LOG_TRACE(

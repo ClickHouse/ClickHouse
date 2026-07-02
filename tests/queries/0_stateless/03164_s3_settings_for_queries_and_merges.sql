@@ -1,4 +1,8 @@
--- Tags: no-random-settings, no-fasttest, no-parallel
+-- Tags: no-random-settings, no-fasttest, no-parallel, no-reader-executor
+-- no-reader-executor: asserts legacy S3 read accounting, including the OPTIMIZE
+-- merge read, which a session setting cannot redirect to the legacy reader; the
+-- executor's read/cache behavior on this scenario is covered by
+-- 04302_reader_executor_s3_read_introspection.
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;

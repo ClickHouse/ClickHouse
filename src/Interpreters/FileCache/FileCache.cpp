@@ -1420,18 +1420,34 @@ bool FileCache::doTryReserve(
         throw;
     }
 
+    /// Create the key's on-disk directory now. Eviction above has physically
+    /// reclaimed disk space (`EvictionCandidates::evict` removes the files), so on
+    /// a full cache disk this `mkdir` can succeed here, where it would have failed
+    /// if done at the top of the function before eviction. It must run before the
+    /// `FileSegment` reservation-state mutation below: on failure, roll back the
+    /// queue entries this reservation added (mirroring the catch block above) and
+    /// return, so the segment is left `EMPTY` with no dangling `queue_iterator`
+    /// (the invariant `assertCorrectnessUnlocked` relies on). Both the main and the
+    /// per-query queue entries are rolled back so neither leaks an orphan.
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
+    {
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
+        if (added_new_main_entry)
+        {
+            if (main_priority_iterator)
+                main_priority_iterator->invalidate();
+            if (query_priority_iterator)
+                query_priority_iterator->invalidate();
+        }
+        return false;
+    }
+
     /// Mark that size was successfully updated.
     if (added_new_main_entry)
         file_segment.setQueueIterator(main_priority_iterator);
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
-
-    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
-    {
-        failure_reason = "Failed to create base directory for key, error: " + ec.message();
-        return false;
-    }
 
     return true;
 }

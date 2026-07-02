@@ -384,8 +384,15 @@ void DiskLocal::prepareRead(
     /// an empty file.
     std::error_code ec;
     auto file_size = fs::file_size(full_path, ec);
+    /// On stat() failure we use `UnknownSize` as a sentinel — `bytes_size = 0`
+    /// would be indistinguishable from a real 0-byte file. The executor /
+    /// `OffsetMap` recognise the sentinel and switch to streaming-until-EOF
+    /// mode instead of returning EOF immediately. The real I/O error
+    /// (`FILE_DOESNT_EXIST` for broken projections, etc.) still surfaces at
+    /// open time on the source-read path.
+    const UInt64 bytes_size = ec ? StoredObject::UnknownSize : file_size;
 
-    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
+    StoredObject obj(full_path.string(), full_path.string(), bytes_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(

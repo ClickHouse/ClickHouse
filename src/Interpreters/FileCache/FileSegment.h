@@ -195,6 +195,13 @@ public:
 
     void completePartAndResetDownloader();
 
+    /// Wake threads waiting in `wait` (e.g. a reader streaming a partially-downloaded prefix)
+    /// after the downloader has advanced the write offset, WITHOUT giving up the downloader
+    /// role or changing the state. Lets one downloader stream a segment progressively across
+    /// several `write` calls while readers consume the committed prefix; the downloader still
+    /// finalizes with `completePartAndResetDownloader`/`complete` at the end.
+    void notifyDownloadProgress();
+
     void resetDownloader();
 
     /**
@@ -254,7 +261,7 @@ private:
     size_t getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const;
 
     void setDownloadState(State state, const FileSegmentGuard::Lock &);
-    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &);
+    void resetDownloadingStateUnlocked(const FileSegmentGuard::Lock &, bool allow_non_downloader = false);
     void setDetachedState(const FileSegmentGuard::Lock &);
 
     String getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const;

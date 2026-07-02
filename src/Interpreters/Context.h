@@ -146,6 +146,7 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class ReaderExecutorLog;
 class FilesystemReadPrefetchesLog;
 class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
@@ -155,6 +156,8 @@ class DeadLetterQueue;
 class HypotheticalIndexStore;
 class IAsynchronousReader;
 class IOUringReader;
+class PrefetchThreadPool;
+class LongConnectionLimit;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
@@ -1608,6 +1611,7 @@ public:
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
+    std::shared_ptr<ReaderExecutorLog> getReaderExecutorLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
@@ -1823,6 +1827,8 @@ public:
     OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
+    std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;
 #endif

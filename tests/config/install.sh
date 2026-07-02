@@ -258,6 +258,14 @@ ln -sf $SRC_PATH/users.d/enable_blobs_check.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
+if check_clickhouse_version 26.6; then
+    # `use_reader_executor` / `enable_reader_executor_log` and `<reader_executor_log>`
+    # are registered in the 26.6 settings-history block. Upgrade-check and stress
+    # tests run older binaries against the same test config, which would reject
+    # the users.xml with UNKNOWN_SETTING.
+    ln -sf $SRC_PATH/users.d/use_reader_executor.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/reader_executor_log.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/

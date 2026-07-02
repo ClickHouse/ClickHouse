@@ -85,6 +85,15 @@ public:
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 
+    /// Async impl reads into `memory` (or `prefetch_buffer`), not into the
+    /// pointer set via ReadBuffer::set() — and assumes
+    /// `memory.size() == internal_buffer.size()`. Returning false here tells
+    /// callers like ReaderExecutor::readIntoBlock to use an explicit copy via
+    /// read() instead of the set()+next() zero-copy pattern, which would
+    /// otherwise overflow `memory` whenever set()'s chunk exceeds the buffer's
+    /// constructor-time size.
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
     std::future<IAsynchronousReader::Result> asyncReadInto(char * data, size_t size, Priority priority);
 

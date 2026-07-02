@@ -115,6 +115,8 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
+#include <IO/PrefetchThreadPool.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -347,11 +349,18 @@ namespace Setting
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
-    extern const SettingsBool use_reader_executor;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
     extern const SettingsBool use_page_cache_for_local_disks;
     extern const SettingsBool use_page_cache_for_object_storage;
     extern const SettingsBool use_page_cache_with_distributed_cache;
+    extern const SettingsBool use_reader_executor;
+    extern const SettingsBool enable_reader_executor_log;
+    extern const SettingsUInt64 reader_executor_window_size;
+    extern const SettingsUInt64 reader_executor_plan_look_ahead_max_window;
+    extern const SettingsUInt64 reader_executor_block_size;
+    extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
+    extern const SettingsUInt64 reader_executor_max_tail_for_drain;
+    extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
@@ -386,6 +395,7 @@ namespace ServerSetting
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
+    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
@@ -400,6 +410,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
     extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 reader_executor_prefetch_pool_size;
+    extern const ServerSettingsUInt64 reader_executor_prefetch_queue_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
     extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
     extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
@@ -623,6 +635,12 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag threadpool_writer_initialized;
     mutable std::unique_ptr<ThreadPool> threadpool_writer;
+
+    mutable OnceFlag prefetch_thread_pool_initialized;
+    mutable std::shared_ptr<PrefetchThreadPool> prefetch_thread_pool;
+
+    mutable OnceFlag long_connection_limit_initialized;
+    mutable std::shared_ptr<LongConnectionLimit> long_connection_limit;
 
 #if USE_LIBURING
     mutable OnceFlag io_uring_reader_initialized;
@@ -6486,6 +6504,15 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
     return shared->system_logs->filesystem_cache_log;
 }
 
+std::shared_ptr<ReaderExecutorLog> Context::getReaderExecutorLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->reader_executor_log;
+}
+
 std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -7981,6 +8008,29 @@ IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) co
     }
 }
 
+std::shared_ptr<PrefetchThreadPool> Context::getPrefetchThreadPool() const
+{
+    callOnce(shared->prefetch_thread_pool_initialized, [&]
+    {
+        const auto & server_settings = getServerSettings();
+        size_t pool_size = server_settings[ServerSetting::reader_executor_prefetch_pool_size];
+        size_t queue_size = server_settings[ServerSetting::reader_executor_prefetch_queue_size];
+        shared->prefetch_thread_pool = std::make_shared<PrefetchThreadPool>(pool_size, queue_size);
+    });
+    return shared->prefetch_thread_pool;
+}
+
+std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const
+{
+    callOnce(shared->long_connection_limit_initialized, [&]
+    {
+        const auto & server_settings = getServerSettings();
+        size_t max_live = server_settings[ServerSetting::max_remote_read_connections];
+        shared->long_connection_limit = std::make_shared<LongConnectionLimit>(max_live);
+    });
+    return shared->long_connection_limit;
+}
+
 #if USE_LIBURING
 IOUringReader & Context::getIOUringReader() const
 {
@@ -8054,7 +8104,6 @@ ReadSettings Context::getReadSettings() const
     res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
     res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
-    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
     res.page_cache_settings.read_if_exists_otherwise_bypass
         = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
@@ -8092,6 +8141,14 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
+    res.use_reader_executor = settings_ref[Setting::use_reader_executor];
+    res.enable_reader_executor_log = settings_ref[Setting::enable_reader_executor_log];
+    res.reader_executor_window_size = settings_ref[Setting::reader_executor_window_size];
+    res.reader_executor_plan_look_ahead_max_window = settings_ref[Setting::reader_executor_plan_look_ahead_max_window];
+    res.reader_executor_block_size = settings_ref[Setting::reader_executor_block_size];
+    res.reader_executor_min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
+    res.reader_executor_max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
+    res.reader_executor_use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
 
     return res;
 }

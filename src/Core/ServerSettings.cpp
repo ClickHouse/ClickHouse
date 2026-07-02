@@ -6,10 +6,13 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <IO/MMappedFileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/LongConnectionLimit.h>
 #include <IO/S3Defines.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -1413,6 +1416,12 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
     DECLARE(UInt64, threadpool_local_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from local filesystem.)", 0) \
     DECLARE(NonZeroUInt64, threadpool_remote_fs_reader_pool_size, 250, R"(Number of threads in the Thread pool used for reading from remote filesystem when `remote_filesystem_read_method = 'threadpool'`.)", 0) \
     DECLARE(UInt64, threadpool_remote_fs_reader_queue_size, 10000, R"(The maximum number of jobs that can be scheduled on the thread pool for reading from remote filesystem.)", 0) \
+    DECLARE(NonZeroUInt64, reader_executor_prefetch_pool_size, 8, R"(Number of threads in the shared prefetch pool for `ReaderExecutor` (experimental `use_reader_executor` setting). Applied when the pool is first created at server start; changing it requires a restart (`SYSTEM RELOAD CONFIG` does not resize the live pool).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_prefetch_queue_size, 80, R"(Maximum number of prefetch tasks (running + queued) for the shared `ReaderExecutor` prefetch pool. `submit` returns immediately (with nullptr handle) when this limit is reached; the executor falls back to a synchronous read. A value of `0` means "use the default of `reader_executor_prefetch_pool_size * 10`". Applied when the pool is first created at server start; changing it requires a restart (`SYSTEM RELOAD CONFIG` does not resize the live pool).)", EXPERIMENTAL) \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_1_pct, 75, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L1 sizes. Each level must be in `[0, 100]` and the three values must satisfy `level_1 <= level_2 <= level_3`; out-of-range or out-of-order values are rejected with `BAD_ARGUMENTS` at startup or on `SYSTEM RELOAD CONFIG`. See [[MemoryPressureMonitor]] for the level table.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_2_pct, 90, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L2 sizes.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_level_3_pct, 95, R"(Total-memory pressure (`%` of `max_server_memory_usage`) at which `ReaderExecutor` shrinks the read window to L3 sizes (CRITICAL — smallest window and block).)", EXPERIMENTAL) \
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
@@ -2061,6 +2070,17 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).rcvbuf), ChangeableWithoutRestart::Yes}},
             {"http_connections_sndbuf",
              {std::to_string(HTTPConnectionPools::instance().getSocketBufferSizes(HTTPConnectionGroupType::HTTP).sndbuf), ChangeableWithoutRestart::Yes}},
+
+            /// `ReaderExecutor` settings applied live in `Server.cpp` reload
+            /// path — report the live values from their owning components.
+            {"max_remote_read_connections",
+             {std::to_string(context->getLongConnectionLimit()->getCapacity()), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_1_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l1_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_2_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l2_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_level_3_pct",
+             {std::to_string(memoryPressureMonitor().getThresholds().l3_pct), ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

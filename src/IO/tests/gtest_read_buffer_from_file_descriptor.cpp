@@ -49,6 +49,26 @@ TEST(ReadBufferFromFileDescriptor, RewindResetsBufferState)
     ASSERT_EQ(line, line2);
 }
 
+/// An O_DIRECT-aligned descriptor must not advertise external-buffer mode: its
+/// user buffer has to be sector-aligned, so a caller (e.g. the ReaderExecutor) must
+/// read into the descriptor's own aligned buffer rather than `set()` arbitrary memory.
+/// A non-aligned descriptor keeps external-buffer mode for zero-copy reads.
+TEST(ReadBufferFromFileDescriptor, AlignedDescriptorOptsOutOfExternalBufferMode)
+{
+    auto tmp_file = createTemporaryFile("/tmp/");
+    {
+        WriteBufferFromFile out(tmp_file->path());
+        writeString(std::string_view{"data"}, out);
+        out.finalize();
+    }
+
+    ReadBufferFromFile plain(tmp_file->path());
+    EXPECT_TRUE(plain.supportsExternalBufferMode());
+
+    ReadBufferFromFile aligned(tmp_file->path(), DBMS_DEFAULT_BUFFER_SIZE, -1, nullptr, /*alignment=*/4096);
+    EXPECT_FALSE(aligned.supportsExternalBufferMode());
+}
+
 /// Same test for the asynchronous variant of the buffer.
 TEST(AsynchronousReadBufferFromFileDescriptor, RewindResetsBufferState)
 {
