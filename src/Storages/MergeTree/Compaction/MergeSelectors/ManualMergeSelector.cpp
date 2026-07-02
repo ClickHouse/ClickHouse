@@ -2,13 +2,20 @@
 
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Common/Exception.h>
 
+#include <algorithm>
 #include <deque>
 #include <mutex>
 #include <unordered_map>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -17,7 +24,63 @@ struct ManualMergeSelectorTableInfo
 {
     std::deque<Names> queue;
     std::vector<MergeTreePartInfo> scheduled_part_infos;
+    /// Every merge scheduled since the last completed SYNC MERGES, kept (unlike `queue`, which select
+    /// drains as each merge materializes) so the projection in push can replay them. See projectScheduledMerges.
+    std::vector<Names> merge_defs;
 };
+
+MergeTreePartInfo partInfoFromName(const std::string & name)
+{
+    return MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+}
+
+bool isExactlyPresent(const ActiveDataPartSet & parts, const std::string & name)
+{
+    /// Compared as a string, the form select/lookupRange use, so a non-canonical spelling
+    /// (all_1_1_0_0 for all_1_1_0) or a part merely covered by a larger one does not qualify.
+    return parts.getContainingPart(partInfoFromName(name)) == name;
+}
+
+/// Result part of merging the range, named the same way as FutureMergedMutatedPart. The caller
+/// guarantees all parts are in the same partition.
+MergeTreePartInfo mergeResultInfo(const Names & merge)
+{
+    std::vector<MergeTreePartInfo> infos;
+    infos.reserve(merge.size());
+    for (const auto & name : merge)
+        infos.push_back(partInfoFromName(name));
+    std::sort(infos.begin(), infos.end());
+
+    UInt32 max_level = 0;
+    Int64 max_mutation = 0;
+    for (const auto & info : infos)
+    {
+        max_level = std::max(max_level, info.level);
+        max_mutation = std::max(max_mutation, info.mutation);
+    }
+
+    return MergeTreePartInfo(infos.front().getPartitionId(), infos.front().min_block, infos.back().max_block, max_level + 1, max_mutation);
+}
+
+/// The parts that will exist once the already-scheduled merges run: start from the parts active
+/// now and replay each scheduled merge that can still run (all its inputs are present and not yet
+/// consumed by an earlier one). A merge whose inputs are gone has already executed (its result is
+/// either present or was dropped) and is not replayed, so a consumed or dropped result is absent
+/// from the projection. In-flight merges keep their inputs active until they commit, so a chained
+/// reference stays valid across the pop-to-commit window.
+ActiveDataPartSet projectScheduledMerges(const ActiveDataPartSet & active_set, const std::vector<Names> & merge_defs)
+{
+    ActiveDataPartSet projected = active_set;
+    for (const auto & def : merge_defs)
+    {
+        if (std::ranges::all_of(def, [&](const std::string & name) { return isExactlyPresent(projected, name); }))
+        {
+            const auto result = mergeResultInfo(def);
+            projected.add(result, result.getPartNameV1());
+        }
+    }
+    return projected;
+}
 
 std::mutex registry_mutex;
 std::unordered_map<StorageID, ManualMergeSelectorTableInfo, StorageID::DatabaseAndTableNameAndUUIDHash, StorageID::DatabaseAndTableNameAndUUIDEqual> registry;
@@ -85,13 +148,48 @@ PartsRanges ManualMergeSelector::select(
     if (info->queue.empty())
         return {};
 
+    /// Drop scheduled merges whose result has materialized. `parts_ranges` is the set offered for
+    /// selection, already filtered to exclude parts that are currently merging. A scheduled merge
+    /// whose inputs are all covered here by a larger active part has run and committed, so we advance
+    /// past it. An in-flight merge keeps its (currently-merging) inputs out of `parts_ranges`, so they
+    /// read as uncovered and the entry is NOT dropped -- it stays queued until its result appears.
+    ActiveDataPartSet active(MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+    for (const auto & range : parts_ranges)
+        for (const auto & part : range)
+            active.add(part.info, part.name);
+
+    const auto is_materialized = [&](const Names & merge)
+    {
+        return std::ranges::all_of(merge, [&](const std::string & name)
+        {
+            const std::string containing = active.getContainingPart(partInfoFromName(name));
+            return !containing.empty() && containing != name;
+        });
+    };
+
+    while (!info->queue.empty() && is_materialized(info->queue.front()))
+        info->queue.pop_front();
+
+    /// Hand out runnable scheduled merges WITHOUT removing them from the queue: an entry leaves the
+    /// queue only once its result has materialized (above). If a merge selected here is then abandoned
+    /// by the caller (merges stopped between selection and launch, the pool full, or the merge task
+    /// failing) it is simply re-selected on a later call, so a scheduled merge is never silently lost
+    /// and SYNC MERGES cannot wait forever for it. The local cursor avoids handing out the same entry
+    /// twice within one call; across calls the currently-merging filter prevents it once the merge runs.
+    ///
+    /// Scheduled merges are processed strictly FIFO: the loop stops at the first queue entry that is
+    /// not currently runnable, so an in-flight (or not-yet-runnable) head holds back the entries behind
+    /// it until it materializes. This is intentional for an explicit, ordered manual operation and
+    /// keeps chained schedules (a later merge consuming an earlier one's result) correct by
+    /// construction.
     PartsRanges ranges;
+    size_t cursor = 0;
     for (const auto & constraint : merge_constraints)
     {
-        if (info->queue.empty())
+        if (cursor >= info->queue.size())
             break;
 
-        auto range = lookupRange(parts_ranges, info->queue.front());
+        auto range = lookupRange(parts_ranges, info->queue[cursor]);
         if (!range)
             break;
 
@@ -101,20 +199,48 @@ PartsRanges ManualMergeSelector::select(
         if (range_filter && !range_filter(range.value()))
             break;
 
-        info->queue.pop_front();
         ranges.push_back(std::move(range.value()));
+        ++cursor;
     }
 
     return ranges;
 }
 
-void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merge)
+void ManualMergeSelector::push(const StorageID & id, const Names & parts_to_merge, const ActiveDataPartSet & active_set)
 {
     auto [info, lock] = getTableInfo(id);
 
+    /// A merge spanning several partitions can never be selected (lookupRange matches within a
+    /// single range), so reject it outright rather than let SYNC MERGES wait for it to time out.
+    const std::string partition_id = partInfoFromName(parts_to_merge.front()).getPartitionId();
     for (const auto & name : parts_to_merge)
-        info->scheduled_part_infos.push_back(MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING));
+        if (partInfoFromName(name).getPartitionId() != partition_id)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SCHEDULE MERGE: parts {} and {} are in different partitions", parts_to_merge.front(), name);
 
+    /// lookupRange matches the listed names positionally against the parts, which are in ascending
+    /// order, so a merge listed out of order (or with a duplicate) can never be selected. Require
+    /// strictly ascending order rather than let SYNC MERGES wait for it to time out.
+    for (size_t i = 0; i + 1 < parts_to_merge.size(); ++i)
+        if (!(partInfoFromName(parts_to_merge[i]) < partInfoFromName(parts_to_merge[i + 1])))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SCHEDULE MERGE: parts must be listed in ascending order without duplicates, but {} is listed before {}",
+                parts_to_merge[i], parts_to_merge[i + 1]);
+
+    /// Reject inputs that can never be merged, so SYNC MERGES does not wait for them until it times
+    /// out. Validate against the parts that will exist once the merges scheduled so far have run:
+    /// an input must be present there, i.e. active now and not already consumed by an earlier
+    /// scheduled merge, or produced by one. See projectScheduledMerges.
+    const ActiveDataPartSet projected = projectScheduledMerges(active_set, info->merge_defs);
+    for (const auto & name : parts_to_merge)
+        if (!isExactlyPresent(projected, name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "SCHEDULE MERGE: part {} does not exist and is not produced by a previously scheduled merge", name);
+
+    for (const auto & name : parts_to_merge)
+        info->scheduled_part_infos.push_back(partInfoFromName(name));
+
+    info->merge_defs.push_back(parts_to_merge);
     info->queue.push_back(parts_to_merge);
 }
 
@@ -128,7 +254,13 @@ bool ManualMergeSelector::isAllScheduledPartsCovered(const StorageID & id, const
         return !containing.empty() && containing != part_info.getPartNameV1();
     });
 
-    return info->scheduled_part_infos.empty();
+    if (!info->scheduled_part_infos.empty())
+        return false;
+
+    /// Everything scheduled has materialized; forget the merge definitions so they do not grow
+    /// unbounded across many schedule/sync cycles.
+    info->merge_defs.clear();
+    return true;
 }
 
 void ManualMergeSelector::erase(const StorageID & id)
