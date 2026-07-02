@@ -244,7 +244,15 @@ void throwRowRefPointerTooLarge()
 {
     throw Exception(
         ErrorCodes::LOGICAL_ERROR,
-        "Arena pointer does not fit in 48 bits; RowRefList count tagging is invalid on this platform");
+        "Arena pointer does not fit in 48 bits; RowRefList pointer+count packing is invalid on this platform");
+}
+
+void throwRowRefOutOfRange(size_t block_no, size_t row_no)
+{
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR,
+        "RowRef out of range: block_no {} must fit in 31 bits and row_no {} in 32 bits",
+        block_no, row_no);
 }
 
 UInt32 StoredColumnsIndex::add(const StoredBlock * block)

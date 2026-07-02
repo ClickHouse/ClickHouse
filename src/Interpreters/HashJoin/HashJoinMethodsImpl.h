@@ -507,7 +507,7 @@ void processMatch(
             else
                 used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
 
-            added_columns.appendFromBlock(row_ref->word(), join_features.add_missing);
+            added_columns.appendFromBlock(row_ref->encode(), join_features.add_missing);
         }
         else
             addNotFoundRow<join_features.add_missing, join_features.need_replication>(added_columns, current_offset);

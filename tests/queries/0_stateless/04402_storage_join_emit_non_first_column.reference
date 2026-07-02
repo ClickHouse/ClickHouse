@@ -1,16 +1,21 @@
-any_b	1	bee1
-any_b	2	bee2
-any_b	3	bee3
-any_b	4	
-any_c	1	-11
-any_c	2	-22
-any_c	3	-33
-any_c	4	0
-any_cb	1	-11	bee1
-any_cb	2	-22	bee2
-any_cb	3	-33	bee3
-joinget_b	bee2
-joinget_c	-33
-all_b	1	x1
-all_b	1	x2
-all_b	2	y1
+ANY LEFT JOIN, select only the second non-key column (b)
+1	bee1
+2	bee2
+3	bee3
+4	
+ANY LEFT JOIN, select only the third non-key column (c)
+1	-11
+2	-22
+3	-33
+4	0
+ANY LEFT JOIN, select a reordered subset (c, b)
+1	-11	bee1
+2	-22	bee2
+3	-33	bee3
+joinGet of the non-first columns
+bee2
+-33
+ALL INNER JOIN with duplicate keys, select only the second non-key column (b)
+1	x1
+1	x2
+2	y1

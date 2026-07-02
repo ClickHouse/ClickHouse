@@ -44,8 +44,8 @@ struct JoinOnKeyColumns
 struct LazyOutput
 {
     /// Entries share the encoding of the join hash map cell values (see RowRefs.h):
-    ///   0 - default row; bit 63 set - inline encoded RowRef; otherwise - a count-tagged
-    ///   RowRefList list word (pointer to a Batch node in the low 48 bits).
+    ///   0 - default row; bit 63 set - inline encoded RowRef; otherwise - a RowRefList
+    ///   list word (pointer to a Batch node in the low 48 bits + row count).
     /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
@@ -77,7 +77,7 @@ struct LazyOutput
 
     void reserve(size_t size) { row_refs.reserve(size); }
 
-    /// `ref_word` is either an inline single ref or a count-tagged RowRefList list word.
+    /// `ref_word` is either an inline single ref or a RowRefList list word (pointer + count).
     void addRef(UInt64 ref_word)
     {
         chassert(ref_word != 0);
@@ -218,8 +218,8 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    /// Encoded RowRef word (inline single ref, including an ASOF match) or count-tagged
-    /// RowRefList list word.
+    /// Encoded RowRef word (inline single ref, including an ASOF match) or a RowRefList
+    /// list word (pointer + count).
     void appendFromBlock(UInt64 ref_word, bool has_default);
 
     void appendDefaultRow()

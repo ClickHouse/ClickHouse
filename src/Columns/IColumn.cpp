@@ -594,7 +594,7 @@ static void fillColumnFromRowRefs(
                 /// single-row keys that way) or a range node; firstWord()/rows() resolve both. The
                 /// chassert keeps the debug-only invariant that a non-range list node never reaches
                 /// this path - it would otherwise be mis-emitted as a run of consecutive rows.
-                chassert(ref_list.isSingleton() || ref_list.asBatch()->is_range);
+                chassert(ref_list.isInline() || ref_list.asBatch()->is_range);
                 const UInt64 start_word = ref_list.firstWord();
                 const size_t rows = ref_list.rows();
 

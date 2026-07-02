@@ -10,7 +10,7 @@ TEST(RowRefList, InsertInitialElementFromEmpty)
 {
     Arena pool;
 
-    const UInt64 ref_word = RowRef(/*block_no=*/7, /*row_no=*/42).word();
+    const UInt64 ref_word = RowRef(/*block_no=*/7, /*row_no=*/42).encode();
 
     /// Key point: default construction, empty list
     RowRefList list;
@@ -22,8 +22,8 @@ TEST(RowRefList, InsertInitialElementFromEmpty)
         list.insert(ref_word, pool);
     });
 
-    /// The single element must be stored inline, with the singleton flag set
-    EXPECT_TRUE(list.isSingleton());
+    /// The single element must be stored inline, with the inline flag set
+    EXPECT_TRUE(list.isInline());
     EXPECT_EQ(list.rows(), 1u);
     EXPECT_EQ(refWordBlockNo(list.word), 7u);
     EXPECT_EQ(refWordRowNo(list.word), 42u);
@@ -45,9 +45,9 @@ TEST(RowRefList, InsertWithinOneNodeKeepsInsertionOrder)
     /// holds the rest; with a single overflow node iteration is exact insertion order.
     RowRefList list(/*block_no=*/3, /*row_no=*/0);
     for (size_t row = 1; row < 10; ++row)
-        list.insert(RowRef(3, row).word(), pool);
+        list.insert(RowRef(3, row).encode(), pool);
 
-    ASSERT_FALSE(list.isSingleton());
+    ASSERT_FALSE(list.isInline());
     EXPECT_EQ(list.rows(), 10u);
     EXPECT_EQ(refWordRowNo(list.firstWord()), 0u);
 
@@ -67,7 +67,7 @@ TEST(RowRefList, EvictionBoundaryKeepsInsertionOrder)
     /// overflow node) the order is still pure insertion order, and total_rows is correct.
     RowRefList list(/*block_no=*/0, /*row_no=*/0);
     for (size_t row = 1; row < 8; ++row)
-        list.insert(RowRef(0, row).word(), pool);
+        list.insert(RowRef(0, row).encode(), pool);
 
     EXPECT_EQ(list.rows(), 8u);
 
@@ -86,7 +86,7 @@ TEST(RowRefList, MultiNodeChainOrder)
     /// With two overflow nodes the order is head, local slots, then overflow nodes newest-first.
     RowRefList list(/*block_no=*/2, /*row_no=*/0);
     for (size_t row = 1; row < 16; ++row)
-        list.insert(RowRef(2, row).word(), pool);
+        list.insert(RowRef(2, row).encode(), pool);
 
     EXPECT_EQ(list.rows(), 16u);
     EXPECT_EQ(refWordRowNo(list.firstWord()), 0u);
@@ -113,12 +113,12 @@ TEST(RowRefList, CountSaturationStillIteratesEveryRow)
 
     EXPECT_EQ(list.rows(), 1u);
     for (size_t row = 1; row < RowRefList::COUNT_SAT - 1; ++row)
-        list.insert(RowRef(0, row).word(), pool);
+        list.insert(RowRef(0, row).encode(), pool);
     /// Exact count straight from the word, no node load.
     EXPECT_EQ(list.rows(), RowRefList::COUNT_SAT - 1);
 
     for (size_t row = RowRefList::COUNT_SAT - 1; row < n; ++row)
-        list.insert(RowRef(0, row).word(), pool);
+        list.insert(RowRef(0, row).encode(), pool);
     /// Saturated: rows() now reflects total_rows loaded from the node.
     EXPECT_EQ(list.rows(), n);
 
@@ -141,9 +141,9 @@ TEST(RowRefList, RangeRepresentation)
     Arena pool;
 
     RowRefList list;
-    list.setRange(RowRef(/*block_no=*/1, /*row_no=*/100).word(), /*rows_=*/5, pool);
+    list.setRange(RowRef(/*block_no=*/1, /*row_no=*/100).encode(), /*rows_=*/5, pool);
 
-    ASSERT_FALSE(list.isSingleton());
+    ASSERT_FALSE(list.isInline());
     list.asBatch()->assertIsRange();
     EXPECT_EQ(list.rows(), 5u);
 

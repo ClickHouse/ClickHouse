@@ -2123,7 +2123,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                 else
                 {
                     RowRefList range_ref;
-                    range_ref.setRange(RowRef(merged.block_no, start_row).word(), merged_rows, data->pool);
+                    range_ref.setRange(RowRef(merged.block_no, start_row).encode(), merged_rows, data->pool);
                     rows_ref = range_ref;
                 }
             }

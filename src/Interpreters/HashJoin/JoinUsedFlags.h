@@ -145,8 +145,8 @@ public:
     template <typename Mapped>
     std::atomic_bool & headRowFlag(const Mapped & mapped)
     {
-        /// firstRefWord dispatches on Mapped exactly as needed: RowRefList -> firstWord() (the head
-        /// row of the key), RowRef -> word(). refWordBlockNo/refWordRowNo of that word equal
+        /// firstRefWord dispatches on Mapped exactly as needed: RowRefList -> firstWord (the head
+        /// row of the key), RowRef -> encode. refWordBlockNo/refWordRowNo of that word equal
         /// blockNo()/rowNo() for a RowRef (same 8-byte layout), so this is one uniform decode.
         const UInt64 ref_word = firstRefWord(mapped);
         return per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];

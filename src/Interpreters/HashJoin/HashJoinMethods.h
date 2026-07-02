@@ -17,7 +17,7 @@ namespace DB
 /// Returns the threshold (in bytes) above which prefetching is enabled in JOIN.
 size_t getMinBytesForPrefetchInJoin();
 
-/// Inserting an element into a hash table of the form `key -> compact reference to a row`, which will then be used by JOIN.
+/// Inserting an element into a hash table of the form `key -> reference to a row`, which will then be used by JOIN.
 template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
@@ -40,9 +40,9 @@ struct Inserter
             new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_block_no, i);
         else
         {
-            /// A singleton ref is stored in the value of the hash table; the first duplicate
+            /// A single ref is stored inline in the value of the hash table; the first duplicate
             /// switches the value to a pointer to an arena-allocated list of refs.
-            emplace_result.getMapped().insert(RowRef(stored_block_no, i).word(), pool);
+            emplace_result.getMapped().insert(RowRef(stored_block_no, i).encode(), pool);
         }
         return emplace_result.isInserted();
     }

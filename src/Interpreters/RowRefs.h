@@ -21,65 +21,64 @@ namespace DB
 
 class Block;
 class ColumnReplicated;
-/// The stored right-side block (columns + replicated handles + selector + block_no). Defined in
-/// Interpreters/HashJoin/ScatteredBlock.h; only pointers to it are needed here, so a forward
-/// declaration keeps this widely-included header free of the heavier ScatteredBlock.h.
 struct StoredBlock;
 
-/// Compact 8-byte index-based reference to a row of the right table: (block_no, row_no).
-/// `block_no` indexes the per-join `StoredColumnsIndex` (see below) that resolves it to the
-/// stored block. This is the mapped value of MapsOne join hash maps and the leaf of the ASOF
-/// sorted lookup vectors (resolved to a stored block the same way, at emit time).
+/// Thrown by the RowRef constructor when a block or row number does not fit in its 32-bit field.
+[[noreturn]] void throwRowRefOutOfRange(size_t block_no, size_t row_no);
+
+/// 8-byte index-based reference to a row of the right table. `row_no` and `block_no` consume
+/// 4 bytes each; `block_no` indexes the per-join `StoredColumnsIndex` (see below) that resolves
+/// it to the stored block. This is the mapped value of MapsOne join hash maps and the leaf of
+/// the ASOF sorted lookup vectors (resolved to a stored block the same way, at emit time).
 ///
-/// Word layout (`word()`): `row_no` occupies the LOW half and `block_no` the HIGH half of the
-/// 8-byte word, so the MSB of the `block_no` field is bit 63 of the whole word.
-/// That bit is the INLINE/SINGLETON flag. It is always set for refs stored in hash map
-/// cells and `LazyOutput` entries. It distinguishes an inline ref from:
-///   - the zero word (the "default row" marker in `LazyOutput::row_refs`),
-///   - a count-tagged `RowRefList` list word (user-space pointers have bit 63 clear on
-///     x86-64/aarch64, and its count occupies bits 62..48).
-/// Thanks to the flag, unique keys of ALL joins cost no extra memory and no extra loads
-/// at probe time (the win of RadixHashJoin's SINGLETON_FLAG design).
+/// `encode` packs both fields into a single UInt64 with `block_no` in the high half, so bit 63
+/// of the encoded value is the MSB of `block_no`. That bit is the INLINE flag: when it is 1, the
+/// value stored in a hash map cell or `LazyOutput` entry is the row reference itself (an inline
+/// ref) - always the case for ANY joins, and for keys of ALL joins that have no duplicate rows.
+/// When it is 0, the value is either zero (the "default row" marker in `LazyOutput::row_refs`)
+/// or a `RowRefList` value (see below).
 struct RowRef
 {
-    static constexpr UInt32 SINGLETON_FLAG = 0x80000000u;
+    static constexpr UInt32 INLINE_FLAG = 0x80000000u;
     static constexpr UInt32 BLOCK_NO_MASK = 0x7FFFFFFFu;
-    static constexpr UInt64 SINGLETON_WORD_FLAG = 1ull << 63;
+    static constexpr UInt64 ENCODED_INLINE_FLAG = 1ull << 63;
 
     using SizeT = UInt32; /// Do not use size_t cause of memory economy (block/row counts are bounded to 32 bits)
 
     UInt32 row_no = 0;
-    UInt32 block_no = 0; /// includes SINGLETON_FLAG in the MSB
+    UInt32 block_no = 0; /// includes INLINE_FLAG in the MSB
 
     RowRef() = default;
     RowRef(size_t block_no_, size_t row_no_)
         : row_no(static_cast<UInt32>(row_no_))
-        , block_no(static_cast<UInt32>(block_no_) | SINGLETON_FLAG)
+        , block_no(static_cast<UInt32>(block_no_) | INLINE_FLAG)
     {
-        /// RowRef::SizeT is UInt32: blocks are limited to 4G rows (checked in addBlockToJoin)
-        /// and the join is limited to 2^31 stored blocks (checked in StoredColumnsIndex::add).
-        chassert(block_no_ <= BLOCK_NO_MASK);
-        chassert(row_no_ <= std::numeric_limits<UInt32>::max());
+        /// Both fields are stored in 32 bits: blocks are limited to 4G rows (checked in
+        /// addBlockToJoin) and the join is limited to 2^31 stored blocks (checked in
+        /// StoredColumnsIndex::add), so this is only a defensive re-check of those limits.
+        if (block_no_ > BLOCK_NO_MASK || row_no_ > std::numeric_limits<UInt32>::max()) [[unlikely]]
+            throwRowRefOutOfRange(block_no_, row_no_);
     }
 
     UInt32 blockNo() const { return block_no & BLOCK_NO_MASK; }
     UInt32 rowNo() const { return row_no; }
 
-    /// Build the word with explicit shifts (not std::bit_cast of the struct) so the layout is
-    /// byte-order-independent: block_no (with SINGLETON_FLAG in its MSB) in the high half, row_no
-    /// in the low half, matching the refWord* decoders below on both little- and big-endian.
-    UInt64 word() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
+    /// Encode this ref into the single UInt64 stored in hash map cells and `LazyOutput` entries.
+    /// Built with explicit shifts (not std::bit_cast of the struct) so that the bit layout is the
+    /// same on little- and big-endian systems: block_no (with INLINE_FLAG in its MSB) lands in the
+    /// high half and row_no in the low half, matching the refWord* decoders below either way.
+    UInt64 encode() const { return (static_cast<UInt64>(block_no) << 32) | row_no; }
 };
 
 static_assert(sizeof(RowRef) == 8, "RowRef must stay 8 bytes: it is the hash map cell payload");
 
 /// Helpers for the encoded 64-bit ref words stored in LazyOutput / RowRefList nodes.
-inline bool refWordIsInline(UInt64 word) { return word & RowRef::SINGLETON_WORD_FLAG; }
+inline bool refWordIsInline(UInt64 word) { return word & RowRef::ENCODED_INLINE_FLAG; }
 inline UInt32 refWordBlockNo(UInt64 word) { return static_cast<UInt32>(word >> 32) & RowRef::BLOCK_NO_MASK; }
 inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 
 /// Thrown when an arena pointer does not fit in the low 48 bits of a RowRefList word, which would
-/// make the count-tagged encoding ambiguous. Cannot happen on Linux x86-64/aarch64 today: even with
+/// make the pointer+count packing ambiguous. Cannot happen on Linux x86-64/aarch64 today: even with
 /// 5-level paging (`CONFIG_X86_5LEVEL`, 57-bit VA) or arm64 52-bit LVA, the kernel hands out
 /// mappings above the 47-bit boundary only when the mmap address hint explicitly requests them,
 /// which our allocators never do. If that ever changes, the contingency is to shrink the count
@@ -90,10 +89,10 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 [[noreturn]] void throwRowRefPointerTooLarge();
 
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
-///   - bit 63 set: the key has exactly one row so far; the word IS the encoded RowRef (singleton).
-///   - bit 63 clear, non-zero: a pointer (bits 47..0) to an arena-allocated `Batch` node, with the
-///     duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets the probe
-///     loop read `rows` straight from the cell word without dereferencing the node.
+///   - bit 63 is 1: the key has exactly one row so far; the word IS the encoded RowRef (inline).
+///   - bit 63 is 0 and the word is not 0: a pointer (bits 47..0) to an arena-allocated `Batch` node,
+///     with the duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets
+///     the probe loop read `rows` straight from the cell word without dereferencing the node.
 /// The node is allocated only when the first duplicate of a key arrives, so ALL-join cells are as
 /// small as ANY-join cells for every key type, and unique keys never touch the arena.
 struct RowRefList
@@ -150,26 +149,29 @@ struct RowRefList
     UInt64 word = 0;
 
     RowRefList() = default;
-    RowRefList(size_t block_no_, size_t row_no_) : word(RowRef(block_no_, row_no_).word()) {}
+    RowRefList(size_t block_no_, size_t row_no_) : word(RowRef(block_no_, row_no_).encode()) {}
 
-    bool isSingleton() const { return refWordIsInline(word); }
+    bool isInline() const { return refWordIsInline(word); }
 
     const Batch * asBatch() const
     {
-        chassert(word != 0 && !isSingleton());
+        chassert(word != 0 && !isInline());
         return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
+    /// Not const on purpose: a const-qualified version returning a mutable `Batch *` would leak
+    /// mutable access from a const list and could not coexist with the const overload above
+    /// (overloads cannot differ only in the return type).
     Batch * asBatch() /// NOLINT(readability-make-member-function-const)
     {
-        chassert(word != 0 && !isSingleton());
+        chassert(word != 0 && !isInline());
         return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
     }
 
     /// Total number of rows for this key. Load-free unless the count saturated.
     UInt32 rows() const
     {
-        if (isSingleton())
+        if (isInline())
             return 1;
         const UInt32 count = static_cast<UInt32>((word >> COUNT_SHIFT) & COUNT_SAT);
         if (count != COUNT_SAT)
@@ -178,7 +180,7 @@ struct RowRefList
     }
 
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
-    UInt64 firstWord() const { return isSingleton() ? word : asBatch()->refs[0]; }
+    UInt64 firstWord() const { return isInline() ? word : asBatch()->refs[0]; }
 
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
@@ -196,15 +198,15 @@ struct RowRefList
     {
         chassert(refWordIsInline(ref_word));
 
-        /// First row: start as a singleton (no allocation).
+        /// First row: store it inline (no allocation).
         if (word == 0)
         {
             word = ref_word;
             return;
         }
 
-        /// Second row: allocate the cell node and move the singleton into its head.
-        if (isSingleton())
+        /// Second row: allocate the cell node and move the inline ref into its head.
+        if (isInline())
         {
             auto * b = pool.alloc<Batch>();
             b->is_range = 0;
@@ -265,14 +267,14 @@ struct RowRefList
     }
 
     /// Iterates encoded ref words: refs[0] first, then the cell node's local refs, then the overflow
-    /// nodes newest-first (each in ref order). Handles singleton, list, and range representations.
+    /// nodes newest-first (each in ref order). Handles inline, list, and range representations.
     ///
     /// The list of duplicates is a sequence of contiguous runs: in `Batch` the head and the local
     /// slots are one `refs` array, so the cell node's [refs[0] .. last local ref] is a single run
     /// starting at `&refs[0]`, and each overflow node contributes the run `refs[1 .. 1 + size)`. The
     /// hot path (the overflow walk of a heavily-duplicated key, where emit time concentrates) is then
     /// just three live pointers - `cur`/`run_end`/`next_node` - which keeps the emit loop off the
-    /// stack. The singleton and range representations take the separate `range_*` path (`cur == nullptr`).
+    /// stack. The inline and range representations take the separate `range_*` path (`cur == nullptr`).
     class ForwardIterator
     {
     public:
@@ -281,7 +283,7 @@ struct RowRefList
             if (list.word == 0)
                 return; /// empty (default-constructed) list -> ok() is false
 
-            if (list.isSingleton())
+            if (list.isInline())
             {
                 range_word = list.word;
                 range_remaining = 1;
@@ -326,7 +328,7 @@ struct RowRefList
                 return;
             }
 
-            /// Range mode (singleton / rerange run): consecutive rows live in one block, only row_no advances.
+            /// Range mode (inline ref / rerange run): consecutive rows live in one block, only row_no advances.
             if (--range_remaining)
                 ++range_word;
         }
@@ -342,7 +344,7 @@ struct RowRefList
         const UInt64 * cur = nullptr;
         const UInt64 * run_end = nullptr;
         const Batch * next_node = nullptr;
-        /// Range mode (singleton / rerange): `range_word` is the current ref, `range_remaining` the count.
+        /// Range mode (inline ref / rerange): `range_word` is the current ref, `range_remaining` the count.
         UInt64 range_word = 0;
         UInt32 range_remaining = 0;
     };
@@ -365,7 +367,7 @@ private:
 static_assert(sizeof(RowRefList) == 8, "RowRefList must stay 8 bytes: it is the hash map cell payload");
 static_assert(sizeof(RowRefList::Batch) == 64, "RowRefList::Batch must stay one cache line");
 
-/// Number of rows an encoded cell / LazyOutput word represents (singleton = 1, list = its count,
+/// Number of rows an encoded cell / LazyOutput word represents (inline ref = 1, list = its count,
 /// range = its length), without spelling out a RowRefList at the call site. A zero word yields 0.
 inline UInt32 refWordRows(UInt64 word)
 {
@@ -376,7 +378,7 @@ inline UInt32 refWordRows(UInt64 word)
 
 /// Iterable view over the encoded refs of a cell / LazyOutput word, so a call site can write
 /// `for (UInt64 ref_word : refsOf(word))` instead of materializing a RowRefList and driving its
-/// ForwardIterator by hand. Covers singleton, list, and range words alike.
+/// ForwardIterator by hand. Covers inline, list, and range words alike.
 struct RowRefsRange
 {
     RowRefList list;
@@ -399,7 +401,7 @@ ALWAYS_INLINE UInt64 firstRefWord(const Mapped & mapped)
     if constexpr (std::is_same_v<std::decay_t<Mapped>, RowRefList>)
         return mapped.firstWord();
     else
-        return mapped.word();
+        return mapped.encode();
 }
 
 /// Maps `block_no` (the high half of RowRef) to the stored block.
@@ -437,7 +439,7 @@ public:
     };
 
     /// Registers a stored block, returns its block_no. Throws when the 2^31 limit
-    /// (RowRef::BLOCK_NO_MASK, the MSB is the singleton flag) is exceeded.
+    /// (RowRef::BLOCK_NO_MASK, the MSB is the inline flag) is exceeded.
     UInt32 add(const StoredBlock * block);
 
     /// Protection against dangling pointers: a popped/replaced block keeps its slot,
