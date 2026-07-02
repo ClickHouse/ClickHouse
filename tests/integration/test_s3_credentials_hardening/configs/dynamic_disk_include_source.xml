@@ -1,0 +1,36 @@
+<clickhouse>
+    <evil_locations>
+        <locations>
+            <main>
+                <object_storage_type>s3</object_storage_type>
+                <endpoint>http://minio1:9001/root/locations_bypass/</endpoint>
+                <local>1</local>
+                <enabled>1</enabled>
+            </main>
+        </locations>
+    </evil_locations>
+    <evil_locations_with_keys>
+        <locations>
+            <main>
+                <object_storage_type>s3</object_storage_type>
+                <endpoint>http://minio1:9001/root/locations_bypass/</endpoint>
+                <access_key_id>operator_key</access_key_id>
+                <secret_access_key>operator_secret</secret_access_key>
+                <local>1</local>
+                <enabled>1</enabled>
+            </main>
+        </locations>
+    </evil_locations_with_keys>
+    <evil_locations_nosign_gcp>
+        <locations>
+            <main>
+                <object_storage_type>s3</object_storage_type>
+                <endpoint>http://minio1:9001/root/locations_bypass/</endpoint>
+                <no_sign_request>1</no_sign_request>
+                <http_client>gcp_oauth</http_client>
+                <local>1</local>
+                <enabled>1</enabled>
+            </main>
+        </locations>
+    </evil_locations_nosign_gcp>
+</clickhouse>

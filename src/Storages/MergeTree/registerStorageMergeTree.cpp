@@ -823,7 +823,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// table was originally created.
         /// User-initiated `ATTACH TABLE` queries use `LoadingStrictnessLevel::ATTACH` and must
         /// still be subject to these checks.
-        storage_settings->loadFromQuery(*args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode));
+        storage_settings->loadFromQuery(
+            *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
+            args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)

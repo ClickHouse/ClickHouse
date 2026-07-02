@@ -80,6 +80,16 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
+
+    /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
+    /// definition resolves to server-managed credentials (e.g. a named collection later re-bound to
+    /// `use_environment_credentials = 1`, or a server `<s3>` `role_arn` added afterwards) must not silently
+    /// regain the server identity on restart, since a user `CREATE`/`ATTACH` of the same definition would be
+    /// refused. Flagging the load lets `getClient` downgrade such a table to an anonymous client (so the server
+    /// still starts and the table is merely inaccessible) instead of escalating, controlled by the server
+    /// setting `s3_load_table_anonymously_if_credentials_restricted`.
+    configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
+
     return std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,

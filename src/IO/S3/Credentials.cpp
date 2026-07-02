@@ -9,6 +9,7 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Server/CloudPlacementInfo.h>
 
 namespace DB
@@ -94,6 +95,7 @@ namespace ErrorCodes
 {
     extern const int AWS_ERROR;
     extern const int GCP_ERROR;
+    extern const int ACCESS_DENIED;
 }
 
 namespace S3
@@ -792,12 +794,12 @@ AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::AwsAuthSTSAssumeRoleWebIdent
     aws_client_configuration.scheme = Aws::Http::Scheme::HTTPS;
     aws_client_configuration.region = std::move(tmp_region);
 
-    Strings retryable_errors;
-    retryable_errors.push_back("IDPCommunicationError");
-    retryable_errors.push_back("InvalidIdentityToken");
-
-    aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(
-        retryable_errors, /* maxRetries = */3);
+    /// Use ClickHouse's retry strategy so the STS web-identity client stays bounded and respects query
+    /// cancellation / max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK
+    /// strategy which is not cancellation-aware.
+    auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+    credentials_retry_strategy.max_retries = 3;
+    aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
     client = std::make_unique<Aws::Internal::STSCredentialsClient>(aws_client_configuration);
     LOG_INFO(logger, "Creating STS AssumeRole with web identity creds provider.");
@@ -903,11 +905,12 @@ void SSOCredentialsProvider::Reload()
     aws_client_configuration.region = sso_region;
     LOG_TEST(logger, "Passing config to client for region: {}", sso_region);
 
-    Aws::Vector<Aws::String> retryable_errors;
-    retryable_errors.push_back("TooManyRequestsException");
-
-    aws_client_configuration.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(
-        SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryable_errors, /*maxRetries=*/3);
+    /// Use ClickHouse's retry strategy so the SSO client stays bounded and respects query cancellation /
+    /// max_execution_time (its ShouldRetry checks isQueryCanceled), instead of the AWS SDK strategy which is
+    /// not cancellation-aware.
+    auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+    credentials_retry_strategy.max_retries = 3;
+    aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
     client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, aws_client_configuration);
 
     LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
@@ -985,7 +988,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    if (credentials_configuration.no_sign_request || boost::iequals(configuration.http_client, "gcp_oauth"))
         return;
 
     /// add explicit credentials to the front of the chain
@@ -995,6 +998,12 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
         return;
     }
+
+    /// Under the restriction there are no explicit credentials, and every remaining provider in this chain
+    /// (environment, IMDS/IRSA, ECS, instance profile, SSO, and the AWS config/credentials file) resolves the
+    /// server's own credentials. Add none of them.
+    if (credentials_configuration.forbid_implicit_credentials)
+        return;
 
     if (credentials_configuration.use_environment_credentials)
     {
@@ -1116,17 +1125,23 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.connectTimeoutMs = 50;
             aws_client_configuration.requestTimeoutMs = 1000;
 
-            aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+            /// Cancellation-aware, bounded retry (IMDS is local and fast; keep a single retry as before).
+            auto credentials_retry_strategy = aws_client_configuration.retry_strategy;
+            credentials_retry_strategy.max_retries = 1;
+            aws_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(credentials_retry_strategy);
 
             AddProvider(AWSInstanceProfileCredentialsProvider::create(
                 aws_client_configuration, !credentials_configuration.use_insecure_imds_request));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
         }
-    }
 
-    /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
-    /// in chain.
-    AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+        /// The AWS config/credentials file is a server-ambient credential source just like the environment
+        /// and IMDS providers above, so it is gated by `use_environment_credentials` too: with the setting
+        /// disabled the chain stays empty and the request goes out unsigned (anonymous).
+        /// Quite verbose provider (argues if file with credentials doesn't exist) so it's the last one
+        /// in chain.
+        AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
+    }
 }
 
 AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
@@ -1249,7 +1264,19 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
-    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override);
+    /// The STS AssumeRole client uses the AWS SDK's own retry loop, so give it ClickHouse's bounded,
+    /// cancellation-aware retry strategy and per-attempt timeout (never longer than the caller's) so an
+    /// AssumeRole against a slow/unreachable STS endpoint stays bounded and respects query cancellation.
+    auto sts_client_configuration = client_configuration;
+    auto sts_retry_strategy = sts_client_configuration.retry_strategy;
+    sts_retry_strategy.max_retries = std::min(sts_retry_strategy.max_retries, static_cast<decltype(sts_retry_strategy.max_retries)>(3));
+    sts_client_configuration.retryStrategy = std::make_shared<Client::RetryStrategy>(sts_retry_strategy);
+    if (sts_client_configuration.connectTimeoutMs <= 0 || sts_client_configuration.connectTimeoutMs > 1000)
+        sts_client_configuration.connectTimeoutMs = 1000;
+    if (sts_client_configuration.requestTimeoutMs <= 0 || sts_client_configuration.requestTimeoutMs > 10000)
+        sts_client_configuration.requestTimeoutMs = 10000;
+
+    auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, sts_client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
@@ -1321,10 +1348,82 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const DB::S3::PocoHTTPClientConfiguration & configuration,
     const Aws::Auth::AWSCredentials & credentials,
-    const CredentialsConfiguration & credentials_configuration)
+    const CredentialsConfiguration & credentials_configuration_)
 {
+    CredentialsConfiguration credentials_configuration = credentials_configuration_;
+
+    /// Set when a refused server-managed request is downgraded to anonymous instead of throwing (only on a
+    /// metadata load, via `anonymous_fallback_for_server_credentials`). Treated like `no_sign_request` below.
+    bool force_anonymous_fallback = false;
+
+    /// For S3 access originating from user SQL, refuse every server-managed credential source. Explicit
+    /// credentials (optionally with a `role_arn`, which then assumes the role using the user's own keys) and
+    /// NOSIGN are still allowed. A server-configured `role_arn` is stripped by the storage/backup layers
+    /// before this point, so any `role_arn` reaching here was supplied by the query or named collection.
+    if (credentials_configuration.forbid_implicit_credentials)
+    {
+        /// Only a complete key pair counts as explicit user credentials.
+        const bool has_explicit_credentials
+            = !credentials.GetAWSAccessKeyId().empty() && !credentials.GetAWSSecretKey().empty();
+
+        /// `gcp_oauth` mints a bearer token from an explicit ADC triple if given, otherwise from the server's
+        /// GCP metadata service. Matched case-insensitively, the same as PocoHTTPClientFactory.
+        const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
+        const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
+            && !configuration.google_adc_client_secret.empty()
+            && !configuration.google_adc_refresh_token.empty();
+
+        /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request is sent
+        /// unsigned (the provider chain below adds no implicit provider), keeping public-bucket access working.
+        const bool wants_server_credentials
+            = credentials_configuration.use_environment_credentials || !credentials_configuration.role_arn.empty();
+
+        if (uses_gcp_oauth)
+        {
+            if (!has_explicit_gcp_adc)
+            {
+                if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                    force_anonymous_fallback = true;
+                else
+                    throw DB::Exception(
+                        DB::ErrorCodes::ACCESS_DENIED,
+                        "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
+                        "explicit Google Application Default Credentials triple (google_adc_client_id, "
+                        "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                        "token from the server's GCP metadata service. Enable the setting "
+                        "`s3_allow_server_credentials_in_user_queries` to allow it.");
+            }
+        }
+        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials && wants_server_credentials)
+        {
+            if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                force_anonymous_fallback = true;
+            else
+                throw DB::Exception(
+                    DB::ErrorCodes::ACCESS_DENIED,
+                    "S3 access from user queries is not allowed to use server-managed credentials "
+                    "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
+                    "or role_arn-based STS assume-role). "
+                    "Provide explicit credentials, use NOSIGN, or enable the setting "
+                    "`s3_allow_server_credentials_in_user_queries`.");
+        }
+
+        if (force_anonymous_fallback)
+            LOG_WARNING(
+                getLogger("AWSClient"),
+                "Loading this table with an anonymous S3 client: it resolves server-managed credentials that "
+                "are restricted for user queries (s3_allow_server_credentials_in_user_queries = 0). The table "
+                "will be inaccessible until its credentials resolve to a permitted source. Set the server "
+                "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
+
+        /// Belt and suspenders: never let the provider chain fall back to the server's environment credentials.
+        credentials_configuration.use_environment_credentials = false;
+    }
+
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    /// Match `gcp_oauth` case-insensitively (as PocoHTTPClientFactory does), so a differently-cased value
+    /// cannot build the AWS provider chain here while the HTTP layer still sends a GCP OAuth token.
+    if (credentials_configuration.no_sign_request || force_anonymous_fallback || boost::iequals(configuration.http_client, "gcp_oauth"))
     {
         credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
     }
@@ -1334,7 +1433,11 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
     }
 
-    if (!credentials_configuration.role_arn.empty())
+    /// Skip the STS assume-role wrapper for anonymous / `gcp_oauth` / fallback clients, so a stray `role_arn`
+    /// alongside them does not trigger credential resolution on top of the anonymous provider.
+    if (!credentials_configuration.no_sign_request && !force_anonymous_fallback
+        && !boost::iequals(configuration.http_client, "gcp_oauth")
+        && !credentials_configuration.role_arn.empty())
     {
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
             credentials_configuration.role_arn,

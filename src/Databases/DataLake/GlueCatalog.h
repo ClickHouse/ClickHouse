@@ -33,7 +33,8 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ASTPtr table_engine_definition_,
+        bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
 

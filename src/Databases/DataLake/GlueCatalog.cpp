@@ -96,7 +96,8 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
+    DB::ASTPtr table_engine_definition_,
+    bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
@@ -110,6 +111,11 @@ GlueCatalog::GlueCatalog(
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
     creds_config.external_id = settings.aws_external_id;
+
+    /// A Glue catalog is created by user SQL, so it must not reuse the server's credentials unless allowed at
+    /// CREATE time. The cached catalog uses the global context, so pass the value captured then, not the live setting.
+    creds_config.forbid_implicit_credentials
+        = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -155,10 +161,10 @@ GlueCatalog::GlueCatalog(
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
 
-        if (credentials.IsEmpty())
+        if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
-            /// You can specify any key for fake moto glue, it's just important
-            /// for it not to be empty.
+            /// Placeholder key for mocked moto glue (must be non-empty). Skipped under the restriction with no
+            /// explicit credentials, so it does not mask the refusal that the test exercises.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }
