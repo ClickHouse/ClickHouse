@@ -34,6 +34,10 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int CORRUPTED_DATA;
+}
 
 namespace
 {
@@ -1531,9 +1535,25 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+/// Expects getCompressionCodecForFile to reject the block as corrupted.
+static void expectCorruptedData(ReadBuffer & in)
+{
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    try
+    {
+        getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true);
+        FAIL() << "Expected CORRUPTED_DATA exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::CORRUPTED_DATA);
+    }
+}
+
 TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
 {
-    /// size_compressed (5) is below the 9-byte block header: must throw.
+    /// size_compressed (5) is below the 9-byte block header: must throw CORRUPTED_DATA.
     constexpr unsigned char block[] = {
         0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
         0x82, /// LZ4 method byte
@@ -1542,9 +1562,7 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
     };
 
     ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
-    UInt32 size_compressed = 0;
-    UInt32 size_decompressed = 0;
-    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+    expectCorruptedData(in);
 }
 
 TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
@@ -1560,9 +1578,7 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
     };
 
     ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
-    UInt32 size_compressed = 0;
-    UInt32 size_decompressed = 0;
-    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+    expectCorruptedData(in);
 }
 
 TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqualsHeader)
@@ -1577,9 +1593,7 @@ TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqu
     };
 
     ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
-    UInt32 size_compressed = 0;
-    UInt32 size_decompressed = 0;
-    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+    expectCorruptedData(in);
     /// The count byte at offset 25 must not have been consumed.
     EXPECT_EQ(in.count(), 16u + ICompressionCodec::getHeaderSize());
 }
