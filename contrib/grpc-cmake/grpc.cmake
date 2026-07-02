@@ -1985,4 +1985,13 @@ target_link_libraries(grpc_cpp_plugin
   grpc_plugin_support
 )
 
+# musl: executables need explicit CRT objects because of -nostartfiles.
+if (USE_MUSL)
+    target_sources(grpc_cpp_plugin PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
+endif()
+
 add_native_target (grpc_cpp_plugin)

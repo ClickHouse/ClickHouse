@@ -594,7 +594,12 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    # if USE_MUSL is on, also include musl CRT objects (crt1, crti, crtn) because we link with -nostartfiles.
+    if (USE_MUSL)
+        add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc>)
+    else ()
+        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
+    endif ()
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
@@ -714,6 +719,7 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

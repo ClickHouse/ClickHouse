@@ -4,7 +4,11 @@ target_link_libraries(pre_compressor PUBLIC ch_contrib::zstd)
 
 add_native_target (pre_compressor)
 
-add_executable (decompressor decompressor.cpp)
+if (USE_MUSL)
+    add_executable (decompressor decompressor.cpp $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+else ()
+    add_executable (decompressor decompressor.cpp)
+endif ()
 target_include_directories(decompressor PRIVATE .)
 target_link_libraries(decompressor PUBLIC ch_contrib::zstd)
 

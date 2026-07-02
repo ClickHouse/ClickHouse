@@ -29,7 +29,9 @@ if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
+    # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
+    # from the sysroot; musl's own are added in clickhouse_add_executable.
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -40,10 +42,19 @@ set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+if (USE_MUSL)
+    # musl provides pthread in libc.
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+else ()
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+endif ()
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+if (USE_MUSL)
+    include (cmake/musl.cmake)
+endif()
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)
