@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -117,13 +118,44 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
     node.children.clear();
 }
 
+/// Copy an outer `LimitStep` down into the per-shard plan so each shard emits at most `limit + offset`
+/// rows, while the global (outer) `LimitStep` stays in place — a per-shard `LIMIT n` is not a global
+/// `LIMIT n`. Mirrors the per-branch LIMIT copy that `limitPushDown.cpp` performs for `UNION ALL`.
+static void tryCopyLimitToRemotePlan(LimitStep & limit, ReadFromRemotePlanStep & placeholder)
+{
+    /// Copy the limit at most once. The bottom-up traversal visits each node once, so this only
+    /// guards against a hypothetical re-traversal; absorption is tracked in the placeholder.
+    if (placeholder.isLimitCopied())
+        return;
+
+    /// WITH TIES needs a global sort order to be meaningful: a per-shard tie set is not composable
+    /// into the global one, so the limit can only be applied on the initiator.
+    if (limit.withTies())
+        return;
+
+    /// `always_read_till_end` means the step must consume all input regardless of the limit. It is set
+    /// for `exact_rows_before_limit` and for WITH TOTALS. In both cases a per-shard limit is either
+    /// pointless (the shard would still read everything) or breaks exact `rows_before_limit_at_least`
+    /// reporting — the same reason `DistributedCreateLocalPlan.cpp` avoids limit pushdown for the
+    /// `WithMergeableStateAfterAggregationAndLimit` stage. Leave the shard reading everything.
+    if (limit.alwaysReadTillEnd())
+        return;
+
+    /// `getLimitForSorting` returns `limit + offset` with overflow protection, yielding 0 when the sum
+    /// would overflow `UInt64` or when the limit itself is 0. In either case a per-shard limit is
+    /// unrepresentable or useless, so leave the outer step alone and absorb nothing.
+    if (limit.getLimitForSorting() == 0)
+        return;
+
+    placeholder.absorbLimitCopy(limit);
+}
+
 void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
 {
-    /// Pattern: an `ExpressionStep` or `FilterStep` whose single child is a `ReadFromRemotePlanStep`
-    /// placeholder. Such a step can be evaluated on the shards inside the serialized inner plan.
+    /// Pattern: a step whose single child is a `ReadFromRemotePlanStep` placeholder. Depending on the
+    /// step type it is either moved into the serialized per-shard plan (Expression/Filter) or copied
+    /// there while staying on the initiator (Limit).
     auto * step = node.step.get();
-    if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
-        return;
 
     if (node.children.size() != 1)
         return;
@@ -131,6 +163,18 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     auto * child_node = node.children.front();
     auto * placeholder = typeid_cast<ReadFromRemotePlanStep *>(child_node->step.get());
     if (!placeholder)
+        return;
+
+    /// A `LimitStep` is copied (not moved) down: the outer step stays as the global limit and the
+    /// traversal simply continues, so there is no node swap here.
+    if (auto * limit = typeid_cast<LimitStep *>(step))
+    {
+        tryCopyLimitToRemotePlan(*limit, *placeholder);
+        return;
+    }
+
+    /// Otherwise only an `ExpressionStep` or `FilterStep` can be evaluated on the shards.
+    if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
         return;
 
     /// Graceful degradation: only move a step that can be serialized to the shard and that carries no

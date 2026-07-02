@@ -52,6 +52,10 @@ public:
     /// The outer step must stay in place, because a per-shard LIMIT is not a global LIMIT.
     void absorbLimitCopy(const LimitStep & limit_step);
 
+    /// Whether a `LimitStep` copy has already been pushed into the inner plan. Used by the
+    /// pushdown rule to avoid copying the same outer limit twice.
+    bool isLimitCopied() const { return limit_copied; }
+
     /// Expose the inner plan to EXPLAIN and debug dumps.
     QueryPlanRawPtrs getChildPlans() override;
 
@@ -85,6 +89,9 @@ private:
 
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
+
+    /// Set once `absorbLimitCopy` has pushed a per-shard `LimitStep` into the inner plan.
+    bool limit_copied = false;
 };
 
 }
