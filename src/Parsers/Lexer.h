@@ -60,6 +60,7 @@ namespace DB
     M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
     M(Concatenation)          /** String concatenation operator: || */ \
+    M(PipeArrow)              /** Pipe operator |> for pipelined SQL syntax */ \
     \
     M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \
     M(DoubleAt)               /** @@. Used for MySQL-style global variables. */ \

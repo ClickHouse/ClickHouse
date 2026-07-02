@@ -19,7 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
+extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -314,6 +314,7 @@ ASTPtr tryParseQuery(
       *
       * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
       */
+
     IParser::Pos lookahead(token_iterator);
     if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
@@ -500,7 +501,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_parser_depth,
     size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert,
-    bool implicit_select)
+    bool implicit_select,
+    bool allow_pipe_syntax)
 {
     ASTPtr ast;
 
@@ -508,7 +510,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select);
+    ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select, allow_pipe_syntax);
 
     queries_list.clear();
 

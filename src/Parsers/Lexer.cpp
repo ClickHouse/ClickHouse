@@ -445,6 +445,8 @@ Token Lexer::nextTokenImpl()
             ++pos;
             if (pos < end && *pos == '|')
                 return Token(TokenType::Concatenation, token_begin, ++pos);
+            if (pos < end && *pos == '>')
+                return Token(TokenType::PipeArrow, token_begin, ++pos);
             return Token(TokenType::PipeMark, token_begin, pos);
         }
         case '@':

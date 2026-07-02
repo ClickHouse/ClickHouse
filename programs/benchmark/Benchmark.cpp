@@ -60,6 +60,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_pipe_syntax;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -484,7 +485,8 @@ private:
                         settings[Setting::max_parser_depth],
                         settings[Setting::max_parser_backtracks],
                         settings[Setting::allow_settings_after_format_in_insert],
-                        settings[Setting::implicit_select]);
+                        settings[Setting::implicit_select],
+                        settings[Setting::allow_experimental_pipe_syntax]);
 
                     if (!parse_res.second)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
