@@ -510,14 +510,14 @@ def test_restore_db_replica_with_diffrent_table_metadata(
     for node in nodes:
         restore_database_and_wait(node, exclusive_database_name, None)
 
-    assert node_1.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
-        check_callback=lambda x: x.strip() == str(count_test_table_1),
-    ) == TSV([count_test_table_1])
-    assert node_2.query_with_retry(
-        f"SELECT count(*) FROM {exclusive_database_name}.{test_table_1}",
-        check_callback=lambda x: x.strip() == str(count_test_table_1),
-    ) == TSV([count_test_table_1])
+    # SYSTEM SYNC REPLICA waits for the background fetch of all parts after the
+    # restore, instead of a fixed-budget count poll that can expire on slow builds.
+    check_contains_table(
+        node_1, f"{exclusive_database_name}.{test_table_1}", count_test_table_1
+    )
+    check_contains_table(
+        node_2, f"{exclusive_database_name}.{test_table_1}", count_test_table_1
+    )
 
     expected_count = ["0"]
     if restore_firstly_node_where_created:
