@@ -3,6 +3,7 @@
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
@@ -514,6 +515,14 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
             const auto & key_base64 = ssh_key.key_base64;
             const auto & type = ssh_key.type;
+
+            /// A key unusable in the current FIPS mode must not abort the load, so skip it - it cannot authenticate.
+            if (!SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
+            {
+                LOG_WARNING(getLogger("AuthenticationData"),
+                    "Skipping SSH key of type {}: not usable in FIPS mode", type);
+                continue;
+            }
 
             try
             {

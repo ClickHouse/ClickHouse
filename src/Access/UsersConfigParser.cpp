@@ -299,6 +299,12 @@ namespace
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected base64_key field in {} entry", entry);
 
+                    if (!SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
+                    {
+                        LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
+                            "Skipping SSH key entry {} for user {} (type {}): not usable in FIPS mode", entry, user_name, type);
+                        continue;
+                    }
 
                     try
                     {

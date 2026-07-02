@@ -58,6 +58,8 @@ public:
     static SSHKey makePrivateKeyFromFile(String filename, String passphrase);
     static SSHKey makePublicKeyFromFile(String filename);
     static SSHKey makePublicKeyFromBase64(String base64_key, String type_name);
+
+    static bool isPublicKeyUsableInFIPSBuilds(const String & type_name);
 };
 
 }

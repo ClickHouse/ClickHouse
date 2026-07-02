@@ -3,6 +3,8 @@
 # if USE_SSH
 #    include <stdexcept>
 
+#    include <Common/Crypto/OpenSSLInitializer.h>
+
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wreserved-macro-identifier"
 #    pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -29,6 +31,27 @@ struct CStringDeleter
 {
     void operator()(char * ptr) const { std::free(ptr); }
 };
+
+bool isEd25519KeyType(enum ssh_keytypes_e key_type)
+{
+    return key_type == SSH_KEYTYPE_ED25519 || key_type == SSH_KEYTYPE_ED25519_CERT01
+        || key_type == SSH_KEYTYPE_SK_ED25519 || key_type == SSH_KEYTYPE_SK_ED25519_CERT01;
+}
+
+bool isKeyTypeUsableInFIPSBuilds(enum ssh_keytypes_e key_type)
+{
+    /// Ed25519 is not FIPS-approved: importing it in FIPS mode in libssh will cause bad things to happen
+    return !isEd25519KeyType(key_type) || !OpenSSLInitializer::instance().isFIPSEnabled();
+}
+
+void checkIfKeyCanBeUsedInFIPSBuilds(ssh_key key)
+{
+    if (key != nullptr && !isKeyTypeUsableInFIPSBuilds(ssh_key_type(key)))
+    {
+        ssh_key_free(key);
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
+    }
+}
 }
 
 SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
@@ -36,6 +59,7 @@ SSHKey SSHKeyFactory::makePrivateKeyFromFile(String filename, String passphrase)
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_privkey_file(filename.c_str(), passphrase.c_str(), nullptr, nullptr, &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH private key from file");
+    checkIfKeyCanBeUsedInFIPSBuilds(key);
     return SSHKey(key);
 }
 
@@ -44,6 +68,7 @@ SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Can't import SSH public key from file");
+    checkIfKeyCanBeUsedInFIPSBuilds(key);
     return SSHKey(key);
 }
 
@@ -51,9 +76,18 @@ SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_nam
 {
     ssh_key key = nullptr;
     auto key_type = ssh_key_type_from_name(type_name.c_str());
+    /// Reject before import: libssh's FIPS ed25519 import leaks a pubkey blob in libcrypto builds.
+    if (!isKeyTypeUsableInFIPSBuilds(key_type))
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Ed25519 SSH keys are not supported in FIPS mode");
     if (int rc = ssh_pki_import_pubkey_base64(base64_key.c_str(), key_type, &key); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Bad SSH public key provided");
+    checkIfKeyCanBeUsedInFIPSBuilds(key);
     return SSHKey(key);
+}
+
+bool SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(const String & type_name)
+{
+    return isKeyTypeUsableInFIPSBuilds(ssh_key_type_from_name(type_name.c_str()));
 }
 
 SSHKey::SSHKey(const SSHKey & other)
