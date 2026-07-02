@@ -139,6 +139,53 @@ FROM (
 )
 SETTINGS optimize_limit_by_in_order = 1;
 
+-- The `ORDER BY ... LIMIT BY ...` shape (rather than the no-`ORDER BY` `LIMIT BY` above) drives
+-- read-in-order through the `SortingStep` and pushes the `LIMIT BY` into the sort via
+-- `pushLimitByIntoSort`. That attaches a per-stream `LimitBySortedStreamTransform` pre-filter
+-- (`SortingStep::addPerStreamLimitByIfNeeded`) which only runs while the pipeline still has
+-- multiple streams. As with the no-`ORDER BY` path, PrefetchingConcat must NOT collapse those
+-- streams into one (it would skip the pre-filter and serialize the reduction). Expect no
+-- PrefetchingConcat.
+SELECT 'no_prefetching_order_by_limit_by';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    ORDER BY path
+    LIMIT 1 BY path
+) WHERE explain LIKE '%PrefetchingConcat%'
+SETTINGS query_plan_push_limit_by_into_sort = 1;
+
+-- The streams stay parallel: the per-stream `LimitBySortedStreamTransform` prefilter appears under
+-- the read (in addition to the final one above the sort, so at least two occurrences), and the
+-- streams are merged by a `MergingSortedTransform` inside the sort. Had PrefetchingConcat collapsed
+-- the read to one stream, the prefilter would be skipped (a single occurrence) and there would be
+-- no `MergingSortedTransform`.
+SELECT 'order_by_limit_by_multi_stream';
+SELECT
+    countIf(explain LIKE '%LimitBySortedStreamTransform%') >= 2 AS has_per_stream_prefilter,
+    countIf(explain LIKE '%MergingSortedTransform%') > 0 AS keeps_multi_stream_merge
+FROM (
+    EXPLAIN PIPELINE SELECT path FROM t_prefetching_concat
+    PREWHERE path LIKE '%file.log'
+    ORDER BY path
+    LIMIT 1 BY path
+)
+SETTINGS query_plan_push_limit_by_into_sort = 1;
+
+SELECT 'order_by_limit_by_correctness';
+SELECT
+    countIf(path < prev_path) = 0 AS is_sorted,
+    count() = (SELECT uniqExact(path) FROM t_prefetching_concat WHERE path LIKE '%file.log') AS count_matches
+FROM (
+    SELECT path, lagInFrame(path, 1, '') OVER (ORDER BY rowNumberInAllBlocks()) AS prev_path
+    FROM (
+        SELECT path FROM t_prefetching_concat
+        PREWHERE path LIKE '%file.log'
+        ORDER BY path
+        LIMIT 1 BY path
+    )
+) SETTINGS query_plan_push_limit_by_into_sort = 1;
+
 DROP TABLE t_prefetching_concat;
 
 -- PrefetchingConcat should NOT be used with multiple parts whose ranges

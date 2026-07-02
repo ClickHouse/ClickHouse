@@ -133,6 +133,10 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
+    /// True when `pushLimitByIntoSort` attached a per-stream `LIMIT BY` hint to this sort.
+    /// See `addPerStreamLimitByIfNeeded`.
+    bool hasLimitByHint() const { return !limit_by_columns.empty(); }
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;

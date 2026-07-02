@@ -1252,6 +1252,18 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             if (find_reading_ctx.passed_residual_cpu_step)
                 reading->setPreferMultipleStreams();
 
+            /// An `ORDER BY ... LIMIT BY ...` whose `BY` columns are a prefix of the sorting key is
+            /// pushed into this sort by `pushLimitByIntoSort`, which attaches a per-stream
+            /// `LimitBySortedStreamTransform` pre-filter (`SortingStep::addPerStreamLimitByIfNeeded`).
+            /// That pre-filter only runs while the pipeline still has multiple streams. Keep the
+            /// per-stream pipeline parallel for the same reason as the no-`ORDER BY` `LimitByStep`
+            /// path: `PrefetchingConcatProcessor` would otherwise collapse a single-part filtered
+            /// read into one stream and serialize the `LIMIT BY` reduction. `pushLimitByIntoSort`
+            /// runs on the ancestor `LimitByStep` before this pass reaches the descendant
+            /// `SortingStep` (pre-order traversal), so the hint is already set here.
+            if (sorting.hasLimitByHint())
+                reading->setPreferMultipleStreams();
+
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
