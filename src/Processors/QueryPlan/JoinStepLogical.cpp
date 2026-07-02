@@ -838,10 +838,16 @@ static std::optional<RelationProfile> tryEstimateRelationProfile(
     RelationProfile profile;
     profile.rows = *stats.estimated_rows;
 
-    /// `column_stats` here is keyed by post-rename column names (the analyzer's `__tableN.`
-    /// qualifier survives the remap chain in `estimateReadRowsCount`). Look up each join
-    /// key both as-is and with the qualifier stripped, so we work whether or not a
+    /// `stats.column_stats` here is keyed by post-rename column names (the analyzer's
+    /// `__tableN.` qualifier survives the remap chain in `estimateReadRowsCount`). Look up
+    /// each join key both as-is and with the qualifier stripped, so we work whether or not a
     /// rename-only `ExpressionStep` sat between the join and the source.
+    ///
+    /// The output `profile.column_stats` is keyed by the *exact* join-key name, never the
+    /// stripped one: two qualified outputs of the right subtree can share a storage name
+    /// (e.g. `__table2.id` and `__table3.id`), so stripping would collapse them into one
+    /// entry and let the later demotion inherit the wrong NDV. The stripped name is used
+    /// only as a fallback to find the underlying direct-storage statistic.
     for (const auto & name : column_names)
     {
         const ColumnStats * found = nullptr;
@@ -852,7 +858,7 @@ static std::optional<RelationProfile> tryEstimateRelationProfile(
             if (auto it2 = stats.column_stats.find(stripped); it2 != stats.column_stats.end())
                 found = &it2->second;
         if (found)
-            profile.column_stats[stripTableQualifier(name)] = *found;
+            profile.column_stats[name] = *found;
     }
 
     return profile;
@@ -975,7 +981,10 @@ static bool demoteLowNdvKeysToResidual(
 
     for (size_t i = 0; i < right.size(); ++i)
     {
-        auto it = profile->column_stats.find(stripTableQualifier(right[i]));
+        /// Keyed by the exact join-key name (see `tryEstimateRelationProfile`): `right` is
+        /// the same vector fed there as `column_names`, so an exact lookup here is both
+        /// unambiguous and collision-free across equally-named qualified columns.
+        auto it = profile->column_stats.find(right[i]);
         if (it == profile->column_stats.end() || it->second.num_distinct_values == 0)
             continue;
         candidates.push_back({{i}, it->second.num_distinct_values});
