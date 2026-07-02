@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 
+#include <optional>
 #include <string>
 
 namespace DB::ErrorCodes
@@ -167,13 +168,14 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
     }));
 
     /// -1 is the protocol sentinel for a NULL parameter; no value bytes follow.
+    /// It maps to a disengaged optional, distinct from the literal text "NULL".
     {
         std::string bytes = build(-1, "");
         ReadBufferFromMemory in(bytes.data(), bytes.size());
         Messaging::BindQuery msg;
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "NULL");
+        EXPECT_EQ(msg.parameters[0], std::nullopt);
     }
 
     /// A non-negative length reads exactly that many bytes.

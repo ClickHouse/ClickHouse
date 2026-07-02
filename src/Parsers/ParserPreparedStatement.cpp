@@ -1,5 +1,6 @@
 #include <Parsers/ParserPreparedStatement.h>
 
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -90,7 +91,13 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     for (size_t i = 0; i < ast_args->children.size(); ++i)
     {
-        result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+        /// Format each argument as a proper SQL literal: strings are quoted and
+        /// escaped, numbers stay bare. The arguments are later spliced into the
+        /// prepared statement body by `$N` substitution, so a raw value (e.g.
+        /// fieldToString of a string drops the quotes) would let a crafted
+        /// EXECUTE argument inject SQL.
+        const Field & value = ast_args->children[i]->as<ASTLiteral>()->value;
+        result->arguments.push_back(applyVisitor(FieldVisitorToString(), value));
     }
     if (!close_bracket.ignore(pos, expected))
         return false;

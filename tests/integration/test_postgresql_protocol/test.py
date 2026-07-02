@@ -6,6 +6,7 @@ import logging
 import os
 import random
 import uuid
+from contextlib import closing
 from io import StringIO
 
 import psycopg
@@ -358,6 +359,238 @@ def test_prepared_statement(started_cluster):
     cur.execute("DEALLOCATE select_test;")
     with pytest.raises(Exception):
         cur.execute("EXECUTE select_test(1);")
+
+
+def test_prepared_statement_no_sql_injection(started_cluster):
+    # Bound parameters must be treated as data, never spliced into the SQL text.
+    # A parameter such as "x' UNION ALL SELECT ..." must not be able to break out
+    # of the literal and read another table.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS inj_users;")
+    cur.execute("DROP TABLE IF EXISTS inj_secret;")
+    cur.execute("CREATE TABLE inj_users (id Int32, name String) ENGINE = Memory;")
+    cur.execute("INSERT INTO inj_users (id, name) VALUES (1, 'alice'), (2, 'bob');")
+    cur.execute("CREATE TABLE inj_secret (sid Int32, secret String) ENGINE = Memory;")
+    cur.execute("INSERT INTO inj_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
+
+    # A parameterized execute already uses the extended Parse/Bind/Execute path
+    # (the bound value travels the wire as data) - that is the path under test.
+    # We do not pass prepare=True: it adds a named, server-side cached statement
+    # whose lifecycle is driven by the client's own prepared-statement cache, and
+    # repeated named prepares on one connection are an unrelated source of
+    # flakiness here. The unnamed parameterized form exercises the same binding.
+
+    # Benign string parameter.
+    cur.execute("SELECT id FROM inj_users WHERE name = %s;", ("bob",))
+    assert cur.fetchall() == [(2,)]
+
+    # Numeric comparison with a (text) parameter still works.
+    cur.execute("SELECT id FROM inj_users WHERE id > %s ORDER BY id;", ("1",))
+    assert cur.fetchall() == [(2,)]
+
+    # Injection attempt: the payload must be bound as a single string literal,
+    # not interpreted as SQL, so the secret table is never read.
+    payload = "x' UNION ALL SELECT secret FROM inj_secret -- "
+    cur.execute("SELECT name FROM inj_users WHERE name = %s;", (payload,))
+    assert cur.fetchall() == []
+
+    # Placeholder inside a block comment: $1 there is not a real placeholder, so
+    # the bound value must not be spliced into the comment. Otherwise a value
+    # beginning with "*/ ... --" closes the comment and what follows becomes
+    # executable SQL ahead of the real placeholder. The body keeps a $1 in a
+    # leading comment and a real $1 in the WHERE; the secret must stay unread
+    # (pre-fix this leaked TOP_SECRET).
+    payload = "*/ SELECT secret FROM inj_secret -- "
+    cur.execute("/* $1 */ SELECT name FROM inj_users WHERE name = %s;", (payload,))
+    assert ("TOP_SECRET",) not in cur.fetchall()
+
+    # A parameter with a single quote must round-trip as data.
+    cur.execute("SELECT %s AS v;", ("O'Brien",))
+    assert cur.fetchall() == [("O'Brien",)]
+
+    cur.execute("DROP TABLE inj_users;")
+    cur.execute("DROP TABLE inj_secret;")
+
+
+def test_execute_no_sql_injection(started_cluster):
+    # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
+    # prepared statement body by $N substitution, so a string argument must be
+    # emitted as a quoted+escaped SQL literal, never as raw SQL text.
+    node = started_cluster.instances["node"]
+
+    def connect():
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+        )
+
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("DROP TABLE IF EXISTS exec_users;")
+    cur.execute("DROP TABLE IF EXISTS exec_secret;")
+    cur.execute("CREATE TABLE exec_users (id Int32, name String) ENGINE = Memory;")
+    cur.execute("INSERT INTO exec_users (id, name) VALUES (1, 'alice'), (2, 'bob');")
+    cur.execute("CREATE TABLE exec_secret (sid Int32, secret String) ENGINE = Memory;")
+    cur.execute("INSERT INTO exec_secret (sid, secret) VALUES (99, 'TOP_SECRET');")
+
+    # Numeric argument: stays a bare number, normal lookup works.
+    cur.execute("PREPARE by_id AS SELECT name FROM exec_users WHERE id = $1;")
+    cur.execute("EXECUTE by_id(2);")
+    assert cur.fetchall() == [("bob",)]
+
+    # String argument: must be treated as a single literal, normal lookup works.
+    cur.execute("PREPARE by_name AS SELECT id FROM exec_users WHERE name = $1;")
+    cur.execute("EXECUTE by_name('alice');")
+    assert cur.fetchall() == [(1,)]
+
+    # Injection through a real, bare $N placeholder (not one wrapped in quotes:
+    # a quoted '$1' is a string-literal token and is left untouched, so it would
+    # never exercise this sink). The placeholder sits in a numeric comparison, so
+    # a client passes a string argument expecting it to be bound as one value. It
+    # must be emitted as a quoted+escaped literal; raw substitution would splice
+    # "1 UNION ALL SELECT secret ..." straight into the SQL and leak the secret.
+    # With the fix the string cannot be coerced to Int32 and the query errors out,
+    # which also drops the connection, so this runs on its own connection.
+    inj = connect()
+    inj_cur = inj.cursor()
+    inj_cur.execute("PREPARE by_id_inj AS SELECT name FROM exec_users WHERE id = $1;")
+    leaked = []
+    try:
+        inj_cur.execute(
+            "EXECUTE by_id_inj('1 UNION ALL SELECT secret FROM exec_secret -- ');"
+        )
+        leaked = inj_cur.fetchall()
+    except psycopg.Error:
+        pass
+    assert ("TOP_SECRET",) not in leaked
+    inj.close()
+
+    # An argument echoed straight back must round-trip as data, never as SQL: the
+    # same payload through "SELECT $1" comes back as a single string value.
+    cur.execute("PREPARE echo_inj AS SELECT $1;")
+    cur.execute("EXECUTE echo_inj('1 UNION ALL SELECT secret FROM exec_secret -- ');")
+    assert cur.fetchall() == [("1 UNION ALL SELECT secret FROM exec_secret -- ",)]
+
+    # An argument containing a single quote round-trips as data.
+    cur.execute("PREPARE echo_one AS SELECT $1 AS v;")
+    cur.execute("EXECUTE echo_one('O''Brien');")
+    assert cur.fetchall() == [("O'Brien",)]
+
+    cur.execute("DEALLOCATE by_id;")
+    cur.execute("DEALLOCATE by_name;")
+    cur.execute("DEALLOCATE echo_inj;")
+    cur.execute("DEALLOCATE echo_one;")
+    cur.execute("DROP TABLE exec_users;")
+    cur.execute("DROP TABLE exec_secret;")
+
+
+def test_copy_no_sql_injection(started_cluster):
+    # COPY builds its SELECT/INSERT from the client-supplied table and column
+    # identifiers. A malicious identifier (quoted so it survives as a single
+    # token) must be back-quoted into one harmless identifier, never spliced as
+    # raw SQL, so it cannot break out into a UNION or a second statement.
+    node = started_cluster.instances["node"]
+
+    def connect():
+        # psycopg2's `with connection` manages the transaction but does NOT close
+        # the connection, so wrap in closing() to guarantee each probe's broken
+        # connection is actually closed.
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    setup_cur = setup.cursor()
+    setup_cur.execute("DROP TABLE IF EXISTS copy_t;")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_secret;")
+    setup_cur.execute("CREATE TABLE copy_t (x UInt32) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_t VALUES (1), (2);")
+    setup_cur.execute("CREATE TABLE copy_secret (s String) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_secret VALUES ('TOP_SECRET');")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_load;")
+    setup_cur.execute("CREATE TABLE copy_load (s String) ENGINE = Memory;")
+    setup_cur.execute("DROP TABLE IF EXISTS copy_secret_str;")
+    setup_cur.execute("CREATE TABLE copy_secret_str (s String) ENGINE = Memory;")
+    setup_cur.execute("INSERT INTO copy_secret_str VALUES ('TOP_SECRET');")
+
+    # A COPY rejected by the server leaves the psycopg2 connection in a broken
+    # state (the next call raises "cursor already closed"), so every COPY attempt
+    # below uses its own connection. Otherwise the benign COPY after a blocked
+    # one would fail for a reason unrelated to the security check under test.
+
+    # Malicious table identifier: the whole UNION is wrapped in one quoted
+    # identifier so it reaches the handler as a single name. It must be treated
+    # as one (non-existent) table name, not executed as SQL.
+    out = StringIO()
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
+            'COPY "copy_t UNION ALL SELECT s FROM copy_secret" TO STDOUT', out
+        )
+    assert "TOP_SECRET" not in out.getvalue()
+
+    # Malicious column identifier: same idea via the column list.
+    out2 = StringIO()
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
+            'COPY copy_t ("x) , (SELECT s FROM copy_secret") TO STDOUT', out2
+        )
+    assert "TOP_SECRET" not in out2.getvalue()
+
+    # A benign COPY on a fresh connection still works.
+    out3 = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_t TO STDOUT", out3)
+    assert sorted(out3.getvalue().split()) == ["1", "2"]
+
+    # COPY FROM builds an INSERT INTO from the same client-supplied identifiers.
+    # A malicious column identifier (quoted so it reaches the handler as one
+    # token) must be back-quoted into a single column name. Otherwise it is
+    # spliced raw and turns the INSERT into "INSERT INTO load (s) SELECT s FROM
+    # secret", copying the secret into the load table.
+    with connect() as c, pytest.raises(Exception):
+        c.cursor().copy_expert(
+            'COPY copy_load ("s) SELECT s FROM copy_secret_str -- ") FROM STDIN',
+            StringIO("x\n"),
+        )
+    # The injected SELECT must not have run: the load table stays empty.
+    # ClickHouse returns the count over the PostgreSQL wire as text, so cast it.
+    setup_cur.execute("SELECT count() FROM copy_load WHERE s = 'TOP_SECRET';")
+    assert int(setup_cur.fetchone()[0]) == 0
+
+    # A benign COPY FROM with a legitimate column still works.
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_load (s) FROM STDIN", StringIO("hello\n"))
+    setup_cur.execute("SELECT s FROM copy_load;")
+    assert setup_cur.fetchall() == [("hello",)]
+
+    setup_cur.execute("DROP TABLE copy_load;")
+    setup_cur.execute("DROP TABLE copy_secret_str;")
+    setup_cur.execute("DROP TABLE copy_t;")
+    setup_cur.execute("DROP TABLE copy_secret;")
+    setup.close()
 
 
 def test_copy_command(started_cluster):

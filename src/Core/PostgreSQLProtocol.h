@@ -9,17 +9,22 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/Base64.h>
+#include <Common/quoteString.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
+#include <Parsers/Lexer.h>
 #include <Parsers/ParserPreparedStatement.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
@@ -763,7 +768,11 @@ class BindQuery : FrontMessage
 public:
     String portal_name;
     String function_name;
-    VectorWithMemoryTracking<String> parameters;
+    /// A bound parameter is either a client-supplied value (std::nullopt means
+    /// the SQL NULL sentinel, length -1 on the wire) or a text/binary payload.
+    /// The value is stored raw here; quoting into a SQL literal happens when the
+    /// statement body is assembled (see PreparedStatemetsManager::getStatement).
+    VectorWithMemoryTracking<std::optional<String>> parameters;
     Int16 num_params{};
 
     void deserialize(ReadBuffer & in) override
@@ -792,12 +801,12 @@ public:
                                 "Wrong parameter length {} in Bind message, it must not be less than -1", sz_param);
             if (sz_param == -1)
             {
-                parameters.emplace_back("NULL");
+                parameters.emplace_back(std::nullopt);
                 continue;
             }
             String current_param(sz_param, 0);
             in.readStrict(current_param.data(), sz_param);
-            parameters.push_back(current_param);
+            parameters.push_back(std::move(current_param));
         }
 
         Int16 num_format_params_result = 0;
@@ -1769,7 +1778,22 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto result = getStatement(bind_query->function_name, bind_query->parameters);
+        /// Bind parameters arrive as untyped text from the wire. Turn each into a
+        /// safe SQL literal before it is spliced into the statement body: a value
+        /// becomes a quoted+escaped string literal, the NULL sentinel becomes the
+        /// SQL keyword NULL. Without this, a parameter such as
+        /// `x' UNION ALL SELECT ...` would be injected verbatim.
+        VectorWithMemoryTracking<String> arguments;
+        arguments.reserve(bind_query->parameters.size());
+        for (const auto & parameter : bind_query->parameters)
+        {
+            if (parameter.has_value())
+                arguments.push_back(quoteString(*parameter));
+            else
+                arguments.emplace_back("NULL");
+        }
+
+        auto result = getStatement(bind_query->function_name, arguments);
 
         return result;
     }
@@ -1789,23 +1813,62 @@ private:
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
+    /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
+    /// arguments. Each argument MUST already be a safe SQL fragment (a quoted
+    /// literal, a number, or NULL); callers are responsible for that (the EXECUTE
+    /// path uses FieldVisitorToString, the Bind path quoteString).
+    ///
+    /// Substitution runs over lexer tokens: a `$N` is replaced only where it is a
+    /// real token, never inside a string literal, quoted identifier, comment or
+    /// heredoc (there a quoted argument has no literal meaning and could break
+    /// out of the surrounding context), and a whole token must match so `$1` is
+    /// not taken for the prefix of `$10`.
     String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
     {
         auto it = statements.find(function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        auto body = it->second;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        const String & body = it->second;
+
+        String result;
+        result.reserve(body.size());
+        Lexer lexer(body.data(), body.data() + body.size());
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
-            auto templ = "$" + std::to_string(i + 1);
-            auto pos = body.find(templ);
-            if (pos != std::string::npos)
+            if (token.isError())
             {
-                body.replace(pos, templ.size(), arguments[i]);
+                /// Malformed SQL: emit the rest verbatim and let the parser report it.
+                result.append(token.begin, body.data() + body.size());
+                break;
             }
+
+            std::string_view text(token.begin, token.size());
+            if (token.type == TokenType::BareWord && text.size() > 1 && text[0] == '$')
+            {
+                /// Parse `$<n>` (1-based). A non-digit makes it a plain identifier,
+                /// not a placeholder; bail out early once the value runs past the
+                /// argument count so a huge index cannot overflow.
+                size_t index = 0;
+                bool is_placeholder = true;
+                for (size_t i = 1; i < text.size(); ++i)
+                {
+                    if (text[i] < '0' || text[i] > '9' || index > arguments.size())
+                    {
+                        is_placeholder = false;
+                        break;
+                    }
+                    index = index * 10 + static_cast<size_t>(text[i] - '0');
+                }
+                if (is_placeholder && index >= 1 && index <= arguments.size())
+                {
+                    result += arguments[index - 1];
+                    continue;
+                }
+            }
+            result.append(token.begin, token.size());
         }
-        return body;
+        return result;
     }
 
 };
