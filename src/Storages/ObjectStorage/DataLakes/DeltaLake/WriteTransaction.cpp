@@ -147,7 +147,7 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create()
+void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -164,16 +164,28 @@ void WriteTransaction::create()
             engine.get()),
         "with_engine_info");
 
-    write_context = ffi::get_write_context(transaction.get());
-    write_schema = DeltaLake::getWriteSchema(write_context.get());
+    if (partition_columns.empty())
+    {
+        /// Unpartitioned tables: let the kernel build the write context.
+        unpartitioned_write_context = DeltaLake::KernelUtils::unwrapResult(
+            ffi::get_unpartitioned_write_context(transaction.get(), engine.get()),
+            "get_unpartitioned_write_context");
+        write_schema = DeltaLake::getWriteSchema(unpartitioned_write_context.get(), engine.get());
 
-    auto * write_path_raw = static_cast<std::string *>(
-        ffi::get_write_path(write_context.get(), DeltaLake::KernelUtils::allocateString));
-    if (!write_path_raw)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
+        std::unique_ptr<std::string> write_path_raw(static_cast<std::string *>(
+            ffi::get_write_path(unpartitioned_write_context.get(), DeltaLake::KernelUtils::allocateString)));
+        if (!write_path_raw)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Failed to get write path");
 
-    write_path = *write_path_raw;
-    delete write_path_raw;
+        write_path = *write_path_raw;
+    }
+    else
+    {
+        /// delta-kernel exposes no partitioned write context via FFI (TODO(#2355)), so derive the
+        /// write schema and path directly; per-partition values are handled when committing.
+        write_schema = table_schema;
+        write_path = kernel_helper->getTableLocation();
+    }
 
     auto pos = write_path.find("://");
     if (pos == std::string::npos)
@@ -253,7 +265,12 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
-    auto version = DeltaLake::KernelUtils::unwrapResult(ffi::commit(transaction.release(), engine.get()), "commit");
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::commit(transaction.release(), engine.get()),
+        "commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
 }

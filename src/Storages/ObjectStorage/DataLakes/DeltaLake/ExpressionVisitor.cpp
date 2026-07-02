@@ -499,6 +499,8 @@ private:
         MULTIPLY,
         DIVIDE,
         TO_JSON,
+        PARSE_JSON,
+        MAP_TO_STRUCT,
         COALESCE,
     };
     static ffi::EngineExpressionVisitor createVisitor(ExpressionVisitorData & data)
@@ -528,6 +530,8 @@ private:
             .visit_not = &visitFunction<DB::FunctionNot>,
             .visit_is_null = &visitFunction<DB::FunctionIsNull>,
             .visit_to_json = &throwNotImplemented<TO_JSON>,
+            .visit_parse_json = &throwNotImplementedParseJSON,
+            .visit_map_to_struct = &throwNotImplemented<MAP_TO_STRUCT>,
             .visit_lt = &throwNotImplemented<LT>,
             .visit_gt = &throwNotImplemented<GT>,
             .visit_eq = &throwNotImplemented<EQ>,
@@ -585,6 +589,25 @@ private:
             throw DB::Exception(
                 DB::ErrorCodes::NOT_IMPLEMENTED,
                 "Method {} not implemented", magic_enum::enum_name(method));
+        });
+    }
+
+    static void throwNotImplementedParseJSON(
+        void * data,
+        uintptr_t sibling_list_id,
+        uintptr_t child_list_id,
+        ffi::SharedSchema * output_schema)
+    {
+        UNUSED(sibling_list_id);
+        UNUSED(child_list_id);
+        ffi::free_schema(output_schema);
+
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::NOT_IMPLEMENTED,
+                "Method ParseJSON not implemented");
         });
     }
 
@@ -817,18 +840,58 @@ private:
         });
     }
 
-    static void visitNullLiteral(void * data, uintptr_t sibling_list_id)
+    /// Maps a null `type_tag` (see `NullTypeTag` in `ffi/src/expressions/kernel_visitor.rs`) to the
+    /// matching ClickHouse type for `Nullable(T)`; tag 12 carries precision/scale, 255/unknown can't.
+    static DB::DataTypePtr nullInnerTypeForTag(uint8_t type_tag, uint8_t precision, uint8_t scale)
+    {
+        switch (type_tag)
+        {
+            case 0: return std::make_shared<DB::DataTypeUInt8>();        /// boolean
+            case 1: return std::make_shared<DB::DataTypeInt8>();         /// byte
+            case 2: return std::make_shared<DB::DataTypeInt16>();        /// short
+            case 3: return std::make_shared<DB::DataTypeInt32>();        /// integer
+            case 4: return std::make_shared<DB::DataTypeInt64>();        /// long
+            case 5: return std::make_shared<DB::DataTypeFloat32>();      /// float
+            case 6: return std::make_shared<DB::DataTypeFloat64>();      /// double
+            case 7: return std::make_shared<DB::DataTypeString>();       /// string
+            case 8: return std::make_shared<DB::DataTypeString>();       /// binary (schema maps binary -> String)
+            case 9: return std::make_shared<DB::DataTypeDate32>();       /// date
+            case 10: return std::make_shared<DB::DataTypeDateTime64>(6); /// timestamp
+            case 11: return std::make_shared<DB::DataTypeDateTime64>(6); /// timestamp_ntz
+            case 12:                                                     /// decimal
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
+                    return std::make_shared<DB::DataTypeDecimal32>(precision, scale);
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)
+                    return std::make_shared<DB::DataTypeDecimal64>(precision, scale);
+                if (precision <= DB::DecimalUtils::max_precision<DB::Decimal128>)
+                    return std::make_shared<DB::DataTypeDecimal128>(precision, scale);
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Unsupported decimal precision {} for null literal", precision);
+            default:
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Unsupported null literal type tag {}", type_tag);
+        }
+    }
+
+    static void visitNullLiteral(
+        void * data,
+        uintptr_t sibling_list_id,
+        uint8_t type_tag,
+        uint8_t precision,
+        uint8_t scale)
     {
         ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
         visitorImpl(*state, [&]()
         {
             if (state->enableLogging())
-                LOG_TEST(state->logger(), "List id: {}, type: Null", sibling_list_id);
+                LOG_TEST(state->logger(), "List id: {}, type: Null (tag {})", sibling_list_id, type_tag);
 
             state->addLiteral(
                 sibling_list_id,
                 DB::Null(),
-                std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeNothing>()));
+                std::make_shared<DB::DataTypeNullable>(nullInnerTypeForTag(type_tag, precision, scale)));
         });
     }
 
