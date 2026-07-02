@@ -6,6 +6,7 @@
 
 namespace DB
 {
+struct PermanentlyDetachedTableInfo;
 
 /** Default engine of databases.
   * It stores tables list in filesystem using list of .sql files,
@@ -78,14 +79,11 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool validate_new_create_query) override;
 
-    Strings getNamesOfPermanentlyDetachedTables() const override
-    {
-        std::lock_guard lock(mutex);
-        return permanently_detached_tables;
-    }
+    Strings getNamesOfPermanentlyDetachedTables() const override;
 
     DiskPtr getDisk() const override { return metadata_disk_ptr; }
 
+    void removeTableFromPermanentlyDetachedTables(const UUID & uuid) override;
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
 protected:
@@ -100,7 +98,7 @@ protected:
         const String & statement,
         ContextPtr query_context);
 
-    Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
+    std::vector<PermanentlyDetachedTableInfo> permanently_detached_tables TSA_GUARDED_BY(mutex);
 
     std::unordered_map<String, LoadTaskPtr> load_table TSA_GUARDED_BY(mutex);
     std::unordered_map<String, LoadTaskPtr> startup_table TSA_GUARDED_BY(mutex);

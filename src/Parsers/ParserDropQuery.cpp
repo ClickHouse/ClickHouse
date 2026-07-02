@@ -1,8 +1,8 @@
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDropQuery.h>
 
 namespace DB
 {
@@ -19,6 +19,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 {
     ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_detached(Keyword::DETACHED);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_database(Keyword::DATABASE);
@@ -52,8 +53,10 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
+    bool is_table = false;
     bool sync = false;
     bool permanently = false;
+    bool detached = false;
 
     if (s_all.checkWithoutMoving(pos, expected))
         has_all = true;
@@ -107,6 +110,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else
     {
+        if (s_detached.ignore(pos, expected))
+            detached = true;
+
         if (s_temporary.ignore(pos, expected))
             temporary = true;
 
@@ -114,9 +120,11 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
             is_view = true;
         else if (s_dictionary.ignore(pos, expected))
             is_dictionary = true;
+        else if (s_table.ignore(pos, expected))
+            is_table = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
+        if (!is_view && !is_dictionary && !is_table && kind != ASTDropQuery::Kind::Truncate)
         {
             return false;
         }
@@ -148,6 +156,18 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
+    if (detached)
+    {
+        if (kind != ASTDropQuery::Kind::Drop)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is only supported with DROP queries");
+        if (if_empty)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is not supported with IF EMPTY");
+        if (!is_table)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DROP DETACHED supports only tables");
+        if (temporary)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "TEMPORARY keyword is meaningless here, since you can't detach temporary tables");
+    }
+
     auto query = make_intrusive<ASTDropQuery>();
     node = query;
 
@@ -161,6 +181,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->is_view = is_view;
     query->sync = sync;
     query->permanently = permanently;
+    query->detached = detached;
     query->database = database;
     query->database_and_tables = database_and_tables;
     query->case_insensitive_like = is_case_insensitive_like;

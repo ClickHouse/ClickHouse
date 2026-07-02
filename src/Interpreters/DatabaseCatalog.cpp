@@ -22,23 +22,26 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/StopToken.h>
 #include <Common/UniqueLock.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/levenshteinDistance.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
-#include <base/scope_guard.h>
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <utility>
+#include <variant>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
@@ -74,19 +77,19 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
-    extern const int TABLE_UUID_MISMATCH;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int DATABASE_ALREADY_EXISTS;
-    extern const int DATABASE_NOT_EMPTY;
-    extern const int DATABASE_ACCESS_DENIED;
-    extern const int LOGICAL_ERROR;
-    extern const int HAVE_DEPENDENT_OBJECTS;
-    extern const int UNFINISHED;
-    extern const int INFINITE_LOOP;
-    extern const int THERE_IS_NO_QUERY;
-    extern const int TIMEOUT_EXCEEDED;
+extern const int TABLE_ALREADY_EXISTS;
+extern const int UNKNOWN_DATABASE;
+extern const int UNKNOWN_TABLE;
+extern const int TABLE_UUID_MISMATCH;
+extern const int DATABASE_ALREADY_EXISTS;
+extern const int DATABASE_NOT_EMPTY;
+extern const int DATABASE_ACCESS_DENIED;
+extern const int LOGICAL_ERROR;
+extern const int HAVE_DEPENDENT_OBJECTS;
+extern const int UNFINISHED;
+extern const int INFINITE_LOOP;
+extern const int THERE_IS_NO_QUERY;
+extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -349,15 +352,10 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     }
     chassert(std::find_if(uuid_map.begin(), uuid_map.end(), [](const auto & elem)
     {
-        /// Ensure that all UUID mappings are empty (i.e. all mappings contain nullptr instead of a pointer to storage)
-        const auto & not_empty_mapping = [] (const auto & mapping)
-        {
-            auto & db = mapping.second.first;
-            auto & table = mapping.second.second;
-            return db || table;
-        };
         std::lock_guard map_lock{elem.mutex};
-        auto it = std::find_if(elem.map.begin(), elem.map.end(), not_empty_mapping);
+        /// Ensure that all UUID mappings are empty.
+        auto it = std::find_if(
+            elem.map.begin(), elem.map.end(), [](const auto & mapping) { return mapping.second.database || mapping.second.table; });
         return it != elem.map.end();
     }) == uuid_map.end());
 
@@ -384,7 +382,7 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         return {};
-    return it->second;
+    return {it->second.database, it->second.table};
 }
 
 
@@ -927,34 +925,33 @@ DatabasePtr DatabaseCatalog::getSystemDatabase() const
     return getDatabase(SYSTEM_DATABASE);
 }
 
-void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
-{
-    addUUIDMapping(uuid, nullptr, nullptr);
-}
-
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table)
 {
     chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
     chassert(database || !table);
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
-    auto [it, inserted] = map_part.map.try_emplace(uuid, database, table);
+    auto [it, inserted] = map_part.map.try_emplace(uuid, UUIDMapping{UUIDMappingState::Detached, database, table});
     if (inserted)
     {
-        /// Mapping must be locked before actually inserting something
-        chassert((!database && !table));
+        it->second.state = database ? UUIDMappingState::Attached : UUIDMappingState::Detached;
         return;
     }
 
-    auto & prev_database = it->second.first;
-    auto & prev_table = it->second.second;
+    auto & prev_database = it->second.database;
+    auto & prev_table = it->second.table;
     chassert(prev_database || !prev_table);
 
+    if (it->second.state == UUIDMappingState::Reserved)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} was reserved, can't add again", uuid);
+    }
     if (!prev_database && database)
     {
         /// It's empty mapping, it was created to "lock" UUID and prevent collision. Just update it.
         prev_database = database;
         prev_table = table;
+        it->second.state = UUIDMappingState::Attached;
         return;
     }
 
@@ -967,6 +964,11 @@ void DatabaseCatalog::addUUIDMapping(const UUID & uuid, const DatabasePtr & data
                     "most likely because some not random UUIDs were manually specified in CREATE queries.", uuid);
 }
 
+void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
+{
+    addUUIDMapping(uuid, nullptr, nullptr);
+}
+
 void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
 {
     chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
@@ -975,7 +977,8 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {nullptr, nullptr};
+    chassert(it->second.state == UUIDMappingState::Attached);
+    it->second = UUIDMapping{UUIDMappingState::Detached, nullptr, nullptr};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
@@ -996,8 +999,9 @@ void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database,
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    auto & prev_database = it->second.first;
-    auto & prev_table = it->second.second;
+    chassert(it->second.state == UUIDMappingState::Attached);
+    auto & prev_database = it->second.database;
+    auto & prev_table = it->second.table;
     chassert(prev_database && prev_table);
     prev_database = std::move(database);
     prev_table = std::move(table);
@@ -1009,6 +1013,45 @@ bool DatabaseCatalog::hasUUIDMapping(const UUID & uuid)
     UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
     std::lock_guard lock{map_part.mutex};
     return map_part.map.contains(uuid);
+}
+
+DatabaseCatalog::UUIDReservation DatabaseCatalog::reserveUUID(const UUID & uuid)
+{
+    chassert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & uuid_map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::optional<UUIDMappingState> previous_state;
+    {
+        std::lock_guard lock{uuid_map_part.mutex};
+        auto it = uuid_map_part.map.find(uuid);
+        if (it == uuid_map_part.map.end())
+        {
+            uuid_map_part.map.emplace(uuid, UUIDMapping{UUIDMappingState::Reserved, nullptr, nullptr});
+        }
+        else
+        {
+            if (it->second.state == UUIDMappingState::Reserved)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} is already reserved", uuid);
+            if (it->second.state == UUIDMappingState::Attached)
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Mapping for table with UUID={} already exists", uuid);
+
+            previous_state = it->second.state;
+            it->second.state = UUIDMappingState::Reserved;
+        }
+    }
+
+    return UUIDReservation{[uuid, previous_state]
+                           {
+                               UUIDToStorageMapPart & reserved_uuid_map_part = DatabaseCatalog::instance().uuid_map[getFirstLevelIdx(uuid)];
+                               std::lock_guard lock{reserved_uuid_map_part.mutex};
+                               auto it = reserved_uuid_map_part.map.find(uuid);
+                               if (it == reserved_uuid_map_part.map.end() || it->second.state != UUIDMappingState::Reserved)
+                                   return;
+
+                               if (previous_state)
+                                   it->second.state = *previous_state;
+                               else
+                                   reserved_uuid_map_part.map.erase(it);
+                           }};
 }
 
 std::unique_ptr<DatabaseCatalog> DatabaseCatalog::database_catalog;
@@ -1229,7 +1272,13 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::loadMarkedAsDroppedTables");
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
-    std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
+    struct DroppedMetadataInfo
+    {
+        StorageID storage_id;
+        DiskPtr db_disk;
+        bool drop_as_detached = false;
+    };
+    std::map<String, DroppedMetadataInfo> dropped_metadata;
     String path = fs::path("metadata_dropped") / "";
 
     auto db_map = getDatabases(GetDatabasesOptions{.with_remote_databases = true});
@@ -1283,7 +1332,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
             String full_path = path + sub_path_filename;
-            dropped_metadata.emplace(std::move(full_path), std::pair{std::move(dropped_id), db_disk});
+            dropped_metadata.emplace(std::move(full_path), DroppedMetadataInfo{std::move(dropped_id), db_disk});
         }
     }
 
@@ -1296,9 +1345,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     for (const auto & elem : dropped_metadata)
     {
         auto full_path = elem.first;
-        auto storage_id = elem.second.first;
-        auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path); });
+        auto storage_id = elem.second.storage_id;
+        auto db_disk = elem.second.db_disk;
+        auto drop_as_detached = elem.second.drop_as_detached;
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk, drop_as_detached]()
+                                   { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, drop_as_detached); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1329,7 +1380,7 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(
-    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay)
+    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool drop_as_detached)
 {
     chassert(table_id.hasUUID());
     chassert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1377,8 +1428,10 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         {
             LOG_WARNING(log, "Cannot parse metadata of partially dropped table {} from {}. Will remove metadata file and data directory. Garbage may be left in /store directory and ZooKeeper.", table_id.getNameForLogs(), dropped_metadata_path);
         }
-
-        addUUIDMapping(table_id.uuid);
+        /// A table recovered after a restart has no live object in the catalog, but `dropTableFinally`
+        /// still requires a UUID mapping to finish cleanup. Keep a strong reservation until final removal.
+        if (!hasUUIDMapping(table_id.uuid))
+            static_cast<void>(reserveUUID(table_id.uuid).release());
         drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
     }
 
@@ -1388,17 +1441,19 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
+            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, drop_as_detached});
     }
     else
     {
         tables_marked_dropped.push_back(
-            {table_id,
-             table,
-             db_disk,
-             dropped_metadata_path,
-             drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
+            TableMarkedAsDropped{
+                table_id,
+                table,
+                db_disk,
+                dropped_metadata_path,
+                drop_time
+                    + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
+                drop_as_detached});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1460,6 +1515,19 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
         chassert(removed);
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
+    }
+
+    /// DROP DETACHED TABLE keeps the UUID mapping until final cleanup.
+    /// Restore cleanup-only mappings to Detached state so addUUIDMapping can attach the table back.
+    if (dropped_table.table_id.uuid != UUIDHelpers::Nil)
+    {
+        UUIDToStorageMapPart & uuid_map_part = uuid_map[getFirstLevelIdx(dropped_table.table_id.uuid)];
+        std::lock_guard lock{uuid_map_part.mutex};
+        auto it = uuid_map_part.map.find(dropped_table.table_id.uuid);
+        if (it != uuid_map_part.map.end() && (it->second.state == UUIDMappingState::Reserved))
+        {
+            it->second = UUIDMapping{UUIDMappingState::Detached, nullptr, nullptr};
+        }
     }
 
     LOG_INFO(log, "Attaching undropped table {} (metadata moved from {})",
@@ -1641,6 +1709,19 @@ void DatabaseCatalog::dropTableDataTask()
     rescheduleDropTableTask();
 }
 
+void DatabaseCatalog::removeDetachedTableInfo(const TableMarkedAsDropped & table) const
+{
+    auto database = tryGetDatabase(table.table_id.getDatabaseName());
+    if (!database)
+        return;
+
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
+    if (!database_ptr)
+        return;
+
+    database_ptr->removeDetachedTableInfo(table.table_id);
+}
+
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseCatalog::dropTableFinally");
@@ -1679,9 +1760,10 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         disk->removeRecursive(data_path);
     }
 
+    removeDetachedTableInfo(table);
+
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));
-
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
 }

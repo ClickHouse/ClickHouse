@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
+#include <mutex>
 #include <tuple>
 #include <utility>
 
@@ -2312,6 +2313,102 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
 
     tables_metadata_digest = new_digest;
     assertDigest(local_context);
+}
+
+void DatabaseReplicated::dropDetachedTable(
+    ContextPtr local_context,
+    const String & table_name,
+    bool sync,
+    const StoragePtr & detached_table,
+    const std::function<void()> & dependency_cleanup)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropDetachedTable");
+    waitDatabaseStarted();
+
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    auto drop_info = prepareDropDetachedTable(local_context, table_name);
+
+    /// Only update local digest if table is still in table_name_to_path (still counted in digest).
+    /// adjustDigestOnTableLostFromRestart already subtracted for tables lost during failed RESTART REPLICA.
+    /// detachTablePermanently already subtracted when table was properly detached.
+    bool digest_updated = false;
+    {
+        std::lock_guard lock{metadata_mutex};
+        const bool table_in_map =
+            [this, table_name]()
+            {
+                std::lock_guard table_lock{mutex};
+                return table_name_to_path.contains(table_name);
+            }();
+
+        UInt64 new_digest = tables_metadata_digest;
+        if (txn && txn->isInitialQuery())
+        {
+            String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+            Coordination::Stat metadata_stat;
+            if (txn->getZooKeeper()->exists(metadata_zk_path, &metadata_stat))
+            {
+                txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
+
+                if (table_in_map)
+                {
+                    new_digest -= getMetadataHash(table_name);
+                    digest_updated = true;
+                }
+                if (!is_recovering)
+                    txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+            }
+        }
+
+        commitDropDetachedTableMetadata(local_context, table_name, drop_info);
+
+        if (digest_updated)
+            tables_metadata_digest = new_digest;
+    }
+
+    finishDropDetachedTable(table_name, sync, detached_table, dependency_cleanup, drop_info);
+
+    if (digest_updated)
+    {
+        std::lock_guard lock{metadata_mutex};
+        assertDigest(local_context);
+    }
+}
+
+bool DatabaseReplicated::hasDetachedTableMetadataInZooKeeper(ContextPtr local_context, const String & table_name) const
+{
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    if (!txn || !txn->isInitialQuery())
+        return false;
+
+    String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+    return txn->getZooKeeper()->exists(metadata_zk_path);
+}
+
+bool DatabaseReplicated::dropDetachedTableMetadataIfExistsInZooKeeper(ContextPtr local_context, const String & table_name)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropDetachedTableMetadataIfExistsInZooKeeper");
+    waitDatabaseStarted();
+
+    auto txn = local_context->getZooKeeperMetadataTransaction();
+    if (!txn || !txn->isInitialQuery())
+        return false;
+
+    String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
+    Coordination::Stat metadata_stat;
+    if (!txn->getZooKeeper()->exists(metadata_zk_path, &metadata_stat))
+        return false;
+
+    {
+        std::lock_guard lock{metadata_mutex};
+        txn->addOp(zkutil::makeRemoveRequest(metadata_zk_path, metadata_stat.version));
+        if (!is_recovering)
+            txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(tables_metadata_digest), -1));
+    }
+
+    std::lock_guard lock{metadata_mutex};
+    assertDigest(local_context);
+    return true;
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,

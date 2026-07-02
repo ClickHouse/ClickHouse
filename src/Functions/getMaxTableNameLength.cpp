@@ -1,13 +1,13 @@
-#include <Functions/IFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
-#include <Core/Field.h>
 #include <Common/computeMaxTableNameLength.h>
 
 namespace DB
@@ -24,7 +24,9 @@ class FunctionGetMaxTableNameLengthForDatabase final : public IFunction
 {
 public:
     static constexpr auto name = "getMaxTableNameLengthForDatabase";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMaxTableNameLengthForDatabase>(context_); }
+
+    explicit FunctionGetMaxTableNameLengthForDatabase(ContextPtr) { }
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -76,23 +78,24 @@ private:
 
 REGISTER_FUNCTION(getMaxTableName)
 {
-    factory.registerFunction<FunctionGetMaxTableNameLengthForDatabase>(FunctionDocumentation{
-        .description=R"(Returns the maximum table name length in a specified database.)",
-        .syntax=R"(getMaxTableNameLengthForDatabase(database_name))",
-        .arguments={{"database_name", "The name of the specified database.", {"String"}}},
-        .returned_value={R"(Returns the length of the maximum table name, an Integer)"},
-        .examples{
-            {"typical",
-            "SELECT getMaxTableNameLengthForDatabase('default');",
-            R"(
+    factory.registerFunction(
+        "getMaxTableNameLengthForDatabase",
+        [](ContextPtr context) { return FunctionGetMaxTableNameLengthForDatabase::create(context); },
+        FunctionDocumentation{
+            .description = R"(Returns the maximum table name length in a specified database.)",
+            .syntax = R"(getMaxTableNameLengthForDatabase(database_name))",
+            .arguments = {{"database_name", "The name of the specified database.", {"String"}}},
+            .returned_value = {R"(Returns the length of the maximum table name, an Integer)"},
+            .examples{
+                {"typical",
+                 "SELECT getMaxTableNameLengthForDatabase('default');",
+                 R"(
             ┌─getMaxTableNameLengthForDatabase('default')─┐
             │                                         206 │
             └─────────────────────────────────────────────┘
-            )"
-        }},
-        .introduced_in = {25, 1},
-        .category = FunctionDocumentation::Category::Other
-    });
+            )"}},
+            .introduced_in = {25, 1},
+            .category = FunctionDocumentation::Category::Other});
 }
 
 }

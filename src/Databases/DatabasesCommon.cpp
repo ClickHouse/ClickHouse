@@ -432,6 +432,12 @@ bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextP
     return tables.contains(table_name);
 }
 
+bool DatabaseWithOwnTablesBase::isTableDetached(const String & table_name) const
+{
+    std::lock_guard lock(mutex);
+    return snapshot_detached_tables.contains(table_name);
+}
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
 {
     waitTableStarted(table_name);
@@ -558,6 +564,18 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         for (auto metric : getAttachedCountersForStorage(table))
             CurrentMetrics::add(metric);
     }
+}
+
+void DatabaseWithOwnTablesBase::dropTableFromSnapshotDetachedTables(const String & table_name, const UUID & uuid)
+{
+    LOG_DEBUG(log, "Remove table {} (uuid: {}) from snapshot detached tables", table_name, uuid);
+    std::lock_guard lock(mutex);
+
+    // Only remove if the UUID matches - this prevents removing a different table
+    // that happens to have the same name
+    auto it = snapshot_detached_tables.find(table_name);
+    if (it != snapshot_detached_tables.end() && it->second.uuid == uuid)
+        snapshot_detached_tables.erase(it);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

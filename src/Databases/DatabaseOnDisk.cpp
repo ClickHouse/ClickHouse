@@ -59,6 +59,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool allow_experimental_drop_detached_table;
 }
 
 namespace ErrorCodes
@@ -294,7 +295,7 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
     auto db_disk = getDisk();
     try
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(table_metadata_path);
         db_disk->removeFileIfExists(detached_permanently_flag);
     }
     catch (Exception & e)
@@ -302,6 +303,11 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
         e.addMessage("while trying to remove permanently detached flag. Table {}.{} may still be marked as permanently detached, and will not be reattached during server restart.", backQuote(getDatabaseName()), backQuote(table_name));
         throw;
     }
+}
+
+fs::path DatabaseOnDisk::getDetachedPermanentlyFlagPath(const String & table_metadata_path)
+{
+    return fs::path(table_metadata_path + detached_suffix);
 }
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -333,7 +339,7 @@ void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const Stri
 
     auto table = detachTable(query_context, table_name);
 
-    fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
+    const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(getObjectMetadataPath(table_name));
     try
     {
         auto db_disk = getDisk();
@@ -404,6 +410,14 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     db_disk->removeFileIfExists(table_metadata_path_drop);
 }
 
+boost::intrusive_ptr<ASTCreateQuery>
+DatabaseOnDisk::getCreateQueryFromDetachedMetadata(ContextPtr local_context, const String & table_metadata_path) const
+{
+    auto db_disk = getDisk();
+    auto ast = parseQueryFromMetadata(log, local_context, db_disk, table_metadata_path);
+    return boost::static_pointer_cast<ASTCreateQuery>(ast);
+}
+
 void DatabaseOnDisk::checkMetadataFilenameAvailability(const String & to_table_name) const
 {
     std::lock_guard lock(mutex);
@@ -416,7 +430,7 @@ void DatabaseOnDisk::checkMetadataFilenameAvailabilityUnlocked(const String & to
     const String table_metadata_path = getObjectMetadataPath(to_table_name);
     if (db_disk->existsFile(table_metadata_path))
     {
-        fs::path detached_permanently_flag(table_metadata_path + detached_suffix);
+        const fs::path detached_permanently_flag = getDetachedPermanentlyFlagPath(table_metadata_path);
 
         if (db_disk->existsFile(detached_permanently_flag))
             throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
@@ -881,6 +895,13 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
                             make_intrusive<ASTLiteral>(metadata_ptr->comment));
 
     return create_table_query;
+}
+
+void DatabaseOnDisk::removeDetachedTableInfo(const StorageID & table_id)
+{
+    dropTableFromSnapshotDetachedTables(table_id.table_name, table_id.uuid);
+    setDetachedTableNotInUseForce(table_id.uuid);
+    removeTableFromPermanentlyDetachedTables(table_id.uuid);
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr)

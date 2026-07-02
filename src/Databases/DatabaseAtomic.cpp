@@ -8,20 +8,21 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/IStoragePolicy.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <base/isSharedPtrUnique.h>
+#include <Common/AsyncLoader.h>
+#include <Common/CurrentThread.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
-#include <Common/AsyncLoader.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace fs = std::filesystem;
@@ -107,6 +108,13 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
+}
+
+boost::intrusive_ptr<ASTCreateQuery>
+DatabaseAtomic::getCreateQueryFromDetachedMetadataByName(ContextPtr local_context, const String & table_name) const
+{
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    return DatabaseOnDisk::getCreateQueryFromDetachedMetadata(local_context, table_metadata_path);
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -239,6 +247,127 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
+}
+
+void DatabaseAtomic::dropDetachedTable(
+    ContextPtr local_context,
+    const String & table_name,
+    const bool sync,
+    const StoragePtr & detached_table,
+    const std::function<void()> & dependency_cleanup)
+{
+    auto drop_info = prepareDropDetachedTable(local_context, table_name);
+    chassert(detached_table);
+    chassert(detached_table->getStorageID().getDatabaseName() == drop_info.storage_id.getDatabaseName());
+    chassert(detached_table->getStorageID().getTableName() == drop_info.storage_id.getTableName());
+    chassert(detached_table->getStorageID().uuid == drop_info.storage_id.uuid);
+    commitDropDetachedTableMetadata(local_context, table_name, drop_info);
+    finishDropDetachedTable(table_name, sync, detached_table, dependency_cleanup, drop_info);
+}
+
+DatabaseAtomic::DropDetachedTableInfo DatabaseAtomic::prepareDropDetachedTable(ContextPtr local_context, const String & table_name)
+{
+    waitDatabaseStarted();
+
+    auto db_disk = getDisk();
+    chassert(db_disk->existsFileOrDirectory(getObjectMetadataPath(table_name)));
+
+    const String table_metadata_path = getObjectMetadataPath(table_name);
+    auto create_query = getCreateQueryFromDetachedMetadata(local_context, table_metadata_path);
+    const StorageID storage_id{getDatabaseName(), table_name, create_query->uuid};
+
+    QueryStatusPtr query_status = local_context->getProcessListElementSafe();
+
+    auto reservation = DatabaseCatalog::instance().reserveUUID(create_query->uuid);
+
+    waitDetachedTableNotInUse(
+        create_query->uuid,
+        [&]()
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+        });
+
+    return DropDetachedTableInfo{
+        .table_metadata_path = table_metadata_path,
+        .table_metadata_path_drop = std::nullopt,
+        .storage_id = storage_id,
+        .uuid_reservation = std::move(reservation),
+    };
+}
+
+void DatabaseAtomic::finishDropDetachedTable(
+    const String & table_name,
+    const bool sync,
+    const StoragePtr & detached_table,
+    const std::function<void()> & dependency_cleanup,
+    DropDetachedTableInfo & drop_info)
+{
+    auto db_disk = getDisk();
+
+    chassert(drop_info.table_metadata_path_drop.has_value());
+    chassert(detached_table);
+    chassert(detached_table->getStorageID().getDatabaseName() == drop_info.storage_id.getDatabaseName());
+    chassert(detached_table->getStorageID().getTableName() == drop_info.storage_id.getTableName());
+    chassert(detached_table->getStorageID().uuid == drop_info.storage_id.uuid);
+    LOG_TRACE(log, "Table {} ready for remove.", table_name);
+
+    /// `detached_table` was reconstructed from detached metadata before the metadata move.
+    /// Passing it here keeps queue registration from reading the moved metadata file.
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(
+        drop_info.storage_id, detached_table, db_disk, *drop_info.table_metadata_path_drop, sync);
+
+    /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
+    /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
+    static_cast<void>(drop_info.uuid_reservation.release());
+
+    try
+    {
+        dependency_cleanup();
+
+        /// Metadata is already moved to `metadata_dropped`, so removing detached flag is safe.
+        /// If a crash happens before this removal, we can only get a stale orphan flag.
+        const auto detached_flag_path = getDetachedPermanentlyFlagPath(drop_info.table_metadata_path);
+        LOG_TRACE(log, "Deleting {} flag.", detached_flag_path);
+        db_disk->removeFileIfExists(detached_flag_path);
+
+        if (db_disk->existsFileOrDirectory(getPathSymlink(table_name)))
+        {
+            LOG_TRACE(log, "Remove symlink for {}", table_name);
+            tryRemoveSymlink(table_name);
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot finish cleanup after detached table was marked as dropped");
+    }
+}
+
+void DatabaseAtomic::commitDropDetachedTableMetadata(
+    ContextPtr local_context,
+    const String & table_name,
+    DropDetachedTableInfo & drop_info)
+{
+    auto db_disk = getDisk();
+
+    {
+        std::lock_guard lock(mutex);
+        drop_info.table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(drop_info.storage_id);
+
+        db_disk->createDirectories(fs::path(*drop_info.table_metadata_path_drop).parent_path());
+
+        auto txn = local_context->getZooKeeperMetadataTransaction();
+        if (txn && !local_context->isInternalSubquery())
+            txn->commit();
+
+        LOG_TRACE(log, "Rename metadata from {} to {} for removing.", drop_info.table_metadata_path, *drop_info.table_metadata_path_drop);
+        db_disk->replaceFile(drop_info.table_metadata_path, *drop_info.table_metadata_path_drop);
+
+        /// Metadata rename is the commit point for dropping a detached table.
+        /// Restart will continue cleanup from the file in `metadata_dropped`.
+        table_name_to_path.erase(table_name);
+        snapshot_detached_tables.erase(table_name);
+    }
 }
 
 void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -645,7 +774,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         if (!table->storesDataOnDisk())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
-        String link = path_to_table_symlinks / escapeForFileName(table_name);
+        String link = getPathSymlink(table_name);
 
         LOG_DEBUG(
             log,
@@ -669,6 +798,11 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
     }
 }
 
+String DatabaseAtomic::getPathSymlink(const String & table_name) const
+{
+    return path_to_table_symlinks / escapeForFileName(table_name);
+}
+
 void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 {
     auto db_disk = getDisk();
@@ -678,7 +812,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
     try
     {
-        String path = path_to_table_symlinks / escapeForFileName(table_name);
+        String path = getPathSymlink(table_name);
         db_disk->removeFileIfExists(path);
     }
     catch (...)

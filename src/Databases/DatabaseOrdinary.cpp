@@ -304,7 +304,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
 
                     std::lock_guard lock(mutex);
-                    permanently_detached_tables.push_back(table_name);
+                    permanently_detached_tables.push_back({create_query->uuid, table_name});
 
                     const auto detached_table_name = create_query->getTable();
 
@@ -788,6 +788,28 @@ void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_
         db_disk->removeFileIfExists(table_metadata_tmp_path);
         throw;
     }
+}
+
+Strings DatabaseOrdinary::getNamesOfPermanentlyDetachedTables() const
+{
+    std::lock_guard lock(mutex);
+    Strings result;
+    result.reserve(permanently_detached_tables.size());
+    for (const auto & info : permanently_detached_tables)
+        result.push_back(info.table_name);
+    return result;
+}
+
+void DatabaseOrdinary::removeTableFromPermanentlyDetachedTables(const UUID & uuid)
+{
+    LOG_DEBUG(log, "Remove table {} from permanently detached tables", uuid);
+    std::lock_guard lock(mutex);
+    permanently_detached_tables.erase(
+        std::remove_if(
+            permanently_detached_tables.begin(),
+            permanently_detached_tables.end(),
+            [&uuid](const auto & info) { return info.uuid == uuid; }),
+        permanently_detached_tables.end());
 }
 
 void registerDatabaseOrdinary(DatabaseFactory & factory);
