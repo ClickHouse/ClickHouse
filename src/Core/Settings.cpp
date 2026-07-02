@@ -269,21 +269,24 @@ Allow multiple threads to process non-joined rows from the right table in parall
 This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
-    DECLARE(UInt64, max_insert_threads, 0, R"(
+    DECLARE(MaxThreads, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
 Possible values:
 
-- 0 (or 1) — `INSERT SELECT` no parallel execution.
-- Positive integer. Bigger than 1.
+- 0 — Auto. Uses the number of CPU cores available to the server (the same auto value as [`max_threads`](#max_threads)), reduced under memory pressure by [`max_insert_threads_min_free_memory_per_thread`](#max_insert_threads_min_free_memory_per_thread).
+- 1 — `INSERT SELECT` is executed in a single thread (no parallel execution). Use this to preserve the insertion order of `INSERT ... SELECT`.
+- Positive integer bigger than 1 — Parallel execution with the specified number of threads.
+
+Before version 26.7 the default was `1` (no parallel execution). Since 26.7 the default (`0`) resolves to the number of CPU cores, so `INSERT SELECT` is parallelized by default. Set `max_insert_threads` to `1` (or use the `compatibility` setting) to restore the previous behavior.
+
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
+Higher values will lead to higher memory usage.
 
 Cloud default value:
 - `1` for nodes with 8 GiB memory
 - `2` for nodes with 16 GiB memory
 - `4` for larger nodes
-
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
 The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
