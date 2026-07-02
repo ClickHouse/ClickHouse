@@ -744,6 +744,19 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
     }
 
+    /// `renameDatabase` changes each table's `StorageID` via `renameInMemory` below without going
+    /// through any rename guard. Enforce a database-rename-specific guard here so storages whose
+    /// shared path is fixed at startup (e.g. `MergeTree` with `leader_election = 1`) are not
+    /// silently renamed by a database-level rename.
+    ///
+    /// Note: this must NOT reuse `checkTableCanBeRenamed`. That check encodes table-rename
+    /// semantics (UUID transitions, moving a table between databases) and would reject a
+    /// `ReplicatedMergeTree` with implicit macros / `KeeperMap` / `ObjectStorageQueue` carried by
+    /// the rename — including the final `RENAME DATABASE` of the Ordinary-to-Atomic startup
+    /// conversion, which a previous version of this code broke. See
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename`.
+    for (auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename();
 
     try
     {

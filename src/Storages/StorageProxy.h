@@ -97,6 +97,15 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
+    /// NOTE: `checkTableCanBeRenamed` / `checkTableCanBeRenamedByDatabaseRename` /
+    /// `dropSkipsDataDirectoryCleanup` are intentionally NOT overridden here on the generic
+    /// `StorageProxy`. Materializing the nested storage in these metadata-only hooks is only
+    /// wanted for `StorageTableProxy` (lazy on-disk tables, where the `leader_election` guard in
+    /// `StorageMergeTree` must run). For `StorageTableFunctionProxy` it would force loading the
+    /// nested table function on a plain `RENAME`/`DROP`, contacting the external source even
+    /// though those proxies store no data and need no such guard. The hooks live in
+    /// `StorageTableProxy` instead.
+
     void renameInMemory(const StorageID & new_table_id) override
     {
         getNested()->renameInMemory(new_table_id);

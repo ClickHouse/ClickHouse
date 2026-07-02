@@ -1,0 +1,513 @@
+#include <Storages/MergeTree/MergeTreeLeaderElection.h>
+
+#include <Core/ServerUUID.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
+
+#include <base/JSON.h>
+#include <base/getFQDNOrHostName.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event MergeTreeLeaderElectionAcquired;
+    extern const Event MergeTreeLeaderElectionLost;
+    extern const Event MergeTreeLeaderElectionLeaseRenewals;
+    extern const Event MergeTreeLeaderElectionLeaseTakeovers;
+    extern const Event MergeTreeLeaderElectionLeaseConflicts;
+    extern const Event MergeTreeLeaderElectionLeaseParseErrors;
+    extern const Event MergeTreeLeaderElectionUnknownVersionRejections;
+    extern const Event MergeTreeLeaderElectionHeartbeatErrors;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MergeTreeLeaderElectionLeader;
+    extern const Metric MergeTreeLeaderElectionFollower;
+}
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int S3_ERROR;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int TABLE_IS_READ_ONLY;
+}
+
+static constexpr size_t MAX_LEASE_FILE_SIZE = 4096;
+
+MergeTreeLeaderElection::MergeTreeLeaderElection(
+    const StorageID & storage_id_,
+    ObjectStoragePtr object_storage_,
+    String lease_path_,
+    ContextPtr context_,
+    UInt64 heartbeat_interval_ms_,
+    UInt64 session_timeout_ms_)
+    : storage_id(storage_id_)
+    , object_storage(std::move(object_storage_))
+    , lease_path(std::move(lease_path_))
+    , context(std::move(context_))
+    , heartbeat_interval_ms(heartbeat_interval_ms_)
+    , session_timeout_ms(session_timeout_ms_)
+    , leader_id(generateLeaderId())
+    , log(getLogger("MergeTreeLeaderElection"))
+{
+    /// Every participating table starts as a follower. `stop` always brings the
+    /// instance back to the follower state before the destructor decrements this
+    /// gauge, so the increment + decrement pair is balanced regardless of how
+    /// leadership transitions during the table's lifetime.
+    CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+}
+
+MergeTreeLeaderElection::~MergeTreeLeaderElection()
+{
+    stop();
+    CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
+}
+
+void MergeTreeLeaderElection::start()
+{
+    task = context->getSchedulePool().createTask(storage_id, "MergeTreeLeaderElection", [this] { run(); });
+    task->activateAndSchedule();
+}
+
+void MergeTreeLeaderElection::stop()
+{
+    stopped.store(true, std::memory_order_release);
+
+    if (task)
+        task->deactivate();
+
+    /// Hold the same lock that `run` uses while updating leadership state.
+    /// `task->deactivate` waits for the current scheduled execution to finish, but
+    /// the task may have been already running concurrently when `stop` was called,
+    /// so we serialize the final transition here to avoid a stale `on_leadership_change(true)`
+    /// being invoked after `stop` returns.
+    std::lock_guard lock(leadership_change_mutex);
+    /// Block user writes first, before clearing `is_leader`, so a concurrent
+    /// `INSERT` observing `is_leader == true` cannot also observe `writes_enabled == true`.
+    writes_enabled.store(false, std::memory_order_release);
+    bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+    if (was_leader)
+    {
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+        CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+        CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+        if (on_leadership_change)
+        {
+            /// Shield the callback so an exception cannot escape the destructor
+            /// (which calls `stop`) and trigger `std::terminate`.
+            try
+            {
+                on_leadership_change(false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Exception in leadership-loss callback during stop");
+            }
+        }
+    }
+}
+
+bool MergeTreeLeaderElection::isLeader() const
+{
+    if (!is_leader.load(std::memory_order_acquire))
+        return false;
+
+    /// Protect against stalled heartbeat thread: if the last successful renewal
+    /// was too long ago, we cannot be sure the lease is still valid.
+    /// We use 2x heartbeat interval as the threshold — this gives a comfortable margin
+    /// for scheduling jitter while being well within the session timeout.
+    ///
+    /// During an in-progress takeover-sync callback, the heartbeat task is busy executing
+    /// the callback itself (no other heartbeat can run until it returns), so the "stalled
+    /// thread" interpretation does not apply. Relax the threshold to `session_timeout_ms`
+    /// — the remote lease is valid for that long, so commits issued by the callback are
+    /// still backed by a legitimate lease. Beyond `session_timeout_ms`, another node may
+    /// have legitimately taken over and commits must fail.
+    auto elapsed = std::chrono::steady_clock::now() - last_renewal_time.load(std::memory_order_acquire);
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    UInt64 threshold_ms = in_takeover_sync.load(std::memory_order_acquire)
+        ? session_timeout_ms
+        : heartbeat_interval_ms * 2;
+    return static_cast<UInt64>(elapsed_ms) < threshold_ms;
+}
+
+MergeTreeLeaderElection::TakeoverSyncScope::TakeoverSyncScope(MergeTreeLeaderElection & election_)
+    : election(election_)
+{
+    election.in_takeover_sync.store(true, std::memory_order_release);
+}
+
+MergeTreeLeaderElection::TakeoverSyncScope::~TakeoverSyncScope()
+{
+    election.in_takeover_sync.store(false, std::memory_order_release);
+}
+
+void MergeTreeLeaderElection::assertIsLeader() const
+{
+    if (!isLeader())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode because this instance is not the leader");
+}
+
+bool MergeTreeLeaderElection::isLeaderAndWritable() const
+{
+    /// Order matters: `is_leader` is the cheaper, more frequently flipped check.
+    /// `writes_enabled` is only true if takeover sync has completed at least once
+    /// since the lease was acquired, so any `INSERT` reaching the second load is
+    /// safe to commit against the current part view.
+    return isLeader() && writes_enabled.load(std::memory_order_acquire);
+}
+
+void MergeTreeLeaderElection::assertIsLeaderAndWritable() const
+{
+    if (!isLeaderAndWritable())
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Table is in readonly mode because this instance is not the leader "
+            "or the post-failover sync is still in progress");
+}
+
+void MergeTreeLeaderElection::run()
+{
+    try
+    {
+        bool became_leader = false;
+        /// Whether the successful write (if any) was a renewal of an already-held lease
+        /// or a takeover of a missing/expired lease. Used to attribute the operation
+        /// to the right ProfileEvent counter.
+        bool was_renewal_attempt = false;
+
+        /// Try to read the existing lease file.
+        /// Disable filesystem cache for lease reads — the lease file is tiny and
+        /// must not go through CachedOnDiskReadBufferFromFile, which can cause
+        /// use-after-free during table shutdown when the cache is destroyed
+        /// before the background task fully stops.
+        auto read_settings = context->getReadSettings();
+        read_settings.enable_filesystem_cache = false;
+        auto result = object_storage->tryGetObjectMetadata(lease_path, /* with_tags= */ false);
+
+        if (!result)
+        {
+            /// Lease file does not exist. Try to create it.
+            LOG_TRACE(log, "Lease file does not exist at '{}', trying to create", lease_path);
+            became_leader = tryWriteLease(/* if_match= */ "", /* if_none_match= */ "*");
+        }
+        else
+        {
+            /// Lease file exists. Read its content and ETag.
+            auto data_with_metadata = object_storage->readSmallObjectAndGetObjectMetadata(
+                StoredObject(lease_path), read_settings, MAX_LEASE_FILE_SIZE);
+
+            String etag = data_with_metadata.metadata.etag;
+            auto parsed = parseLeaseContent(data_with_metadata.data);
+
+            time_t now = time(nullptr);
+            time_t session_timeout_seconds = static_cast<time_t>(session_timeout_ms / 1000);
+
+            /// The lease is stale if its timestamp is older than the session timeout, or
+            /// implausibly far in the future (leader clock skew — see the comments in the claim
+            /// branch). Computed up front so that an *expired* lease still carrying our own
+            /// `leader_id` (e.g. after a failed takeover sync cleared `is_leader`) reaches the
+            /// claim branch below instead of being trapped forever in the same-id "do not renew"
+            /// branch — which would otherwise leave a single-node deployment permanently read-only.
+            ///
+            /// Written as `parsed.timestamp < now - X` / `> now + X` (rather than
+            /// `now - parsed.timestamp > X`) to avoid signed overflow when a malformed lease parses
+            /// to an extreme timestamp; `now ± X` is safe because `now` is the current Unix time and
+            /// `X` is at most `leader_election_session_timeout`.
+            const bool lease_expired = parsed.timestamp < now - session_timeout_seconds
+                || parsed.timestamp > now + session_timeout_seconds;
+
+            if (parsed.status == LeaseParseStatus::UnknownVersion)
+            {
+                /// Fail closed for forward compatibility: a newer binary may write a lease
+                /// in a format we do not understand. Taking it over with our older format
+                /// would let an old node steal leadership from a healthy newer leader and
+                /// silently downgrade the on-disk lease format. Stay a follower until the
+                /// binary is upgraded.
+                LOG_WARNING(log, "Lease at '{}' has unknown payload version, refusing to take over (rolling-upgrade safety)", lease_path);
+                ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionUnknownVersionRejections);
+                became_leader = false;
+            }
+            else if (parsed.status == LeaseParseStatus::Ok && parsed.leader_id == leader_id && !lease_expired)
+            {
+                /// The remote lease still carries our `leader_id`. Only renew it while we are
+                /// actually serving as the local leader. If a previous takeover-sync callback
+                /// threw, the catch handler cleared `is_leader`/`writes_enabled` locally, yet the
+                /// remote lease kept our id. Renewing it here would let a node that cannot complete
+                /// takeover monopolize the lease: it would keep the lease alive (so healthy
+                /// followers never observe it expire) while never enabling writes itself, livelocking
+                /// failover. By not renewing, the lease ages out and another node — or this one, via
+                /// the expiry branch below on a later heartbeat — can claim it and retry takeover.
+                if (is_leader.load(std::memory_order_acquire))
+                {
+                    LOG_TRACE(log, "Renewing leader lease at '{}'", lease_path);
+                    was_renewal_attempt = true;
+                    became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
+                }
+                else
+                {
+                    LOG_WARNING(log,
+                        "Remote lease at '{}' still carries our leader id, but this node is not "
+                        "serving as leader (a previous takeover sync likely failed). Not renewing, "
+                        "so the lease can expire and another node can take over.",
+                        lease_path);
+                    became_leader = false;
+                }
+            }
+            else if (parsed.status == LeaseParseStatus::ParseError || lease_expired)
+            {
+                /// The lease has expired or its timestamp is far in the future (`lease_expired`,
+                /// see above), or the content was corrupted. This also covers an expired lease
+                /// that still carries our own `leader_id`, so this node can reclaim it after a
+                /// failed takeover. Try to claim leadership.
+                LOG_INFO(log, "Leader lease at '{}' expired, corrupted, or has future timestamp (leader_id: {}), trying to claim",
+                    lease_path, parsed.leader_id);
+                became_leader = tryWriteLease(/* if_match= */ etag, /* if_none_match= */ "");
+            }
+            else
+            {
+                /// Another leader holds a valid lease.
+                LOG_TRACE(log, "Another leader holds the lease at '{}' (leader_id: {}, age: {} s)",
+                    lease_path, parsed.leader_id, now - parsed.timestamp);
+                became_leader = false;
+            }
+        }
+
+        if (became_leader)
+        {
+            ProfileEvents::increment(was_renewal_attempt
+                ? ProfileEvents::MergeTreeLeaderElectionLeaseRenewals
+                : ProfileEvents::MergeTreeLeaderElectionLeaseTakeovers);
+        }
+
+        /// Serialize the leadership transition with `stop`. Without this lock, a heartbeat
+        /// task in flight when `stop` is called could re-acquire leadership and invoke
+        /// `on_leadership_change(true)` after `stop` has already relinquished it,
+        /// leaving background tasks running during shutdown.
+        std::lock_guard lock(leadership_change_mutex);
+
+        /// Re-check `stopped` while holding the lock — another thread may have called
+        /// `stop` between the slow lease I/O above and acquiring this mutex.
+        if (stopped.load(std::memory_order_acquire))
+            return;
+
+        /// If we are not (or no longer) the writable leader, disable writes *before* flipping
+        /// `is_leader` below. Otherwise a concurrent `INSERT` could load the old `is_leader == true`,
+        /// then this task flips `is_leader` to false, and the `INSERT` still loads the old
+        /// `writes_enabled == true` and passes `assertIsLeaderAndWritable`. Clearing `writes_enabled`
+        /// first (matching the ordering in `stop` and the catch handler) makes the loss path fail
+        /// closed at the entry gate.
+        if (!became_leader)
+            writes_enabled.store(false, std::memory_order_release);
+
+        bool was_leader = is_leader.exchange(became_leader, std::memory_order_acq_rel);
+
+        if (became_leader && !was_leader)
+        {
+            /// New leadership epoch. Incremented before publishing `is_leader`/`writes_enabled`
+            /// and before the takeover callback, so any write admitted under a previous lease
+            /// observes a different epoch at commit time and is rejected (see `leadershipEpoch`).
+            leadership_epoch.fetch_add(1, std::memory_order_acq_rel);
+
+            LOG_INFO(log, "Acquired leadership for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionAcquired);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionFollower);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            if (on_leadership_change)
+            {
+                /// Relax the `isLeader` freshness check while the takeover callback is
+                /// running. The callback (`loadNewlyAppearedParts` + counter advance)
+                /// commits parts via `Transaction::commit`, which goes through
+                /// `assertCanCommitTransaction` -> `assertIsLeader`. Without this scope,
+                /// any sync that exceeds `2 * heartbeat_interval` would self-fail and
+                /// drop leadership, livelocking failover with a non-trivial part backlog.
+                ///
+                /// `writes_enabled` is still false at this point, so user `INSERT`s
+                /// observing `is_leader == true` are still rejected by
+                /// `assertIsLeaderAndWritable`. Only after the callback returns —
+                /// when the part view reflects the previous leader's commits and the
+                /// block-number counter has been advanced past them — do we publish
+                /// the writable flag.
+                TakeoverSyncScope sync_scope(*this);
+                on_leadership_change(true);
+            }
+            writes_enabled.store(true, std::memory_order_release);
+        }
+        else if (!became_leader && was_leader)
+        {
+            /// `writes_enabled` was already cleared above, before `is_leader` was flipped to false.
+            LOG_INFO(log, "Lost leadership for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+            if (on_leadership_change)
+                on_leadership_change(false);
+        }
+    }
+    catch (...)
+    {
+        /// On any error, conservatively assume we are not the leader.
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionHeartbeatErrors);
+        std::lock_guard lock(leadership_change_mutex);
+        /// Block user writes first, before clearing `is_leader`, mirroring the
+        /// graceful loss path above. This matters if the exception was thrown by
+        /// the takeover-sync callback itself: at that point `is_leader` is true and
+        /// `writes_enabled` may have been set by a previous successful takeover,
+        /// so we must clear both.
+        writes_enabled.store(false, std::memory_order_release);
+        bool was_leader = is_leader.exchange(false, std::memory_order_acq_rel);
+        if (was_leader)
+        {
+            LOG_WARNING(log, "Lost leadership due to exception for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLost);
+            CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
+            CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
+            if (on_leadership_change)
+            {
+                /// Shield the callback so that an exception thrown from the
+                /// leadership-loss notification cannot escape `run` and skip the
+                /// `scheduleAfter` call below, which would permanently stop the
+                /// heartbeat task with no recovery path.
+                try
+                {
+                    on_leadership_change(false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Exception in leadership-loss callback");
+                }
+            }
+        }
+
+        tryLogCurrentException(log, "Error in leader election heartbeat");
+    }
+
+    if (!stopped.load(std::memory_order_acquire))
+        task->scheduleAfter(heartbeat_interval_ms);
+}
+
+bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const String & if_none_match)
+{
+    try
+    {
+        /// Anchor local lease freshness to the instant the persisted lease `timestamp` is sampled
+        /// (inside `buildLeaseContent`, before the write starts), NOT to the moment the write
+        /// finishes. Remote observers expire the lease based on that persisted timestamp, so if the
+        /// conditional write / `finalize` stalls, anchoring `last_renewal_time` to the end of the
+        /// write would let this node keep treating its lease as fresh after other nodes have already
+        /// considered the persisted lease expired — opening a dual-writer window. Capturing the
+        /// monotonic anchor here can only make us fail closed slightly sooner, which is the safe
+        /// direction.
+        const auto renewal_anchor = std::chrono::steady_clock::now();
+        String content = buildLeaseContent();
+
+        auto write_settings = context->getWriteSettings();
+        write_settings.object_storage_write_if_match = if_match;
+        write_settings.object_storage_write_if_none_match = if_none_match;
+        /// Disable filesystem cache for lease writes — the lease file is tiny and
+        /// rewritten frequently. Writing through CachedOnDiskWriteBufferFromFile
+        /// causes "Having intersection with already existing cache" errors.
+        write_settings.enable_filesystem_cache_on_write_operations = false;
+
+        auto buffer = object_storage->writeObject(
+            StoredObject(lease_path),
+            WriteMode::Rewrite,
+            /* attributes= */ std::nullopt,
+            DBMS_DEFAULT_BUFFER_SIZE,
+            write_settings);
+
+        buffer->write(content.data(), content.size());
+        buffer->finalize();
+
+        /// The next heartbeat will read the lease back together with its ETag
+        /// (single round-trip via `readSmallObjectAndGetObjectMetadata`), so an
+        /// extra `getObjectMetadata` call here would only add a chance for a
+        /// transient remote failure to surface as spurious leadership loss
+        /// without providing any value to subsequent renewals.
+        last_renewal_time.store(renewal_anchor, std::memory_order_release);
+
+        return true;
+    }
+    catch (const Exception & e)
+    {
+        if ((e.code() == ErrorCodes::S3_ERROR || e.code() == ErrorCodes::AZURE_BLOB_STORAGE_ERROR)
+            && (e.message().find("PreconditionFailed") != String::npos
+                || e.message().find("ConditionNotMet") != String::npos))
+        {
+            LOG_TRACE(log, "Conditional write failed (precondition not met) for lease at '{}'", lease_path);
+            ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseConflicts);
+            return false;
+        }
+        throw;
+    }
+}
+
+String MergeTreeLeaderElection::buildLeaseContent() const
+{
+    WriteBufferFromOwnString out;
+    writeString(R"({"version":1,"leader_id":")", out);
+    writeString(leader_id, out);
+    writeString(R"(","timestamp":)", out);
+    writeIntText(time(nullptr), out);
+    writeChar('}', out);
+    return out.str();
+}
+
+MergeTreeLeaderElection::ParsedLease MergeTreeLeaderElection::parseLeaseContent(const String & content)
+{
+    try
+    {
+        JSON json(content);
+
+        /// An unknown payload version is a forward-compatibility signal — a newer binary
+        /// may have written this lease. Distinguishing it from a parse error matters: a
+        /// parse error self-heals via lease takeover, but an unknown version must NOT,
+        /// otherwise an older node would silently downgrade the lease format mid-cluster.
+        Int64 version = json["version"].getInt();
+        if (version != 1)
+        {
+            LOG_WARNING(
+                getLogger("MergeTreeLeaderElection"),
+                "Lease file has unknown version {}; treating as held by a newer binary",
+                version);
+            ParsedLease unknown;
+            unknown.status = LeaseParseStatus::UnknownVersion;
+            return unknown;
+        }
+
+        ParsedLease result;
+        result.leader_id = json["leader_id"].getString();
+        result.timestamp = json["timestamp"].getInt();
+        result.status = LeaseParseStatus::Ok;
+        return result;
+    }
+    catch (...)
+    {
+        /// Corrupted lease file: caller will treat it as expired and overwrite it.
+        tryLogCurrentException("MergeTreeLeaderElection", "Failed to parse lease file content");
+        ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseParseErrors);
+        ParsedLease error;
+        error.status = LeaseParseStatus::ParseError;
+        return error;
+    }
+}
+
+String MergeTreeLeaderElection::generateLeaderId()
+{
+    return getFQDNOrHostName() + ":" + toString(ServerUUID::get());
+}
+
+}

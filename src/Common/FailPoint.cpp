@@ -62,6 +62,7 @@ static struct InitFiu
     ONCE(smt_lightweight_snapshot_table_path_session_expired) \
     ONCE(smt_lightweight_update_sleep_after_block_allocation) \
     ONCE(smt_merge_task_sleep_in_prepare) \
+    REGULAR(merge_tree_leader_election_stale_epoch_before_commit) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \

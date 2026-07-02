@@ -2261,6 +2261,33 @@ is enabled.
 
 The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
 )", 0) \
+    DECLARE(Bool, leader_election, false, R"(
+Enable leader election for non-replicated MergeTree tables on shared `S3` object storage.
+When enabled, the table uses conditional writes on the object storage to elect a single leader among
+multiple server instances sharing the same data. Only the leader can perform writes and merges (and
+mutations on disks that support hard links; note the recommended `plain_rewritable` layout does not, so
+`ALTER TABLE ... UPDATE`/`DELETE` is rejected even on the leader there).
+Follower instances act as read-only replicas. Requires every disk in the storage policy to be an `S3`
+object storage disk with shared metadata (`metadata_type = plain_rewritable` is recommended), so
+that after a failover the new leader sees the parts written by the previous leader. Tables on disks with
+the default per-replica `metadata_type = local` are rejected at creation.
+(`Azure` object storage is implemented but not yet test-covered, so it is rejected for now.)
+)", EXPERIMENTAL) \
+    DECLARE(Seconds, leader_election_heartbeat_interval, 10, R"(
+Interval in seconds between leader election heartbeats. The leader renews its lease at this interval,
+and followers check for an expired lease at this interval. Only takes effect when `leader_election` is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Seconds, leader_election_session_timeout, 30, R"(
+Session timeout in seconds for leader election. If the leader does not renew its lease within this period,
+a follower will assume that the leader is dead and try to claim leadership. Must be at least 3x
+`leader_election_heartbeat_interval`. Only takes effect when `leader_election` is enabled.
+Participating nodes must keep their clocks synchronized (e.g. via NTP) to well within
+`leader_election_heartbeat_interval`; the conditional-write protocol prevents two writers
+from extending the lease successively, but skew beyond approximately
+`session_timeout - 2 * heartbeat_interval` can briefly leave both the old and new
+leader believing they hold the lease (up to one `leader_election_heartbeat_interval`)
+until the old leader's next heartbeat fails the ETag check.
+)", EXPERIMENTAL) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
 Otherwise, they can be created by explicit [MATERIALIZE PROJECTION](/sql-reference/statements/alter/projection.md/#materialize-projection)
@@ -2640,6 +2667,35 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    if ((*this)[MergeTreeSetting::leader_election])
+    {
+        if ((*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_heartbeat_interval` must be a positive number of seconds, got {} s",
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
+        }
+
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() <= 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` must be a positive number of seconds, got {} s",
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds());
+        }
+
+        if ((*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds() < (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds() * 3)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of `leader_election_session_timeout` ({} s) must be at least 3x"
+                " the value of `leader_election_heartbeat_interval` ({} s)",
+                (*this)[MergeTreeSetting::leader_election_session_timeout].totalSeconds(),
+                (*this)[MergeTreeSetting::leader_election_heartbeat_interval].totalSeconds());
+        }
+    }
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2961,6 +3017,9 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "add_minmax_index_for_block_number_column"
         || name == "add_minmax_index_for_block_offset_column"
         || name == "table_disk"
+        || name == "leader_election"
+        || name == "leader_election_heartbeat_interval"
+        || name == "leader_election_session_timeout"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
     ;

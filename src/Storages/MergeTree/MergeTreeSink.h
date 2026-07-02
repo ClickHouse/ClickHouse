@@ -64,6 +64,11 @@ protected:
     UInt64 num_blocks_processed = 0;
     bool deduplicate = true;
     bool synchronously_commit_part_for_dependent_views = false;
+    /// Leadership epoch captured when the sink is created (right after the `INSERT` admission
+    /// gate in `StorageMergeTree::write`). Re-checked before publishing each part so that an
+    /// `INSERT` admitted under one `leader_election` lease cannot commit under another. 0 (and
+    /// unchecked) when `leader_election` is disabled.
+    const UInt64 commit_epoch;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
 

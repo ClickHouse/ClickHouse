@@ -27,6 +27,7 @@
 namespace DB
 {
 
+class MergeTreeLeaderElection;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
@@ -111,7 +112,44 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
+    /// Under `leader_election`, table data lives on shared object storage that is
+    /// not owned exclusively by this node. After this storage's own `drop()` skips
+    /// cleanup, `DatabaseCatalog::dropTableFinally` must also skip its per-disk
+    /// recursive removal — otherwise the second node to drop the table retries
+    /// forever against keys the first node already deleted.
+    bool dropSkipsDataDirectoryCleanup() const override;
+
+    /// `MergeTreeData::rename` moves the data directory on every disk in the storage policy.
+    /// Under `leader_election`, the data directory is shared between nodes and the lease
+    /// path is captured at startup — neither the followers' lease path nor their in-memory
+    /// `relative_data_path` would be updated, so we refuse the rename rather than diverge.
+    void rename(const String & new_table_path, const StorageID & new_table_id) override;
+
+    /// The rejection lives here, not only in `rename`, because the default `Atomic` database
+    /// reaches a rename through `checkTableCanBeRenamed` + `renameInMemory` and never calls
+    /// `StorageMergeTree::rename` (only the on-disk/`Ordinary` path does). Overriding this hook
+    /// makes the `leader_election` rejection cover both paths.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
+
+    /// `RENAME DATABASE` carries this table along via `renameInMemory` without ever calling
+    /// `checkTableCanBeRenamed` (and the generic check cannot be reused there — see
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename`). Reject the database-level rename too,
+    /// for the same reason as a table rename: the shared lease path is captured at startup and
+    /// there is no protocol to broadcast a new path to followers.
+    void checkTableCanBeRenamedByDatabaseRename() const override;
+
     void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+
+    /// Reject metadata-mutating ALTERs under `leader_election` before the generic
+    /// `MergeTreeData` checks (which can fail with confusing errors like
+    /// "cannot modify primary key type" on a follower that has no business
+    /// running the ALTER in the first place).
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    Pipe alterPartition(
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartitionCommands & commands,
+        ContextPtr query_context) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -186,7 +224,44 @@ private:
 
     const bool support_transaction;
 
-    void loadMutations();
+    std::unique_ptr<MergeTreeLeaderElection> leader_election_ptr;
+
+    /// Held while this instance is NOT the leader under `leader_election`. The cancellations
+    /// cause `MergeTreeDataMergerMutator::merges_blocker` and `MergeTreePartsMover::moves_blocker`
+    /// to report active — any in-flight merge or move task aborts at the next check, and no
+    /// new tasks can be scheduled. Released when leadership is acquired.
+    ActionLock follower_merges_cancellation;
+    ActionLock follower_moves_cancellation;
+
+    void assertCanCommitTransaction() const override;
+
+    /// The current leadership epoch (0 when `leader_election` is disabled). A write path captures
+    /// this at admission / block-number allocation and passes it back to `assertWritableLeaderAtEpoch`
+    /// before publishing the part.
+    UInt64 currentLeadershipEpoch() const;
+
+    /// Guard called by write paths immediately BEFORE the first irreversible rename that publishes
+    /// a part on (possibly shared) storage (`MergeTreeSink::commitPart`, the merge finalize). For a
+    /// non-`leader_election` table it is a no-op. Otherwise it requires that this node still holds a
+    /// fresh, writable lease AND is in the same leadership epoch as `admission_epoch`. Enforcing the
+    /// check before the rename (rather than only inside `commit`) prevents a node that lost — or lost
+    /// and reacquired — leadership from publishing a part prepared under a stale lease, which a new
+    /// leader could otherwise activate via `loadNewlyAppearedParts`.
+    void assertWritableLeaderAtEpoch(UInt64 admission_epoch) const;
+
+    /// Under `leader_election`, only the lease-holding leader may mutate shared object storage
+    /// (delete stale mutation/dedup files, rotate the deduplication log, repair/detach/remove
+    /// parts, persist removal TIDs). During construction and while a follower the lease is not
+    /// held, so these maintenance writes are deferred and re-run by the leadership-acquisition
+    /// callback as the single writer. Keyed on the persisted setting rather than
+    /// `leader_election_ptr` (which is null during construction) so the very first load is
+    /// read-only on a follower.
+    bool mayMutateSharedStorage() const override;
+
+    /// `reloading` is set on a `leader_election` leadership takeover, when mutation entries
+    /// created by the previous leader while this node was a follower must be picked up. Already
+    /// known entries are then skipped instead of triggering the "already exists" bug check.
+    void loadMutations(bool reloading = false);
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
@@ -307,6 +382,14 @@ private:
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
     void assertNotReadonly() const;
+
+    /// Whether destructive background cleanup (`clearOldParts*`, `clearOldMutations`, ...)
+    /// is currently allowed. When `leader_election` is off this is always true. When on,
+    /// the cleanup thread is started/stopped by the leadership callbacks, but a stalled
+    /// heartbeat can delay the loss callback past the freshness threshold while another
+    /// node legitimately takes over. `isLeader()` includes that freshness check, so the
+    /// cleanup iteration re-checks it to fail closed even when the stop callback is delayed.
+    bool canRunDestructiveCleanup() const;
 
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;

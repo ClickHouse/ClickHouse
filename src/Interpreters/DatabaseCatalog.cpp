@@ -16,6 +16,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TableNameHints.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/IStorage.h>
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -1337,6 +1339,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time = 0;
+    bool skip_disk_cleanup = false;
     if (table)
     {
         chassert(hasUUIDMapping(table_id.uuid));
@@ -1372,6 +1375,30 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }
+
+            /// Fail close: if the storage object could not be materialized but the
+            /// metadata declares `leader_election = 1`, the table's data lives on
+            /// shared object storage owned by another node. `removeRecursive` here
+            /// would delete data the live leader still owns. Skip per-disk cleanup
+            /// instead — leaking the metadata file is preferable to destroying
+            /// shared data on a transient load failure.
+            if (!table && create->storage && create->storage->settings)
+            {
+                if (const Field * value = create->storage->settings->changes.tryGet("leader_election"))
+                {
+                    try
+                    {
+                        skip_disk_cleanup = !value->isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), *value);
+                    }
+                    catch (...) /// Ok: fail close on any parse error
+                    {
+                        /// Treat an unparsable `leader_election` value as fail close: we
+                        /// cannot prove the table is local, so do not risk a destructive
+                        /// `removeRecursive` against shared object storage.
+                        skip_disk_cleanup = true;
+                    }
+                }
+            }
         }
         else
         {
@@ -1388,7 +1415,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time});
+            first_async_drop_in_queue,
+            TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, skip_disk_cleanup});
     }
     else
     {
@@ -1398,7 +1426,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
              db_disk,
              dropped_metadata_path,
              drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
+                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
+             skip_disk_cleanup});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1667,16 +1696,64 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         return is_disk_eligible;
     };
 
-    /// Even if table is not loaded, try remove its data from disks.
-    for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+    /// Storages whose data lives on shared object storage (for example, `MergeTree`
+    /// with `leader_election = 1`) manage cleanup externally. Their own `drop()` has
+    /// already skipped local cleanup; iterating disks here would have us retry the
+    /// `removeRecursive` against a prefix that the leader has already deleted, and
+    /// the per-table dropper retries indefinitely on every failure — hanging
+    /// `DROP TABLE ... SYNC` on every node except the one that actually owned the
+    /// data when it was dropped.
+    ///
+    /// If the storage object itself could not be materialized (`table.table` is
+    /// null because `createTableFromAST` failed during dropped-metadata recovery),
+    /// `enqueueDroppedTableCleanup` precomputes the same skip from the metadata
+    /// AST — see `TableMarkedAsDropped::skip_disk_cleanup`.
+    bool skip_disk_cleanup = table.skip_disk_cleanup
+        || (table.table && table.table->dropSkipsDataDirectoryCleanup());
+    if (skip_disk_cleanup)
     {
-        String data_path = getStoreDirPath(table.table_id.uuid);
-        auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
-            continue;
+        LOG_INFO(log,
+            "Skipping per-disk data cleanup of dropped table {}: storage manages its data externally",
+            table.table_id.getNameForLogs());
+    }
+    else
+    {
+        /// If the storage object could not be materialized (`table.table` is null after a failed
+        /// dropped-metadata recovery, e.g. the metadata file is unparsable), we cannot read its
+        /// settings to learn whether its data lives on shared object storage owned by another
+        /// node. Be conservative without broadening behavior for the common local case: still
+        /// clean up node-local disks (so an ordinary corrupted-metadata drop does not leak
+        /// `/store/<uuid>`), but skip disks whose metadata is shared across nodes
+        /// (`plain_rewritable` / `keeper` — the backends `leader_election` requires), where
+        /// `removeRecursive` could destroy data a live leader still owns. Leaking on a shared
+        /// disk is preferable to deleting shared data on a transient/permanent load failure.
+        const bool data_ownership_unknown = !table.table;
 
-        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
-        disk->removeRecursive(data_path);
+        /// Even if table is not loaded, try remove its data from disks.
+        for (const auto & [disk_name, disk] : getContext()->getDisksMap())
+        {
+            String data_path = getStoreDirPath(table.table_id.uuid);
+            auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
+            if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+                continue;
+
+            if (data_ownership_unknown)
+            {
+                auto metadata_type = disk->getDataSourceDescription().metadata_type;
+                if (metadata_type == MetadataStorageType::PlainRewritable || metadata_type == MetadataStorageType::Keeper)
+                {
+                    LOG_WARNING(log,
+                        "Not removing data directory {} of dropped table {} from disk {}: the table could not be "
+                        "loaded and the disk uses shared metadata, so its data may belong to another node. Skipping "
+                        "to avoid destroying shared data; the directory may need manual cleanup.",
+                        data_path, table.table_id.getNameForLogs(), disk_name);
+                    continue;
+                }
+            }
+
+            LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
+            disk->removeRecursive(data_path);
+        }
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());

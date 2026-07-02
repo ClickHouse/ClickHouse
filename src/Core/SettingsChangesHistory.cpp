@@ -1275,6 +1275,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"leader_election", false, false, "New setting to enable leader election for non-replicated MergeTree tables on shared object storage"},
+            {"leader_election_heartbeat_interval", 10, 10, "New setting to control leader lease renewal interval"},
+            {"leader_election_session_timeout", 30, 30, "New setting to control leader lease expiry threshold"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

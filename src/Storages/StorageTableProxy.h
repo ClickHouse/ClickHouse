@@ -99,6 +99,12 @@ public:
             return;
         }
 
+        StoragePtr nested_storage;
+        /// Only *materializing* the nested storage is allowed to fail closed. A failure of the
+        /// nested `drop()` itself must propagate: otherwise a failed drop is reported as success,
+        /// and `dropSkipsDataDirectoryCleanup` then tells `DatabaseCatalog::dropTableFinally` to
+        /// skip per-disk cleanup and finalize the catalog drop, leaving half-dropped / leaked
+        /// shared-storage state.
         try
         {
             LOG_TRACE(log, "Loading table for drop without startup");
@@ -106,19 +112,38 @@ public:
             if (!get_nested)
             {
                 LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+                drop_load_failed = true;
                 return;
             }
 
-            auto nested_storage = get_nested();
-            nested_storage->drop();
-            get_nested = {};
+            nested_storage = get_nested();
         }
         catch (...)
         {
             LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Data cleanup will be handled by the database engine.",
+                             "Per-disk cleanup will be skipped to avoid destructive fallback "
+                             "on shared object storage.",
                         getCurrentExceptionMessage(false));
+            /// We could not determine the underlying storage. Fail closed:
+            /// the catalog must not run per-disk recursive cleanup, since the
+            /// nested storage may be a `MergeTree` with `leader_election = 1`
+            /// whose data lives on shared object storage and is owned by
+            /// another node. Leaking local data on the unreachable engine is
+            /// the lesser harm.
+            drop_load_failed = true;
+            return;
         }
+
+        /// Outside the catch: a real drop failure here propagates rather than being converted into
+        /// a finalized catalog drop.
+        nested_storage->drop();
+        get_nested = {};
+        /// Keep the dropped storage around so `dropSkipsDataDirectoryCleanup`
+        /// can delegate to it: `DatabaseCatalog::dropTableFinally` queries it
+        /// right after `drop()` returns to decide whether to skip per-disk
+        /// cleanup. Without this, an unloaded `MergeTree` with
+        /// `leader_election = 1` would fall back to the unsafe default.
+        nested = std::move(nested_storage);
     }
 
     void read(
@@ -162,6 +187,35 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    /// Must materialize the nested storage: the default `Atomic` database renames a table
+    /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
+    /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`
+    /// rejection in `StorageMergeTree::checkTableCanBeRenamed`) for lazily loaded on-disk tables.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        getNested()->checkTableCanBeRenamed(new_name);
+    }
+
+    /// Same reasoning as `checkTableCanBeRenamed`: materialize the nested storage so a
+    /// `RENAME DATABASE` cannot bypass the nested-storage guard (the `leader_election`
+    /// rejection) for a lazily loaded on-disk table.
+    void checkTableCanBeRenamedByDatabaseRename() const override
+    {
+        getNested()->checkTableCanBeRenamedByDatabaseRename();
+    }
+
+    bool dropSkipsDataDirectoryCleanup() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->dropSkipsDataDirectoryCleanup();
+        /// `drop()` set this when it could not materialize the nested storage.
+        /// Skip per-disk cleanup so we never run a destructive `removeRecursive`
+        /// against a path that may be on shared object storage owned by a
+        /// `leader_election = 1` peer (see `drop()` for details).
+        return drop_load_failed;
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};
@@ -195,9 +249,10 @@ public:
     }
 
 private:
-    mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
+    mutable std::recursive_mutex nested_mutex; /// Guards `get_nested`, `nested`, and `drop_load_failed`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    bool drop_load_failed = false; /// `drop()` could not load the lazy table; force fail-closed cleanup decision.
     LoggerPtr log;
 };
 

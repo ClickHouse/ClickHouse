@@ -313,6 +313,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
+    extern const MergeTreeSettingsBool leader_election;
+    extern const MergeTreeSettingsSeconds leader_election_heartbeat_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -2044,7 +2046,10 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
 
     /// Explicitly set remove_tid for parts w/o transaction (i.e. w/o txn_version.txt)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
-    if (!current_version_info.isRemoved())
+    /// Under `leader_election`, persisting the removal TID writes to the covered part's version
+    /// metadata on shared object storage; only the lease-holding leader may do that. A follower
+    /// sets `remove_time` in memory above but leaves the on-disk removal TID to the leader.
+    if (!current_version_info.isRemoved() && part->storage.mayMutateSharedStorage())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
         part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
@@ -2553,7 +2558,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             }
             else if (res.part->is_duplicate)
             {
-                if (!is_static_storage)
+                /// Under `leader_election`, only the lease-holding leader may remove parts from
+                /// shared object storage; a follower loads its view read-only (mayMutateSharedStorage).
+                if (!is_static_storage && mayMutateSharedStorage())
                 {
                     LOG_ERROR(log, "Removing duplicate part {}", res.part->getDataPartStorage().getFullPath());
                     res.part->remove();
@@ -2608,7 +2615,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         LOG_WARNING(log, "Found suspicious broken unexpected parts {} with total rows count {}", suspicious_broken_unexpected_parts, suspicious_broken_unexpected_parts_bytes);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
-    if (!is_static_storage)
+    /// Under `leader_election`, detaching a broken part renames it on shared object storage,
+    /// which only the lease-holding leader may do; a follower loads its view read-only.
+    if (!is_static_storage && mayMutateSharedStorage())
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
@@ -2687,7 +2696,16 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     data_parts_loading_finished = true;
 
     auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
-    if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
+
+    /// Under `leader_election`, followers must periodically scan shared object storage so that
+    /// `SELECT` sees parts the current leader has committed since this replica started up.
+    /// Use the heartbeat cadence as the default refresh interval — staleness on followers is then
+    /// bounded by the same cadence the leader uses to renew its lease.
+    bool leader_election_follower_refresh = (*settings)[MergeTreeSetting::leader_election];
+    if (leader_election_follower_refresh && refresh_parts_interval == 0)
+        refresh_parts_interval = (*settings)[MergeTreeSetting::leader_election_heartbeat_interval].totalMilliseconds();
+
+    if ((all_disks_are_readonly || leader_election_follower_refresh) && refresh_parts_interval && !refresh_parts_task)
     {
         refresh_parts_task = getContext()->getSchedulePool().createTask(
             getStorageID(), "MergeTreeData::refreshDataParts",
@@ -2697,7 +2715,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 refreshDataParts(refresh_parts_interval);
             });
 
-        refresh_parts_task->scheduleAfter(refresh_parts_interval);
+        /// For `leader_election` tables we leave scheduling to the leadership-change callback in
+        /// `StorageMergeTree::startup`: the task runs only while we are a follower.
+        if (!leader_election_follower_refresh)
+            refresh_parts_task->scheduleAfter(refresh_parts_interval);
     }
 }
 
@@ -2718,53 +2739,23 @@ void MergeTreeData::startStatisticsCache()
     }
 }
 
-void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
-try
+size_t MergeTreeData::loadNewlyAppearedParts(bool strict_takeover)
 {
-    refreshDataPartsOnce(interval_milliseconds);
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh parts");
-    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
-    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
-    /// reschedule that refreshStatistics performs in its own catch block.
-    refresh_parts_task->scheduleAfter(interval_milliseconds);
-}
-
-/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
-/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
-/// parts already marked outdated). Shared by the background refresh task (which reschedules
-/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
-/// callers are serialized so they cannot load the same new part concurrently.
-void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
-{
-    std::lock_guard refresh_lock(refresh_parts_mutex);
-
-    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
-    });
-
-    for (auto & disk : getStoragePolicy()->getDisks())
-        disk->refresh(interval_milliseconds);
-
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto settings = getSettings();
-
     auto disks = getStoragePolicy()->getDisks();
+
+    /// The caller is responsible for refreshing the disk metadata cache before this call
+    /// if it needs the freshest view. The periodic refresh path (`refreshDataParts`) does
+    /// this in a rate-limited way; the leader-election takeover path forces a refresh.
+
     PartLoadingTree::PartLoadingInfos parts_to_load;
 
     for (const auto & disk_ptr : disks)
     {
         if (disk_ptr->isBroken())
             continue;
-        if (!disk_ptr->isReadOnly())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataPartsOnce should only be called if all disks are readonly");
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
@@ -2807,6 +2798,11 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
         if (res.is_broken)
         {
+            if (strict_takeover)
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Data part {} on shared storage is broken and cannot be loaded during leadership "
+                    "takeover; refusing to enable writes with an incomplete active set",
+                    res.part->name);
             LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
         }
         else
@@ -2815,7 +2811,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);
                 preparePartForCommit(res.part, transaction, part_lock, false, false);
-                transaction.commit(part_lock);
+                transaction.commit(part_lock, /* is_refresh = */ true);
             }
 
             bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
@@ -2825,9 +2821,18 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         }
     }
 
-    has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
-    has_lightweight_delete_parts = have_lightweight_in_parts;
-    transactions_enabled = have_parts_with_version_metadata;
+    /// Only flip capability flags from `false` to `true`: these flags reflect properties of
+    /// the entire active part set, but `parts_to_add` only contains newly appearing parts.
+    /// On a `leader_election` takeover with no new parts to add, an unconditional assignment
+    /// would clobber flags that existing active parts still require (e.g. resetting
+    /// `has_non_adaptive_index_granularity_parts` would let `canUseAdaptiveGranularity` flip
+    /// back to true and start writing adaptive parts on top of legacy non-adaptive ones).
+    if (have_non_adaptive_parts)
+        has_non_adaptive_index_granularity_parts = true;
+    if (have_lightweight_in_parts)
+        has_lightweight_delete_parts.store(true);
+    if (have_parts_with_version_metadata)
+        transactions_enabled.store(true);
 
     auto old_parts = grabOldParts(true);
 
@@ -2837,6 +2842,62 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
+
+    return parts_to_add.size();
+}
+
+/// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
+/// last scan (it does not detect parts that vanished from disk; `grabOldParts` only cleans up
+/// parts already marked outdated). Shared by the background refresh task (which reschedules
+/// itself afterwards) and by `SYSTEM RESTART DISK` (an explicit, one-shot refresh). The two
+/// callers are serialized so they cannot load the same new part concurrently.
+void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
+{
+    std::lock_guard refresh_lock(refresh_parts_mutex);
+
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
+    });
+
+    for (auto & disk : getStoragePolicy()->getDisks())
+        disk->refresh(interval_milliseconds);
+
+    loadNewlyAppearedParts();
+}
+
+void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+try
+{
+    /// The periodic refresh task is scheduled either when every disk is read-only, or when
+    /// `leader_election` is enabled and this replica is a follower. In both cases the
+    /// replica must not write to shared storage. Verify the invariant before re-scanning.
+    /// `SYSTEM RESTART DISK` performs its own readonly check before calling
+    /// `refreshDataPartsOnce`, so the assertion lives in the callers rather than the shared
+    /// `refreshDataPartsOnce` (a `leader_election` follower legitimately has writable disks).
+    bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    if (!is_leader_election)
+    {
+        for (const auto & disk_ptr : getStoragePolicy()->getDisks())
+        {
+            if (disk_ptr->isBroken())
+                continue;
+            if (!disk_ptr->isReadOnly())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::refreshDataParts should only be called if all disks are readonly or `leader_election` is enabled");
+        }
+    }
+
+    refreshDataPartsOnce(interval_milliseconds);
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Failed to refresh parts");
+    /// Re-schedule on the failure path as well: a transient object-storage error must
+    /// degrade to a delayed retry, not permanently disable follower visibility under
+    /// `leader_election`. The leadership transition callback deactivates the task if
+    /// this replica becomes the leader before the next tick.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
@@ -2924,7 +2985,9 @@ try
             loadUnexpectedDataPart(load_state);
 
             chassert(load_state.part);
-            if (load_state.is_broken)
+            /// Under `leader_election`, detaching renames on shared object storage; only the
+            /// lease-holding leader may do it. A follower leaves the broken part in place.
+            if (load_state.is_broken && mayMutateSharedStorage())
                 load_state.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
         }, Priority{});
     }
@@ -3015,13 +3078,24 @@ try
                 loading_parts_max_backoff_ms, loading_parts_max_tries);
 
             ++num_loaded_parts;
+            /// Under `leader_election`, detaching/removing parts mutates shared object storage,
+            /// which only the lease-holding leader may do. A follower loads the parts read-only
+            /// and leaves broken/duplicate parts in place (mayMutateSharedStorage). The normal
+            /// `preparePartForRemoval` path is itself read-only on a follower — it sets the
+            /// in-memory remove time but skips persisting the removal TID (see the function).
             if (res.is_broken)
             {
-                forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
-                res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                if (mayMutateSharedStorage())
+                {
+                    forcefullyRemoveBrokenOutdatedPartFromZooKeeperBeforeDetaching(res.part->name);
+                    res.part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
+                }
             }
             else if (res.part->is_duplicate)
-                res.part->remove();
+            {
+                if (mayMutateSharedStorage())
+                    res.part->remove();
+            }
             else
                 preparePartForRemoval(res.part);
         }, Priority{});
@@ -8962,14 +9036,21 @@ void MergeTreeData::Transaction::renameParts()
     precommitted_parts_need_rename.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(bool is_refresh)
 {
     auto lock = data.lockParts();
-    return commit(lock);
+    return commit(lock, is_refresh);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, bool is_refresh)
 {
+    /// Refresh-path commits (`loadNewlyAppearedParts`) only add parts that already exist on
+    /// shared storage to the local in-memory index; they do not produce new data. Followers
+    /// under `leader_election` must be able to run this path to keep their part view fresh,
+    /// so the leadership assertion is skipped in that case.
+    if (!is_refresh)
+        data.assertCanCommitTransaction();
+
     DataPartsVector total_covered_parts;
 
     if (!isEmpty())

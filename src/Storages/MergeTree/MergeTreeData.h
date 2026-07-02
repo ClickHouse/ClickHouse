@@ -363,8 +363,12 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit();
-        DataPartsVector commit(DataPartsLock & lock);
+        /// `is_refresh` skips `assertCanCommitTransaction`. Used by `loadNewlyAppearedParts`
+        /// to add parts discovered on shared storage into the in-memory part set on follower
+        /// replicas under `leader_election`, where the leadership assertion would otherwise
+        /// reject the commit even though no new data is being produced.
+        DataPartsVector commit(bool is_refresh = false);
+        DataPartsVector commit(DataPartsLock & lock, bool is_refresh = false);
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO
@@ -659,6 +663,15 @@ public:
     /// The same as above but does not hold vector of data parts.
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
+    /// Whether this node may currently write to the (possibly shared) storage that backs the
+    /// parts — repairing `checksums.txt`/`columns.txt`, removing duplicate parts, detaching
+    /// broken parts, and persisting removal TIDs during loading and refresh. A standalone table
+    /// owns its data outright and always may. `StorageMergeTree` with `leader_election` overrides
+    /// this to allow such writes only while the lease is held, so that a follower (or a node that
+    /// has not yet acquired the lease) loads and refreshes its part view strictly read-only and
+    /// never mutates shared object-storage metadata owned by the current leader.
+    virtual bool mayMutateSharedStorage() const { return true; }
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -668,6 +681,21 @@ public:
     /// `refreshDataPartsOnce` performs a single refresh and is also used by `SYSTEM RESTART DISK`.
     void refreshDataParts(UInt64 interval_milliseconds);
     void refreshDataPartsOnce(UInt64 interval_milliseconds);
+
+    /// Scan shared storage for new parts and add them to the in-memory set.
+    /// Unlike `refreshDataParts`, does not reschedule a periodic task and does not require
+    /// all disks to be read-only. Used by `leader_election` to sync a new leader's view
+    /// of parts written by the previous leader before resuming writes.
+    /// The caller is responsible for invalidating the disk metadata cache via
+    /// `disk->refresh(...)` before this call when it needs the freshest view.
+    /// Returns the number of newly loaded parts.
+    ///
+    /// When `strict_takeover` is true (a `leader_election` leadership acquisition), a part that
+    /// cannot be loaded aborts the call with an exception instead of being skipped, so the new
+    /// leader never enables writes with an incomplete active set or advances the block-number
+    /// counter past a part it failed to load. The periodic follower refresh leaves it false and
+    /// stays best-effort.
+    size_t loadNewlyAppearedParts(bool strict_takeover = false);
 
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
@@ -1470,6 +1498,10 @@ protected:
     friend class MutationsState; // for access to log
 
     bool require_part_metadata;
+
+    /// Called from Transaction::commit to verify the instance is allowed to commit changes.
+    /// Overridden in StorageMergeTree to check leader election status.
+    virtual void assertCanCommitTransaction() const {}
 
     /// Relative path data, changes during rename for ordinary databases use
     /// under lockForShare if rename is possible.

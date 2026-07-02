@@ -37,24 +37,54 @@ Float32 MergeTreeCleanupThread::iterate()
 
     auto storage_settings = storage.getSettings();
 
+    /// Under `leader_election`, every operation below is destructive against shared object
+    /// storage and must only run while we hold a fresh lease. The cleanup thread is started
+    /// and stopped by the leadership callbacks, but a stalled heartbeat can delay the
+    /// leadership-loss callback (which calls `cleanup_thread.stop()`) past the freshness
+    /// threshold while another node legitimately takes over. Re-check leadership here so a
+    /// stale leader fails closed even when its stop callback is delayed.
+    if (!storage.canRunDestructiveCleanup())
+        return 0.0f;
+
     auto shared_lock
         = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
+    /// Re-check leadership again immediately before each destructive group: a single iteration can
+    /// be slow (object-storage listings/deletes), so the lease can age out mid-iteration while the
+    /// heartbeat — and thus the leadership-loss callback that stops this thread — is delayed. The
+    /// check is placed before `compareAndRestartDeferred` so a stale leader does not reset the
+    /// interval timer while skipping the work.
+    if (storage.canRunDestructiveCleanup())
     {
-        /// Both use relative_data_path which changes during rename, so we do it under share lock
-        cleaned_part_like += storage.clearOldTemporaryDirectories(
-            (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
+        if (auto lock = time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+                static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_temporary_directories_interval_seconds])))
+        {
+            /// Both use relative_data_path which changes during rename, so we do it under share lock
+            cleaned_part_like += storage.clearOldTemporaryDirectories(
+                (*storage.getSettings())[MergeTreeSetting::temporary_directories_lifetime].totalSeconds());
+        }
     }
 
-    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
+    if (storage.canRunDestructiveCleanup())
     {
-        cleaned_parts += storage.clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */ true);
-        cleaned_other += storage.clearOldMutations();
-        cleaned_part_like += storage.clearEmptyParts();
-        cleaned_part_like += storage.clearUnusedPatchParts();
-        cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+        if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
+                static_cast<double>((*storage_settings)[MergeTreeSetting::merge_tree_clear_old_parts_interval_seconds])))
+        {
+            /// Each helper below lists and deletes on the shared object storage and can run long on
+            /// its own — in particular `clearOldPartsFromFilesystem` has an internal pause point
+            /// (`storage_merge_tree_background_clear_old_parts_pause`). Re-check lease freshness
+            /// before each one so that if an earlier helper consumes most of
+            /// `leader_election_session_timeout` and another node legitimately takes over, the
+            /// remaining destructive helpers fail closed instead of running as a stale leader.
+            cleaned_parts += storage.clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */ true);
+            if (storage.canRunDestructiveCleanup())
+                cleaned_other += storage.clearOldMutations();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.clearEmptyParts();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.clearUnusedPatchParts();
+            if (storage.canRunDestructiveCleanup())
+                cleaned_part_like += storage.unloadPrimaryKeysAndClearCachesOfOutdatedParts();
+        }
     }
 
     constexpr Float32 parts_number_amplification = 1.3f; /// Assuming we merge 4-5 parts each time

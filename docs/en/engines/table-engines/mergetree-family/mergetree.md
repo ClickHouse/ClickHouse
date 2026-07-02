@@ -1208,6 +1208,85 @@ When using `use_environment_credentials` for S3 authentication, the environment 
 
 It is possible to set up non-replicated MergeTree tables with a one-writer, many-readers scenario on shared storage. This is provided by the automatic refresh of the parts list, which can be set up on readers. Note that this requires shared filesystem metadata across replicas (or `table_disk = true` with a table-local disk). See [refresh_parts_interval and table_disk](/operations/storing-data.md/#refresh-parts-interval-and-table-disk).
 
+### Leader election for non-replicated MergeTree on shared object storage {#leader-election-on-shared-storage}
+
+<ExperimentalBadge/>
+
+Multiple ClickHouse instances sharing a single non-replicated `MergeTree` table on object storage can elect a single leader using the [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) setting. Only the leader accepts inserts, merges, mutations (where the disk's metadata layout supports them), and partition operations (`DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, `OPTIMIZE`); metadata-changing `ALTER TABLE` is rejected on all nodes (see the supported/unsupported lists below). The other instances act as read-only followers and will take over automatically when the current leader becomes unavailable. `DROP TABLE` on a follower is permitted as a local-metadata-only operation (see "Behavior on the leader vs. on followers" below). This enables active/standby failover without requiring `ClickHouse Keeper`.
+
+Coordination is implemented using conditional writes (`If-Match` / `If-None-Match`) on a small lease file in the object storage bucket. No external coordination service is needed.
+
+Requirements and constraints:
+
+- Supported backend: `S3` (which exposes the conditional writes the lease protocol needs). `Azure` is implemented but not yet covered by tests, so it is currently rejected at table creation; it will be enabled once an Azure failover test is in place.
+- Shared metadata: every disk in the storage policy must use `metadata_type = plain_rewritable` (recommended) or `metadata_type = keeper`. These are the only metadata layouts where the directory of parts is visible to every participating instance, so the next leader after a failover sees all parts written by the previous leader. The default `metadata_type = local` is rejected at table creation because each replica's part list would otherwise be invisible to its peers.
+- Shared storage: every participating instance must read and write the same bucket and prefix.
+- Clock synchronization: keep node clocks well within `leader_election_heartbeat_interval` of each other (for example, via `NTP`). The conditional-write protocol prevents two writers from extending the lease successively, but skew beyond approximately `session_timeout - 2 * heartbeat_interval` can leave both the old and new leader believing they hold the lease for up to one heartbeat interval, until the old leader's next heartbeat fails the ETag check.
+
+Behavior on the leader vs. on followers:
+
+- Leader: inserts, `INSERT`-driven merges, `DETACH`/`ATTACH`/`MOVE`/`REPLACE PARTITION`, and `OPTIMIZE` all run normally; background merges, moves, and cleanup are active. Mutations (`ALTER TABLE ... UPDATE` / `DELETE`) are accepted on the leader **only on disks whose metadata layout provides the hard-link semantics that mutations require**. The recommended `plain_rewritable` layout does **not** support mutations — `MergeTreeData::checkMutationIsPossible` rejects disks without hard links — so a mutation fails even on the leader (see [s3_plain_rewritable](/operations/storing-data.md#s3-plain-rewritable-storage)). When leadership is acquired, the leader refreshes its in-memory view of parts from shared storage (loading any parts the previous leader committed) and advances the local block-number counter past anything the previous leader wrote.
+- Follower: writes and DDL fail with `TABLE_IS_READ_ONLY`. `SELECT` is allowed. Background write tasks are stopped, and any in-flight merges or moves on a node that just lost leadership are actively cancelled to bound the dual-writer window.
+- `DROP TABLE` (on the leader or a follower): always removes only local metadata and intentionally leaves the shared object-storage data intact. A node cannot prove it still holds the lease at the moment it executes `DROP`, so it never deletes the shared data to avoid destroying data owned by another leader. Removing the shared data is an explicit out-of-band operation (for example, deleting the bucket prefix once no instance uses the table).
+
+Unsupported operations under `leader_election`:
+
+- `ALTER TABLE` — schema, indices, projections, statistics, TTLs, and settings live in each replica's local metadata and are not replicated across nodes. Applying an `ALTER` on the leader would leave followers with stale metadata, so after failover the new leader would interpret shared parts with the wrong schema. `ALTER` is rejected on all nodes. To change schema or settings, recreate the table on every node. The exceptions are `COMMENT TABLE` and `COMMENT COLUMN`, which are pure-text and have no effect on data interpretation.
+- `RENAME TABLE` — rejected on all `leader_election` tables. The lease path is fixed at startup and there is no protocol to broadcast a new name to the followers, so even under the default `Atomic` database (where the rename would otherwise be a metadata-only operation, because the data path is `UUID`-stable) the followers would keep tracking the old path. Drop and recreate the table to rename it.
+- `ReplicatedMergeTree` — the `leader_election` setting is only honoured by `MergeTree`. Setting it on `ReplicatedMergeTree` is rejected at create/attach because that engine already uses ZooKeeper for active/standby coordination.
+
+Example: enabling leader election on an S3-backed table.
+
+All participating instances must point at the same storage prefix. Under the `Atomic` database the prefix is derived from the table `UUID`, so every instance must use the **same** `UUID`. Create the table once with an explicit `UUID` on the first instance:
+
+```sql
+CREATE TABLE t UUID '00000000-0000-0000-0000-000000000001'
+(
+    id UInt64,
+    value String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    storage_policy = 's3_policy',
+    leader_election = 1,
+    leader_election_heartbeat_interval = 10,
+    leader_election_session_timeout = 30;
+```
+
+On every other instance, `ATTACH` the table with the same `UUID` (and the same `storage_policy`) so they share the bucket prefix and lease file:
+
+```sql
+ATTACH TABLE t UUID '00000000-0000-0000-0000-000000000001'
+(
+    id UInt64,
+    value String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS
+    storage_policy = 's3_policy',
+    leader_election = 1,
+    leader_election_heartbeat_interval = 10,
+    leader_election_session_timeout = 30;
+```
+
+If each instance instead runs a plain `CREATE TABLE` without a shared `UUID`, every instance gets a different prefix and they will neither share data nor contend for the same lease — each instance just becomes the leader of its own independent table (its own lease file), which is almost certainly not what you want.
+
+With the shared-`UUID` setup shown above, all instances point at the same prefix and contend for the same lease file. After startup, exactly one of them becomes the leader and accepts writes; the others become read-only and watch the lease.
+
+Related settings:
+
+- [`leader_election`](/operations/settings/merge-tree-settings.md/#leader_election) — enable leader election for this table.
+- [`leader_election_heartbeat_interval`](/operations/settings/merge-tree-settings.md/#leader_election_heartbeat_interval) — how often the leader renews its lease.
+- [`leader_election_session_timeout`](/operations/settings/merge-tree-settings.md/#leader_election_session_timeout) — when followers consider the lease expired and try to take over. Must be at least `3 * leader_election_heartbeat_interval`.
+
+These settings are immutable after table creation: `ALTER TABLE ... MODIFY SETTING leader_election = ...` is rejected.
+
+:::note
+The `leader_election` setting is experimental and is intended for shared object-storage deployments only. For multi-writer replication with full conflict resolution, use `ReplicatedMergeTree`.
+:::
+
 :::note cache configuration
 ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
 :::
