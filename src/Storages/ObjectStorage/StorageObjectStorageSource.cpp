@@ -644,7 +644,13 @@ Chunk StorageObjectStorageSource::generate()
 
             return chunk;
         }
-        else if (format_filter_info->condition_hash)
+        /// Do not write the query condition cache for a bucketed read: `getMatchedBuckets`
+        /// reports only this bucket's matching row groups while `total_groups` is the whole
+        /// file, so the row groups owned by other buckets (which this reader never examined)
+        /// would be stored as unmatched under the whole-object key `(uuid, file, condition_hash)`
+        /// and poison later non-bucketed reads. This mirrors the count-cache guard below and the
+        /// cache-read guard in `createReader`.
+        else if (format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info)
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = object_info->getIdentifier(/*include_file_bucket_info=*/ false);
@@ -703,8 +709,12 @@ Chunk StorageObjectStorageSource::generate()
             }
         }
 
+        /// Do not write the count cache for a bucketed read: `total_rows_in_file` then holds
+        /// only this bucket's rows, and the cache key ignores the bucket id, so the partial
+        /// count would be stored as the whole-object total and poison later count queries.
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag
+            && !reader.getObjectInfo()->file_bucket_info)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -838,7 +848,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     object_info->getFileFormat().value_or(configuration->format));
                 if (file_bucket_info)
                 {
-                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                    /// Pass the total row-group count (equal to the number of cached marks) so the
+                    /// cache-derived bucket fails close via `checkFileMatchesBucketAssignment` if the
+                    /// object is overwritten with a different number of row groups, matching the
+                    /// splitter and cluster-task read paths.
+                    auto filtered = file_bucket_info->filterByMatchingRowGroups(matching_row_groups, total_row_groups);
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
@@ -882,9 +896,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
+    /// The count cache stores the object's total row count, keyed by path (the bucket id is
+    /// not part of the key). When this reader was assigned only a subset of the object's row
+    /// groups (file_bucket_info is set, e.g. for cluster table functions), the cache is
+    /// inapplicable: reading it would report the whole-object total for a single bucket and
+    /// over-count, so it must be skipped — mirroring `StorageFileSource`.
     std::optional<size_t> num_rows_from_cache
         = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
-        ? try_get_num_rows_from_cache() : std::nullopt;
+            && !object_info->file_bucket_info
+        ? try_get_num_rows_from_cache()
+        : std::nullopt;
 
     if (num_rows_from_cache)
     {

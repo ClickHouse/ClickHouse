@@ -42,6 +42,10 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
+#if USE_PARQUET
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
+#endif
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -115,6 +119,7 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_file;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -142,6 +147,7 @@ namespace ErrorCodes
     extern const int CANNOT_DETECT_FORMAT;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_CHANGED_WHILE_READING;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -149,6 +155,29 @@ using String = std::string;
 
 namespace
 {
+
+/// A version token for a local file, used both as the format metadata cache key (e.g.
+/// the Parquet footer cache) and to detect in-place rewrites. `st_mtime` alone is
+/// second-resolution, so an in-place rewrite within the same second that keeps the file
+/// size unchanged would otherwise look identical; including sub-second mtime, inode and
+/// size makes such a rewrite observable.
+String makeFileCacheVersion(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+    return fmt::format(
+        "{}.{:09}_{}_{}",
+        static_cast<Int64>(mtim_sec),
+        static_cast<Int64>(mtim_nsec),
+        static_cast<Int64>(file_stat.st_ino),
+        file_stat.st_size);
+}
+
 /// Bound on the recursion depth of `listFilesWithRegexpMatchingImpl`.
 constexpr size_t MAX_LIST_FILES_RECURSION_DEPTH = 1000;
 
@@ -1645,6 +1674,15 @@ Chunk StorageFileSource::generate()
                         }
                     }
                 }
+                else if (fixed_file_path.has_value())
+                {
+                    /// This source was assigned to one specific (file, bucket) pair.
+                    /// Consume it exactly once.
+                    if (fixed_file_consumed)
+                        return {};
+                    fixed_file_consumed = true;
+                    current_path = *fixed_file_path;
+                }
                 else
                 {
                     current_path = files_iterator->next();
@@ -1669,26 +1707,34 @@ Chunk StorageFileSource::generate()
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
 
                 /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
+                current_file_cache_version = makeFileCacheVersion(file_stat);
+
+                /// Fail-close for the single-file parallel split. The bucket (row-group)
+                /// assignment in `file_bucket_info` was computed at planning time from a
+                /// footer read of a specific file version (`expected_file_cache_version`).
+                /// `File` storage takes no lock spanning the split decision and these
+                /// per-bucket source reads, so a concurrent in-place rewrite (e.g. an
+                /// `INSERT ... engine_file_truncate_on_insert = 1` on the same table) could
+                /// leave us applying stale row-group indices to a different file — at best
+                /// an out-of-range error, at worst silently wrong results. If the file
+                /// version observed here differs from the one the split was computed on,
+                /// refuse to read rather than return inconsistent data.
+                if (file_bucket_info && expected_file_cache_version.has_value()
+                    && *expected_file_cache_version != *current_file_cache_version)
+                    throw Exception(
+                        ErrorCodes::FILE_CHANGED_WHILE_READING,
+                        "File {} was modified concurrently while a parallel single-file read was in progress "
+                        "(version changed from {} to {})",
+                        current_path, *expected_file_cache_version, *current_file_cache_version);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
 
-                if (need_only_count && tryGetCountFromCache(file_stat))
+                /// The count cache stores the file's total row count. When this source
+                /// only reads a subset of the file (file_bucket_info is set), the cache
+                /// is inapplicable — using it would have every source report the full
+                /// total and produce a count that's multiplied by the number of buckets.
+                if (need_only_count && !file_bucket_info && tryGetCountFromCache(file_stat))
                     continue;
 
                 if (is_one_format)
@@ -1715,8 +1761,15 @@ Chunk StorageFileSource::generate()
             /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
             /// the cache even when the new file has the same length and is written
             /// within the same wall-clock second.
+            ///
+            /// Gated on `use_parquet_metadata_cache`: when it is disabled we leave the
+            /// metadata empty so `getInputWithMetadata` is not used, the plain input
+            /// creator is taken instead, and `ParquetV3BlockInputFormat` receives a null
+            /// cache — neither reading from nor populating `ParquetMetadataCache`. This
+            /// matches `StorageObjectStorageSource`.
             std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
+            if (getContext()->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
                 && current_file_cache_version.has_value())
             {
@@ -1764,6 +1817,12 @@ Chunk StorageFileSource::generate()
             }
 
             input_format->setSerializationHints(serialization_hints);
+
+            /// If this source was assigned to read only a subset of the file's buckets
+            /// (used to read one large file with multiple parallel sources), pass the
+            /// bucket assignment to the format before it starts reading.
+            if (file_bucket_info)
+                input_format->setBucketsToRead(file_bucket_info);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1833,7 +1892,8 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter())
+            && !file_bucket_info)
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2046,10 +2106,125 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
 
+    auto ctx = getContext();
+
+    /// If we are reading exactly one local file in a splittable format (e.g. Parquet),
+    /// we can split it into multiple buckets (row group ranges) and create one source
+    /// per bucket. This recovers the parallelism we'd otherwise have only when reading
+    /// many files at once. Without this, a single big Parquet file feeds the whole
+    /// downstream pipeline through a single source/Resize(1->N) — leaving most of the
+    /// CPU idle on machines with many cores.
+    ///
+    /// We use the file list from `files_iterator` rather than `storage->paths`: the
+    /// iterator has already pruned files by `_path`/`_file` virtual-column predicates
+    /// (`createPathAndFileFilterDAG`), so the optimization respects that pruning. If
+    /// the predicate excludes the only path the file is not read at all. It also
+    /// means a query against many paths whose predicate prunes down to a single file
+    /// still benefits from the split.
+    ///
+    /// The split is also gated on `parallelize_output_from_storages`: if the user has
+    /// explicitly disabled output parallelism, we must not create multiple sources
+    /// for a single file either — the setting's contract is to allow / disallow
+    /// parallel reads of `file/url/s3/etc`, and the per-bucket sources are exactly
+    /// that. `need_only_count` queries are also excluded: they only consult the
+    /// file's metadata, so splitting them across N sources just multiplies the
+    /// metadata-parse cost N-fold without any read-side benefit.
+    std::vector<FileBucketInfoPtr> per_source_buckets;
+    String single_file_path;
+    String decision_file_version;
+    if (max_num_streams > 1
+        && !need_only_count
+        && ctx->getSettingsRef()[Setting::parallelize_output_from_storages]
+        && !storage->archive_info
+        && !storage->use_table_fd
+        && !storage->has_peekable_read_buffer_from_fd.load()
+        && !storage->distributed_processing
+        && FormatFactory::instance().checkFormatHasSplitter(storage->format_name)
+        && FormatFactory::instance().checkParallelizeOutputAfterReading(storage->format_name, ctx)
+        && files_iterator->getFiles().size() == 1)
+    {
+        single_file_path = files_iterator->getFiles().front();
+
+        /// Only split when the file is read uncompressed. The split relies on the format's
+        /// native, seekable reader (e.g. the Parquet prefetcher reading individual row
+        /// groups); an externally-compressed file is instead wrapped in a
+        /// `CompressedReadBufferWrapper`, which cannot seek and would force every per-bucket
+        /// source to decompress the whole file from the start — turning one full-file read
+        /// into `N + 1` of them plus a large memory regression. Gate on the *resolved*
+        /// compression method, not on the raw `compression_method` hint: with the default
+        /// `auto`, the method is derived from the file extension, so `data.parquet.gz` /
+        /// `data.parquet.zst` resolve to an external codec even though the hint is `auto`.
+        const bool is_uncompressed
+            = chooseCompressionMethod(single_file_path, storage->compression_method) == CompressionMethod::None;
+
+        struct stat file_stat = getFileStat(single_file_path, false, -1, storage->getName());
+        if (file_stat.st_size > 0 && is_uncompressed)
+        {
+            /// File version observed at split-decision time. Threaded into each per-bucket
+            /// source so it can fail-close if the file is rewritten before it reads (see
+            /// `StorageFileSource::expected_file_cache_version`).
+            decision_file_version = makeFileCacheVersion(file_stat);
+            std::vector<FileBucketInfoPtr> buckets;
+
+#if USE_PARQUET
+            if (boost::iequals(storage->format_name, "Parquet"))
+            {
+                /// Use the same `(file_path, etag)` key `StorageFileSource` uses when it later
+                /// fetches metadata via `ParquetMetadataCache`, so the per-bucket sources hit the
+                /// cache and don't re-parse the footer. The etag is `decision_file_version`
+                /// (sub-second mtime + inode + size) for in-place-rewrite safety.
+                const String & cache_etag = decision_file_version;
+
+                /// Honor `use_parquet_metadata_cache`: when it is disabled we must neither
+                /// make the split decision from a previously cached footer nor populate the
+                /// cache from this path. Passing a null cache makes both
+                /// `trySplitParquetFileFromCacheOnly` (returns empty) and
+                /// `splitParquetFileWithCache` (parses without caching) honor the setting,
+                /// matching `StorageObjectStorageSource`.
+                auto metadata_cache = ctx->getSettingsRef()[Setting::use_parquet_metadata_cache]
+                    ? ctx->tryGetParquetMetadataCache()
+                    : nullptr;
+
+                /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
+                /// when the footer is already cached from a previous query against this file. The
+                /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
+                /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
+                buckets = trySplitParquetFileFromCacheOnly(
+                    max_num_streams, single_file_path, cache_etag, metadata_cache);
+                if (buckets.empty())
+                {
+                    auto buf = createReadBuffer(
+                        single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                    const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                    buckets = splitParquetFileWithCache(
+                        max_num_streams,
+                        single_file_path,
+                        cache_etag,
+                        *buf,
+                        format_settings,
+                        metadata_cache);
+                }
+            }
+            else
+#endif
+            {
+                auto buf = createReadBuffer(
+                    single_file_path, file_stat, false, -1, storage->compression_method, ctx);
+                const auto & format_settings = storage->format_settings.value_or(getFormatSettings(ctx));
+                auto splitter = FormatFactory::instance().getSplitter(storage->format_name);
+                buckets = splitter->splitToBucketsByCount(max_num_streams, *buf, format_settings);
+            }
+
+            if (buckets.size() >= 2)
+            {
+                per_source_buckets = std::move(buckets);
+                num_streams = per_source_buckets.size();
+            }
+        }
+    }
+
     Pipes pipes;
     pipes.reserve(num_streams);
-
-    auto ctx = getContext();
 
     /// Set total number of bytes to process. For progress bar.
     auto progress_callback = ctx->getFileProgressCallback();
@@ -2081,13 +2256,20 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             parser_shared_resources,
             format_filter_info);
 
+        if (i < per_source_buckets.size())
+        {
+            source->fixed_file_path = single_file_path;
+            source->file_bucket_info = per_source_buckets[i];
+            source->expected_file_cache_version = decision_file_version;
+        }
+
         pipes.emplace_back(std::move(source));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports != max_num_streams)
         pipe.resize(max_num_streams);
 
     if (pipe.empty())

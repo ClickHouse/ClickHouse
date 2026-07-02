@@ -50,11 +50,20 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    virtual void serialize(WriteBuffer & buffer) = 0;
-    virtual void deserialize(ReadBuffer & buffer) = 0;
+    /// `protocol_version` is the negotiated cluster-processing protocol version (see
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`). Implementations must gate any field added in a
+    /// newer version on it so the payload stays decodable across mixed-version clusters.
+    virtual void serialize(WriteBuffer & buffer, size_t protocol_version) = 0;
+    virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    /// Returns a new bucket that keeps only `matching_row_groups`. `file_num_row_groups` is the total
+    /// number of row groups in the file as known by the caller (0 = unknown). When it is non-zero the
+    /// returned bucket carries it, so the read path keeps the fail-close
+    /// `checkFileMatchesBucketAssignment` guard against a concurrent overwrite; when it is zero the
+    /// bucket keeps whatever total this prototype already had.
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -66,6 +75,11 @@ struct IBucketSplitter
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
     virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    /// Splits a file into approximately `target_count` buckets, each covering a roughly
+    /// equal slice of the file. Useful for parallelising one large file across N readers.
+    /// The result has at most `target_count` buckets and never drops any data.
+    virtual std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
     virtual ~IBucketSplitter() = default;
 };

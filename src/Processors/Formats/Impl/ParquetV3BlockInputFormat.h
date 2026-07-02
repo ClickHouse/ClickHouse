@@ -16,16 +16,26 @@ struct ParquetFileBucketInfo : public FileBucketInfo
 {
     std::vector<size_t> row_group_ids;
 
+    /// Total number of row groups the file had when the bucket assignment was computed (from the
+    /// footer read at planning time). Carried so the read path can verify the file still has the
+    /// same number of row groups and fail close if it diverged - e.g. an object overwritten
+    /// between the split decision and the per-bucket read on the object-storage path, which -
+    /// unlike the local `StorageFile` path - has no file-version guard. A value of 0 means
+    /// "unknown" (e.g. a bucket deserialized from a node that predates this field) and disables
+    /// the check.
+    size_t file_num_row_groups = 0;
+
     ParquetFileBucketInfo() = default;
-    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_, size_t file_num_row_groups_ = 0);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
         return "Parquet";
     }
-    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
+        const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const override;
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
@@ -33,7 +43,33 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
+
+/// Cache-aware single-file split. Parses the Parquet footer via `Parquet::Reader::readFileMetaData`
+/// (the same path the input format uses) and stores the result in the `ParquetMetadataCache` under
+/// the `(file_path, cache_etag)` key, so the per-bucket sources created by the caller hit the cache
+/// instead of re-parsing the footer. If `metadata_cache` is null or the key components are empty,
+/// metadata is parsed without caching.
+std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    ReadBuffer & buf,
+    const FormatSettings & format_settings,
+    ParquetMetadataCachePtr metadata_cache);
+
+/// Warm-cache fast path for the single-file split decision. Returns the bucket layout without any
+/// I/O when `(file_path, cache_etag)` is already present in `metadata_cache`, and an empty vector
+/// otherwise (so the caller can fall through to the full `splitParquetFileWithCache` path that
+/// opens the file). The point is to avoid `createReadBuffer` + `Prefetcher::init` overhead on
+/// repeated queries against the same file — those are ~0.3 ms of fixed cost that visibly slows
+/// "short" queries (e.g. `clickbench_parquet_short`).
+std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
+    size_t target_count,
+    const String & file_path,
+    const String & cache_etag,
+    const ParquetMetadataCachePtr & metadata_cache);
 
 class ParquetV3BlockInputFormat final : public IInputFormat
 {

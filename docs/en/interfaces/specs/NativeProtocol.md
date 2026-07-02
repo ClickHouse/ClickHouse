@@ -143,7 +143,7 @@ When a feature is active, its fields **must** be present on the wire. The protoc
 | JWT_IN_INTERSERVER              | 54476   | ClientInfo             | Adds a JWT-presence UInt8 + optional `String jwt` at the tail of ClientInfo. External clients (no JWT) send byte `0x00`. (Spelled `DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER` in C++ — note the typo in the constant name.) |
 | QUERY_PLAN_SERIALIZATION        | 54477   | ServerHello, QueryPlan packet | ServerHello appends `VarUInt query_plan_serialization_version` after server settings. Also introduces `ClientPacket::QueryPlan` (code `13`) for inter-server delivery of pre-built query plans — external clients never send. |
 | PARALLEL_BLOCK_MARSHALLING      | 54478   | Block (Column)         | Server may wrap columns in `ColumnBLOB` (compressed inline) for parallel processing. Gated on the query having compression enabled AND `rows > 1`; otherwise the regular column wire format applies. Clients that never enable compression on outgoing Query packets see no wire change. |
-| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Used for `*Cluster` table functions (`s3Cluster`, etc.). Current value: `8` (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index` to the inter-server cluster read-task payload (the `ReadTaskResponse` body, which stays unspecified here — see below). External clients decode and ignore. |
+| VERSIONED_CLUSTER_FUNCTION_PROTOCOL | 54479 | ServerHello           | Adds `VarUInt cluster_function_protocol_version` at the tail of ServerHello. Negotiates the separate cluster-function task protocol version (`DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION`, current value `9`) used for `*Cluster` table functions (`s3Cluster`, etc.); see [ReadTaskResponse](#readtaskresponse). External clients decode and ignore. |
 | OUT_OF_ORDER_BUCKETS_IN_AGGREGATION | 54480 | BlockInfo              | Adds field 3 (`out_of_order_buckets: Vec<Int32>`) to BlockInfo's field-tagged stream. Decoded as `[VarUInt count][Int32]*count`. External clients don't emit this themselves; the decoder reads any non-empty list the server sends. |
 | COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS | 54481 | Log, ProfileEvents, TableColumns | Server may wrap [`Log`](#log), [`ProfileEvents`](#profileevents), and [`TableColumns`](#tablecolumns) packet bodies in the [compression frame](/interfaces/specs/NativeFormat#compression-frame). At this version all three bodies travel through the same optionally-compressed output path, which becomes a real compression frame only when the query has `compression = true`. Clients that never enable compression on outgoing Query packets see no wire change. |
 | REPLICATED_SERIALIZATION        | 54482   | Block (Column)         | Server may emit columns with kind_stack `0x04 = REPLICATED` — a dictionary-style compact form for repeated values — see [kind_stack and sparse encoding](/interfaces/specs/NativeFormat#kind-stack-and-sparse-encoding). Below this version the writer expanded such columns before sending. Decoded via index lookup (`elements[indexes[i]]` per row); leaf types plus `Nullable`/`Array`/`Tuple`/`Map`/`Nested`/`LowCardinality` inners supported. |
@@ -454,7 +454,7 @@ Server → Client. The reply to ClientHello on successful authentication.
 | 11 | nonce            | UInt64  | inter-server | INTERSERVER_SECRET_V2 (v54462) | 8-byte LE random nonce. The server's inter-server query-signing scheme uses it. External clients MUST decode it (to keep the stream aligned) and SHOULD ignore the value. |
 | 12 | server_settings  | Setting[] | universal | SERVER_SETTINGS (v54474)        | Server's non-default settings broadcast. Format: zero or more `(String key, VarUInt flags, String value)` triples, terminated by an empty key. Same as the [Query packet's settings list](#setting). |
 | 13 | query_plan_serialization_version | VarUInt | universal | QUERY_PLAN_SERIALIZATION (v54477) | Server's supported query-plan serialization version. External clients decode and ignore. |
-| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `8`. The value gates additive fields in the inter-server cluster read-task payload (the otherwise-unspecified `ReadTaskResponse` body); version `7` is reserved for a private-repository feature (Iceberg compaction), and `8` adds an optional `read_source_index`. External clients do not participate in cluster reads — they decode and ignore this field. |
+| 14 | cluster_function_protocol_version | VarUInt | universal | VERSIONED_CLUSTER_FUNCTION_PROTOCOL (v54479) | Server's `*Cluster` table-function protocol version. Current: `9`. The value gates additive fields in the inter-server cluster read-task payload (the otherwise-unspecified `ReadTaskResponse` body); version `7` is reserved for a private-repository feature (Iceberg compaction), `8` adds an optional `read_source_index`, and `9` adds `ParquetFileBucketInfo::file_num_row_groups`. See the [ReadTaskResponse version table](#readtaskresponse) for the full list. External clients do not participate in cluster reads — they decode and ignore this field. |
 
 **Rule** — an element of `password_complexity_rules`:
 
@@ -764,6 +764,48 @@ Server → Client, gated by `TIMEZONE_UPDATES` (v54464). Sent in exactly one pla
 
 The packet arrives once, immediately after the input-schema block and before the client starts sending row blocks. A decoder that ignores `TimezoneUpdate` MUST still consume the trailing `String` to keep the wire aligned.
 
+### ReadTaskResponse (packet type 9) {#readtaskresponse}
+
+Used by the `*Cluster` table functions (`s3Cluster`, `fileCluster`, `urlCluster`, `icebergCluster`, etc.) to hand out work. The initiator drives a pull-based loop over an inter-server connection: it sends `ReadTaskRequest` (server → client, packet type 13, no body) and the worker replies with `ReadTaskResponse` (client → server, packet type 9) describing the next object — or part of an object — to read. An empty `path` signals that no more work is available.
+
+The `ReadTaskResponse` body is versioned by its own scheme, **separate from the TCP protocol revision**: a monotonic `VarUInt` carried in the first field, named `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION` in the C++ source. Both peers learn each other's maximum via the `cluster_function_protocol_version` field of [ServerHello](#serverhello) (gated by `VERSIONED_CLUSTER_FUNCTION_PROTOCOL`, v54479), and the initiator serializes the body at `min(local_max, peer_max)` so a newer node never emits a field an older node cannot decode. The receiver rejects a version outside `[1, current_max]` with an `UNKNOWN_PROTOCOL` exception.
+
+| Version | Constant suffix                  | Adds |
+|---------|----------------------------------|------|
+| 1       | (initial)                        | `path` only. |
+| 2       | `WITH_DATA_LAKE_METADATA`        | A data-lake schema-evolution transform (a serialized `ActionsDAG`; an empty `ActionsDAG` when there is none). |
+| 3       | `WITH_ICEBERG_METADATA`          | A trailing Iceberg metadata block (`VarUInt` presence flag, then the Iceberg object info when present). |
+| 4       | `WITH_FILE_BUCKETS_INFO`         | A format-specific `FileBucketInfo` describing which slice of the object this task covers (see below). |
+| 5       | `WITH_EXCLUDED_ROWS`             | The data-lake `excluded_rows` payload (positional deletes / deletion vectors), written right after the schema transform. |
+| 6       | `WITH_ICEBERG_FILE_STATS`        | Per-file statistics inside the Iceberg metadata block. |
+| 7       | `WITH_ICEBERG_COMPACTION`        | Reserved for a private-repository feature (Iceberg compaction); adds no field on the open-source wire. Kept so the version number space stays identical between the open-source and private repositories. |
+| 8       | `WITH_READ_SOURCE_INDEX`         | An optional `read_source_index` at the tail of the body (which wildcard URL shard a web task belongs to). |
+| 9       | `WITH_PARQUET_FILE_ROW_GROUP_COUNT` | The `file_num_row_groups` field of `ParquetFileBucketInfo` (see below). |
+
+Body layout, in wire order. Each block is present only when `cluster_function_protocol_version` is at least the listed version; the field order on the wire does **not** follow the numeric version order (file buckets at v4 precede the Iceberg block at v3):
+
+| Field | Type | Present from | Description |
+|-------|------|--------------|-------------|
+| `cluster_function_protocol_version` | VarUInt | v1 | The negotiated version this body is encoded at. |
+| `path` | String | v1 | Object path/URI of the task. Empty string ⇒ no more tasks. |
+| `schema_transform` | `ActionsDAG` | v2 | Data-lake schema-evolution transform; an empty `ActionsDAG` when absent. |
+| `excluded_rows` | opaque | v5 | Data-lake positional-deletes payload; a default (empty) payload when absent. Written immediately after `schema_transform` (inside the v2 block). |
+| `file_bucket_info` | format name `String` + payload | v4 | `FileBucketInfo` for the task. The format name (e.g. `Parquet`) is written first; an **empty** format name means no bucket info and nothing further for this block. Otherwise the format-specific payload follows. |
+| `iceberg_info` | VarUInt flag + payload | v3 | `1` followed by the serialized Iceberg object info, or `0` when absent. v6 extends the payload with per-file stats. |
+| `read_source_index` | VarUInt flag + VarUInt | v8 | Presence flag, then (when present) the index of the wildcard URL shard this task reads. Written last, after `iceberg_info`. A newer initiator that needs `read_source_index` but negotiates a version below v8 fails closed with `UNKNOWN_PROTOCOL` rather than dropping the field. |
+
+#### FileBucketInfo and ParquetFileBucketInfo {#filebucketinfo}
+
+`FileBucketInfo` lets the initiator split one object across several reader tasks. It is an extension point keyed by format name; the only implementation today is `ParquetFileBucketInfo`, which assigns a subset of a Parquet file's row groups to a task so a single large file can be read in parallel. Its payload, written by `ParquetFileBucketInfo::serialize` after the format-name `String`:
+
+| Field | Type | Present from | Description |
+|-------|------|--------------|-------------|
+| `num_row_group_ids` | VarUInt | v4 | Count of row-group indices that follow. |
+| `row_group_ids[i]` | VarUInt | v4 | The row-group indices (into the file's footer) this task must read. |
+| `file_num_row_groups` | VarUInt | v9 | Total number of row groups the file had when the initiator split it. |
+
+`file_num_row_groups` is a fail-close guard against a file changing between planning and reading: the reader compares it against the row-group count of the footer it actually opens and throws `FILE_CHANGED_WHILE_READING` on mismatch, rather than silently under-reading. A value of `0` means **unknown** and disables the check — this is what a v4–v8 peer (which does not send the field) deserializes to, and what `ParquetFileBucketInfo::deserialize` substitutes below v9. Because the field is gated on v9, an older peer reads the bytes that follow `row_group_ids` as the next body block, keeping the stream aligned across mixed-version clusters.
+
 ### SSH challenge-response authentication (packet types 11, 12, 18) {#ssh-authentication}
 
 Gated by `SSH_AUTHENTICATION` (v54466), and opt-in only. A connection enters the SSH flow when ClientHello sends `user = " SSH KEY AUTHENTICATION " + <real_user>` (with the leading and trailing spaces) and `password = ""`. The server reads the prefix, strips it to recover the real user, and switches to challenge-response.
@@ -833,7 +875,7 @@ External clients that don't use SSH auth never see packets 11, 12, or 18 — the
 | 6    | KeepAlive                 | not specified       | Connection keepalive |
 | 7    | Scalar                    | not specified       | Scalar data block |
 | 8    | IgnoredPartUUIDs          | not specified       | Parts to exclude from query |
-| 9    | ReadTaskResponse          | not specified       | S3 cluster read response |
+| 9    | ReadTaskResponse          | [ReadTaskResponse](#readtaskresponse) | `*Cluster` table-function read-task response |
 | 10   | MergeTreeReadTaskResponse | not specified       | Parallel read task response |
 | 11   | SSHChallengeRequest       | [SSH auth](#ssh-authentication) | SSH auth challenge request |
 | 12   | SSHChallengeResponse      | [SSH auth](#ssh-authentication) | SSH auth challenge response |
@@ -856,7 +898,7 @@ External clients that don't use SSH auth never see packets 11, 12, or 18 — the
 | 10   | Log                            | [Log](#log)         | Query execution log lines |
 | 11   | TableColumns                   | [TableColumns](#tablecolumns) | Column descriptions for defaults |
 | 12   | PartUUIDs                      | not specified       | Unique part IDs |
-| 13   | ReadTaskRequest                | not specified       | Cluster read task request |
+| 13   | ReadTaskRequest                | (no body)           | `*Cluster` read-task request; see [ReadTaskResponse](#readtaskresponse) |
 | 14   | ProfileEvents                  | [ProfileEvents](#profileevents) | Performance counters |
 | 15   | MergeTreeAllRangesAnnouncement | not specified       | Parallel read initialization |
 | 16   | MergeTreeReadTaskRequest       | not specified       | Parallel read task assignment |

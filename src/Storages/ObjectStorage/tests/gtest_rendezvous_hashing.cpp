@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -85,6 +86,17 @@ namespace
         }
         return true;
     }
+
+    /// Minimal `FileBucketInfo` used only to exercise the serialization guards. On the fail-closed
+    /// downgrade path none of its methods are called, so trivial implementations are enough.
+    struct StubFileBucketInfo : public FileBucketInfo
+    {
+        void serialize(WriteBuffer &, size_t) override {}
+        void deserialize(ReadBuffer &, size_t) override {}
+        String getIdentifier() const override { return "stub"; }
+        String getFormatName() const override { return "Parquet"; }
+        std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> &, size_t) const override { return nullptr; }
+    };
 
     // Head of the list must contains all paths for files with numbers from file_nums
     bool checkHead(const std::vector<std::string> & paths, std::vector<size_t> file_nums)
@@ -315,4 +327,31 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
     auto object_info = deserialized.getObjectInfo();
     ASSERT_TRUE(object_info->relative_path_with_metadata.read_source_index.has_value());
     ASSERT_EQ(*object_info->relative_path_with_metadata.read_source_index, 42);
+}
+
+TEST(ClusterFunctionReadTaskResponse, FailsClosedWhenFileBucketInfoCannotBeCarried)
+{
+    ClusterFunctionReadTaskResponse response;
+    response.path = "/path/file";
+    response.file_bucket_info = std::make_shared<StubFileBucketInfo>();
+
+    /// A worker whose negotiated protocol predates `WITH_FILE_BUCKETS_INFO` cannot carry the bucket
+    /// assignment. Serializing must throw instead of silently downgrading to a path-only task, which
+    /// would make the worker read the whole file for every bucket and over-count rows.
+    ASSERT_LT(DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO);
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_THROW(
+            response.serialize(out, DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION),
+            DB::Exception);
+    }
+
+    /// At a protocol version that supports it, serialization succeeds.
+    {
+        String serialized;
+        WriteBufferFromString out(serialized);
+        EXPECT_NO_THROW(
+            response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
+    }
 }
