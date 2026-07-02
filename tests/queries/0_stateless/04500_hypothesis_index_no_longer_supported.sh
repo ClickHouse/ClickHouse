@@ -39,4 +39,25 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.data_skipping_indices
     WHERE database = currentDatabase() AND table = 't_attach' AND type = 'hypothesis';
 "
+
+# The legacy hypothesis index is inert: it holds no data and cannot be recomputed. An attached
+# table carrying it must stay fully usable (issue #89797). Before the fix, INSERT, DELETE
+# (a mutation) and OPTIMIZE (a merge) all failed with ILLEGAL_INDEX and the table wedged.
+$CLICKHOUSE_CLIENT --query "INSERT INTO t_attach (c0, c1) SELECT number, number % 2 FROM numbers(10);"
+$CLICKHOUSE_CLIENT --query "INSERT INTO t_attach (c0, c1) SELECT number + 100, number % 2 FROM numbers(10);"
+# Filtered query on the indexed column no longer throws building the index condition.
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM t_attach WHERE c0 = 3;"
+# Merge succeeds and collapses the parts.
+$CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_attach FINAL;"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_attach' AND active;"
+# Mutation (lightweight delete) completes instead of looping forever.
+$CLICKHOUSE_CLIENT --query "DELETE FROM t_attach WHERE c1;"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM t_attach;"
+$CLICKHOUSE_CLIENT --query "SELECT is_done FROM system.mutations WHERE database = currentDatabase() AND table = 't_attach';"
+# The user can still drop the dead index.
+$CLICKHOUSE_CLIENT --query "ALTER TABLE t_attach DROP INDEX i0;"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM system.data_skipping_indices
+    WHERE database = currentDatabase() AND table = 't_attach' AND type = 'hypothesis';
+"
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_attach;"
