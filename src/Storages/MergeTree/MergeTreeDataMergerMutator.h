@@ -38,11 +38,13 @@ public:
 
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
       * Used to reduce ZooKeeper requests during merge predicate construction for RMT.
+      * If `partitions_hint` is set, only those partitions are examined.
       */
     PartitionIdsHint getPartitionsThatMayBeMerged(
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
-        const MergeSelectorApplier & selector) const;
+        const MergeSelectorApplier & selector,
+        const std::optional<PartitionIdsHint> & partitions_to_check = std::nullopt) const;
 
     /** Selects which parts to merge. Uses a lot of heuristics.
       *

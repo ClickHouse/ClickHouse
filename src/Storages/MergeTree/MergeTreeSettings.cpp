@@ -707,6 +707,18 @@ requests to zookeeper in large-scale clusters
 The sleep time for merge selecting task is multiplied by this factor when
 there's nothing to merge and divided when a merge was assigned
 )", 0) \
+    DECLARE(UInt64, replicated_merge_selecting_partitions_batch_size, 0, R"(
+    If greater than zero, the background merge selecting task of a replicated table
+    considers at most this many partitions per run, chosen in round-robin order,
+    instead of scanning all partitions to discover merge candidates. This reduces the
+    per-run latency of merge selection for tables with a very large number of
+    partitions and parts. The round-robin cursor covers every partition over
+    successive runs, so no partition is starved. A value of `0` keeps the default
+    behavior of scanning all partitions.
+
+    This is ignored when `min_age_to_force_merge_on_partition_only` is enabled, since
+    forced whole-partition merges rely on statistics gathered from all partitions.
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60, R"(
 Sets the interval in seconds for ClickHouse to execute the cleanup of old
 temporary directories.

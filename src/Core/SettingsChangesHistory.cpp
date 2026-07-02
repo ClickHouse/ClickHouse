@@ -1279,6 +1279,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"replicated_merge_selecting_partitions_batch_size", 0, 0, "New setting to bound the number of partitions considered per background merge-selection run of a replicated table"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
