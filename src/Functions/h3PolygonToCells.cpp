@@ -195,6 +195,9 @@ public:
                     GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
 
                     int64_t polygon_size = 0;
+                    /// Surface backend errors (including panics caught at the FFI boundary, see
+                    /// `rust/workspace/h3o/src/lib.rs`) as exceptions instead of silently producing
+                    /// an empty result.
                     H3Error size_err = maxPolygonToCellsSize(polygon_wrapper.unwrap(), resolution, 0, &polygon_size);
                     if (size_err != E_SUCCESS)
                         throw Exception(
@@ -235,6 +238,8 @@ public:
                         "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                         getName(), current_offset - row_start_offset, toString(resolution));
 
+                /// Set the offset once per row, including for empty geometries — otherwise
+                /// the offset stays default-initialized (`0`) and breaks `ColumnArray` invariants.
                 dst_offsets[row] = current_offset;
             }
         });

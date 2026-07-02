@@ -135,7 +135,12 @@ public:
             {
                 continue;
             }
-            gridPathCells(start, end, ptr + current_offset);
+            H3Error fill_err = gridPathCells(start, end, ptr + current_offset);
+            if (fill_err)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, fill_err);
             current_offset += size;
         }
 

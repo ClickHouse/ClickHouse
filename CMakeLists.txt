@@ -630,6 +630,18 @@ include_directories(${CONFIG_INCLUDE_PATH})
 include (cmake/warnings.cmake)
 include (cmake/print_flags.cmake)
 
+# H3 is provided by the Rust h3o crate. On platforms or configurations where
+# Rust is unavailable (e.g. FreeBSD — see rust/workspace/CMakeLists.txt — or
+# an explicit `-DENABLE_RUST=OFF`), default ENABLE_H3 to OFF so the
+# FATAL_ERROR guard below does not trip on a default configure. An explicit
+# `-DENABLE_H3=ON` without Rust still fails loudly.
+if (OS_FREEBSD OR NOT ENABLE_RUST)
+    set (ENABLE_H3_DEFAULT OFF)
+else ()
+    set (ENABLE_H3_DEFAULT ${ENABLE_LIBRARIES})
+endif ()
+option (ENABLE_H3 "Enable H3 (via Rust h3o)" ${ENABLE_H3_DEFAULT})
+
 if (ENABLE_RUST)
     add_subdirectory (rust)
 
@@ -652,6 +664,15 @@ if (ENABLE_RUST)
     if (ENABLE_THINLTO)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--allow-multiple-definition")
     endif()
+endif()
+
+# H3 is provided by the Rust h3o crate. If the user requested ENABLE_H3=ON
+# but Rust is not available (e.g. cross-compilation to an unsupported target,
+# FreeBSD, or ENABLE_RUST=OFF), fail explicitly so the request is never silently ignored.
+if (ENABLE_H3 AND NOT TARGET ch_rust::h3o)
+    message (FATAL_ERROR "ENABLE_H3=ON was requested, but H3 (via Rust h3o) is unavailable. "
+        "This usually means ENABLE_RUST is OFF or the target platform does not support Rust. "
+        "Either enable Rust or pass -DENABLE_H3=OFF.")
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO"
@@ -744,6 +765,11 @@ if (NATIVE_BUILD_TARGETS
             "-DCMAKE_BUILD_TYPE=Release"
             # Avoid overriding .cargo/config.toml with native toolchain.
             "-DENABLE_RUST=OFF"
+            # H3 is provided by the Rust h3o crate; with Rust disabled, the H3
+            # check at the top level would fatal-error. The native helper build
+            # only builds host tools (protoc, grpc_cpp_plugin, pre_compressor)
+            # that do not need H3, so disable it here.
+            "-DENABLE_H3=OFF"
             "-DENABLE_CLICKHOUSE_SELF_EXTRACTING=${ENABLE_CLICKHOUSE_SELF_EXTRACTING}"
             "-DUSE_BINARY_HASH=${USE_BINARY_HASH}"
         ${PROJECT_SOURCE_DIR}
