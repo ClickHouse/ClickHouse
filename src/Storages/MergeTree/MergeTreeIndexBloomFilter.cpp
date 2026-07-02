@@ -9,6 +9,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
@@ -30,7 +32,9 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
+    extern const int NO_COMMON_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
@@ -791,6 +795,53 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
+/// Decide whether `map[key] = const` (where `key` is absent from the map) can be satisfied by the
+/// map value type's default. When `key` is missing, `arrayElement` returns the value type default,
+/// so a granule that lacks the key still matches if `default = const` holds at runtime. The result
+/// of that comparison must use the same semantics the query engine uses (e.g. String/FixedString
+/// equality ignores trailing NUL bytes), so we evaluate the real `equals` function on a default
+/// column of the map value type and a constant column of the comparison constant. Returns true when
+/// the default can match (the granule must not be pruned) and conservatively true if the comparison
+/// cannot be evaluated.
+static bool mapElementDefaultCanMatchConstant(
+    const ContextPtr & context,
+    const DataTypePtr & map_value_type,
+    const DataTypePtr & const_type,
+    const Field & const_value)
+{
+    if (!map_value_type)
+        return true;
+
+    try
+    {
+        ColumnsWithTypeAndName arguments{
+            {map_value_type->createColumnConstWithDefaultValue(1), map_value_type, "default"},
+            {const_type->createColumnConst(1, const_value), const_type, "const"},
+        };
+
+        auto equals_resolver = FunctionFactory::instance().get("equals", context);
+        auto equals_func = equals_resolver->build(arguments);
+        auto result = equals_func->execute(arguments, equals_func->getResultType(), 1, /* dry_run = */ false);
+
+        Field result_field;
+        result->get(0, result_field);
+        /// NULL (e.g. comparing with a Nullable default) means "may match" -> keep the granule.
+        return result_field.isNull() || result_field.safeGet<UInt64>() != 0;
+    }
+    catch (const Exception & e)
+    {
+        /// Only tolerate the type-mismatch case (the default and the constant are not comparable):
+        /// be conservative and do not prune. Resource limits, query cancellation, allocation
+        /// failures, and internal errors must not be swallowed here, otherwise a query that should
+        /// fail would silently continue with the index disabled. The predicate was already accepted
+        /// by the query analyzer, so any other failure is unexpected and must propagate.
+        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT || e.code() == ErrorCodes::NO_COMMON_TYPE)
+            return true;
+        throw;
+    }
+}
+
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -946,13 +997,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     {
         if (auto map_info = tryResolveMapInfoFromNode(key_node, header))
         {
-            /** It is important to ignore keys like column_map['Key'] = '' because if the key does not exist in the map
-              * we return the default value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where the map key does not exist.
+            /** arrayElement returns the map value type default when the key is absent, so a granule
+              * that lacks the key still matches when `default = const` holds. The check must use the
+              * map value type and runtime equality semantics (see mapElementDefaultCanMatchConstant),
+              * not a byte-wise comparison against the constant's own type default.
               */
-            if (value_field == value_type->getDefault())
+            const auto * key_dag_node = key_node.getDAGNode();
+            const DataTypePtr map_value_type = key_dag_node ? key_dag_node->result_type : nullptr;
+            if (mapElementDefaultCanMatchConstant(getContext(), map_value_type, value_type, value_field))
                 return false;
 
             size_t position = 0;
@@ -967,6 +1019,15 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 position = map_info->values_index_position;
                 const_value = value_field;
+
+                /// String/FixedString equality ignores trailing NUL padding, so a single hash of the
+                /// constant cannot soundly match every stored value when the constant and indexed
+                /// value types differ. Skip the index (scan) to avoid pruning a matching granule.
+                const auto values_index_value_type
+                    = BloomFilter::getPrimitiveType(header.getByPosition(position).type);
+                if ((isStringOrFixedString(values_index_value_type) || isStringOrFixedString(value_type))
+                    && !value_type->equals(*values_index_value_type))
+                    return false;
             }
             else
             {
