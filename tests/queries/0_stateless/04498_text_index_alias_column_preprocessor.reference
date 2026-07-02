@@ -1,0 +1,22 @@
+-- CREATE: preprocessor over an ALIAS column
+-- index metadata keeps the ALIAS name in the argument, key is the expanded expression
+text(tokenizer = \'splitByNonAlpha\', preprocessor = lower(combined))	concat(title, \' \', body)
+-- query results
+1
+1
+1
+1
+1
+1
+1
+0
+-- index is used
+Name: idx
+-- DETACH / ATTACH round-trip (recalculateWithNewColumns)
+1
+-- ALTER ADD INDEX / MATERIALIZE INDEX
+1
+1
+-- ALIAS column shadowing a parameter name does not break argument parsing
+1
+1
