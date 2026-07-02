@@ -296,6 +296,13 @@ void EvictionCandidates::evict()
 
                 const auto segment = candidate->file_segment;
 
+                /// Capture the disk-accounted size before `removeFileSegment` detaches the
+                /// segment: detaching clears `key_metadata`, after which
+                /// `FileSegment::getDiskAccountedSize` can no longer align the size and would
+                /// fall back to the raw reserved size. The eviction telemetry must free the
+                /// same unit that `FilesystemCacheSize` tracks.
+                const size_t disk_accounted_size = segment->getDiskAccountedSize();
+
                 IFileCachePriority::IteratorPtr iterator;
                 if (!removed_queue_entries)
                 {
@@ -338,7 +345,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
+                        on_evict_callback(*segment, disk_accounted_size, key_candidates.key_metadata->origin->user_id);
                     }
                     catch (...)
                     {

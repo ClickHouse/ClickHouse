@@ -22,6 +22,19 @@
                 <disk>aligned_cache</disk>
                 <key>1234567812345678</key>
             </aligned_cache_encrypted>
+            <!-- A small cache with sub-block file segments (`max_file_segment_size` below the
+                 filesystem block size) and a tiny `max_size`, used to force LRU eviction of
+                 sub-block segments and check that the eviction telemetry reports the same
+                 block-aligned unit as `FilesystemCacheSize`. -->
+            <aligned_cache_evict>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/tmp/s3_aligned_cache_evict/</path>
+                <max_size>32Ki</max_size>
+                <max_file_segment_size>512</max_file_segment_size>
+                <boundary_alignment>512</boundary_alignment>
+                <use_real_disk_size>1</use_real_disk_size>
+            </aligned_cache_evict>
         </disks>
         <policies>
             <external>
@@ -38,6 +51,13 @@
                     </main>
                 </volumes>
             </external_encrypted>
+            <external_evict>
+                <volumes>
+                    <main>
+                        <disk>aligned_cache_evict</disk>
+                    </main>
+                </volumes>
+            </external_evict>
         </policies>
     </storage_configuration>
 </clickhouse>

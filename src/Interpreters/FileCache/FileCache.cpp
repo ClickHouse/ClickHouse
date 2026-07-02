@@ -388,9 +388,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    main_priority->setOnEvictCallback([this](const FileSegment & segment, const String & user_id)
+    main_priority->setOnEvictCallback([this](const FileSegment & segment, size_t disk_accounted_size, const String & user_id)
     {
-        onSegmentEvicted(segment, user_id);
+        onSegmentEvicted(segment, disk_accounted_size, user_id);
     });
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -2396,21 +2396,23 @@ FileCache::~FileCache()
     assertCacheCorrectness();
 }
 
-void FileCache::onSegmentEvicted(const FileSegment & segment, const String & user_id) const
+void FileCache::onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
     /// Report the disk-accounted size so that eviction telemetry stays consistent with the
     /// live cache size. With `use_real_disk_size` the queue entry (and hence `FilesystemCacheSize`)
     /// is accounted by the filesystem-block-aligned size, so eviction must free the same unit;
     /// otherwise `FilesystemCacheSize` would drop by the aligned size while the evicted-bytes
-    /// counters only advance by the raw size. Without the mode `getDiskAccountedSize` returns the
-    /// raw reserved size, so this is a no-op for the default path.
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getDiskAccountedSize());
+    /// counters only advance by the raw size. `disk_accounted_size` is captured by the caller
+    /// before the segment is detached, because a detached segment loses its key metadata and
+    /// `getDiskAccountedSize` would then fall back to the raw reserved size. Without the mode the
+    /// captured value equals the raw reserved size, so this is a no-op for the default path.
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, disk_accounted_size);
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
 
-    const size_t bytes = segment.getDiskAccountedSize();
+    const size_t bytes = disk_accounted_size;
     const size_t hits = segment.getHitsCount();
     filesystem_cache_evictions_total.withLabels({name}).increment();
     filesystem_cache_evicted_bytes_total.withLabels({name}).increment(static_cast<DimensionalMetrics::Value>(bytes));
@@ -2430,12 +2432,12 @@ IFileCachePriority::OnEvictCallback FileCache::getOnBackgroundEvictCallback() co
     return std::bind_front(&FileCache::onSegmentEvictedInTheBackground, this);
 }
 
-void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const
+void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments);
     /// See `onSegmentEvicted`: report the disk-accounted size to stay consistent with `FilesystemCacheSize`.
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, segment.getDiskAccountedSize());
-    onSegmentEvicted(segment, user_id);
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, disk_accounted_size);
+    onSegmentEvicted(segment, disk_accounted_size, user_id);
 }
 
 void FileCache::deactivateBackgroundOperations()

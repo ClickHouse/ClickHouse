@@ -454,8 +454,12 @@ public:
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
     /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
-    /// segment.
-    using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
+    /// segment. `disk_accounted_size` is the size that was freed from
+    /// `FilesystemCacheSize` (aligned to the filesystem block when
+    /// `use_real_disk_size` is on); it is captured before the segment is
+    /// detached, because `FileSegment::getDiskAccountedSize` would fall back to
+    /// the raw reserved size once the segment loses its key metadata.
+    using OnEvictCallback = std::function<void(const FileSegment & segment, size_t disk_accounted_size, const UserID & user_id)>;
     virtual void setOnEvictCallback(OnEvictCallback callback)
     {
         chassert(!on_evict_callback, "on_evict_callback cannot be set twice");
