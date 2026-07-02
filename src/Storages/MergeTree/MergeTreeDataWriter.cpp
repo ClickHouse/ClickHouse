@@ -7,6 +7,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -878,8 +879,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+
     SerializationInfoByName infos(columns, settings);
-    infos.add(block);
+
+    /// Columns whose default counts are provided by the explicit statistics built above are not
+    /// sampled: the builder takes their exact counts from the statistics and samples only the rest.
+    EstimatesBuilder estimates_builder(columns, settings, statistics.getEstimates());
+    estimates_builder.add(block);
+    estimates_builder.chooseKinds(infos);
 
     for (const auto & [column_name, _] : columns)
     {
@@ -965,6 +972,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
+
+    /// The block was already sampled above (to choose the serialization kinds); reuse those counts
+    /// for `serialization.json` instead of sampling the same rows again in the output stream.
+    out->setSerializationEstimatesBuilder(std::move(estimates_builder));
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1070,7 +1081,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
-    infos.add(block);
+    EstimatesBuilder estimates_builder(columns, settings, {});
+    estimates_builder.add(block);
+    estimates_builder.chooseKinds(infos);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
@@ -1163,6 +1176,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         /*blocks_are_granules_size=*/ false,
         data.getContext()->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
+
+    /// The block was already sampled above (to choose the serialization kinds); reuse those counts
+    /// for `serialization.json` instead of sampling the same rows again in the output stream.
+    out->setSerializationEstimatesBuilder(std::move(estimates_builder));
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);

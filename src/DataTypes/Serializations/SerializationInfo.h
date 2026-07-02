@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Core/MergeTreeSerializationEnums.h>
+#include <Core/Names.h>
 #include <Core/Types_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <map>
+#include <unordered_map>
 
 namespace Poco::JSON
 {
@@ -16,17 +18,23 @@ namespace DB
 {
 
 class ReadBuffer;
-class ReadBuffer;
 class WriteBuffer;
 class NamesAndTypesList;
 class Block;
 
+/// Per-column estimates (row and default counts, and richer statistics) keyed by column/subcolumn path.
+/// Defined in `Storages/Statistics/Estimate.h`; only referenced here by const reference, so a forward
+/// declaration (the alias must match the one there; the compiler rejects a divergence) keeps this
+/// lower-level header independent of the statistics subsystem.
+struct Estimate;
+using Estimates = std::unordered_map<String, Estimate>;
+
 /** Contains information about kind of serialization of column and its subcolumns.
- *  Also contains information about content of columns,
- *  that helps to choose kind of serialization of column.
  *
- *  Currently has only information about number of default rows,
- *  that helps to choose sparse serialization.
+ *  The counts that help choosing the serialization kind (currently the number of default rows, used to
+ *  choose sparse serialization) are no longer stored here: they are carried by `Estimate` and are passed
+ *  in explicitly when writing `serialization.json` and returned explicitly when reading it back
+ *  (see `EstimatesBuilder`). This class only carries the chosen kind stack.
  *
  *  Should be extended, when new kinds of serialization will be implemented.
  */
@@ -35,30 +43,12 @@ class SerializationInfo
 public:
     using Settings = SerializationInfoSettings;
 
-    struct Data
-    {
-        size_t num_rows = 0;
-        size_t num_defaults = 0;
-
-        void add(const IColumn & column);
-        void add(const Data & other);
-        void remove(const Data & other);
-        void addDefaults(size_t length);
-    };
-
     SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_);
-    SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
     virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
     virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
-
-    virtual void add(const IColumn & column);
-    virtual void add(const SerializationInfo & other);
-    virtual void remove(const SerializationInfo & other);
-    virtual void addDefaults(size_t length);
-    virtual void replaceData(const SerializationInfo & other);
 
     virtual std::shared_ptr<SerializationInfo> clone() const;
 
@@ -70,25 +60,26 @@ public:
     virtual void serialializeKindStackBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
-    virtual void writeJSON(WriteBuffer & out, const String * name) const;
-    virtual void toJSON(Poco::JSON::Object & object) const;
-    virtual void fromJSON(const Poco::JSON::Object & object);
+    /// Write the kind stack and the counts of this column (and its subcolumns), looked up in `estimates`
+    /// by `key` (the column/subcolumn path). A (sub)column absent from `estimates` is written with zero
+    /// counts.
+    virtual void writeJSON(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const;
+
+    /// Read the kind stack, and put the counts of this column (and its subcolumns) into `estimates` keyed
+    /// by `key` (the column/subcolumn path).
+    virtual void fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates);
 
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
-    const Data & getData() const { return data; }
     ISerialization::KindStack getKindStack() const { return kind_stack; }
 
-    static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
-
 protected:
-    virtual void writeJSONFields(WriteBuffer & out, const String * name) const;
+    virtual void writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const;
 
     const SerializationInfoSettings settings;
 
     ISerialization::KindStack kind_stack;
-    Data data;
 };
 
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -106,23 +97,13 @@ public:
     explicit SerializationInfoByName(const Settings & settings_);
     SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings_);
 
-    void add(const Block & block);
-    void add(const SerializationInfoByName & other);
-    void add(const String & name, const SerializationInfo & info);
-
-    void remove(const SerializationInfoByName & other);
-    void remove(const String & name, const SerializationInfo & info);
-
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::KindStack getKindStack(const String & column_name) const;
 
-    /// Takes data from @other, but keeps current serialization kinds.
-    /// If column exists in @other infos, but not in current infos,
-    /// it's cloned to current infos.
-    void replaceData(const SerializationInfoByName & other);
-
-    void writeJSON(WriteBuffer & out) const;
+    /// Write the infos together with the counts from `estimates` (keyed by column/subcolumn path). Columns
+    /// and subcolumns absent from `estimates` are written with zero counts.
+    void writeJSON(WriteBuffer & out, const Estimates & estimates) const;
 
     SerializationInfoByName clone() const;
 
@@ -132,9 +113,10 @@ public:
 
     bool needsPersistence() const;
 
-    static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
+    /// Read the infos, returning the per-column/subcolumn counts in `estimates`.
+    static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in, Estimates & estimates);
 
-    static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
+    static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str, Estimates & estimates);
 
 private:
     /// This field stores all configuration options that are not tied to a
@@ -143,7 +125,7 @@ private:
     ///   specifying different versions for `String` or other types.
     ///
     /// Design notes:
-    /// - We intentionally keep such options out of `SerializationInfo::Data`,
+    /// - We intentionally keep such options out of per-column `SerializationInfo` entries,
     ///   because the mere existence of a `SerializationInfo` entry triggers
     ///   sparse encoding logic. This would produce misleading content in
     ///   `serializations.json` for types that do not support sparse encoding.

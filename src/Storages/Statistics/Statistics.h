@@ -4,6 +4,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/Statistics/Estimate.h>
 
 #include <boost/core/noncopyable.hpp>
 
@@ -71,6 +72,10 @@ public:
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;
 
+    /// Estimate the number of default values in the column.
+    /// Throws if the statistics object is not able to do a meaningful estimation.
+    virtual UInt64 estimateDefaults() const;
+
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
@@ -85,18 +90,6 @@ protected:
 
 class ColumnStatistics;
 using ColumnStatisticsPtr = std::shared_ptr<ColumnStatistics>;
-
-struct Estimate
-{
-    std::set<StatisticsType> types;
-    UInt64 rows_count = 0;
-    std::optional<UInt64> estimated_cardinality;
-    std::optional<Field> estimated_min;
-    std::optional<Field> estimated_max;
-    std::optional<UInt64> estimated_null_count;
-};
-
-using Estimates = std::unordered_map<String, Estimate>;
 
 /// All statistics objects for a column in a part
 class ColumnStatistics
@@ -119,6 +112,8 @@ public:
     UInt64 getNonNullRowCount() const;
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
+    /// True iff the default-count is available for this column (via `Basic` on a sparse-capable column).
+    bool hasDefaultsCount() const;
     UInt64 estimateCardinality() const;
     UInt64 estimateDefaults() const;
 

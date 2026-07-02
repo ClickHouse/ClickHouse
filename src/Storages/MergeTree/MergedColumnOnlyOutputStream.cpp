@@ -68,7 +68,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr, nullptr);
-    new_serialization_infos.add(block);
+    estimates_builder.add(block);
 }
 
 void MergedColumnOnlyOutputStream::finalizeIndexGranularity()
@@ -88,7 +88,6 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
 
     auto columns = new_part->getColumns();
     auto serialization_infos = new_part->getSerializationInfos();
-    serialization_infos.replaceData(new_serialization_infos);
 
     NameSet empty_columns;
     for (const auto & column : writer->getColumnsSample())

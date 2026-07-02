@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -315,12 +316,11 @@ private:
     size_t final_size = 0;
 };
 
-static void addMissedColumnsToSerializationInfos(
+static void addMissedColumnsToEstimatesBuilder(
     size_t num_rows_in_parts,
     const Names & part_columns,
     const ColumnsDescription & storage_columns,
-    const SerializationInfo::Settings & info_settings,
-    SerializationInfoByName & new_infos)
+    EstimatesBuilder & estimates_builder)
 {
     NameSet part_columns_set(part_columns.begin(), part_columns.end());
 
@@ -335,9 +335,9 @@ static void addMissedColumnsToSerializationInfos(
         if (column.default_desc.expression)
             continue;
 
-        auto new_info = column.type->createSerializationInfo(info_settings);
-        new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
+        /// The column is absent from this part, so all of its rows are default. This is a no-op for
+        /// columns the builder does not track (e.g. types that cannot use sparse serialization).
+        estimates_builder.addDefaults(column.name, num_rows_in_parts);
     }
 }
 
@@ -835,26 +835,29 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    EstimatesBuilder estimates_builder(global_ctx->storage_columns, info_settings, {});
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
         {
-            auto part_infos = part->getSerializationInfos();
+            estimates_builder.add(part->getEstimates());
 
-            addMissedColumnsToSerializationInfos(
+            addMissedColumnsToEstimatesBuilder(
                 part->rows_count,
                 part->getColumns().getNames(),
                 global_ctx->metadata_snapshot->getColumns(),
-                info_settings,
-                part_infos);
-
-            infos.add(part_infos);
+                estimates_builder);
         }
 
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
     }
+
+    /// Choose the serialization kind of the new part from the combined counts of all source parts.
+    /// The actual counts written to `serialization.json` are recomputed from the merged data by the
+    /// builder inside `MergedBlockOutputStream` (kept consistent with the kinds chosen here).
+    estimates_builder.chooseKinds(infos);
 
     if (global_ctx->new_data_part->info.isPatch())
     {
@@ -1910,6 +1913,11 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     ctx->column_to->finalizeIndexGranularity();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->new_data_part->checksums);
     global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
+    /// Accumulate the sampled counts of the gathered column: the final `serialization.json` is written
+    /// by the horizontal stream (`global_ctx->to`), whose own builder samples only the merging columns
+    /// (see `MergedBlockOutputStream::finalizePartOnDisk`).
+    EstimatesBuilder::addEstimates(global_ctx->gathered_data.serialization_estimates, ctx->column_to->getSerializationEstimates({}));
 
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
     global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());

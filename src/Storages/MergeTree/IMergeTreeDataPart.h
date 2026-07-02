@@ -182,8 +182,16 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    /// The estimates of the part: the row/default counts read from / written to `serialization.json`
+    /// (per column and subcolumn) combined with the estimates from the explicit column statistics
+    /// (min/max/cardinality; their exact default counts take precedence over the sampled ones).
+    /// Populated once — when the part is loaded or written — and immutable afterwards, so it never
+    /// reads from disk (safe under locks) and every reader (merges, the statistics pruner, the
+    /// per-table serialization hints) sees one consistent value for the lifetime of the part.
     Estimates getEstimates() const;
-    void setEstimates(const Estimates & new_estimates);
+    /// Set the estimates of a freshly written part from the counts persisted in `serialization.json`
+    /// and the estimates of the explicit statistics computed during the write.
+    void setEstimates(Estimates serialization_counts, const Estimates & statistics_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -777,10 +785,21 @@ private:
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
-    /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// See `getEstimates`. `loadColumns` stores the counts from `serialization.json` here and
+    /// `loadEstimates` then merges the explicit statistics in; for written parts `setEstimates` builds
+    /// the merged value from the in-memory sources directly.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    Estimates estimates TSA_GUARDED_BY(estimates_mutex);
+
+    /// Combine the counts from `serialization.json` with the estimates of the explicit statistics:
+    /// the statistics provide min/max/cardinality and the exact default counts for the columns that
+    /// have them; the counts cover every column and subcolumn and fill in the rest.
+    static Estimates buildEstimates(Estimates serialization_counts, const Estimates & statistics_estimates);
+
+    /// Merge the estimates of the explicit statistics into the counts stored by `loadColumns`.
+    /// Called while the part is being loaded, after the checksums (which `loadStatistics` iterates)
+    /// are available, so that `getEstimates` never has to read from disk later.
+    void loadEstimates();
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

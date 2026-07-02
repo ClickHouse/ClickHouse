@@ -233,7 +233,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
-        serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
 
@@ -365,16 +364,35 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
+    const auto & statistics = gathered_data.statistics;
+    auto statistics_estimates = statistics.getEstimates();
+
+    /// This stream's builder samples only the columns written through it. A vertical merge writes
+    /// the gathered (non-merging) columns through separate column-only streams, whose counts
+    /// `MergeTask` accumulates into `gathered_data.serialization_estimates`. Combine both and
+    /// reconcile with the counts from the explicit statistics; persist the result inline
+    /// (num_rows/num_defaults per column and subcolumn).
+    auto serialization_counts = getSerializationEstimates({});
+    EstimatesBuilder::addEstimates(serialization_counts, gathered_data.serialization_estimates);
+    EstimatesBuilder::mergeEstimates(serialization_counts, statistics_estimates);
+
+    /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
+    /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
+    /// again as all-default for the missing column, and the in-memory part would diverge from a
+    /// reloaded one.
+    EstimatesBuilder::filterEstimates(serialization_counts, serialization_infos);
+
     if (serialization_infos.needsPersistence())
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer);
+            serialization_infos.writeJSON(buffer, serialization_counts);
         });
     }
 
-    const auto & statistics = gathered_data.statistics;
-    new_part->setEstimates(statistics.getEstimates());
+    /// Set the estimates on the in-memory part, so it exposes them via `getEstimates` (e.g. as a
+    /// source part of a later merge) without being reloaded from disk.
+    new_part->setEstimates(std::move(serialization_counts), statistics_estimates);
 
     if (!statistics.empty())
     {
@@ -453,8 +471,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation, permuted_columns_cache);
-    if (reset_columns)
-        new_serialization_infos.add(block);
+    /// Sample the estimates of the written data so the counts persisted in `serialization.json`
+    /// reflect what was actually written — unless an upstream builder already sampled it (inserts).
+    if (sample_written_blocks)
+        estimates_builder.add(block);
 
     rows_count += rows;
 }
