@@ -1,0 +1,33 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <!--
+                    Prevent pathologically slow/hung queries built from deeply nested
+                    expressions (e.g. `SELECT formatQuery($$SELECT [[[[...20000...]]]]$$)`).
+                    Cap the parser/AST depth and size settings at their defaults so neither
+                    the query fuzzer nor a test can raise them to values that build huge,
+                    slow-to-parse/format queries. Lowering is still allowed.
+
+                    Installed by both the AST fuzzer and the stress test, since the stress
+                    test ignores `no-*` build tags and runs the fuzzer over every query.
+                -->
+                <max_ast_depth>
+                    <max>1000</max>
+                </max_ast_depth>
+                <max_parser_depth>
+                    <max>1000</max>
+                </max_parser_depth>
+                <max_parser_backtracks>
+                    <max>1000000</max>
+                </max_parser_backtracks>
+                <max_ast_elements>
+                    <max>50000</max>
+                </max_ast_elements>
+                <max_expanded_ast_elements>
+                    <max>500000</max>
+                </max_expanded_ast_elements>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>
