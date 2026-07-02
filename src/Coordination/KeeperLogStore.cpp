@@ -1,4 +1,6 @@
 #include <Coordination/KeeperLogStore.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfiledLocks.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/DiskLocal.h>
@@ -11,9 +13,17 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char keeper_changelog_read_plan_resolved[];
+}
+}
 
-KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, KeeperContextPtr keeper_context)
-    : log(getLogger("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, keeper_context)
+namespace DB
+{
+
+KeeperLogStore::KeeperLogStore(LogFileSettings log_file_settings, FlushSettings flush_settings, ReadAheadSettings readahead_settings, KeeperContextPtr keeper_context)
+    : log(getLogger("KeeperLogStore")), changelog(log, log_file_settings, flush_settings, readahead_settings, keeper_context)
 {
     if (log_file_settings.force_sync)
         LOG_INFO(log, "force_sync enabled");
@@ -63,15 +73,52 @@ void KeeperLogStore::write_at(uint64_t index, nuraft::ptr<nuraft::log_entry> & e
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_entries(uint64_t start, uint64_t end)
 {
-    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getLogEntriesBetween(start, end);
+    // Unlike log_entries_ext, log_entries must never return nullptr — callers such as
+    // KeeperStateMachine::preprocessUncommittedLogEntries dereference the result immediately.
+    // Build the plan under a shared lock and execute without catching exceptions.
+    LogReadPlan plan;
+    {
+        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+        plan = changelog.getReadPlan(start, end, /*max_size_bytes=*/0);
+    }
+    return changelog.executeReadPlan(plan);
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
-KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes)
+KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size_hint_in_bytes, int32_t peer_id)
 {
-    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
-    return changelog.getLogEntriesBetween(start, end, batch_size_hint_in_bytes);
+    const auto build_plan_under_lock = [&](auto && build)
+    {
+        LogReadPlan plan;
+        {
+            ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+            plan = build();
+        }
+        FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+        return plan;
+    };
+
+    try
+    {
+        if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+        {
+            auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
+                                              { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
+            return changelog.serveReadAhead(peer_id, plan);
+        }
+
+        auto plan
+            = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS { return changelog.getReadPlan(start, end, batch_size_hint_in_bytes); });
+        return changelog.executeReadPlan(plan);
+    }
+    catch (...)
+    {
+        // NuRaft's log_entries_ext contract: return nullptr when an entry cannot be retrieved
+        // (e.g. a concurrent writeAt truncation races with the lock-free read phase).
+        // NuRaft treats nullptr as a signal to trigger snapshot fallback.
+        tryLogCurrentException(log, fmt::format("While reading changelog entries [{}, {})", start, end));
+        return nullptr;
+    }
 }
 
 nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)

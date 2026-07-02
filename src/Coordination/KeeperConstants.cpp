@@ -328,6 +328,9 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
@@ -408,6 +411,9 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
     M(KeeperTTLNodes) \
+    M(KeeperChangelogReadAheadThreads) \
+    M(KeeperChangelogReadAheadThreadsActive) \
+    M(KeeperChangelogReadAheadThreadsScheduled) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \

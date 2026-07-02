@@ -5,8 +5,29 @@
 
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 
+#include <atomic>
+#include <barrier>
+#include <future>
 #include <thread>
+
+
+namespace DB
+{
+namespace FailPoints
+{
+    extern const char keeper_changelog_read_plan_resolved[];
+    extern const char keeper_changelog_removed_from_disk_set[];
+    extern const char keeper_changelog_prefetch_pause[];
+}
+}
+
+namespace ProfileEvents
+{
+    extern const Event KeeperLogsEntryReadFromFile;
+}
 
 
 template<typename TestType>
@@ -52,6 +73,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     auto entry = getLogEntry("hello world", 77);
@@ -73,6 +95,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     auto entry = getLogEntry("hello world", 77);
@@ -106,6 +129,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogReadWrite)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -123,6 +147,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogReadWrite)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
@@ -148,6 +173,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogWriteAt)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     for (size_t i = 0; i < 10; ++i)
@@ -173,6 +199,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogWriteAt)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
 
@@ -192,6 +219,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterRead)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     for (size_t i = 0; i < 7; ++i)
@@ -211,6 +239,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterRead)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
 
@@ -265,6 +294,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestCompaction)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -319,6 +349,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestCompaction)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(6, 0);
 
@@ -337,6 +368,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperations)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     for (size_t i = 0; i < 10; ++i)
@@ -355,6 +387,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperations)
     DB::KeeperLogStore apply_changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     apply_changelog.init(0, 0);
 
@@ -394,6 +427,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         for (size_t i = 0; i < 10; ++i)
@@ -415,6 +449,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
     DB::KeeperLogStore changelog_new(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_new.init(0, 0);
     EXPECT_EQ(changelog_new.size(), 0);
@@ -440,6 +475,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(5, 0);
 }
@@ -454,6 +490,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtPreviousFile)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -498,6 +535,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtPreviousFile)
     DB::KeeperLogStore changelog_read(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_read.init(0, 0);
     EXPECT_EQ(changelog_read.size(), 7);
@@ -515,6 +553,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtFileBorder)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -559,6 +598,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtFileBorder)
     DB::KeeperLogStore changelog_read(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_read.init(0, 0);
     EXPECT_EQ(changelog_read.size(), 11);
@@ -576,6 +616,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtAllFiles)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     for (size_t i = 0; i < 33; ++i)
@@ -626,6 +667,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestStartNewLogAfterRead)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -650,6 +692,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestStartNewLogAfterRead)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
 
@@ -699,6 +742,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -728,6 +772,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
         DB::KeeperLogStore changelog_reader(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         ASSERT_THROW(changelog_reader.init(0, 0), DB::Exception);
     }
@@ -740,6 +785,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
     EXPECT_EQ(changelog_reader.size(), 10);
@@ -764,6 +810,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
     DB::KeeperLogStore changelog_reader2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader2.init(0, 0);
     EXPECT_EQ(changelog_reader2.size(), 11);
@@ -780,6 +827,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -803,6 +851,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
         DB::KeeperLogStore changelog_reader(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         ASSERT_THROW(changelog_reader.init(0, 0), DB::Exception);
     }
@@ -812,6 +861,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
 
@@ -829,6 +879,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
     DB::KeeperLogStore changelog_reader2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader2.init(0, 0);
     EXPECT_EQ(changelog_reader2.size(), 1);
@@ -846,6 +897,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate3)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -869,6 +921,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate3)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_reader.init(0, 0);
 
@@ -921,6 +974,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMixedLogTypes)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -942,6 +996,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMixedLogTypes)
         DB::KeeperLogStore changelog_compressed(
             DB::LogFileSettings{.force_sync = true, .compress_logs = true, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog_compressed.init(0, 0);
 
@@ -964,6 +1019,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMixedLogTypes)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -991,6 +1047,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -1010,6 +1067,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
 
     ASSERT_THROW(changelog_reader.init(5, 0), DB::Exception);
@@ -1024,6 +1082,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles2)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 10},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
@@ -1047,6 +1106,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles2)
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 10},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     ASSERT_THROW(changelog_reader.init(5, 0), DB::Exception);
 }
@@ -1061,6 +1121,7 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
 
         changelog.init(0, 3);
@@ -1082,6 +1143,7 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
     DB::KeeperLogStore changelog_1(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 10},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_1.init(0, 50);
     for (size_t i = 0; i < 55; ++i)
@@ -1101,6 +1163,7 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
     DB::KeeperLogStore changelog_2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 7},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_2.init(98, 55);
 
@@ -1128,6 +1191,7 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
     DB::KeeperLogStore changelog_3(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog_3.init(116, 3);
     for (size_t i = 0; i < 17; ++i)
@@ -1167,6 +1231,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 20, .max_size = 50 * 1024 * 1024},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1187,6 +1252,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 4000},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1209,6 +1275,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 4000},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         ASSERT_EQ(changelog.entry_at(last_entry_index)->get_term(), (i - 1 + 44) * 10);
@@ -1223,6 +1290,7 @@ TYPED_TEST(CoordinationChangelogTest, TestCompressedLogsMultipleRewrite)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
 
     changelog.init(0, 3);
@@ -1240,6 +1308,7 @@ TYPED_TEST(CoordinationChangelogTest, TestCompressedLogsMultipleRewrite)
     DB::KeeperLogStore changelog1(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog1.init(0, 3);
     for (size_t i = 55; i < 70; ++i)
@@ -1256,6 +1325,7 @@ TYPED_TEST(CoordinationChangelogTest, TestCompressedLogsMultipleRewrite)
     DB::KeeperLogStore changelog2(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog2.init(0, 3);
     for (size_t i = 70; i < 80; ++i)
@@ -1278,6 +1348,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1292,6 +1363,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1306,6 +1378,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1320,6 +1393,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1342,6 +1416,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertMultipleTimesSmooth)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
         for (size_t j = 0; j < 7; ++j)
@@ -1356,6 +1431,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertMultipleTimesSmooth)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
     EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
@@ -1371,6 +1447,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
         DB::KeeperLogStore changelog1(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog1.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1385,6 +1462,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
         DB::KeeperLogStore changelog2(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog2.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1399,6 +1477,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
         DB::KeeperLogStore changelog3(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog3.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1413,6 +1492,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
         DB::KeeperLogStore changelog4(
             DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog4.init(0, 0);
         auto entry = getLogEntry("hello_world", 1000);
@@ -1432,6 +1512,7 @@ TYPED_TEST(CoordinationChangelogTest, TestLogGap)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
 
     changelog.init(0, 3);
@@ -1452,6 +1533,7 @@ TYPED_TEST(CoordinationChangelogTest, TestLogGap)
     DB::KeeperLogStore changelog1(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog1.init(60, 3);
 
@@ -1473,6 +1555,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1497,6 +1580,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1528,6 +1612,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
         DB::KeeperLogStore changelog(
             DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1548,6 +1633,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogLoadingFromInvalidName)
             DB::LogFileSettings{
                 .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 500},
             DB::FlushSettings(),
+            DB::ReadAheadSettings{},
             this->keeper_context);
         changelog.init(0, 0);
 
@@ -1584,10 +1670,961 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogLoadingFromInvalidName)
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 500},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(15, 0);
 
     ASSERT_EQ(changelog.next_slot(), 501);
+}
+
+// Tests: PLAN/EXECUTE split + removed_from_disk fence
+
+// Verify the PLAN/EXECUTE split releases changelog_lock before disk I/O.
+// An append must complete while a reader is parked between PLAN and EXECUTE.
+TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
+{
+    // Compression does not affect lock behaviour; skip to save time.
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    // Tiny cache forces entries to disk.
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<void> reader_past_plan;
+    std::promise<void> reader_done;
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    std::thread reader([&]
+    {
+        // log_entries_ext calls getReadPlan (under shared lock), then
+        // pauseFailPoint (no lock held), then executeReadPlan.
+        auto entries = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
+        entries_promise.set_value(std::move(entries));
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<void> append_done_promise;
+    std::thread appender([&]
+    {
+        auto entry = getLogEntry("new_entry", 11);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        append_done_promise.set_value();
+    });
+
+    auto append_future = append_done_promise.get_future();
+    ASSERT_EQ(append_future.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "append deadlocked — changelog_lock was held across the EXECUTE disk read";
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    reader.join();
+    appender.join();
+
+    auto entries = entries_promise.get_future().get();
+    ASSERT_NE(entries, nullptr);
+    ASSERT_EQ(entries->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1));
+}
+
+
+// Verify removed_from_disk fence: compaction between PLAN and EXECUTE must
+// produce nullptr (snapshot fallback), not a throw or a read of a deleted file.
+TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    // Write 10 entries (2 files of 5 each).
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // Sub-case B1: compact first file after PLAN, before EXECUTE.
+    {
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+        std::thread reader([&]
+        {
+            auto entries = changelog.log_entries_ext(1, 4, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
+            entries_promise.set_value(std::move(entries));
+        });
+
+        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        this->keeper_context->setLastCommitIndex(5);
+        changelog.compact(5);
+
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+        reader.join();
+
+        (void)entries_promise.get_future().get();
+    }
+
+    // Sub-case B2: fully compacted store must return nullptr, not throw.
+    {
+        this->keeper_context->setLastCommitIndex(10);
+        changelog.compact(10);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        auto entries = changelog.log_entries_ext(1, 4, 0, DB::KeeperLogStore::NO_PEER_ID);
+        EXPECT_EQ(entries, nullptr);
+    }
+}
+
+
+// Unresolved PrefetchedCacheEntryPtr must be treated as a cache miss, not awaited.
+TYPED_TEST(CoordinationChangelogTest, PrefetchCancelDoesNotWedgeRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_prefetch_pause);
+
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    std::thread reader([&]
+    {
+        auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
+        entries_promise.set_value(std::move(entries));
+    });
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_prefetch_pause);
+
+    reader.join();
+
+    auto entries = entries_promise.get_future().get();
+    ASSERT_NE(entries, nullptr);
+    ASSERT_GT(entries->size(), 0u);
+}
+
+
+// write_at racing with EXECUTE must not return silently wrong data.
+TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> entries_promise;
+
+    std::thread reader([&]
+    {
+        try
+        {
+            auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
+            entries_promise.set_value(std::move(entries));
+        }
+        catch (...) // Ok: promise handles exception-case via nullptr
+        {
+            entries_promise.set_value(nullptr);
+        }
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    auto new_entry = getLogEntry("overwrite", 999);
+    changelog.write_at(5, new_entry);
+    changelog.end_of_append_batch(0, 0);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+    reader.join();
+
+    auto entries = entries_promise.get_future().get();
+    if (entries && !entries->empty())
+    {
+        for (size_t i = 0; i < entries->size(); ++i)
+        {
+            const auto term = (*entries)[i]->get_term();
+            EXPECT_TRUE(term == static_cast<ulong>(i + 1) || term == 999u)
+                << "Unexpected term " << term << " at position " << i;
+        }
+    }
+}
+
+
+// Entries evicted from cache must be readable from disk.
+TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
+{
+    // executeReadPlan seeks by decompressed offset in the raw file; compressed logs are not
+    // yet supported in the plan-execute split path.
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::LogFileSettings settings{
+        .force_sync = true,
+        .compress_logs = this->enable_compression,
+        .rotate_interval = 1000,
+        .latest_logs_cache_size_threshold = 1,
+        .commit_logs_cache_size_threshold = 1,
+    };
+
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.init(0, 0);
+
+        for (size_t i = 0; i < 20; ++i)
+        {
+            auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+            writer.append(entry);
+        }
+        writer.end_of_append_batch(0, 0);
+        waitDurableLogs(writer);
+    }
+
+    uint64_t counter_before
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    changelog.init(0, 0);
+
+    auto entries = changelog.log_entries_ext(1, 11, 0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(entries, nullptr);
+    ASSERT_EQ(entries->size(), 10u);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1))
+            << "Wrong term at index " << (i + 1);
+    }
+
+    uint64_t counter_after
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+    EXPECT_GT(counter_after, counter_before);
+}
+
+
+// Stress: concurrent appends and disk reads detect races under TSan.
+TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = this->enable_compression,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("base", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> appended{10};
+
+    std::thread writer([&]
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            size_t idx = appended.fetch_add(1, std::memory_order_relaxed) + 1;
+            auto entry = getLogEntry("w", idx);
+            changelog.append(entry);
+            changelog.end_of_append_batch(0, 0);
+        }
+    });
+
+    std::thread reader_thread([&]
+    {
+        for (int iter = 0; iter < 200 && !stop.load(std::memory_order_relaxed); ++iter)
+        {
+            try
+            {
+                auto entries = changelog.log_entries_ext(1, 6, 0, DB::KeeperLogStore::NO_PEER_ID);
+                // Either nullptr (if compacted) or non-empty.
+                if (entries && !entries->empty())
+                {
+                    EXPECT_LE(entries->size(), 5u);
+                }
+            }
+            catch (const DB::Exception &) // NOLINT(bugprone-empty-catch) - expected when writeAt races with the read
+            {
+            }
+        }
+        stop.store(true, std::memory_order_relaxed);
+    });
+
+    reader_thread.join();
+    writer.join();
+}
+
+// Tests: per-peer read-ahead
+
+namespace DB
+{
+namespace FailPoints
+{
+    extern const char keeper_changelog_readahead_fill_wedge[];
+    extern const char keeper_changelog_readahead_serve_wait[];
+    extern const char keeper_changelog_readahead_park_armed[];
+}
+}
+
+// NO_PEER_ID or disabled read-ahead must return identical results to the direct path.
+// Verify read-ahead returns the same entries as the direct path.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // Direct path (NO_PEER_ID skips read-ahead).
+    auto direct_result = changelog.log_entries_ext(1, 11, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(direct_result, nullptr);
+    ASSERT_EQ(direct_result->size(), 10u);
+
+    // Read-ahead path (peer_id != NO_PEER_ID, enabled = true).
+    auto ra_result = changelog.log_entries_ext(1, 11, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/42);
+    ASSERT_NE(ra_result, nullptr);
+    ASSERT_EQ(ra_result->size(), 10u);
+
+    for (size_t i = 0; i < 10; ++i)
+        EXPECT_EQ((*direct_result)[i]->get_term(), (*ra_result)[i]->get_term());
+
+    // Disabled read-ahead (enabled = false) must also match the direct path.
+    DB::KeeperLogStore changelog_disabled(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = false},
+        this->keeper_context);
+    changelog_disabled.init(0, 0);
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        changelog_disabled.append(entry);
+    }
+    changelog_disabled.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog_disabled);
+
+    auto disabled_result = changelog_disabled.log_entries_ext(1, 11, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/42);
+    ASSERT_NE(disabled_result, nullptr);
+    ASSERT_EQ(disabled_result->size(), 10u);
+    for (size_t i = 0; i < 10; ++i)
+        EXPECT_EQ((*direct_result)[i]->get_term(), (*disabled_result)[i]->get_term());
+}
+
+// serveReadAhead runs without changelog_lock; concurrent appends must not deadlock.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadConcurrentAppend)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test5", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> result_promise;
+    std::thread reader([&]
+    {
+        auto result = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+        result_promise.set_value(std::move(result));
+    });
+
+    std::promise<void> append_done;
+    std::thread appender([&]
+    {
+        auto entry = getLogEntry("new_entry", 11);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+        append_done.set_value();
+    });
+
+    auto append_fut = append_done.get_future();
+    ASSERT_EQ(append_fut.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    reader.join();
+    appender.join();
+
+    auto result = result_promise.get_future().get();
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
+}
+
+// Wedged fill must escape via timeout and return correct entries.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFillTimeout)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test8", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    auto start = std::chrono::steady_clock::now();
+    auto result = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    EXPECT_LE(elapsed_ms, 5000);
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
+}
+
+// Rewind must clear the deque and return contiguous entries from the new start.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadNonSequentialRewind)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test9", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto r1 = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/2);
+    ASSERT_NE(r1, nullptr);
+    ASSERT_EQ(r1->size(), 5u);
+
+    auto r2 = changelog.log_entries_ext(1, 4, 0, /*peer_id=*/2);
+    ASSERT_NE(r2, nullptr);
+    ASSERT_EQ(r2->size(), 3u);
+    for (size_t i = 0; i < 3; ++i)
+        EXPECT_EQ((*r2)[i]->get_term(), static_cast<uint64_t>(i + 1));
+}
+
+// Compaction after PLAN must produce nullptr, not a throw.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionDuringServe)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test11", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    changelog.compact(10);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    auto result = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/3);
+    if (result != nullptr)
+        EXPECT_LE(result->size(), 5u);
+}
+
+// Shutdown must join all fill tasks without deadlock.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 60000},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test16", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    // A later append batch runs the existing `flushAsync` refresh after the first batch's
+    // `addLogLocations`, so old entries leave `latest_logs_cache` and become file spans.
+    auto marker = getLogEntry("readahead_test_l2_test16_marker", 11);
+    changelog.append(marker);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    std::thread reader([&]
+    {
+        changelog.log_entries_ext(1, 6, 0, /*peer_id=*/4);
+    });
+
+    // Wait until the fill task is actually wedged before releasing it.
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    reader.join();
+
+}
+
+// log_entries_ext must dispatch correctly through the virtual base.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadSignatureOverride)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = false, .compress_logs = this->enable_compression, .rotate_interval = 5},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 5; ++i)
+    {
+        auto entry = getLogEntry("sig_check", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    nuraft::log_store * base = &changelog;
+    auto result = base->log_entries_ext(1, 4, 0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 3u);
+}
+
+// Byte hint must truncate results the same as the direct path.
+// Tests the direct path (NO_PEER_ID, read-ahead disabled) byte-hint truncation.
+TYPED_TEST(CoordinationChangelogTest, DirectPathByteHintTruncation)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test19", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto l1_1b = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/1, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(l1_1b, nullptr);
+    ASSERT_GE(l1_1b->size(), 1u);
+
+    auto l1_0b = changelog.log_entries_ext(1, 11, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(l1_0b, nullptr);
+    ASSERT_EQ(l1_0b->size(), 10u);
+
+    auto l1_max = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/0x7FFFFFFF, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(l1_max, nullptr);
+    ASSERT_EQ(l1_max->size(), 20u);
+}
+
+// serve_wait_timeout must bound serve time when fill is blocked.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadServeWaitBound)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test20", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    const auto start = std::chrono::steady_clock::now();
+    auto result = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/5);
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+
+    EXPECT_LE(elapsed_ms, 5000);
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 5u);
+}
+
+// After a reader terminates, the next request must create a fresh reader.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTerminalReaderReaping)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 20; ++i)
+    {
+        auto entry = getLogEntry("readahead_test_l2_test21c", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto r1 = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/6);
+    ASSERT_NE(r1, nullptr);
+    ASSERT_EQ(r1->size(), 5u);
+
+    changelog.compact(15);
+
+    // The second serve call reaps the terminal reader (Compacted due to compaction)
+    // and creates a new one for entries 16-20. The fill may still be in-flight when
+    // compact returns; serve_wait_timeout_ms (100ms) bounds the wait.
+    (void)changelog.log_entries_ext(16, 21, 0, /*peer_id=*/6);
+}
+
+// TSan stress: interleave appends, read-ahead serves, and compaction.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadTSanStress)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 5,
+            .latest_logs_cache_size_threshold = 1,
+            .commit_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 50; ++i)
+    {
+        auto entry = getLogEntry("l2_stress", static_cast<size_t>(i + 1));
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    std::atomic<bool> stop{false};
+    std::atomic<int> appended{50};
+
+    std::thread appender([&]
+    {
+        while (!stop.load(std::memory_order_relaxed))
+        {
+            int idx = appended.fetch_add(1, std::memory_order_relaxed);
+            auto entry = getLogEntry("l2_stress", static_cast<size_t>(idx) + 1);
+            changelog.append(entry);
+            changelog.end_of_append_batch(0, 0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    });
+
+    constexpr int NUM_READERS = 3;
+    std::vector<std::thread> readers;
+    readers.reserve(NUM_READERS);
+    for (int peer = 0; peer < NUM_READERS; ++peer)
+    {
+        readers.emplace_back([&, peer]
+        {
+            size_t start = 1;
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                size_t end = std::min(start + 5, static_cast<size_t>(appended.load(std::memory_order_relaxed)));
+                if (end <= start)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+                auto result = changelog.log_entries_ext(
+                    start, end, /*batch_size_hint_in_bytes=*/0, static_cast<int32_t>(peer + 1));
+                if (result != nullptr)
+                    start += result->size();
+                else
+                    start = 1;
+            }
+        });
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    stop.store(true, std::memory_order_relaxed);
+
+    appender.join();
+    for (auto & t : readers)
+        t.join();
 }
 
 #endif

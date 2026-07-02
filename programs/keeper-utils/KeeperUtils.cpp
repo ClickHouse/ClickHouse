@@ -263,7 +263,7 @@ void analyzeChangelogs(const std::string & log_path, const std::string & specifi
                 {
                     desc->disk = std::make_shared<DB::DiskLocal>("LogDisk", log_path);
                     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-                    LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
+                    LogEntryStorage entry_storage{LogFileSettings{}, ReadAheadSettings{}, std::make_shared<KeeperContext>(true, settings)};
                     Changelog::readChangelog(desc, entry_storage);
 
                     auto last_log_index = desc->from_log_index + entry_storage.size();
@@ -654,6 +654,7 @@ int dumpStateMachine(
         LogFileSettings{
             .force_sync = true, .compress_logs = (*settings)[DB::CoordinationSetting::compress_logs], .rotate_interval = 10000000},
         FlushSettings(),
+        ReadAheadSettings{},
         keeper_context);
 
     changelog.init(last_committed_index, 10000000000UL); // collect all logs
@@ -716,7 +717,7 @@ int deserializeChangelog(
         desc->disk = std::make_shared<DB::DiskLocal>("LogDisk", fs::path(changelog_path).parent_path().string());
 
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-        LogEntryStorage entry_storage{LogFileSettings{}, std::make_shared<KeeperContext>(true, settings)};
+        LogEntryStorage entry_storage{LogFileSettings{}, ReadAheadSettings{}, std::make_shared<KeeperContext>(true, settings)};
         Changelog::readChangelog(desc, entry_storage);
 
         if (start_index == 0)

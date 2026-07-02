@@ -96,6 +96,13 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(Bool, keeper_log_readahead_enabled, false, "Enable per-peer decoded read-ahead for changelog catch-up reads. Off by default.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_window_bytes, 64 * 1024 * 1024, "Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader is evicted. Worst case is approximately twice this value due to the scan gate interval.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_serve_wait_timeout_ms, 50, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
+    DECLARE(UInt64, keeper_log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 

@@ -1153,7 +1153,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesPreprocessedTailAboveS
     ChangelogDirTest test("./logs");
 
     auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
@@ -1203,7 +1203,7 @@ TEST(KeeperMemorySnapshotApplyTest, ApplySnapshotPreservesEphemeralTailForCloseP
     ChangelogDirTest test("./logs");
 
     auto ctx = makeMemoryContextForSnapshotApply("./snapshots", "./logs");
-    DB::KeeperLogStore changelog({}, {}, ctx);
+    DB::KeeperLogStore changelog({}, {}, DB::ReadAheadSettings{}, ctx);
     changelog.init(0, 1000);
     DB::SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
