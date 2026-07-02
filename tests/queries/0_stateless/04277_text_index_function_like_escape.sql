@@ -18,7 +18,10 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+-- A moderate index_granularity keeps the text index small (few granules) so the
+-- flaky check stays well under its per-run time limit; the four single-value parts
+-- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
+SETTINGS index_granularity = 128;
 
 INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
@@ -44,7 +47,7 @@ SELECT 'ESCAPE used to match a literal LIKE wildcard returns the expected zero r
 SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
 SELECT count() FROM tab WHERE message LIKE '%fast#%' ESCAPE '#';
 
-SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 1024 granules out of 4 parts / 4096 granules';
+SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 4 parts / 32 granules';
 
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
@@ -91,7 +94,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 128;  -- keep the text index small for the flaky check (see the note above)
 
 INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);

@@ -9,35 +9,35 @@ Results are the same with and without an ESCAPE clause when the escape character
 ESCAPE used to match a literal LIKE wildcard returns the expected zero rows
 0
 0
-Text index analysis with LIKE ESCAPE: index narrows to 1 part / 1024 granules out of 4 parts / 4096 granules
+Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 4 parts / 32 granules
 Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
+Granules: 8/32
 Text index analysis with LIKE ESCAPE on a non-existent token: 0 parts and 0 granules selected
 Name: idx
 Description: text GRANULARITY 100000000
 Parts: 0/4
-Granules: 0/4096
+Granules: 0/32
 Text index analysis with ILIKE ESCAPE: index narrows correctly
 Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
+Granules: 8/32
 Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form
 1024
 1024
 Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
+Granules: 8/32
 Text index with array tokenizer also uses the index with LIKE ESCAPE
 1024
 1024
 Name: idx
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
+Granules: 8/32
 A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call
 An unknown backslash escape is not pruned by the text index (would otherwise drop the literal backslash and tokenize differently than the indexed value)
 Correctness check: the row containing the literal backslash is returned
