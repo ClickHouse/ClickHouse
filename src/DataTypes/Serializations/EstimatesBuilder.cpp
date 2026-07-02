@@ -12,32 +12,36 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <algorithm>
 
 namespace DB
 {
 
-using SubcolumnCallback = std::function<void(const String &, const ISerialization::SubstreamData &)>;
+using SubcolumnCallback = std::function<void(const String &, const ColumnPtr &)>;
 
-static ISerialization::SubstreamData getSubstreamData(const DataTypePtr & type, const ColumnPtr & column)
+/// Calls back with the key of the column and, for a `Tuple`, of every element, recursively: only
+/// `Tuple` has per-element serialization infos (mirrors `DataTypeTuple::createSerializationInfo`),
+/// all other types are leaves whose elements (if any) are serialized as a whole. The keys are the
+/// same `subcolumnEstimateKey` paths the consumers of the estimates (`chooseKinds`,
+/// `copyColumnEstimate`) build when walking the serialization infos. `column` is null on the paths
+/// that do not sample data. Deliberately does not enumerate the serialization's subcolumns: that
+/// would materialize every virtual subcolumn of the sampled column (e.g. the sizes of a `String`).
+static void forEachSubcolumnWithEstimates(const String & column_name, const SubcolumnCallback & callback, const IDataType & type, const ColumnPtr & column)
 {
-    return ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type).withColumn(column);
-}
+    callback(column_name, column);
 
-static void forEachSubcolumnWithEstimates(const String & column_name, const SubcolumnCallback & callback, const ISerialization::SubstreamData & data)
-{
-    callback(column_name, data);
-
-    IDataType::forEachSubcolumn([&](const auto & subpath, const auto & subname, const auto & subdata)
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
     {
-        if (subpath.back().type == ISerialization::Substream::TupleElement)
+        const auto & elem_types = type_tuple->getElements();
+        const auto & names = type_tuple->getElementNames();
+
+        for (size_t i = 0; i < names.size(); ++i)
         {
-            auto full_name = Nested::concatenateName(column_name, subname);
-            callback(full_name, subdata);
+            ColumnPtr elem_column = column ? assert_cast<const ColumnTuple &>(*column).getColumnPtr(i) : nullptr;
+            forEachSubcolumnWithEstimates(subcolumnEstimateKey(column_name, names[i]), callback, *elem_types[i], elem_column);
         }
-    }, data);
+    }
 }
 
 EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings_, const Estimates & external_estimates)
@@ -72,7 +76,7 @@ EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const Seri
                 estimates.emplace(full_name, Estimate{});
             };
 
-            forEachSubcolumnWithEstimates(column.name, callback, getSubstreamData(column.type, nullptr));
+            forEachSubcolumnWithEstimates(column.name, callback, *column.type, nullptr);
         }
     }
 }
@@ -81,23 +85,23 @@ void EstimatesBuilder::add(const Block & block)
 {
     for (const auto & column : block)
     {
-        auto callback = [&](const auto & full_name, const auto & subdata)
+        auto callback = [&](const auto & full_name, const ColumnPtr & subcolumn)
         {
             if (columns_with_exact_counts.contains(full_name))
                 return;
 
-            size_t rows = subdata.column->size();
-            double ratio = subdata.column->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
             auto it = estimates.find(full_name);
-
             if (it == estimates.end())
                 return;
+
+            size_t rows = subcolumn->size();
+            double ratio = subcolumn->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
 
             it->second.rows_count += rows;
             it->second.num_defaults = it->second.num_defaults.value_or(0) + static_cast<UInt64>(ratio * static_cast<double>(rows));
         };
 
-        forEachSubcolumnWithEstimates(column.name, callback, getSubstreamData(column.type, column.column));
+        forEachSubcolumnWithEstimates(column.name, callback, *column.type, column.column);
     }
 }
 
@@ -109,7 +113,7 @@ void EstimatesBuilder::addNumRows(const String & column_name, const DataTypePtr 
             it->second.rows_count += num_rows;
     };
 
-    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
+    forEachSubcolumnWithEstimates(column_name, callback, *type, nullptr);
 }
 
 void EstimatesBuilder::addNumDefaults(const String & column_name, const DataTypePtr & type, size_t num_defaults)
@@ -120,7 +124,7 @@ void EstimatesBuilder::addNumDefaults(const String & column_name, const DataType
             it->second.num_defaults = it->second.num_defaults.value_or(0) + num_defaults;
     };
 
-    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
+    forEachSubcolumnWithEstimates(column_name, callback, *type, nullptr);
 }
 
 void EstimatesBuilder::addNumDefaults(const String & column_name, const DataTypePtr & type, const Estimates & source_estimates)
@@ -131,10 +135,16 @@ void EstimatesBuilder::addNumDefaults(const String & column_name, const DataType
         auto it_src = source_estimates.find(full_name);
 
         if (it_dst != estimates.end() && it_src != source_estimates.end())
-            it_dst->second.num_defaults = it_src->second.num_defaults.value_or(0);
+            it_dst->second.num_defaults = it_dst->second.num_defaults.value_or(0) + it_src->second.num_defaults.value_or(0);
     };
 
-    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
+    forEachSubcolumnWithEstimates(column_name, callback, *type, nullptr);
+}
+
+void EstimatesBuilder::addEstimates(const Estimates & external_counts)
+{
+    for (const auto & [key, external] : external_counts)
+        addCounts(estimates[key], external);
 }
 
 void EstimatesBuilder::mergeEstimates(const Estimates & external_estimates)
@@ -164,6 +174,23 @@ void EstimatesBuilder::mergeEstimates(Estimates & estimates, const Estimates & e
 Estimates EstimatesBuilder::getEstimates() const
 {
     return {estimates.begin(), estimates.end()};
+}
+
+Estimates EstimatesBuilder::getEstimates(const Estimates & external_estimates) const
+{
+    auto result = getEstimates();
+
+    /// Explicit statistics exist only for top-level columns; override the sampled default count with the
+    /// exact one from the statistics where it is available. The sampled row count is kept (it is exact).
+    for (const auto & [name, external] : external_estimates)
+    {
+        if (!external.num_defaults.has_value())
+            continue;
+        if (auto it = result.find(name); it != result.end())
+            it->second.num_defaults = external.num_defaults;
+    }
+
+    return result;
 }
 
 ISerialization::KindStack EstimatesBuilder::chooseKindStack(

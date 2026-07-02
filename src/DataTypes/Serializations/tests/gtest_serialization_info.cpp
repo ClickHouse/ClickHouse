@@ -414,8 +414,8 @@ TEST(EstimatesBuilder, TuplePerElementKinds)
 }
 
 /// A column absent from a source part (and implicitly default there) contributes all-default rows,
-/// recursively for its tuple elements.
-TEST(EstimatesBuilder, AddPartAbsentColumnContributesDefaults)
+/// recursively for its tuple elements (the composition used by `chooseSerializationInfosForMerge`).
+TEST(EstimatesBuilder, AbsentColumnContributesDefaults)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
@@ -423,7 +423,8 @@ TEST(EstimatesBuilder, AddPartAbsentColumnContributesDefaults)
 
     SerializationInfoByName infos(columns, defaultSettings());
     EstimatesBuilder builder(columns, defaultSettings(), {});
-    builder.addPart(/*part_estimates=*/ {}, /*absent_default_columns=*/ {"t"}, 1000);
+    builder.addNumRows("t", tuple_type, 1000);
+    builder.addNumDefaults("t", tuple_type, 1000);
     builder.chooseKinds(infos);
 
     const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(infos.tryGet("t").get());
@@ -433,9 +434,9 @@ TEST(EstimatesBuilder, AddPartAbsentColumnContributesDefaults)
     EXPECT_EQ(info_tuple->getElementKindStack(1), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
 }
 
-/// A tracked subcolumn missing from the estimates of a part whose column is present contributes
-/// all-default rows of the column's own row count.
-TEST(EstimatesBuilder, AddPartMissingSubcolumnContributesDefaults)
+/// A tracked subcolumn missing from the estimates of a part whose column is present contributes its
+/// rows without defaults: the data is unknown, so it is assumed dense rather than all-default.
+TEST(EstimatesBuilder, MissingSubcolumnContributesDenseRows)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     auto tuple_type = std::make_shared<DataTypeTuple>(DataTypes{uint_type, uint_type}, Strings{"a", "b"});
@@ -443,41 +444,87 @@ TEST(EstimatesBuilder, AddPartMissingSubcolumnContributesDefaults)
 
     Estimates part;
     part.emplace("t", makeEstimate(1000, 0));
-    part.emplace(subcolumnEstimateKey("t", "a"), makeEstimate(1000, 0));
+    part.emplace(subcolumnEstimateKey("t", "a"), makeEstimate(1000, 900));
     /// No entry for element `b`.
 
     EstimatesBuilder builder(columns, defaultSettings(), {});
-    builder.addPart(part, {}, 1000);
+    builder.addNumRows("t", tuple_type, 1000);
+    builder.addNumDefaults("t", tuple_type, part);
 
     auto estimates = builder.getEstimates();
-    EXPECT_EQ(estimates.at(subcolumnEstimateKey("t", "a")).num_defaults.value_or(0), 0u);
+    EXPECT_EQ(estimates.at(subcolumnEstimateKey("t", "a")).num_defaults.value_or(0), 900u);
     EXPECT_EQ(estimates.at(subcolumnEstimateKey("t", "b")).rows_count, 1000u);
-    EXPECT_EQ(estimates.at(subcolumnEstimateKey("t", "b")).num_defaults.value_or(0), 1000u);
+    EXPECT_EQ(estimates.at(subcolumnEstimateKey("t", "b")).num_defaults.value_or(0), 0u);
 }
 
-/// A column that has no estimates in a part (and is not absent from it) contributes nothing: the
-/// combined estimate is built only from the parts that have the counts.
-TEST(EstimatesBuilder, AddPartColumnWithoutEstimatesContributesNothing)
+/// A column that has no estimates in a part contributes its rows without defaults: unknown data is
+/// assumed dense, so a part written before the counts existed prevents choosing sparse.
+TEST(EstimatesBuilder, ColumnWithoutEstimatesContributesDenseRows)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     NamesAndTypesList columns{{"c", uint_type}};
 
     SerializationInfoByName infos(columns, defaultSettings());
     EstimatesBuilder builder(columns, defaultSettings(), {});
-    builder.addPart(/*part_estimates=*/ {}, /*absent_default_columns=*/ {}, 1000);
+    /// A part with 1000 rows and no estimates for `c`.
+    builder.addNumRows("c", uint_type, 1000);
 
     Estimates part;
     part.emplace("c", makeEstimate(100, 100));
-    builder.addPart(part, {}, 100);
+    builder.addNumRows("c", uint_type, 100);
+    builder.addNumDefaults("c", uint_type, part);
     builder.chooseKinds(infos);
 
-    /// The first part contributed nothing, so the ratio is 100/100 from the second part alone.
-    EXPECT_EQ(builder.getEstimates().at("c").rows_count, 100u);
-    EXPECT_EQ(infos.getKindStack("c"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    /// The first part contributed dense rows, so the ratio is 100/1100.
+    EXPECT_EQ(builder.getEstimates().at("c").rows_count, 1100u);
+    EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 100u);
+    EXPECT_EQ(infos.getKindStack("c"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT}));
+}
+
+/// The default counts of multiple source parts accumulate instead of replacing each other.
+TEST(EstimatesBuilder, AddNumDefaultsAccumulatesAcrossParts)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    NamesAndTypesList columns{{"c", uint_type}};
+
+    Estimates part_first;
+    part_first.emplace("c", makeEstimate(1000, 990));
+    Estimates part_second;
+    part_second.emplace("c", makeEstimate(1000, 980));
+
+    EstimatesBuilder builder(columns, defaultSettings(), {});
+    builder.addNumRows("c", uint_type, 1000);
+    builder.addNumDefaults("c", uint_type, part_first);
+    builder.addNumRows("c", uint_type, 1000);
+    builder.addNumDefaults("c", uint_type, part_second);
+
+    EXPECT_EQ(builder.getEstimates().at("c").rows_count, 2000u);
+    EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 1970u);
+}
+
+/// `addEstimates` adds externally accumulated counts and inserts the keys the builder does not track
+/// (the counts carried over for the hardlinked columns of a column-only mutation).
+TEST(EstimatesBuilder, AddEstimatesInsertsUntrackedKeys)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    NamesAndTypesList columns{{"c", uint_type}};
+
+    EstimatesBuilder builder(columns, defaultSettings(), {});
+
+    Estimates carried_over;
+    carried_over.emplace("c", makeEstimate(1000, 990));
+    carried_over.emplace("d", makeEstimate(500, 100));
+    builder.addEstimates(carried_over);
+
+    auto estimates = builder.getEstimates();
+    EXPECT_EQ(estimates.at("c").rows_count, 1000u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 990u);
+    EXPECT_EQ(estimates.at("d").rows_count, 500u);
+    EXPECT_EQ(estimates.at("d").num_defaults.value_or(0), 100u);
 }
 
 /// The exact default count from the explicit statistics overrides the sampled one.
-TEST(EstimatesBuilder, MergeEstimatesPrefersExternalDefaults)
+TEST(EstimatesBuilder, GetEstimatesPrefersExternalDefaults)
 {
     auto uint_type = std::make_shared<DataTypeUInt64>();
     NamesAndTypesList columns{{"c", uint_type}};
@@ -495,11 +542,12 @@ TEST(EstimatesBuilder, MergeEstimatesPrefersExternalDefaults)
     /// External statistics say the column is almost all-default; this must win.
     Estimates external;
     external.emplace("c", makeEstimate(1000, 990));
-    builder.mergeEstimates(external);
-    builder.chooseKinds(infos);
+    auto estimates = builder.getEstimates(external);
+    EstimatesBuilder::chooseKinds(infos, estimates);
 
     EXPECT_EQ(infos.getKindStack("c"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
-    EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 990u);
+    EXPECT_EQ(estimates.at("c").rows_count, 1000u);
+    EXPECT_EQ(estimates.at("c").num_defaults.value_or(0), 990u);
 }
 
 /// A column whose default count is provided by the explicit statistics (passed to the constructor)

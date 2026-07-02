@@ -354,7 +354,9 @@ static SerializationInfoByName chooseSerializationInfosForMerge(
             if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.expression)
                 continue;
 
-            estimates_builder.addNumDefaults(column.name, column.type, part_estimates);
+            /// A column physically absent from the part is implicitly all-default in it.
+            estimates_builder.addNumRows(column.name, column.type, part->rows_count);
+            estimates_builder.addNumDefaults(column.name, column.type, part->rows_count);
         }
     }
 
