@@ -255,7 +255,7 @@ void RestorerFromBackup::logNumberOfDatabasesAndTablesToRestore() const
 
 void RestorerFromBackup::loadSystemAccessTables()
 {
-    if (restore_settings.structure_only)
+    if (!restore_settings.shouldRestoreAccessEntities())
         return;
 
     /// Special handling for ACL-related system tables.
@@ -303,7 +303,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 if (isSystemFunctionsTableName(table_name))
                 {
                     /// CREATE_FUNCTION privilege is required to restore the "system.functions" table.
-                    if (!restore_settings.structure_only && table_info.has_data)
+                    if (table_info.has_data && restore_settings.shouldRestoreFunctions())
                         required_access.emplace_back(AccessType::CREATE_FUNCTION);
                 }
                 /// Privileges required to restore ACL system tables are checked separately
@@ -331,7 +331,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     flags |= AccessType::CREATE_TABLE;
             }
 
-            if (!restore_settings.structure_only && table_info.has_data)
+            if (restore_settings.shouldRestoreTableData() && table_info.has_data)
             {
                 flags |= AccessType::INSERT;
             }
@@ -884,8 +884,20 @@ void RestorerFromBackup::insertDataToTables()
 
 void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name)
 {
-    if (restore_settings.structure_only)
+    if (isSystemAccessTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreAccessEntities())
+            return;
+    }
+    else if (isSystemFunctionsTableName(table_name))
+    {
+        if (!restore_settings.shouldRestoreFunctions())
+            return;
+    }
+    else if (!restore_settings.shouldRestoreTableData())
+    {
         return;
+    }
 
     {
         std::lock_guard lock{mutex};
