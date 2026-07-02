@@ -11,3 +11,13 @@
 (DELETE WHERE toYear(ts) = 2024)	1
 (DELETE WHERE year(ts) = 2022)	1
 -- niladic year() stays rejected in a Replicated mutation
+-- projections: year(<date>) filters/keys still select projections like toYear(<date>)
+-- normal projection is chosen for both toYear(ts) and year(ts) filters
+1
+1
+-- force_optimize_projection = 1 succeeds for year(ts) (would throw PROJECTION_NOT_USED if rejected), same result as toYear(ts)
+730
+730
+-- aggregate projection is chosen for a year(ts) GROUP BY, and force_optimize_projection = 1 succeeds
+1
+9

@@ -53,3 +53,46 @@ SELECT '-- niladic year() stays rejected in a Replicated mutation';
 ALTER TABLE 03481_rep DELETE WHERE ts < makeDateTime(year(), 1, 1, 0, 0, 0) SETTINGS mutations_sync = 2; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE 03481_rep SYNC;
+
+SELECT '-- projections: year(<date>) filters/keys still select projections like toYear(<date>)';
+-- The projection implication checks run on the post-build ActionsDAG node (function_base), which for
+-- year(<date>) is toYear's deterministic base via the resolver's build() delegation. So a normal or
+-- aggregate projection defined over year(...) is still used for year(...) queries, exactly like toYear.
+-- Projection selection is orthogonal to parallel-replica routing, so pin enable_parallel_replicas = 0
+-- to keep the test focused (the standalone test server has no parallel_replicas cluster).
+SET enable_parallel_replicas = 0;
+DROP TABLE IF EXISTS 03481_proj;
+CREATE TABLE 03481_proj
+(
+    id UInt32,
+    ts DateTime,
+    val UInt32,
+    PROJECTION p_by_year (SELECT id, ts, val ORDER BY year(ts))
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000;
+INSERT INTO 03481_proj SELECT number, toDateTime('2015-01-01 00:00:00') + number * 43200, number FROM numbers(50000);
+
+SELECT '-- normal projection is chosen for both toYear(ts) and year(ts) filters';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id, ts, val FROM 03481_proj WHERE toYear(ts) = 2018 SETTINGS optimize_use_projections = 1, force_optimize_projection = 0) WHERE explain ILIKE '%p_by_year%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id, ts, val FROM 03481_proj WHERE year(ts) = 2018 SETTINGS optimize_use_projections = 1, force_optimize_projection = 0) WHERE explain ILIKE '%p_by_year%';
+SELECT '-- force_optimize_projection = 1 succeeds for year(ts) (would throw PROJECTION_NOT_USED if rejected), same result as toYear(ts)';
+SELECT count() FROM 03481_proj WHERE toYear(ts) = 2018 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+SELECT count() FROM 03481_proj WHERE year(ts) = 2018 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE 03481_proj;
+
+DROP TABLE IF EXISTS 03481_agg;
+CREATE TABLE 03481_agg
+(
+    ts DateTime,
+    v UInt32,
+    PROJECTION p_agg_year (SELECT year(ts) AS y, sum(v) GROUP BY y)
+)
+ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8192;
+INSERT INTO 03481_agg SELECT toDateTime('2019-01-01 00:00:00') + number * 86400, number FROM numbers(3000);
+
+SELECT '-- aggregate projection is chosen for a year(ts) GROUP BY, and force_optimize_projection = 1 succeeds';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT year(ts) AS y, sum(v) FROM 03481_agg GROUP BY y SETTINGS optimize_use_projections = 1, force_optimize_projection = 0) WHERE explain ILIKE '%p_agg_year%';
+SELECT count() FROM (SELECT year(ts) AS y, sum(v) FROM 03481_agg GROUP BY y SETTINGS optimize_use_projections = 1, force_optimize_projection = 1);
+
+DROP TABLE 03481_agg;
