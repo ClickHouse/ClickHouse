@@ -3,7 +3,7 @@
 # $<TARGET_OBJECTS:...> in INTERFACE_LINK_LIBRARIES, so clickhouse_add_executable
 # adds them to each executable instead.
 
-target_link_libraries(global-libs INTERFACE musl)
+target_link_libraries(global-libs INTERFACE ${MUSL_LIBC_TARGET})
 
 # musl headers, in priority order: stubs for headers musl lacks (execinfo.h),
 # generated headers, arch-specific bits/*.h, generic arch fallbacks, public headers.

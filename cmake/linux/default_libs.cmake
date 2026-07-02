@@ -44,8 +44,15 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
 if (USE_MUSL)
+    # Sanitizer builds link the copy of musl with the intercepted functions
+    # renamed to __real_* (see contrib/compiler-rt-cmake).
+    if (SANITIZE)
+        set (MUSL_LIBC_TARGET musl_intercepted)
+    else ()
+        set (MUSL_LIBC_TARGET musl)
+    endif ()
     # musl provides pthread in libc.
-    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES ${MUSL_LIBC_TARGET})
 else ()
     set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
 endif ()
