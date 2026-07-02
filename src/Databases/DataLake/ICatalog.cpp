@@ -277,15 +277,11 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
     std::string metadata_location = iceberg_metadata_file_location;
     if (!metadata_location.empty())
     {
-        std::string data_location = getLocation();
-
-        // Use the actual storage type prefix (e.g., s3://, file://, etc.)
-        if (metadata_location.starts_with(storage_type_str))
-            metadata_location = metadata_location.substr(storage_type_str.size());
-        if (data_location.starts_with(storage_type_str))
-            data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
+        /// Anchor on the endpoint-independent values from `setLocation`, not `getLocation`:
+        /// with a REST-catalog-vended `s3.endpoint`, `getLocation` rebuilds the URI around the
+        /// endpoint, so its prefix no longer matches the `s3://<bucket>/...` metadata URI and the
+        /// absolute URI would leak below, duplicating the path.
+        const std::string data_location = std::filesystem::path(location_without_path) / path;
 
         if (metadata_location.starts_with(data_location))
         {
