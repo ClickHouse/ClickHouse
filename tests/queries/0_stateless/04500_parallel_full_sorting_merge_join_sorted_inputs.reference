@@ -1,0 +1,6 @@
+analyzer sorted_subquery_scattered	1
+analyzer sorted_union_scattered	1
+analyzer read_in_order_not_scattered	1
+analyzer read_in_order_virtual_row_not_scattered	1
+legacy sorted_subquery_scattered	1
+result_all_equal	1

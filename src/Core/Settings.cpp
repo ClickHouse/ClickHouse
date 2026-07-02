@@ -3539,6 +3539,12 @@ Possible values:
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
+- parallel_full_sorting_merge
+
+ Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.
+
+ Only plain equality joins whose key types hash consistently with the merge-join comparison are sharded by the hash of the keys. This hash-sharding is skipped for `ASOF` joins and for floating-point / `JSON` / `Object` / `Dynamic` key types, in which case the join runs as a single `full_sorting_merge`. Read-in-order (`FinishSorting`) inputs also skip the hash-sharding rewrite, but they can still be sharded by primary-key ranges when `query_plan_join_shard_by_pk_ranges` is enabled. Under `make_distributed_plan` this is an initiator-side restriction only: the hash-sharding rewrite is skipped while the initiator builds the distributed plan, because the scattered sort is not serializable for remote execution, but the local single-fragment plan and the per-worker fragments re-optimize with `make_distributed_plan` disabled and can still take the sharded `parallel_full_sorting_merge` path.
+
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.

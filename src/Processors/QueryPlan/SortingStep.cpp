@@ -316,7 +316,10 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
 
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
-    size_t threads = pipeline.getNumThreads();
+    /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
+    /// both sides of the join scatter into the same number of shards even if they read a different number
+    /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
+    size_t threads = scatter_partitions > 0 ? scatter_partitions : pipeline.getNumThreads();
     size_t streams = pipeline.getNumStreams();
 
     if (!partition_by_description.empty() && threads > 1)

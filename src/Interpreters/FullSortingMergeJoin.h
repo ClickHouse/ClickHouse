@@ -22,10 +22,11 @@ class FullSortingMergeJoin : public IJoin
 {
 public:
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
-                                  int null_direction_ = 1)
+                                  int null_direction_ = 1, bool is_parallel_ = false)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
         , null_direction(null_direction_)
+        , is_parallel(is_parallel_)
     {
         LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
@@ -43,10 +44,19 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction);
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction, is_parallel);
     }
 
     int getNullDirection() const { return null_direction; }
+
+    /// True when this join was selected as `parallel_full_sorting_merge` (i.e. that algorithm was the first
+    /// supported one in the `join_algorithm` priority list), rather than plain `full_sorting_merge`. Both
+    /// build this same object, so the value cannot be recovered from `join_algorithm` membership alone: a
+    /// setting such as `full_sorting_merge,parallel_full_sorting_merge` selects `full_sorting_merge` first,
+    /// and the parallel variant is merely a lower-priority fallback that is never reached. The query-plan
+    /// optimizer (`optimizeParallelFullSortingMergeJoin`) shards the join into per-shard merge joins only
+    /// when this is set, so listing the parallel variant as a fallback does not silently change behavior.
+    bool isParallel() const { return is_parallel; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -158,6 +168,7 @@ private:
     SharedHeader right_sample_block;
     Block totals;
     int null_direction;
+    bool is_parallel;
 };
 
 }

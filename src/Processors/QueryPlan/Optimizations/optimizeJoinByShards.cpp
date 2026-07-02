@@ -13,6 +13,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -468,6 +470,165 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
     if (result)
         apply(result->joins);
+}
+
+/// The shard is selected by the hash of the join key's byte representation
+/// (`ScatterByPartitionTransform` -> `IColumn::computeHashInto`), while `FullSortingMergeJoin` matches keys
+/// with `compareAt`. Some types make the two disagree: keys that `compareAt` treats as equal can hash
+/// differently, so hash sharding would scatter them into different shards and the per-shard merge join would
+/// never see the match, returning fewer rows than the `full_sorting_merge` algorithm this one is documented
+/// to mirror. Three known cases:
+///   - Floating-point: `-0.0` and `+0.0` (and NaNs) compare equal for the merge but their bit patterns hash
+///     differently.
+///   - `Object('json')` / `JSON`: `ColumnObject::compareAt` compares the logical path/value map, but the
+///     hash depends on the physical layout - whether a given path is stored as a typed/dynamic subcolumn or
+///     serialized into `shared_data`. That layout can differ between blocks (e.g. when the set of dynamic
+///     paths differs across parts), so two logically-equal objects can hash into different shards.
+///   - `Dynamic`: same problem as `Object`. `ColumnDynamic::compareAt` compares the logical value, but
+///     `ColumnDynamic::computeHashInto` hashes the raw variant storage, which is explicitly documented as not
+///     equal for logically-equal values stored with different variant layouts (a typed variant on one side
+///     vs the shared variant on the other). A plain `Dynamic` join key is rejected earlier by
+///     `TableJoin::inferJoinKeyCommonType`, but only when `allow_dynamic_type_in_join_keys = 0` (the default);
+///     with that compatibility setting enabled a `Dynamic` key reaches this rewrite.
+/// This detects such a type at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/
+/// `Map`/`Variant`.
+static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
+{
+    auto breaks_sharding = [](const IDataType & t)
+    {
+        WhichDataType which(t);
+        return which.isFloat() || which.isObject() || which.isDynamic();
+    };
+
+    if (breaks_sharding(type))
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (breaks_sharding(child))
+            result = true;
+    });
+    return result;
+}
+
+/// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
+/// join keys.
+///
+/// Unlike `optimizeJoinByShards` above (which shards by primary-key ranges and only works when both sides
+/// read from MergeTree in order), this works on any sorted input: each side's pre-join `SortingStep` is
+/// switched to scatter the rows by the hash of the join keys into independent partitions and sort each
+/// partition (one sorted stream per shard), and the join is executed shard-by-shard
+/// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
+/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
+/// in the same shard on both sides. The join output is unordered.
+void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
+{
+    /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
+    if (num_shards <= 1)
+        return;
+
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * join_step = typeid_cast<JoinStep *>(node->step.get());
+            join_step && node->children.size() == 2)
+        {
+            const auto & join = join_step->getJoin();
+            const auto & table_join = join->getTableJoin();
+
+            /// Only shard when `parallel_full_sorting_merge` was the algorithm actually selected. Because
+            /// both `full_sorting_merge` and `parallel_full_sorting_merge` build the same
+            /// `FullSortingMergeJoin`, `join_algorithm` membership is not enough: e.g. with
+            /// `full_sorting_merge,parallel_full_sorting_merge` the priority list selects plain
+            /// `full_sorting_merge` first and the parallel variant is only an unreached fallback, so the
+            /// sharded (unordered) rewrite must not fire. `FullSortingMergeJoin::isParallel` carries the
+            /// selected algorithm from `chooseJoinAlgorithm`.
+            ///
+            /// `FullSortingMergeJoin` also serves `ASOF` joins, but they cannot be sharded by the hash of
+            /// the whole key list: the trailing key is the inequality (`ASOF`) key, so rows with the same
+            /// equality keys but different `ASOF` values would hash into different shards and the per-shard
+            /// merge join could miss the closest match. The primary-key-range sharding path
+            /// (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
+            const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(join.get());
+            if (full_sorting_merge_join
+                && full_sorting_merge_join->isParallel()
+                && table_join.strictness() != JoinStrictness::Asof
+                && table_join.getClauses().size() == 1)
+            {
+                auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
+                auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
+
+                /// A merge-join pre-sort is scattered when it is a plain full sort, or a `FinishSorting`
+                /// that `applyOrder` produced from a generic already-sorted input - a sorted subquery, a
+                /// sorted `UNION ALL`, or any other sorted upstream operator (`applyOrder` runs before this
+                /// pass and turns the full sort into a `FinishSorting` when its input already carries a sort
+                /// prefix). `convertToScatteredFullSort` turns the step back into a full sort per shard, so
+                /// the pre-sortedness is simply re-established inside each shard; this is what lets
+                /// `parallel_full_sorting_merge` parallelize any sorted input, as advertised, and not only
+                /// unsorted ones.
+                ///
+                /// Read-in-order MergeTree reads are deliberately left alone: `optimizeReadInOrder` marks
+                /// their pre-join `FinishSorting` with buffering (and, with `read_in_order_use_virtual_row`,
+                /// virtual-row chunks) that the scatter path is not meant to consume. Such reads are sharded
+                /// by the primary-key-range path (`optimizeJoinByShards`), which runs before this pass and
+                /// converts them to `PartitionedFinishSorting`. So a `FinishSorting` is scattered only when
+                /// it does not use buffering, i.e. it was created by `applyOrder` rather than read-in-order.
+                auto is_scatterable_merge_join_sort = [](const SortingStep & sort)
+                {
+                    if (!sort.isSortingForMergeJoin())
+                        return false;
+                    if (sort.getType() == SortingStep::Type::Full)
+                        return true;
+                    return sort.getType() == SortingStep::Type::FinishSorting && !sort.getUseBuffering();
+                };
+                if (left_sort && right_sort
+                    && is_scatterable_merge_join_sort(*left_sort)
+                    && is_scatterable_merge_join_sort(*right_sort))
+                {
+                    const auto & clause = table_join.getClauses().front();
+                    const auto & left_header = left_sort->getOutputHeader();
+                    const auto & right_header = right_sort->getOutputHeader();
+
+                    /// Do not shard when a join key is (or contains) a type whose hash-based shard selection
+                    /// is not consistent with the merge-join `compareAt` - floating-point (`-0.0` == `+0.0`,
+                    /// NaN == NaN), `JSON`/`Object`, or `Dynamic` - so equal keys could land in different
+                    /// shards and the match would be lost (see `joinKeyTypeBreaksHashSharding`). If a key
+                    /// column cannot be found to check its type, be conservative and skip sharding as well.
+                    /// The join then runs as a single merge join, exactly like `full_sorting_merge`.
+                    bool can_shard = left_header && right_header;
+                    for (size_t i = 0; can_shard && i < clause.key_names_left.size(); ++i)
+                    {
+                        const auto * left_key = left_header->findByName(clause.key_names_left[i]);
+                        const auto * right_key = right_header->findByName(clause.key_names_right[i]);
+                        if (!left_key || !right_key
+                            || joinKeyTypeBreaksHashSharding(*left_key->type)
+                            || joinKeyTypeBreaksHashSharding(*right_key->type))
+                            can_shard = false;
+                    }
+
+                    if (can_shard)
+                    {
+                        left_sort->convertToScatteredFullSort(num_shards);
+                        right_sort->convertToScatteredFullSort(num_shards);
+
+                        JoinStep::PrimaryKeySharding sharding;
+                        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+                            sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
+                        join_step->enableJoinByLayers(std::move(sharding));
+                    }
+                }
+            }
+        }
+
+        for (auto * child : node->children)
+            stack.push(child);
+    }
 }
 
 }
