@@ -787,6 +787,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     //    `new_unified_hash` (the default) and `compatible_double_hashes` still append the source number for
     //    a synchronous insert, so identical blocks on different branches collide.
     // Keep such strict inserts single-stream (as before), so the numbering stays global.
+    //
+    // The analogous VIEW-level collision for dependent materialized views (a per-branch view block
+    // number under the legacy deduplication hash modes) is handled inside `InsertDependenciesBuilder`,
+    // which keeps its sink stream size at 1 in that case regardless of the value passed here.
     const auto dedup_version = context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
     const bool strict_dedup_single_stream = !async_insert
         && settings[Setting::use_strict_insert_block_limits]
