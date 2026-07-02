@@ -881,6 +881,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     };
 
     SerializationInfoByName infos(columns, settings);
+
     /// Columns whose default counts are provided by the explicit statistics built above are not
     /// sampled: the builder takes their exact counts from the statistics and samples only the rest.
     EstimatesBuilder estimates_builder(columns, settings, statistics.getEstimates());

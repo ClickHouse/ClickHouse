@@ -848,7 +848,7 @@ getColumnsForNewDataPart(
 
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}, std::move(new_serialization_estimates)};
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos, ColumnsSubstreams{}, std::move(new_serialization_estimates)};
 
     const auto & source_columns = source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
