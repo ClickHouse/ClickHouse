@@ -1064,6 +1064,30 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+void ColumnNullable::serializeAsComparable(size_t n, String & out) const
+{
+    const auto & null_map_data = getNullMapData();
+    if (null_map_data[n])
+    {
+        out.push_back('\x01');
+        return;
+    }
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
+}
+
+void ColumnNullable::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
+{
+    for (size_t r = 0; r < num_rows; ++r)
+    {
+        const size_t src = permutation ? (*permutation)[r] : r;
+        serializeAsComparable(src, out[r]);
+    }
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))

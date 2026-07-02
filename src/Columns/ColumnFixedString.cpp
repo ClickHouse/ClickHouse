@@ -576,4 +576,21 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(chars.data() + start), count * n};
 }
 
+void ColumnFixedString::serializeAsComparable(size_t row, String & out) const
+{
+    out.append(reinterpret_cast<const char *>(&chars[row * n]), n);
+}
+
+void ColumnFixedString::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
+{
+    for (size_t r = 0; r < num_rows; ++r)
+    {
+        const size_t src = permutation ? (*permutation)[r] : r;
+        out[r].append(reinterpret_cast<const char *>(&chars[src * n]), n);
+    }
+}
+
 }

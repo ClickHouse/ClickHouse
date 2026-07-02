@@ -208,6 +208,9 @@ public:
     bool onlyNull() const override { return nested_column->isDummy(); }
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, std::vector<String> & out, const IColumn::Permutation * permutation) const override;
+
 
     /// Return the column that represents values.
     IColumn & getNestedColumn() { return *nested_column; }

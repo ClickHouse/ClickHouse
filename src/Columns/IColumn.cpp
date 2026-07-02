@@ -234,6 +234,23 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const 
     }
 }
 
+void IColumn::serializeAsComparable(size_t /* n */, String & /* out */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeAsComparable is not supported for {}", getName());
+}
+
+void IColumn::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const Permutation * permutation) const
+{
+    for (size_t r = 0; r < num_rows; ++r)
+    {
+        const size_t src = permutation ? (*permutation)[r] : r;
+        serializeAsComparable(src, out[r]);
+    }
+}
+
 void IColumn::updateAt(const IColumn &, size_t, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());

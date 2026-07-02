@@ -162,6 +162,8 @@ public:
 
     UInt32 getScale() const { return scale; }
 
+    void serializeAsComparable(size_t n, String & out) const final;
+
 protected:
     Container data;
     UInt32 scale;

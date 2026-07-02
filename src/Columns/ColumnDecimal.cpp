@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/transformEndianness.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -24,6 +25,9 @@
 
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
+#include <bit>
+#include <cstring>
+
 #include <base/TypeName.h>
 #include <base/sort.h>
 
@@ -38,6 +42,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template <is_decimal T>
@@ -691,6 +696,24 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
+}
+
+template <is_decimal T>
+void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
+{
+    using Native = T::NativeType;
+    if constexpr (std::is_integral_v<Native> || is_big_int_v<Native>)
+    {
+        Native value = data[n].value;
+        transformEndianness<std::endian::big>(value);
+        char * bytes = reinterpret_cast<char *>(&value);
+        bytes[0] ^= 0x80;
+        out.append(reinterpret_cast<const char *>(&value), sizeof(Native));
+    }
+    else
+    {
+        IColumn::serializeAsComparable(n, out);
+    }
 }
 
 template class ColumnDecimal<Decimal32>;
