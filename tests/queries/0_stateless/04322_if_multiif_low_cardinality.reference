@@ -198,14 +198,14 @@ x	String
 y	String
 x	String
 multiIf
-a	LowCardinality(String)
-NUM	LowCardinality(String)
-a	LowCardinality(String)
-hello	LowCardinality(String)
-a	LowCardinality(String)
-NUM	LowCardinality(String)
-a	LowCardinality(String)
-hello	LowCardinality(String)
+a	String
+NUM	String
+a	String
+hello	String
+a	String
+NUM	String
+a	String
+hello	String
 transform with default
 100	US	United States	String
 101	GB	United Kingdom	String

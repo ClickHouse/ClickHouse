@@ -33,6 +33,7 @@ namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
     extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -64,8 +65,14 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
+        /// Mirror FunctionIf::create: the LowCardinality optimisation is disabled when
+        /// `optimize_if_transform_strings_to_enum` is enabled, so that `if` and `multiIf` produce
+        /// the same result type. Otherwise `multiIf` would return `LowCardinality(String)` while a
+        /// flag-less `if` returns `String`, and `MultiIfToIfPass` could no longer rewrite `multiIf` to `if`.
+        const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+            && !settings[Setting::optimize_if_transform_strings_to_enum];
         return std::make_shared<FunctionMultiIf>(
-            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type], settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]);
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type], use_low_cardinality_optimisation);
     }
 
     explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool optimize_if_transform_const_strings_to_lowcardinality_)
