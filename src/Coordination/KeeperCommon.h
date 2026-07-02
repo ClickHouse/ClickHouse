@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 
 
 namespace Coordination
@@ -16,7 +17,10 @@ using ZooKeeperRequestPtr = std::shared_ptr<ZooKeeperRequest>;
 struct ZooKeeperResponse;
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
+struct Stat;
+
 }
+
 namespace DB
 {
 
@@ -47,6 +51,15 @@ struct KeeperDigest
 };
 
 static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V5;
+
+/// One SHA1 of user:password that a session authenticated with.
+struct KeeperAuthID
+{
+    std::string scheme;
+    std::string id;
+
+    bool operator==(const KeeperAuthID & other) const { return scheme == other.scheme && id == other.id; }
+};
 
 struct KeeperResponseForSession
 {
@@ -98,5 +111,70 @@ void moveFileBetweenDisks(
 /// It is valid to always return false - that just makes the queue bloat prevention less effective;
 /// if you do return true, you *must* call KeeperDispatcher::onResponseDeallocated later.
 using ZooKeeperResponseCallback = std::function<bool(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
+
+/// Metadata that must be stored for each znode, + data ptr and cached digest.
+/// (Despite having many fields, this struct is not a kitchen sink, it doesn't have anything
+///  unnecessary and is trying to be small.)
+struct KeeperNodeStats
+{
+    /// Ephemeral nodes and nodes with TTL can't have children, so we set their num_children to
+    /// these special values to indicate these special node types.
+    static constexpr uint32_t SPECIAL_EPHEMERAL = UINT32_MAX;
+    static constexpr uint32_t SPECIAL_TTL = UINT32_MAX - 1;
+    /// Smallest of the above SPECIAL_* values.
+    static constexpr uint32_t SPECIAL_MIN = SPECIAL_TTL;
+
+    uint32_t data_size = 0;
+    uint32_t acl_id = 0;
+    int32_t version = 0;
+    /// Either number of children or one of the SPECIAL_* constants above.
+    uint32_t num_children_or_special = 0;
+
+    int64_t czxid = 0;
+    int64_t mzxid = 0;
+    int64_t pzxid = 0;
+
+    int64_t ctime = 0;
+    int64_t mtime = 0;
+
+    int32_t cversion = 0;
+    int32_t aversion = 0;
+
+    /// Ephemeral owner (if isEphemeral()) or TTL (if isTTL(); in ms since mtime) or sequence number
+    /// for sequentially named children (otherwise).
+    int64_t ephemeral_or_seq_num_or_ttl = 0;
+
+    int32_t getNumChildren() const { return num_children_or_special >= SPECIAL_MIN ? 0 : num_children_or_special; }
+    bool isEphemeral() const { return num_children_or_special == SPECIAL_EPHEMERAL; }
+    bool isTTL() const { return num_children_or_special == SPECIAL_TTL; }
+
+    /// Marks the node as ephemeral (in num_children_or_special) and sets its owner (in ephemeral_or_seq_num_or_ttl).
+    void makeEphemeral(int64_t ephemeral_owner);
+    /// Similar for TTL.
+    void makeTTL(int64_t ttl);
+    /// Sets non-ephemeral non-TTL node's number of children.
+    void setNumChildren(uint32_t num_children);
+
+    void increaseNumChildren();
+    void decreaseNumChildren();
+
+    void setSeqNum(int64_t seq_num);
+    void increaseSeqNum();
+
+    int64_t getEphemeralOwner() const { return isEphemeral() ? ephemeral_or_seq_num_or_ttl : 0; }
+    int64_t getTTL() const { return isTTL() ? ephemeral_or_seq_num_or_ttl : 0; }
+    int64_t getSeqNum() const { return num_children_or_special < SPECIAL_MIN ? ephemeral_or_seq_num_or_ttl : 0; }
+
+    int64_t destroyTime() const
+    {
+        chassert(isTTL());
+        return mtime + getTTL();
+    }
+
+    uint64_t calculateDigest(std::string_view path, std::string_view data) const;
+
+    void copyStats(const Coordination::Stat & stat);
+    void setResponseStat(Coordination::Stat & response_stat) const;
+};
 
 }

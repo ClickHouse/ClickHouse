@@ -5,6 +5,8 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Common/assert_cast.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
@@ -36,23 +38,26 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         auto key = keys.front();
         keys.pop();
         std::cout << key << "\n";
-        auto value = storage.container.getValue(key);
-        std::cout << "\tStat: {version: " << value.stats.version <<
-            ", mtime: " << value.stats.mtime <<
-            ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
-            ", czxid: " << value.stats.czxid <<
-            ", mzxid: " << value.stats.mzxid <<
-            ", numChildren: " << value.numChildren() <<
-            ", dataLength: " << value.stats.data_size <<
+        KeeperNodeStats stats;
+        std::string data;
+        if (!storage.nodes_storage->getCommittedNodeSimple(key, &stats, &data))
+            continue;
+        std::cout << "\tStat: {version: " << stats.version <<
+            ", mtime: " << stats.mtime <<
+            ", emphemeralOwner: " << stats.getEphemeralOwner() <<
+            ", czxid: " << stats.czxid <<
+            ", mzxid: " << stats.mzxid <<
+            ", numChildren: " << stats.getNumChildren() <<
+            ", dataLength: " << stats.data_size <<
             "}" << std::endl;
-        std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
+        std::cout << "\tData: " << data << std::endl;
 
-        for (const auto & child : value.getChildren())
+        for (const auto & child : storage.nodes_storage->listCommittedChildrenNames(key))
         {
             if (key == "/")
-                keys.push(key + std::string{child});
+                keys.push(key + child);
             else
-                keys.push(key + "/" + std::string{child});
+                keys.push(key + "/" + child);
         }
     }
     std::cout << std::flush;
