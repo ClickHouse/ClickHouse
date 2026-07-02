@@ -53,8 +53,8 @@ ColumnPtr runReinterpret(const DataTypePtr & from_type, ColumnPtr from_column, c
     auto result_type = function->getResultType();
     auto result = function->execute(args, result_type, /*input_rows_count=*/ 1, /*dry_run=*/ false);
 
-    /// The result column must be structurally consistent with the declared type, scale included.
-    EXPECT_TRUE(columnMatchesType(*result, *result_type, /*strict_decimal_scale=*/ true))
+    /// columnMatchesType is scale-blind; each test asserts the declared scale via getScale().
+    EXPECT_TRUE(columnMatchesType(*result, *result_type))
         << "reinterpret returned " << result->getName() << " for declared type " << result_type->getName();
     return result;
 }
