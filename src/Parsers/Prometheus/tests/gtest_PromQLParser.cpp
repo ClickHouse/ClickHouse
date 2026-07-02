@@ -275,6 +275,20 @@ PrometheusQueryTree(INSTANT_VECTOR):
         foo{__name__=~"foo"}
         )"), DB::Exception);
 
+    /// Round-trip: a valid selector with more than one in-brace `__name__` matcher keeps the metric name
+    /// inside the braces. Hoisting it (`foo{__name__!="bar"}`) would set the metric name twice and fail to
+    /// reparse, which breaks lowering of such selectors into a `timeSeriesSelector` call.
+    EXPECT_EQ(parse(R"(
+        {__name__="foo", __name__!="bar"}
+        )"), R"(
+{__name__="foo",__name__!="bar"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'foo'
+        __name__ NE 'bar'
+)");
+
     /// Aggregation operators.
     EXPECT_EQ(parse("sum(demo_memory_usage_bytes)"), R"(
 sum(demo_memory_usage_bytes)

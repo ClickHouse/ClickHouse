@@ -307,16 +307,30 @@ String PrometheusQueryTree::StringLiteral::toString(const PrometheusQueryTree &)
 
 String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree &) const
 {
+    /// The metric name can be written in front of the braces (`foo{...}`) only when there is a single
+    /// `__name__` matcher and it uses `=`. With more than one `__name__` matcher the metric name must stay
+    /// inside the braces, because a serialization such as `foo{__name__!="bar"}` sets the metric name twice
+    /// and would be rejected when reparsed (e.g. in `timeSeriesSelector`), breaking the selector round-trip.
+    size_t metric_name_matchers_count = 0;
+    for (const auto & matcher : matchers)
+    {
+        if (matcher.label_name == "__name__")
+            ++metric_name_matchers_count;
+    }
+
     bool has_metric_name = false;
     size_t metric_name_pos = static_cast<size_t>(-1);
-    for (size_t i = 0; i != matchers.size(); ++i)
+    if (metric_name_matchers_count == 1)
     {
-        const auto & matcher = matchers[i];
-        if ((matcher.label_name == "__name__") && (matcher.matcher_type == MatcherType::EQ))
+        for (size_t i = 0; i != matchers.size(); ++i)
         {
-            has_metric_name = true;
-            metric_name_pos = i;
-            break;
+            const auto & matcher = matchers[i];
+            if ((matcher.label_name == "__name__") && (matcher.matcher_type == MatcherType::EQ))
+            {
+                has_metric_name = true;
+                metric_name_pos = i;
+                break;
+            }
         }
     }
 
