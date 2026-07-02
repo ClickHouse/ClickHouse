@@ -20,6 +20,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
+#include <Core/QueryProcessingStage.h>
 #include <Interpreters/Session.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
@@ -1058,6 +1060,18 @@ namespace
             if (settings[Setting::throw_if_no_data_to_insert])
                 throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
 
+            /// A zero-row INSERT ... RETURNING is still a successful insert and must produce the RETURNING
+            /// result. Finish the pushing pipeline with an empty stream and swap in the RETURNING SELECT;
+            /// otherwise the pipeline stays pushing and generateOutput returns no result to the client.
+            if (insert_query->returning_select)
+            {
+                PushingPipelineExecutor executor(io.pipeline);
+                executor.start();
+                executor.finish();
+                replacePipelineWithInsertReturningAfterPush(
+                    io, *insert_query, query_context, QueryProcessingStage::Complete);
+            }
+
             return;
         }
 
@@ -1076,9 +1090,16 @@ namespace
         }
 
         if (isQueryCancelled())
+        {
             executor.cancel();
-        else
-            executor.finish();
+            return;
+        }
+
+        executor.finish();
+
+        if (insert_query)
+            replacePipelineWithInsertReturningAfterPush(
+                io, *insert_query, query_context, QueryProcessingStage::Complete);
     }
 
     void Call::initializePipeline(const Block & header)

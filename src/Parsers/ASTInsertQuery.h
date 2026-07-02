@@ -25,8 +25,15 @@ public:
     ASTPtr table_function;
     ASTPtr partition_by;
     ASTPtr settings_ast;
+    /// Query-level SETTINGS parsed after RETURNING in INSERT ... SELECT ... RETURNING ... SETTINGS ...
+    /// They apply to the source SELECT / INSERT phase, but must not leak into RETURNING result limits.
+    ASTPtr source_select_settings_ast;
+    /// Runtime-only snapshot of query settings that must be restored before planning RETURNING.
+    /// Filled in `executeQueryImpl` after source-only settings are applied.
+    ASTPtr source_select_settings_restore_ast;
 
     ASTPtr select;
+    ASTPtr returning_select;
     ASTPtr infile;
     ASTPtr compression;
 
@@ -64,7 +71,10 @@ public:
         if (table_function) { res->table_function = table_function->clone(); res->children.push_back(res->table_function); }
         if (partition_by) { res->partition_by = partition_by->clone(); res->children.push_back(res->partition_by); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
+        if (source_select_settings_ast) { res->source_select_settings_ast = source_select_settings_ast->clone(); }
+        if (source_select_settings_restore_ast) { res->source_select_settings_restore_ast = source_select_settings_restore_ast->clone(); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (returning_select) { res->returning_select = returning_select->clone(); res->children.push_back(res->returning_select); }
         if (infile) { res->infile = infile->clone(); res->children.push_back(res->infile); }
         if (compression) { res->compression = compression->clone(); res->children.push_back(res->compression); }
 

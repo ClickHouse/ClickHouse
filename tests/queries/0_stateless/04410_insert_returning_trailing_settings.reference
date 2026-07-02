@@ -1,0 +1,59 @@
+select returning trailing settings
+3
+rows after insert
+1
+2
+3
+select returning trailing settings pushed down
+5
+5
+trailing settings still apply to source select
+1
+1
+source settings before returning do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+1
+query settings preserved for returning
+0
+1
+2
+3
+4
+1
+source custom setting does not leak into returning
+unset
+1
+source default settings merged with trailing settings
+3
+3
+source query global settings are rejected
+0
+trailing settings do not affect returning planning
+1
+1
+1
+trailing settings do not cap returning
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+values returning with settings
+1
+10

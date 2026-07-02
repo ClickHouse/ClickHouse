@@ -1,0 +1,49 @@
+1	foo
+table after values returning
+1	foo
+1
+table after select returning
+2	bar
+10
+insert failure
+2
+returning subquery settings
+0
+1
+2
+3
+4
+returning analysis after insert
+1
+returning settings after insert
+1
+returning max_execution_time rejection
+1
+returning memory limit rejection
+1
+returning memory limit default rejection
+1
+returning temp data limit rejection
+1
+returning network bandwidth rejection
+1
+returning local read bandwidth rejection
+1
+returning admission limit rejection
+1
+returning ast size limit
+1
+returning delayed ast size limit
+1
+1
+returning delayed strict identifier
+1
+1
+returning analyzer setting
+1
+1
+returning union_default_mode
+1
+1
+async insert rejection
+nested union settings rejection

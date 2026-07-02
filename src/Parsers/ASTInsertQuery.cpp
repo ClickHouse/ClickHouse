@@ -104,6 +104,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         settings_ast->format(ostr, settings, state, frame);
     }
 
+    if (returning_select && !select)
+    {
+        ostr << settings.nl_or_ws << "RETURNING" << " (";
+        returning_select->format(ostr, settings, state, frame);
+        ostr << ")";
+    }
+
     /// Compatibility for INSERT without SETTINGS to format in oneline, i.e.:
     ///
     ///     INSERT INTO foo VALUES
@@ -133,6 +140,19 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             ostr << delim
                 << "FORMAT" << " " << format;
         }
+
+        if (returning_select)
+        {
+            ostr << settings.nl_or_ws << "RETURNING" << " (";
+            returning_select->format(ostr, settings, state, frame);
+            ostr << ")";
+        }
+
+        if (source_select_settings_ast)
+        {
+            ostr << settings.nl_or_ws << "SETTINGS" << " ";
+            source_select_settings_ast->format(ostr, settings, state, frame);
+        }
     }
     else
     {
@@ -155,6 +175,8 @@ void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(table_id.table_name);
     hash_state.update(table_id.uuid);
     hash_state.update(format);
+    if (source_select_settings_ast)
+        source_select_settings_ast->updateTreeHash(hash_state, ignore_aliases);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

@@ -65,6 +65,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool async_insert;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -1046,9 +1047,24 @@ BlockIO InterpreterInsertQuery::execute()
     }
 
     BlockIO res;
+    if (query.returning_select)
+    {
+        if (async_insert || settings[Setting::async_insert])
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... RETURNING is not supported with async_insert=1");
+        }
+    }
+
     if (query.select)
     {
-        if (settings[Setting::parallel_distributed_insert_select])
+        /// The distributed insert-select optimizations serialize this AST to build the remote INSERT sent to each
+        /// shard. With `returning_select` present that remote query would become `INSERT ... SELECT ... RETURNING (...)`,
+        /// so every shard would run the user RETURNING `SELECT` and stream a result the initiator cannot consume. The
+        /// contract is that RETURNING runs once on the initiator after the insert phase completes, so fall back to the
+        /// local insert-select pipeline (RETURNING is wrapped on the initiator in `executeQueryImpl`) when it is present.
+        if (settings[Setting::parallel_distributed_insert_select] && !query.returning_select)
         {
             /// distributed write paths may mutate the SELECT AST (CTE expansion), so keep a backup
             auto saved_select = query.select->clone();
@@ -1079,6 +1095,10 @@ BlockIO InterpreterInsertQuery::execute()
     {
         res.pipeline = buildInsertPipeline(query, table);
     }
+
+    /// For INSERT ... RETURNING the RETURNING `SELECT` is wrapped later, in `executeQueryImpl`, after the query
+    /// start has been logged. This keeps a failure while planning the RETURNING subquery (which runs after the
+    /// INSERT has persisted rows) from being logged as EXCEPTION_BEFORE_START.
 
     res.pipeline.addStorageHolder(table);
 

@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/buildInsertReturningPipeline.h>
 #include <Interpreters/executeQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -316,7 +317,7 @@ void LocalConnection::sendQuery(
     try
     {
         query_context->setSetting("serialize_query_plan", false);
-        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
+        std::tie(state->parsed_query, state->io) = executeQuery(state->query, query_context, QueryFlags{}, state->stage);
 
         if (state->io.pipeline.pushing())
         {
@@ -395,7 +396,55 @@ void LocalConnection::sendQueryPlan(const QueryPlan &)
 void LocalConnection::sendData(const Block & block, const String &, bool)
 {
     if (block.empty())
+    {
+        if (state->pushing_async_executor)
+        {
+            state->pushing_async_executor->finish();
+            state->pushing_async_executor.reset();
+        }
+        else if (state->pushing_executor)
+        {
+            state->pushing_executor->finish();
+            state->pushing_executor.reset();
+        }
+
+        if (const auto * insert_query = state->parsed_query ? state->parsed_query->as<ASTInsertQuery>() : nullptr)
+        {
+            /// Building the RETURNING `SELECT` after the push can throw (unknown identifier, rejected `SETTINGS`,
+            /// ...) once the INSERT has already finished. Route such failures through the exception path so the
+            /// query is logged as `ExceptionWhileProcessing` and not finalized as success by a later `onFinish`.
+            try
+            {
+                if (replacePipelineWithInsertReturningAfterPush(state->io, *insert_query, query_context, state->stage))
+                {
+                    state->block = state->io.pipeline.getHeader();
+                    state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);
+                    state->io.pipeline.setConcurrencyControl(false);
+                    /// Announce the result header as the next packet, exactly as the pulling path in `sendQuery` does.
+                    /// `ClientBase::onData` uses this zero-row header to initialize the output format; without it the
+                    /// header is dropped (overwritten by the first result block, or never sent for an empty result).
+                    next_packet_type = Protocol::Server::Data;
+                }
+            }
+            catch (const Exception & e)
+            {
+                state->io.onException();
+                state->exception.reset(e.clone());
+            }
+            catch (const std::exception & e)
+            {
+                state->io.onException();
+                state->exception = std::make_unique<Exception>(Exception::CreateFromSTDTag{}, e);
+            }
+            catch (...) // Ok: wrap unknown exception for the client
+            {
+                state->io.onException();
+                state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
+            }
+        }
+
         return;
+    }
 
     if (state->pushing_async_executor)
         state->pushing_async_executor->push(block);

@@ -403,6 +403,67 @@ sequenceDiagram
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
 
+### INSERT ... RETURNING phase {#insert-returning-phase}
+
+`INSERT ... RETURNING` extends the [INSERT phase](#insert-phase) with a full query-result stream after the row upload. Once the client sends the end-of-input terminator (the empty Data block), the server executes the `RETURNING` subquery and streams its output exactly as the [Query phase](#query-phase) does: a header block, zero or more result blocks, optional `Totals`/`Extremes`, and finally `EndOfStream` or `Exception`.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant S as Server
+
+    C->>S: Query packet (INSERT … RETURNING body)
+    C->>S: External-table Data packets (0 or more)
+    opt metadata before schema
+        S->>C: TableColumns / Progress / ...
+    end
+    S->>C: Data packet — INSERT schema block (columns, 0 rows)
+    loop one or more blocks
+        C->>S: Data packet (rows N)
+    end
+    C->>S: Data packet — empty block, end-of-input terminator
+    S->>C: Data packet — RETURNING result header (columns, 0 rows)
+    loop until EndOfStream or Exception
+        S->>C: Data — result block / Progress / ProfileInfo / Log / ProfileEvents
+    end
+    opt WITH TOTALS
+        S->>C: Totals
+    end
+    opt extremes setting
+        S->>C: Extremes
+    end
+    S->>C: EndOfStream
+```
+
+Steps 1–5 are identical to the plain INSERT phase. After the end-of-input terminator:
+
+6. The server sends a `Data` header block for the `RETURNING` result (0 rows, full column structure).
+7. The server streams result blocks interleaved with `Progress`, `ProfileInfo`, `Log`, and `ProfileEvents` packets, exactly as in the Query phase response loop.
+8. If `WITH TOTALS` is active the server sends a `Totals` packet; if `extremes` is enabled it sends an `Extremes` packet.
+9. The server sends `EndOfStream`.
+
+**Client implementation note.** A client that handles plain `INSERT` by draining until `EndOfStream`/`Exception` and discarding all non-`EndOfStream` packets will silently drop the `RETURNING` result. To consume the result the client must detect the `Data` header packet that arrives after the end-of-input terminator and switch into the Query-phase response loop. The simplest safe approach is to treat the post-terminator response identically to a `SELECT` response: accumulate `Data` blocks, handle `Totals`/`Extremes`, and exit on `EndOfStream` or `Exception`.
+
+**Settings restriction.** The following settings raise `NOT_IMPLEMENTED` if supplied in the `RETURNING` subquery `SETTINGS` clause, because they operate on shared query-level state that is captured at `INSERT` registration and cannot be correctly scoped to the subquery alone:
+
+| Category | Rejected settings |
+|---|---|
+| Memory | `max_memory_usage`, `max_memory_usage_for_user`, `memory_overcommit_ratio_denominator`, `memory_overcommit_ratio_denominator_for_user`, `memory_usage_overcommit_max_wait_microseconds` |
+| Execution time | `max_execution_time`, `timeout_overflow_mode` |
+| Temporary data on disk | `max_temporary_data_on_disk_size_for_query`, `max_temporary_data_on_disk_size_for_user`, `temporary_files_codec`, `temporary_files_buffer_size` |
+| Network bandwidth | `max_network_bandwidth_for_user`, `max_network_bandwidth_for_all_users`, `max_remote_read_network_bandwidth`, `max_remote_write_network_bandwidth`, `max_local_read_bandwidth`, `max_local_write_bandwidth` |
+| Concurrency / admission | `max_concurrent_queries_for_user`, `max_concurrent_queries_for_all_users`, `queue_max_wait_ms`, `replace_running_query`, `replace_running_query_max_wait_ms`, `priority`, `low_priority_query_wait_time_ms`, `workload`, `reserve_memory`, `use_concurrency_control` |
+| Profile | `profile` (rejected because it can expand into any of the settings above) |
+
+Result-shaping limits (`max_result_rows`, `max_result_bytes`, `result_overflow_mode`) are fully supported, as they operate only on the result pipeline.
+
+The same query-global settings class is also rejected in source-side `SETTINGS` of `INSERT ... SELECT ... RETURNING ... SETTINGS ...`, because those values are bound at query registration and cannot be scoped to source phase only.
+
+Output format settings (e.g. `output_format_json_quote_64bit_integers`) supplied in the `RETURNING` subquery `SETTINGS` are accepted but silently ignored — the result is serialized using the output format established by the outer query context and the client transport.
+
+`input()` is not supported in the `RETURNING` subquery and is rejected with `NOT_IMPLEMENTED`.
+
 ## Message reference {#message-reference}
 
 Fields are listed in wire order. The `Type` column uses:

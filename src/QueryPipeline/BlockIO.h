@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <Common/QueryScope.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -19,6 +20,13 @@ struct QueryPipelineFinalizedInfo
     std::optional<ResultProgress> result_progress;
     VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+};
+
+/// Shared by BlockIO finish callbacks; must outlive executeQueryImpl stack frame.
+struct BlockIOFinishCallbackState
+{
+    bool pulling_pipeline_at_setup = false;
+    bool insert_returning_result_as_select = false;
 };
 
 struct BlockIO
@@ -51,6 +59,8 @@ struct BlockIO
     QueryMetadataCachePtr query_metadata_cache;
 
     QueryPipeline pipeline;
+
+    std::shared_ptr<BlockIOFinishCallbackState> finish_callback_state;
 
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.

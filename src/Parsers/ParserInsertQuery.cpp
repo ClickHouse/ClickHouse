@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -14,6 +15,8 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
 #include <Common/typeid_cast.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -57,6 +60,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_values(Keyword::VALUES);
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
+    ParserKeyword s_returning(Keyword::RETURNING);
     ParserKeyword s_select(Keyword::SELECT);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
@@ -78,6 +82,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr select;
     ASTPtr table_function;
     ASTPtr settings_ast;
+    ASTPtr source_select_settings_ast;
+    ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
@@ -185,8 +191,30 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    auto try_parse_returning_subquery = [&]() -> bool
+    {
+        if (!s_returning.ignore(pos, expected))
+            return false;
+
+        if (!s_lparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected opening round bracket after RETURNING");
+
+        ParserSelectWithUnionQuery select_p;
+        if (!select_p.parse(pos, returning_select, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected SELECT query in RETURNING clause");
+
+        if (!s_rparen.ignore(pos, expected))
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected closing round bracket after RETURNING subquery");
+
+        return true;
+    };
+
     String format_str;
     Pos before_values = pos;
+
+    /// For INSERT VALUES and INSERT FORMAT, RETURNING must appear before the data clause.
+    if (!infile)
+        try_parse_returning_subquery();
 
     /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
@@ -212,6 +240,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// If SELECT is defined (possibly in parentheses), return to position before select and parse
         /// rest of query as SELECT query. Parentheses are handled by ParserSelectWithUnionQuery.
         pos = before_values;
+        returning_select.reset();
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
@@ -239,6 +268,26 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+
+        /// For INSERT SELECT, RETURNING appears after the source SELECT.
+        const bool has_returning = try_parse_returning_subquery();
+
+        /// A query-level SETTINGS clause normally trails the source SELECT and is absorbed by
+        /// `ParserSelectWithUnionQuery` as the SELECT's own settings. When RETURNING is present the
+        /// SELECT parser stops at RETURNING, so the trailing `SETTINGS` (e.g. `parallel_distributed_insert_select`)
+        /// would never be consumed. Parse it here and keep it separately from INSERT-level `settings_ast`:
+        /// these settings still apply to the INSERT/source SELECT phase, but must not leak into RETURNING
+        /// limits/context.
+        if (has_returning && s_settings.ignore(pos, expected))
+        {
+            if (settings_ast)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "You have SETTINGS both before and after the source SELECT, this is not allowed.");
+
+            ParserSetQuery parser_settings(true);
+            if (!parser_settings.parse(pos, source_select_settings_ast, expected))
+                return false;
+        }
     }
     else if (!infile)
     {
@@ -271,9 +320,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (select)
     {
-        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS
-        InsertQuerySettingsPushDownVisitor::Data visitor_data{settings_ast};
+        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS.
+        /// When RETURNING is present, keep source-SELECT settings in `source_select_settings_ast` so they can be
+        /// applied for the source phase but excluded from RETURNING planning/limits.
+        ASTPtr & source_settings_target = returning_select ? source_select_settings_ast : settings_ast;
+        InsertQuerySettingsPushDownVisitor::Data visitor_data{source_settings_target};
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+
     }
 
     /// In case of defined format, data follows it -- but only for inline-data INSERTs.
@@ -348,7 +401,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
+    query->returning_select = returning_select;
     query->settings_ast = settings_ast;
+    query->source_select_settings_ast = source_select_settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
 
@@ -356,6 +411,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (returning_select)
+        query->children.push_back(returning_select);
     if (settings_ast)
         query->children.push_back(settings_ast);
 

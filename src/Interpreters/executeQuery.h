@@ -6,6 +6,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/QueryLogElement.h>
+#include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
@@ -23,6 +24,10 @@ class WriteBuffer;
 class IOutputFormat;
 struct QueryStatusInfo;
 struct QueryPlanAndSets;
+
+/// Validate that nested AST nodes do not contradict the enclosing query's `allow_experimental_analyzer` value.
+/// Public entry point for the INSERT ... RETURNING delayed planning path (see `buildReturningSelectPipeline`).
+void validateAnalyzerSettingsForReturning(ASTPtr ast, bool context_value);
 
 struct QueryResultDetails
 {

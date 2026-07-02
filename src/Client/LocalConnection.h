@@ -2,6 +2,7 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -27,6 +28,7 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.
