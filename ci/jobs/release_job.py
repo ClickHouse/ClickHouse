@@ -369,16 +369,19 @@ def main():
                 "echo 'Generate ChangeLog'",
                 "docker pull clickhouse/style-test:latest",
                 # changelog.py runs inside the container, which cannot see the
-                # host gh session, so it needs an explicit token. Mint a
-                # short-lived App token inline (kept out of the log — the command
-                # carries `$(gh auth token)`, not its value) and pass it through
-                # `-e GH_TOKEN` rather than exporting one job-wide.
-                f'GH_TOKEN="$(gh auth token)" CI=1 docker run -u {uid}:{gid}'
+                # host gh session, so it needs an explicit token via
+                # `--gh-user-or-token`. Mint a short-lived App token into a shell
+                # variable first, then expand it into the argument: a `VAR=val cmd`
+                # prefix would not affect `$VAR` expansion in the same command, so
+                # the token must be a normal variable set before `docker run`. The
+                # command string carries `$(gh auth token)`/`$token`, not the value,
+                # so verbose logging never prints the token.
+                f'token="$(gh auth token)" && CI=1 docker run -u {uid}:{gid}'
                 f" -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
                 f" ./tests/ci/changelog.py -v --debug-helpers"
-                f' --gh-user-or-token "$GH_TOKEN"'
+                f' --gh-user-or-token "$token"'
                 f" --jobs=5"
                 f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
                 f"git add ./docs/changelogs/{release_tag}.md",
