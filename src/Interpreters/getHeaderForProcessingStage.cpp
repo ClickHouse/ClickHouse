@@ -57,6 +57,8 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
     /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+    /// Reset the flag too: it must not stay set once its expression is gone.
+    select.group_by_all = false;
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
@@ -98,6 +100,8 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     replace_where(select, ASTSelectQuery::Expression::PREWHERE);
     select.setExpression(ASTSelectQuery::Expression::HAVING, {});
     select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    /// order_by_all implies a non-null orderBy(); keep that invariant after dropping ORDER BY.
+    select.order_by_all = false;
 
     return true;
 }
