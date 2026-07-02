@@ -6,10 +6,6 @@
 # several multi-requests instead of sending them all in a single one. An unbatched
 # multi-request could exceed the maximum ZooKeeper message size (the default
 # jute.maxbuffer of 1MB) and fail for tables with large deduplication windows.
-#
-# Each separate INSERT statement creates exactly one deduplication block node in
-# ZooKeeper, so issuing more than zkutil::MULTI_BATCH_SIZE (100) inserts forces a
-# correct implementation to split the removals into more than one multi-request.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,15 +26,7 @@ $CLICKHOUSE_CLIENT --query "
         ORDER BY k
         SETTINGS replicated_deduplication_window = 10000"
 
-# Each separate INSERT becomes its own deduplication block entry in ZooKeeper.
-# 120 inserts comfortably exceeds zkutil::MULTI_BATCH_SIZE (100), so the removals
-# during TRUNCATE must be split into more than one multi-request.
-NUM_INSERTS=120
-{
-    for i in $(seq 1 $NUM_INSERTS); do
-        echo "INSERT INTO truncate_many_dedup1 VALUES ($i);"
-    done
-} | $CLICKHOUSE_CLIENT --multiquery
+$CLICKHOUSE_CLIENT --query "INSERT INTO truncate_many_dedup1 SELECT number FROM numbers(120) SETTINGS min_insert_block_size_rows=1, max_block_size=1"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA truncate_many_dedup2"
 
