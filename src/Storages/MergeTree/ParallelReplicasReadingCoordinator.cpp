@@ -1269,26 +1269,28 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         auto coordinator = getCoordinator(request.stream_id);
         if (!coordinator)
         {
-            /// Rolling-upgrade case: an older follower (parallel-replicas protocol <
-            /// `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`) doesn't know
-            /// about `#split_i` streams and announced with the bare table name. The new
-            /// coordinator pinned the snapshot replica to the initiator and only registered
-            /// `#split_i` streams, so this follower's stream is "unknown" — but it's also unable
-            /// to read the announcement-response that would tell it to stop. Surface a
-            /// `finish=true` empty response instead of throwing so the follower's pool exits
-            /// cleanly; the query completes via the initiator's local splits. Newer requesters
-            /// have no excuse for an unknown stream — throw, that's a real bug.
-            if (request.replica_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+            /// Mirror of the snapshot-pin guard in `handleInitialAllRangesAnnouncement`: while the
+            /// snapshot replica is pinned, a non-snapshot replica's announcement for an unregistered
+            /// stream is dropped (empty response, "you own nothing"). Its follow-up read request for
+            /// that same dropped stream must get the same graceful `finish=true` answer instead of
+            /// throwing; the snapshot replica's registered streams cover the whole read set, so
+            /// finishing this replica loses no work. Gate on the same condition the announcement guard
+            /// used (snapshot pinned and requester is not the snapshot replica); the protocol-version
+            /// check below only covers the rolling-upgrade subset, not a same-version follower that
+            /// planned this read in a different coordination mode.
+            const bool dropped_under_snapshot_pinning
+                = snapshot_replica_num && request.replica_num != *snapshot_replica_num;
+            if (dropped_under_snapshot_pinning
+                || request.replica_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
             {
                 LOG_DEBUG(
                     getLogger("ParallelReplicasReadingCoordinator"),
-                    "Replica {} (protocol {}) asked for unknown stream {}; rolling-upgrade fallback: "
-                    "telling it that reading is finished. The follower will not contribute work to "
-                    "this query — the initiator and protocol-{}+ followers cover the read set",
+                    "Replica {} (protocol {}) asked for unknown stream {}; telling it that reading is "
+                    "finished. It contributes no work to this query; the other replicas' registered "
+                    "streams cover the read set",
                     request.replica_num,
                     request.replica_protocol_version,
-                    request.stream_id,
-                    DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE);
+                    request.stream_id);
                 return response;
             }
 

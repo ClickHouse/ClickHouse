@@ -70,6 +70,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
+#include <Common/FailPoint.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
@@ -294,6 +295,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_parts_to_activate;
     extern const MergeTreeSettingsUInt64 distributed_index_analysis_min_indexes_bytes_to_activate;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_force_default_mode_on_follower[];
 }
 
 namespace ErrorCodes
@@ -3424,7 +3430,19 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             column_names_to_read,
             query_info.input_order_info);
 
-    if (query_info.input_order_info)
+    /// Test hook: force a parallel-replicas follower to plan this read in Default mode (bare-table
+    /// stream) even when the initiator splits it into #split_i streams, reproducing a cross-node
+    /// coordination-mode divergence that a homogeneous single-server test cluster cannot otherwise
+    /// manufacture. Only affects a non-initiator replica, so the initiator's registered stream set is
+    /// unchanged.
+    bool force_default_on_follower = false;
+    fiu_do_on(FailPoints::parallel_replicas_force_default_mode_on_follower,
+    {
+        if (is_parallel_reading_from_replicas && !isParallelReplicasLocalPlanForInitiator())
+            force_default_on_follower = true;
+    });
+
+    if (query_info.input_order_info && !force_default_on_follower)
     {
         return spreadMarkRangesAmongStreamsWithOrder(
             std::move(parts_with_ranges),
