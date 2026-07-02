@@ -1677,6 +1677,43 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         function->getLambdaArgumentTypes(argument_types);
 
+        /** Detect any `LambdaNode` argument whose placeholder `DataTypeFunction` was not filled in
+          * by `getLambdaArgumentTypes`. Such a position is one where the function did not expect a
+          * lambda but the user supplied one (e.g. `arrayFold`'s initial accumulator).
+          *
+          * Reporting these by their original argument index matters: when an unexpected lambda's
+          * unresolved placeholder propagates into the expected lambda's argument types via
+          * `getLambdaArgumentTypes` (e.g. `arrayFold` copies the accumulator type into its lambda's
+          * argument list), detecting the placeholder later would blame the expected lambda's
+          * position instead of the actual bad argument.
+          *
+          * The check must run before `resolveLambda`: type-checking the lambda body with an
+          * unresolved `DataTypeFunction` crashes in `FunctionArrayMapped::getReturnTypeImpl` when
+          * it calls `removeNullable` on the null return type.
+          */
+        for (size_t function_argument_index : function_lambda_arguments_indexes)
+        {
+            const auto * data_type_function = typeid_cast<const DataTypeFunction *>(
+                argument_types[function_argument_index].get());
+            if (!data_type_function)
+                continue;
+
+            /// `std::all_of` returns true on an empty range, so a zero-argument lambda
+            /// placeholder (`DataTypeFunction([], nullptr)` from `() -> ...`) is also
+            /// classified as unresolved when its return type is null.
+            const auto & lambda_arg_types = data_type_function->getArgumentTypes();
+            const bool all_args_null = std::all_of(
+                lambda_arg_types.begin(), lambda_arg_types.end(),
+                [](const DataTypePtr & t) { return t == nullptr; });
+
+            if (all_args_null && !data_type_function->getReturnType())
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
+                    function_name,
+                    function_argument_index + 1,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
         ProjectionNames lambda_projection_names;
         for (auto & function_lambda_argument_index : function_lambda_arguments_indexes)
         {
@@ -1708,21 +1745,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                 lambda_arguments_size,
                                 argument_types[function_lambda_argument_index]->getName(),
                                 scope.scope_node->formatASTForErrorMessage());
-
-            /** Check that getLambdaArgumentTypes actually resolved the types for this lambda.
-              * If the argument types are still null, the function did not expect a lambda at this position.
-              * This can happen when a lambda is passed where a concrete value is expected,
-              * e.g. arrayFold(lambda, array, another_lambda_instead_of_initial_value).
-              */
-            for (size_t i = 0; i < function_data_type_arguments_size; ++i)
-            {
-                if (!function_data_type_argument_types[i])
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Function '{}' does not expect a lambda expression as argument {}. In scope {}",
-                        function_name,
-                        function_lambda_argument_index + 1,
-                        scope.scope_node->formatASTForErrorMessage());
-            }
 
             QueryTreeNodes lambda_arguments;
             lambda_arguments.reserve(lambda_arguments_size);
