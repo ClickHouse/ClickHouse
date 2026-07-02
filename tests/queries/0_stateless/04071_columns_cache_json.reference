@@ -1,0 +1,39 @@
+Test 1: Basic JSON column read and cache
+1000	44500
+1000	44500
+1000	44500
+Test 2: JSON nested field access
+1000	14995000	7497500
+1000	14995000	7497500
+Test 3: JSON with partial range reads
+2000	user_2000
+1000	city_0
+2000	user_2000
+1000	city_0
+Test 4: JSON string field access
+2000	user_0
+2000	user_0
+Test 5: Complex JSON queries
+city_0	150	40	2235000
+city_1	150	41	2236500
+city_10	150	40	2250000
+city_11	150	41	2251500
+city_12	150	42	2253000
+city_0	150	40	2235000
+city_1	150	41	2236500
+city_10	150	40	2250000
+city_11	150	41	2251500
+city_12	150	42	2253000
+Test 6: JSON with PREWHERE
+780	13669500
+780	13669500
+Test 7: JSON with range intersections
+2000	44.5
+2000	29995
+2000	44.5
+2000	29995
+Test 8: Verify JSON data correctness
+89020	50025000	25012500
+89020	50025000	25012500
+89020	50025000	25012500
+All JSON caching tests passed

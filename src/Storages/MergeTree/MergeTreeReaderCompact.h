@@ -25,6 +25,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
+        ColumnsCache * columns_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
@@ -48,7 +49,7 @@ protected:
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,
-        std::unordered_map<String, ColumnPtr> & columns_cache,
+        std::unordered_map<String, ColumnPtr> & output_columns_cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
         ISerialization::SubstreamsCache * substreams_cache);
 

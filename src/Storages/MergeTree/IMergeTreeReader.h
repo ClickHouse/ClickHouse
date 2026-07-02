@@ -8,6 +8,8 @@
 namespace DB
 {
 
+class ColumnsCache;
+
 using VirtualFields = std::unordered_map<String, Field>;
 using ValueSizeMap = std::map<std::string, double>;
 
@@ -27,6 +29,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
+        ColumnsCache * columns_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
         const MergeTreeReaderSettings & settings_,
@@ -34,9 +37,14 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
+    /// current_task_last_mark is needed for asynchronous reading (mainly from remote fs);
+    /// it is the maximum end mark across all mark ranges of the current read task.
+    /// current_range_last_mark is the end mark of the contiguous mark range being read
+    /// (<= current_task_last_mark; equal to it when the read task is one contiguous range).
+    /// It bounds caching of deserialized columns, which must not span the gaps between
+    /// ranges of a multi-range task. 0 means unknown.
     /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
+    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
                             size_t rows_offset, Columns & res_columns) = 0;
 
@@ -130,6 +138,7 @@ protected:
     SerializationByName serializations_of_full_columns;
 
     UncompressedCache * const uncompressed_cache;
+    ColumnsCache * const columns_cache;
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
@@ -194,6 +203,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,

@@ -1,0 +1,48 @@
+Test 1: Read range covered by cached range
+3000	14997000
+1000	3999000
+1000	3999000
+Test 2: Read range covering cached range
+1000	4999000
+3000	14997000
+3000	14997000
+Test 3: Partial intersection - left overlap
+2000	9998000
+2000	5998000
+2000	5998000
+2000	9998000
+Test 4: Partial intersection - right overlap
+1500	5248500
+2000	11998000
+1500	5248500
+2000	11998000
+Test 5: Non-overlapping ranges
+1000	1999000
+1000	7999000
+1000	1999000
+1000	7999000
+Test 6: Multiple small ranges merging
+500	1249500
+500	2749500
+500	4249500
+3500	19246500
+3500	19246500
+Test 7: Read String.size subcolumn first, then full String
+3000	112890
+3000	112890	string_value_
+3000	112890	string_value_
+Test 8: Read full String and verify caching
+2000	76000	string_value_
+2000	76000	string_value_
+2000	76000	string_value_
+Test 9: String subcolumn with intersecting ranges
+3000	114000
+3000	string_value_
+3000	114000
+3000	string_value_
+Test 10: Adjacent ranges
+1000	3999000
+1000	5999000
+2000	9998000
+2000	9998000
+All range intersection and subcolumn tests passed

@@ -107,6 +107,10 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
+struct ColumnsCacheWriteBudget;
+using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
@@ -633,6 +637,11 @@ protected:
 
     /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
+
+    /// Per-query shared accounting for columns cache writes. Created in
+    /// makeQueryContext and shared across all of the query's read pools so the
+    /// columns-cache write budgets apply per query rather than per pool.
+    ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
 
 public:
     /// Some counters for current query execution.
@@ -1469,6 +1478,11 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    ColumnsCachePtr getColumnsCache() const;
+    void clearColumnsCache() const;
+
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
     void allowSystemAllocateMemory(bool allow);
@@ -1875,6 +1889,10 @@ public:
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
+
+    /// Per-query shared accounting for columns cache writes (see ColumnsCacheWriteBudget).
+    /// Shared across all read pools of the query so the write budgets apply per query.
+    ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;

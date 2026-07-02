@@ -1,5 +1,7 @@
 #pragma once
+#include <atomic>
 #include <cstddef>
+#include <memory>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -61,6 +63,20 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    bool enable_columns_cache_reads = false;
+    bool enable_columns_cache_writes = false;
+    /// Per-query cap on bytes written to the columns cache. 0 means no cap.
+    size_t columns_cache_max_bytes_to_write_to_cache = 0;
+    /// Per-query running total of bytes written to the columns cache.
+    /// Shared across all readers of a single pool so the cap applies to the whole read.
+    std::shared_ptr<std::atomic<size_t>> columns_cache_bytes_written_so_far;
+    /// Per-query flag that disables further columns cache writes once the
+    /// estimated compressed bytes read by the query exceed the estimate budget
+    /// (`columns_cache_max_estimated_compressed_bytes_to_write_to_cache`). The
+    /// estimate is accumulated per part as read tasks are built, after the full
+    /// set of read columns (including prewhere, mutation and patch-part columns)
+    /// is known, so readers must consult it dynamically at write time.
+    std::shared_ptr<std::atomic<bool>> columns_cache_writes_disabled;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

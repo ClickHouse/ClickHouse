@@ -56,6 +56,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         main_reader_->storage_snapshot,
         main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
+        /*columns_cache=*/ nullptr,
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
         main_reader_->settings)
@@ -204,6 +205,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
             main_reader->all_mark_ranges,
             /*virtual_fields=*/{},
             main_reader->uncompressed_cache,
+            main_reader->columns_cache,
             main_reader->mark_cache,
             /*deserialization_prefixes_cache=*/nullptr,
             main_reader->settings,
@@ -406,6 +408,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
     size_t current_task_last_mark,
+    size_t current_range_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -473,7 +476,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         Columns fallback_cols(fallback_columns_list.size(), nullptr);
-        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
+        fallback_reader->readRows(from_mark, current_task_last_mark, current_range_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});

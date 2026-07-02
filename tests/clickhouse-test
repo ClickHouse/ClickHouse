@@ -1541,6 +1541,10 @@ class SettingsRandomizer:
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
+        # Columns cache settings - randomize with 0.5 probability each
+        "use_columns_cache": lambda: random.randint(0, 1),
+        "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
+        "enable_writes_to_columns_cache": lambda: random.randint(0, 1),
         # More query plan optimizations
         "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
