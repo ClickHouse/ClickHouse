@@ -40,6 +40,11 @@ public:
                       const Settings & settings,
                       bool force_connected = true) = 0;
 
+    /// The number of connections currently checked out of the pool. Approximates the number
+    /// of in-flight requests to the host (see PoolBase::getActiveEntries), which is used
+    /// by the `least_request` load balancing.
+    virtual size_t getActiveConnections() const = 0;
+
     const std::string & getHost() const { return host; }
     UInt16 getPort() const { return port; }
     const String & getAddress() const { return address; }
@@ -92,6 +97,8 @@ public:
     Entry get(const ConnectionTimeouts & timeouts, /// NOLINT
               const Settings & settings,
               bool force_connected) override;
+
+    size_t getActiveConnections() const override { return Base::getActiveEntries(); }
 
     std::string getDescription() const;
 

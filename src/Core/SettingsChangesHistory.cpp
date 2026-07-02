@@ -57,6 +57,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
+            {"load_balancing_least_request_choice_count", 2, 2, "New setting: the number of replicas sampled by the new `least_request` load balancing algorithm (`load_balancing = 'least_request'`)."},
+            {"load_balancing_least_request_active_request_bias", 1.0, 1.0, "New setting: the bias of the new `least_request` load balancing algorithm (`load_balancing = 'least_request'`)."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

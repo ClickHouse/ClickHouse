@@ -24,6 +24,8 @@ namespace Setting
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsUInt64 load_balancing_first_offset;
+    extern const SettingsFloat load_balancing_least_request_active_request_bias;
+    extern const SettingsUInt64 load_balancing_least_request_choice_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool skip_unavailable_shards;
 }
@@ -57,6 +59,14 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         get_priority_load_balancing.hostname_longest_common_prefix[i] = getHostNameLongestCommonPrefix(local_hostname, connection_pool.getHost());
         get_priority_load_balancing.hostname_longest_common_suffix[i] = getHostNameLongestCommonSuffix(local_hostname, connection_pool.getHost());
     }
+
+    /// For the `least_request` policy. The nested pools are captured by value (they are shared
+    /// pointers) so that copies of `get_priority_load_balancing` do not depend on the lifetime
+    /// of this pool. Note that nested pools may be shared with other ConnectionPoolWithFailover
+    /// instances through ConnectionPoolFactory, which makes the count of in-flight requests
+    /// per host more accurate, not less.
+    get_priority_load_balancing.get_active_count
+        = [pools = nested_pools](size_t i) { return pools[i]->getActiveConnections(); };
 }
 
 IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts & timeouts)
@@ -83,14 +93,20 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
-    const size_t offset = settings[Setting::load_balancing_first_offset] % nested_pools.size();
-
-    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc(settings[Setting::load_balancing], offset, nested_pools.size());
+    GetPriorityFunc get_priority = makeGetPriorityFunc(settings);
 
     const UInt64 max_ignored_errors = settings[Setting::distributed_replica_max_ignored_errors];
     const bool fallback_to_stale_replicas = settings[Setting::fallback_to_stale_replicas_for_distributed_queries];
 
     return Base::get(max_ignored_errors, fallback_to_stale_replicas, try_get_entry, get_priority);
+}
+
+size_t ConnectionPoolWithFailover::getActiveConnections() const
+{
+    size_t res = 0;
+    for (const auto & pool : nested_pools)
+        res += pool->getActiveConnections();
+    return res;
 }
 
 ConnectionPoolWithFailover::Status ConnectionPoolWithFailover::getStatus() const
@@ -191,7 +207,12 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings & settings)
 {
     const size_t offset = settings[Setting::load_balancing_first_offset] % nested_pools.size();
-    return get_priority_load_balancing.getPriorityFunc(settings[Setting::load_balancing], offset, nested_pools.size());
+    return get_priority_load_balancing.getPriorityFunc(
+        settings[Setting::load_balancing],
+        offset,
+        nested_pools.size(),
+        settings[Setting::load_balancing_least_request_choice_count],
+        settings[Setting::load_balancing_least_request_active_request_bias]);
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(

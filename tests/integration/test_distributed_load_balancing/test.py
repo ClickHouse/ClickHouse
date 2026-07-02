@@ -2,6 +2,8 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
+import threading
+import time
 import uuid
 
 import pytest
@@ -194,6 +196,107 @@ def test_load_balancing_round_robin():
         unique_nodes.add(get_node(n1, settings={"load_balancing": "round_robin"}))
     assert len(unique_nodes) == nodes, unique_nodes
     assert unique_nodes == set(["n1", "n2", "n3"])
+
+
+# When all replicas are idle, least_request degenerates to random.
+def test_load_balancing_least_request_idle():
+    unique_nodes = set()
+    for _ in range(0, queries):
+        unique_nodes.add(get_node(n1, settings={"load_balancing": "least_request"}))
+    assert len(unique_nodes) == nodes, unique_nodes
+
+
+def test_load_balancing_least_request_avoids_busy_replica():
+    # The pinning query sleeps 1 second per row on the remote side, so this is
+    # the upper bound for the busy window. The test finishes much earlier: the
+    # query is killed as soon as the probe queries are done.
+    busy_rows = 300
+    busy_query_id = make_uuid()
+    busy_settings = {
+        "query_id": busy_query_id,
+        # pin the remote part of the query to n1
+        "load_balancing": "in_order",
+        "prefer_localhost_replica": 0,
+        "max_parallel_replicas": 1,
+        # do not let a hedged connection to another replica steal the query from n1
+        "use_hedged_requests": 0,
+    }
+
+    def run_busy_query():
+        try:
+            n1.query("SELECT sleepEachRow(1) FROM dist", settings=busy_settings)
+        except Exception:
+            pass  # killed below
+
+    n1.query("INSERT INTO data (key) SELECT * FROM numbers({})".format(busy_rows))
+    busy_thread = threading.Thread(target=run_busy_query)
+    busy_thread.start()
+
+    try:
+        # Wait until the remote part of the pinning query is running on n1, i.e.
+        # the initiator n1 holds a checked out (in-flight) connection to n1.
+        deadline = time.monotonic() + 60
+        while (
+            int(
+                n1.query(
+                    "SELECT count() FROM system.processes WHERE query_id != initial_query_id AND initial_query_id = '{}'".format(
+                        busy_query_id
+                    )
+                )
+            )
+            == 0
+        ):
+            assert time.monotonic() < deadline, "the pinning query did not start"
+            time.sleep(0.1)
+
+        # With choice_count >= number of replicas all replicas are examined
+        # (the degenerate full scan case), so every probe query must
+        # deterministically avoid n1 while n1 has an in-flight query.
+        probe_ids = []
+        for _ in range(0, queries):
+            query_id = make_uuid()
+            n1.query(
+                "SELECT * FROM dist",
+                settings={
+                    "query_id": query_id,
+                    "log_queries": 1,
+                    "log_queries_min_type": "QUERY_START",
+                    "load_balancing": "least_request",
+                    "load_balancing_least_request_choice_count": 100,
+                    "prefer_localhost_replica": 0,
+                    "max_parallel_replicas": 1,
+                    "use_hedged_requests": 0,
+                },
+            )
+            probe_ids.append(query_id)
+    finally:
+        n1.query("KILL QUERY WHERE query_id = '{}' SYNC".format(busy_query_id))
+        busy_thread.join()
+        n1.query("TRUNCATE TABLE data")
+
+    for n in list(cluster.instances.values()):
+        n.query("SYSTEM FLUSH LOGS")
+
+    rows = n1.query(
+        """
+    SELECT hostName(), count()
+    FROM cluster(shards_cluster, system.query_log)
+    WHERE
+        initial_query_id IN ({query_ids}) AND
+        is_initial_query = 0 AND
+        type = 'QueryFinish'
+    GROUP BY 1
+    ORDER BY 1
+    """.format(
+            query_ids=",".join("'{}'".format(query_id) for query_id in probe_ids)
+        )
+    )
+    queries_per_node = dict(
+        (line.split("\t")[0], int(line.split("\t")[1]))
+        for line in rows.strip().split("\n")
+    )
+    assert "n1" not in queries_per_node, queries_per_node
+    assert sum(queries_per_node.values()) == len(probe_ids), queries_per_node
 
 
 @pytest.mark.parametrize(

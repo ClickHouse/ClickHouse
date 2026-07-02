@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <Poco/Timespan.h>
@@ -58,11 +59,16 @@ private:
       */
     struct PoolEntryHelper
     {
-        explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
+        explicit PoolEntryHelper(PooledObject & data_) : data(data_)
+        {
+            data.in_use = true;
+            data.pool.active_entries.fetch_add(1, std::memory_order_relaxed);
+        }
         ~PoolEntryHelper()
         {
             std::lock_guard lock(data.pool.mutex);
             data.in_use = false;
+            data.pool.active_entries.fetch_sub(1, std::memory_order_relaxed);
             data.pool.available.notify_one();
         }
 
@@ -178,12 +184,31 @@ public:
         return items.size();
     }
 
+    /** The number of entries currently checked out of the pool.
+      * For connection pools it approximates the number of in-flight requests to the host:
+      * an entry is vended when a query is dispatched over the connection and returned to
+      * the pool when the query finishes and the connection is released. It is a lower
+      * bound rather than an exact count of outstanding queries (e.g. connections that are
+      * being established are checked out slightly before the query is sent), but the entry
+      * checkout/return path is the only place where both dispatch and completion are
+      * reliably observable. Used by the `least_request` load balancing.
+      */
+    size_t getActiveEntries() const
+    {
+        return active_entries.load(std::memory_order_relaxed);
+    }
+
 private:
     /** The maximum size of the pool. */
     unsigned max_items;
 
     /** Pool. */
     Objects items;
+
+    /** The number of entries currently handed out to clients (see getActiveEntries).
+      * Atomic because it is read without taking the pool mutex.
+      */
+    std::atomic<size_t> active_entries = 0;
 
     /** Lock to access the pool. */
     std::mutex mutex;
