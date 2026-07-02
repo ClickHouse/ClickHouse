@@ -1071,6 +1071,7 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
+    DECLARE(Bool, user_profile_events_per_cpu, true, R"(Shard per-user `ProfileEvents` counters per CPU to avoid cross-CPU cache-line contention under high thread counts. Each user pays `getNumCPUs() * num_events * sizeof(atomic)` of memory (hundreds of KiB on machines with many cores). Disable to fall back to a single shared atomic per event per user, trading throughput for memory.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
 
 By default, it is `false`:

@@ -219,10 +219,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
-        const UInt64 req_bytes = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -556,7 +554,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        const auto user_info = getContext()->getProcessList().getUserInfo(false);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
