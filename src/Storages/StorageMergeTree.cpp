@@ -472,9 +472,6 @@ void StorageMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
-
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
@@ -494,6 +491,20 @@ void StorageMergeTree::alter(
     }
     else
     {
+        /// `verifySortingKey` rejects sorting keys that contain `SimpleAggregateFunction`
+        /// (and other suspicious types). It is required at CREATE time and on ALTERs that
+        /// can actually change the sorting key. Re-running it on ALTERs that cannot affect
+        /// the sorting key (e.g. column codec changes, column placement modifiers, mixed
+        /// settings/comment statements, etc.) would otherwise reject those ALTERs on tables
+        /// that were created with `allow_suspicious_primary_key = 1` once that setting is no
+        /// longer in effect. Compare the resolved sorting key (columns and types) so the
+        /// check fires only when the key would observe a different verdict than it did at
+        /// CREATE time. `StorageReplicatedMergeTree::alter` performs the same check in the
+        /// same position.
+        if (!query_settings[Setting::allow_suspicious_primary_key]
+            && MergeTreeData::sortingKeyChanged(old_metadata.sorting_key, new_metadata.sorting_key))
+            MergeTreeData::verifySortingKey(new_metadata.sorting_key);
+
         if (!maybe_mutation_commands.empty() && maybe_mutation_commands.containBarrierCommand())
         {
             int64_t prev_mutation = 0;
