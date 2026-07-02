@@ -194,7 +194,7 @@ public:
         addEntry(place, Entry{(*columns[0])[row_num], (*columns[1])[row_num]});
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         const auto & rhs_data = this->data(rhs);
         for (const auto & entry : rhs_data.entries)
@@ -331,6 +331,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMaxMany(
 
 }
 
+void registerAggregateFunctionsArgMinMaxMany(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsArgMinMaxMany(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
