@@ -1,0 +1,138 @@
+-- ROLLUP ---
+true
+\N
+-- CUBE ---
+true
+\N
+-- GROUPING SETS ---
+true
+-- numeric ---
+1
+\N
+-- complex expression ---
+2
+\N
+-- modulo ---
+1
+\N
+-- multiple GROUP BY keys ---
+0	0	0
+1	1	1
+2	0	2
+\N	\N	3
+-- aggregate over correlated column ---
+0	0
+1	1
+2	2
+\N	\N
+-- multi-key CUBE with aggregate over correlated column ---
+0	0	0
+0	\N	0
+1	1	2
+1	\N	2
+2	0	4
+2	\N	4
+3	1	6
+3	\N	6
+4	0	8
+4	\N	8
+5	1	10
+5	\N	10
+6	0	12
+6	\N	12
+7	1	14
+7	\N	14
+8	0	16
+8	\N	16
+9	1	18
+9	\N	18
+\N	0	\N
+\N	1	\N
+\N	\N	\N
+-- HAVING with correlated subquery ---
+0	0
+1	1
+2	2
+-- WHERE with correlated subquery ---
+0	0
+1	1
+2	2
+\N	3
+-- Nullable source ---
+true
+\N
+-- min over correlated String ---
+a
+\N
+-- minOrDefault over correlated String with GROUPING SETS ---
+a
+-- non-correlated subquery ---
+inner
+inner
+-- inner local key collides with outer rollup key (name+type) ---
+7	2
+\N	2
+-- correlated outer key under aggregate, inner has same-named local key ---
+7	7
+\N	\N
+-- type pin: inner local key stays non-Nullable despite outer rollup key collision ---
+COLUMN id: N, column_name: c, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+-- minSimpleState over LowCardinality constant key ---
+1
+-- projected type is LowCardinality(Nullable) ---
+LowCardinality(Nullable(String))
+-- min over LowCardinality constant key with ROLLUP ---
+1
+-- max over LowCardinality constant key with GROUPING SETS ---
+a
+-- original fuzzer query ---
+1
+-- correlated toString in concat over GROUPING SETS ---
+s0
+s1
+s2
+s3
+s4
+-- type pin: bare correlated column is Nullable, outer key is not ---
+COLUMN id: N, column_name: c, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: c, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: c, result_type: Int32, source_id: N
+-- type pin: compound correlated key (modulo) is Nullable ---
+FUNCTION id: N, function_name: modulo, function_type: ordinary, result_type: Nullable(Int16)
+FUNCTION id: N, function_name: modulo, function_type: ordinary, result_type: Int16
+-- type pin: aggregate argument stays non-Nullable ---
+COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
+COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
+COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
+-- skewSamp over correlated key, CUBE ---
+-- varSamp over correlated key, ROLLUP ---
+-- kurtPop over correlated key, GROUPING SETS ---
+-- covarSamp (two-argument statistics aggregate) over correlated key, CUBE ---
+-- skewSamp over correlated key, CUBE, values ---
+0	nan
+1	nan
+2	nan
+3	nan
+4	nan
+5	nan
+6	nan
+7	nan
+\N	\N
+-- type pin: correlated statistics-aggregate argument is Nullable ---
+COLUMN id: N, column_name: k, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: k, result_type: Nullable(Int32), source_id: N
+COLUMN id: N, column_name: k, result_type: Int32, source_id: N
+-- 106377 correlated tuple, ROLLUP ---
+(1,0)
+\N
+-- 106377 correlated tuple, CUBE ---
+(1,0)
+(1,1)
+\N
+-- type pin: correlated tuple result is Nullable(Tuple(...)) ---
+COLUMN id: N, column_name: number, result_type: Nullable(UInt64), source_id: N
+COLUMN id: N, column_name: number, result_type: Nullable(UInt64), source_id: N
+COLUMN id: N, column_name: number, result_type: UInt64, source_id: N
