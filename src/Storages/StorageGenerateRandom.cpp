@@ -10,25 +10,35 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDecimalBase.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
@@ -52,6 +62,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 preferred_block_size_bytes;
+    extern const SettingsUInt64 generate_random_max_json_dynamic_keys;
 }
 
 namespace ErrorCodes
@@ -397,7 +408,8 @@ void appendFuzzyRandomString(ColumnString::Chars & out, size_t max_length, pcg64
 size_t estimateValueSize(
     const DataTypePtr type,
     UInt64 max_array_length,
-    UInt64 max_string_length)
+    UInt64 max_string_length,
+    UInt64 max_json_dynamic_keys = 5)
 {
     if (type->haveMaximumSizeOfValue())
         return type->getMaximumSizeOfValueInMemory();
@@ -415,13 +427,13 @@ size_t estimateValueSize(
         case TypeIndex::Array:
         {
             auto nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_dynamic_keys);
         }
 
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length / 2, max_string_length, max_json_dynamic_keys);
         }
 
         case TypeIndex::Tuple:
@@ -431,7 +443,7 @@ size_t estimateValueSize(
             size_t res = 0;
 
             for (size_t i = 0; i < tuple_size; ++i)
-                res += estimateValueSize(elements[i], max_array_length, max_string_length);
+                res += estimateValueSize(elements[i], max_array_length, max_string_length, max_json_dynamic_keys);
 
             return res;
         }
@@ -439,13 +451,37 @@ size_t estimateValueSize(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return 1 + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_dynamic_keys);
         }
 
         case TypeIndex::LowCardinality:
         {
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length);
+            return sizeof(size_t) + estimateValueSize(nested_type, max_array_length, max_string_length, max_json_dynamic_keys);
+        }
+
+        case TypeIndex::Dynamic:
+        {
+            return max_string_length + sizeof(UInt64);
+        }
+
+        case TypeIndex::Variant:
+        {
+            const auto & variants = typeid_cast<const DataTypeVariant &>(*type).getVariants();
+            size_t res = 1; // discriminator byte
+            for (const auto & v : variants)
+                res = std::max(res, estimateValueSize(v, max_array_length, max_string_length, max_json_dynamic_keys));
+            return res;
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = typeid_cast<const DataTypeObject &>(*type);
+            size_t res = 0;
+            for (const auto & [path, path_type] : object_type.getTypedPaths())
+                res += estimateValueSize(path_type, max_array_length / 2, max_string_length, max_json_dynamic_keys);
+            res += max_json_dynamic_keys * (max_string_length + sizeof(UInt64));
+            return res;
         }
 
         default:
@@ -461,7 +497,8 @@ ColumnPtr fillColumnWithRandomData(
     UInt64 max_array_length,
     UInt64 max_string_length,
     pcg64 & rng,
-    bool fuzzy)
+    bool fuzzy,
+    UInt64 max_json_dynamic_keys)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -549,7 +586,7 @@ ColumnPtr fillColumnWithRandomData(
             }
 
             /// This division by two makes the size growth subexponential on depth.
-            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, fuzzy);
+            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, fuzzy, max_json_dynamic_keys);
 
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
@@ -557,7 +594,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, fuzzy, max_json_dynamic_keys);
             return ColumnMap::create(nested_column);
         }
 
@@ -571,7 +608,7 @@ ColumnPtr fillColumnWithRandomData(
             Columns tuple_columns(tuple_size);
 
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, fuzzy);
+                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, fuzzy, max_json_dynamic_keys);
 
             return ColumnTuple::create(std::move(tuple_columns));
         }
@@ -579,7 +616,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy, max_json_dynamic_keys);
 
             auto null_map_column = ColumnUInt8::create();
             auto & null_map = null_map_column->getData();
@@ -815,7 +852,7 @@ ColumnPtr fillColumnWithRandomData(
             /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
 
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, fuzzy, max_json_dynamic_keys);
 
             auto column = type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
@@ -836,6 +873,145 @@ ColumnPtr fillColumnWithRandomData(
             /// IPv6 is always stored as big-endian in memory, so we don't use fillBufferWithRandomNumbers here.
             fillBufferWithRandomBytes(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(IPv6), rng);
             return column;
+        }
+
+        case TypeIndex::BFloat16:
+        {
+            auto column = ColumnBFloat16::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomNumbers<UInt16>(reinterpret_cast<char *>(column->getData().data()), limit, rng, fuzzy);
+            return column;
+        }
+
+        case TypeIndex::Time:
+        {
+            auto column = ColumnInt32::create();
+            column->getData().resize(limit);
+            /// Time is stored as seconds in [-999:59:59, 999:59:59] = [-3599999, 3599999].
+            /// Filling raw Int32 bits would produce mostly out-of-range values that saturate
+            /// to the boundary on text output. Clamp to the valid range instead.
+            static constexpr Int32 time_range = 3'599'999;
+            for (size_t i = 0; i < limit; ++i)
+                column->getData()[i] = static_cast<Int32>(rng() % (2 * time_range + 1)) - time_range;
+            return column;
+        }
+
+        case TypeIndex::Time64:
+        {
+            auto column = type->createColumn();
+            auto & column_concrete = typeid_cast<ColumnDecimal<Time64> &>(*column);
+            column_concrete.getData().resize(limit);
+            /// Time64 is stored as Int64 ticks; max value in seconds is 3599999, scaled by 10^scale.
+            UInt64 range = static_cast<UInt64>(3'599'999) * intExp10(typeid_cast<const DataTypeTime64 &>(*type).getScale());
+            for (size_t i = 0; i < limit; ++i)
+                column_concrete.getData()[i] = static_cast<Int64>(rng() % (2 * range + 1)) - static_cast<Int64>(range);
+            return column;
+        }
+
+        case TypeIndex::Variant:
+        {
+            const auto & variant_type = typeid_cast<const DataTypeVariant &>(*type);
+            const auto & variants = variant_type.getVariants();
+            if (variants.empty())
+            {
+                auto column = type->createColumn();
+                column->insertManyDefaults(limit);
+                return column;
+            }
+
+            auto column = type->createColumn();
+            auto & column_variant = typeid_cast<ColumnVariant &>(*column);
+            /// One extra outcome produces an untyped NULL (NULL_DISCRIMINATOR) so that the
+            /// null state of a bare Variant column is also exercised.
+            const size_t num_outcomes = variants.size() + 1;
+            for (UInt64 i = 0; i < limit; ++i)
+            {
+                size_t outcome = rng() % num_outcomes;
+                if (outcome == variants.size())
+                {
+                    column_variant.insertDefault(); // inserts NULL_DISCRIMINATOR
+                }
+                else
+                {
+                    auto chosen = static_cast<ColumnVariant::Discriminator>(outcome);
+                    auto single = fillColumnWithRandomData(variants[chosen], 1, max_array_length, max_string_length, rng, fuzzy, max_json_dynamic_keys);
+                    column_variant.insertIntoVariantFrom(chosen, *single, 0);
+                }
+            }
+            return column;
+        }
+
+        case TypeIndex::Dynamic:
+        {
+            const auto & dynamic_type = typeid_cast<const DataTypeDynamic &>(*type);
+            auto column = ColumnDynamic::create(dynamic_type.getMaxDynamicTypes());
+
+            /// Pool of basic scalar types used for random value generation.
+            static const DataTypePtr scalar_pool[] = {
+                std::make_shared<DataTypeUInt64>(),
+                std::make_shared<DataTypeInt64>(),
+                std::make_shared<DataTypeFloat64>(),
+                std::make_shared<DataTypeString>(),
+            };
+            static constexpr size_t pool_size = std::size(scalar_pool);
+
+            for (UInt64 i = 0; i < limit; ++i)
+            {
+                if (rng() % 16 == 0)
+                {
+                    column->insertDefault();
+                }
+                else
+                {
+                    size_t type_idx = rng() % pool_size;
+                    auto single = fillColumnWithRandomData(scalar_pool[type_idx], 1, max_array_length, max_string_length, rng, fuzzy, max_json_dynamic_keys);
+                    Field f;
+                    single->get(0, f);
+                    column->insert(f);
+                }
+            }
+            return column;
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = typeid_cast<const DataTypeObject &>(*type);
+
+            /// Fill typed paths by recursing into their declared types.
+            UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+            for (const auto & [path, path_type] : object_type.getTypedPaths())
+            {
+                typed_path_columns[path] = fillColumnWithRandomData(
+                    path_type, limit, max_array_length / 2, max_string_length, rng, fuzzy, max_json_dynamic_keys)->assumeMutable();
+            }
+
+            /// Generate a small number of random dynamic paths, controlled by max_json_dynamic_keys.
+            const size_t max_dyn = std::min<size_t>(max_json_dynamic_keys, object_type.getMaxDynamicPaths());
+            const size_t num_dyn = max_dyn == 0 ? 0 : rng() % (max_dyn + 1);
+            UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_path_columns;
+            const auto & typed_paths = object_type.getTypedPaths();
+            auto dyn_type = std::make_shared<DataTypeDynamic>(object_type.getMaxDynamicTypes());
+            for (size_t i = 0; i < num_dyn; ++i)
+            {
+                /// Use a prefix unlikely to collide with user-declared typed paths (e.g. JSON(k0 UInt32)).
+                String key = "_rnd_" + std::to_string(i);
+                if (typed_paths.contains(key))
+                    continue;
+                dynamic_path_columns[key] = fillColumnWithRandomData(
+                    dyn_type, limit, max_array_length / 2, max_string_length, rng, fuzzy, max_json_dynamic_keys)->assumeMutable();
+            }
+
+            /// Shared data: empty Array(Tuple(String, String)) with one empty array per row.
+            auto shared_data_col = DataTypeObject::getTypeOfSharedData()->createColumn();
+            shared_data_col->insertManyDefaults(limit);
+
+            return ColumnObject::create(
+                std::move(typed_path_columns),
+                std::move(dynamic_path_columns),
+                std::move(shared_data_col),
+                object_type.getMaxDynamicPaths(),
+                object_type.getMaxDynamicPaths(),
+                object_type.getMaxDynamicTypes());
         }
 
         default:
@@ -861,6 +1037,7 @@ public:
         , block_size(block_size_)
         , max_array_length(max_array_length_)
         , max_string_length(max_string_length_)
+        , max_json_dynamic_keys(context_->getSettingsRef()[Setting::generate_random_max_json_dynamic_keys])
         , block_to_fill(std::move(block_header_))
         , rng(random_seed_)
         , context(context_)
@@ -877,7 +1054,7 @@ protected:
         columns.reserve(block_to_fill.columns());
 
         for (const auto & elem : block_to_fill)
-            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng));
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, /*fuzzy=*/ false, max_json_dynamic_keys));
 
         columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
 
@@ -895,6 +1072,7 @@ private:
     UInt64 block_size;
     UInt64 max_array_length;
     UInt64 max_string_length;
+    UInt64 max_json_dynamic_keys;
     Block block_to_fill;
 
     pcg64 rng;
@@ -1072,7 +1250,8 @@ Pipe StorageGenerateRandom::read(
     size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
-        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
+        UInt64 max_json_dynamic_keys_for_estimate = context->getSettingsRef()[Setting::generate_random_max_json_dynamic_keys];
+        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length, max_json_dynamic_keys_for_estimate);
 
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
