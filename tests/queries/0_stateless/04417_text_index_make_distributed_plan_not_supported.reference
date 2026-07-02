@@ -1,0 +1,9 @@
+-- fuzzer shape: hasToken in PREWHERE and WHERE
+-- WHERE hasToken
+-- PREWHERE hasToken
+-- hasAnyTokens
+-- not distributed: results are correct
+258
+0
+1
+2

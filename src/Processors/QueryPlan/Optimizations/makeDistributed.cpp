@@ -117,6 +117,16 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                 if (column == "_part_index" || column == "_part_starting_offset")
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
+
+            /// Direct read from a text index adds ephemeral virtual columns to the read and a separate
+            /// index-read step that a worker fragment cannot reproduce (the column is not in the table
+            /// and ReadFromDistributedPlanSource cannot materialize it). Reject cleanly at planning time
+            /// instead of crashing later: the single-stage path re-runs the (non-idempotent) text index
+            /// optimization and trips "Column ... already added for reading", and the multi-stage path
+            /// fails with NOT_FOUND_COLUMN_IN_BLOCK at execution.
+            if (read->hasTextIndexReadTasks())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a distributed read using direct text index tasks");
         }
 
         for (const auto * child : node->children)
