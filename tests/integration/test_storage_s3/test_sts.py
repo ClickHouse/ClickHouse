@@ -208,7 +208,7 @@ def test_sts_credentials_cache(started_cluster):
     )
 
     for i in range(20):
-        with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        with pytest.raises(helpers.client.QueryRuntimeException):
             instance.query(
                 f"""
                 SELECT sum(a), sum(b), sum(c) FROM s3Cluster(

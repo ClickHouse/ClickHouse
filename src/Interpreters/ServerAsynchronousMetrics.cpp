@@ -19,6 +19,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
 
@@ -249,6 +250,25 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
 
+#if defined(OS_LINUX)
+    try
+    {
+        const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
+            "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
+            " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
+            " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
+            " physical memory footprint of the UDF processes." };
+        new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
+            "Number of live processes spawned for executable and executable_pool user-defined functions,"
+            " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
+
     if (const auto stats = getHashTablesCacheStatistics())
     {
         new_values["HashTableStatsCacheEntries"] = { stats->entries,
@@ -350,7 +370,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -591,7 +611,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;

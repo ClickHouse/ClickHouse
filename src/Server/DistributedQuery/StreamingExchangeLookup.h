@@ -12,8 +12,7 @@ namespace DB
 ExchangeLookupPtr createStreamingExchangeLookup(
     const String & query_id,
     ExchangeConnectionsPtr connections,
-    const ExchangeStreamSources & exchange_stream_sources,
-    UInt16 streaming_exchange_port);
+    const ExchangeStreamSources & exchange_stream_sources);
 
 }
 
