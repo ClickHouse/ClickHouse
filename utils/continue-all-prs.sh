@@ -38,7 +38,9 @@ set -euo pipefail
 #   --workers N           Number of parallel workers / worktrees (default: 1).
 #   --mine                Select PRs you authored.
 #   --assigned            Select PRs assigned to you.
-#   --related             Select PRs you've contributed to (commented/reviewed).
+#   --related             Select PRs you've contributed to (commented/reviewed),
+#                         but only ones that look abandoned - no activity by
+#                         anyone but you in the last week (RELATED_STALE_DAYS).
 #                         --mine/--assigned/--related are combinable; if none is
 #                         given, all three are selected.
 #   --worktree-base PATH  Base path for worker worktrees; worker i lives at
@@ -89,6 +91,7 @@ WORKERS=1
 WORKTREE_BASE=""
 TIMEOUT=3600
 MAX_CONTINUE=4
+RELATED_STALE_DAYS=7   # a "related" PR is processed only if nobody but me has acted within this many days
 ONCE=0
 SKIP_SUBMODULES=0
 COLOR_WHEN="auto"
@@ -533,6 +536,25 @@ worker()
     exec 9>&-
 }
 
+# Return 0 (true) if a "related" PR looks abandoned: nobody other than me has
+# acted on it (pushed a commit, commented, or reviewed) since `cutoff`. If the
+# activity data can't be fetched, treat it as active (skip) - fail closed rather
+# than jump into a PR we can't assess.
+related_is_abandoned()
+{
+    local number="$1" cutoff="$2" verdict
+    verdict=$(gh pr view "$number" --repo "$REPO" --json commits,comments,reviews 2>/dev/null \
+        | jq -r --arg me "$GH_USER" --arg cutoff "$cutoff" '
+            def others:
+              ([ .commits[]?  | select((.authors // [] | map(.login) | index($me)) | not) | .committedDate ]
+             + [ .comments[]? | select(.author.login  != $me) | .createdAt ]
+             + [ .reviews[]?  | select(.author.login  != $me) | .submittedAt ]);
+            (others | map(select(. != null)) | max) as $last
+            | if ($last == null) or ($last < $cutoff) then "abandoned" else "active" end
+          ' 2>/dev/null)
+    [[ "$verdict" == "abandoned" ]]
+}
+
 fetch_prs()
 {
     if [[ -n "${CONTINUE_ALL_PRS_PRS_FILE:-}" ]]; then
@@ -541,30 +563,55 @@ fetch_prs()
     fi
 
     # Search the selected categories of open PRs that involve me:
-    #   --mine      -> authored by me            (--author)
-    #   --assigned  -> assigned to me            (--assignee)
+    #   --mine      -> authored by me            (--author)     -> always processed
+    #   --assigned  -> assigned to me            (--assignee)   -> always processed
     #   --related   -> contributed to by me      (--commenter, --reviewed-by)
-    # The searches are unioned, deduplicated by PR number, and sorted by last
-    # update (oldest first), so a PR matching several categories is processed
-    # only once. PRs carrying the `hold` label are skipped.
-    {
+    # Each result is tagged: "always" (mine/assigned) or related-only. Results
+    # are unioned, `hold`-labeled PRs dropped, collapsed to one record per PR
+    # (keeping "always" if it matched any always category), and sorted by last
+    # update (oldest first). Related-only PRs are then kept only if they look
+    # abandoned - no activity by anyone but me within RELATED_STALE_DAYS.
+    local cutoff candidates
+    cutoff=$(date -u -d "${RELATED_STALE_DAYS} days ago" +%Y-%m-%dT%H:%M:%SZ)
+
+    candidates=$( {
         if (( MODE_MINE )); then
-            gh search prs --repo "$REPO" --state open --author      @me --limit 1000 --json number,title,updatedAt,labels
+            gh search prs --repo "$REPO" --state open --author @me --limit 1000 \
+                --json number,title,updatedAt,labels | jq -c 'map(. + {always:true})'
         fi
         if (( MODE_ASSIGNED )); then
-            gh search prs --repo "$REPO" --state open --assignee    @me --limit 1000 --json number,title,updatedAt,labels
+            gh search prs --repo "$REPO" --state open --assignee @me --limit 1000 \
+                --json number,title,updatedAt,labels | jq -c 'map(. + {always:true})'
         fi
         if (( MODE_RELATED )); then
-            gh search prs --repo "$REPO" --state open --commenter   @me --limit 1000 --json number,title,updatedAt,labels
-            gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 --json number,title,updatedAt,labels
+            gh search prs --repo "$REPO" --state open --commenter @me --limit 1000 \
+                --json number,title,updatedAt,labels | jq -c 'map(. + {always:false})'
+            gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 \
+                --json number,title,updatedAt,labels | jq -c 'map(. + {always:false})'
         fi
     } | jq -s -r '
         add
         | map(select((.labels // []) | map(.name) | index("hold") | not))
-        | unique_by(.number)
+        | group_by(.number)
+        | map({ number:    .[0].number,
+                title:     .[0].title,
+                updatedAt: (map(.updatedAt) | max),
+                always:    (any(.[]; .always)) })
         | sort_by(.updatedAt)
-        | .[] | "\(.number)\t\(.title)"
-    '
+        | .[] | [ .number, (.always | tostring), .updatedAt, .title ] | @tsv' )
+
+    local number always updatedAt title
+    while IFS=$'\t' read -r number always updatedAt title; do
+        [[ -n "$number" ]] || continue
+        if [[ "$always" == "true" ]]; then
+            printf '%s\t%s\n' "$number" "$title"
+        elif [[ "$updatedAt" < "$cutoff" ]]; then
+            # No activity by anyone (including me) in the window -> abandoned.
+            printf '%s\t%s\n' "$number" "$title"
+        elif related_is_abandoned "$number" "$cutoff"; then
+            printf '%s\t%s\n' "$number" "$title"
+        fi
+    done <<< "$candidates"
 }
 
 # ----------------------------------------------------------------------------
