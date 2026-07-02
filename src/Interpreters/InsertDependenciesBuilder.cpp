@@ -1370,7 +1370,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));

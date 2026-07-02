@@ -129,6 +129,10 @@ public:
 
     void setQuota(std::shared_ptr<const EnabledQuota> quota_);
 
+    /// Normalized query hash, propagated to the quota accounting callbacks so that
+    /// `NORMALIZED_QUERY_HASH` quotas bucket their resources per query pattern.
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_) { normalized_query_hash = normalized_query_hash_; }
+
     void addStorageHolder(StoragePtr storage);
 
     /// Existing resources are not released here, see move ctor for QueryPlanResourceHolder.
@@ -159,6 +163,7 @@ private:
 
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
+    UInt64 normalized_query_hash = 0;
     bool update_profile_events = true;
 
     std::shared_ptr<Processors> processors;

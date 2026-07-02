@@ -165,6 +165,10 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
+    /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
+    /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
+    new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());

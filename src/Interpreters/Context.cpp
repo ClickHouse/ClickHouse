@@ -1288,6 +1288,7 @@ ContextData::ContextData(const ContextData &o) :
     file_progress_callback(o.file_progress_callback),
     process_list_elem(o.process_list_elem),
     has_process_list_elem(o.has_process_list_elem),
+    normalized_query_hash(o.normalized_query_hash),
     insertion_table_info(o.insertion_table_info),
     is_distributed(o.is_distributed),
     default_format(o.default_format),
@@ -4154,6 +4155,18 @@ QueryStatusPtr Context::getProcessListElementSafe() const
     if (auto res = process_list_elem.lock())
         return res;
     return {};
+}
+
+void Context::setNormalizedQueryHash(UInt64 normalized_query_hash_)
+{
+    /// Set once per query before execution starts. As with the process list element, only one query
+    /// is processed at a time in a session, so no lock is needed.
+    normalized_query_hash = normalized_query_hash_;
+}
+
+UInt64 Context::getNormalizedQueryHash() const
+{
+    return normalized_query_hash;
 }
 
 void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
