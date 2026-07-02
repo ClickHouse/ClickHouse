@@ -1,0 +1,2 @@
+String, String(size = 1)	ok
+Tuple(String), Tuple(size = 1, String(size = 1))	ok

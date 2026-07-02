@@ -1,12 +1,16 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -15,7 +19,11 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
+#include <stack>
+#include <unordered_set>
 
 namespace ProfileEvents
 {
@@ -29,6 +37,219 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+}
+
+namespace Setting
+{
+    extern const SettingsBool optimize_constant_columns_after_filter;
+}
+
+namespace
+{
+
+using ConstantColumnAfterFilter = std::pair<size_t, Field>;
+
+const ActionsDAG::Node * unwrapAlias(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.at(0);
+    return node;
+}
+
+std::optional<Field> tryGetConstantField(const ActionsDAG::Node * node)
+{
+    node = unwrapAlias(node);
+    if (!node->column || !isColumnConst(*node->column))
+        return {};
+
+    return assert_cast<const ColumnConst &>(*node->column).getField();
+}
+
+bool containsType(const IDataType & type, bool (WhichDataType::* predicate)() const)
+{
+    if ((WhichDataType(type).*predicate)())
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        if (!result && (WhichDataType(child).*predicate)())
+            result = true;
+    });
+
+    return result;
+}
+
+bool containsFloat(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isFloat);
+}
+
+bool containsColumnedAsDecimal(const DataTypePtr & type)
+{
+    if (isColumnedAsDecimal(*type))
+        return true;
+
+    bool result = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!result && isColumnedAsDecimal(child))
+            result = true;
+    });
+
+    return result;
+}
+
+bool containsString(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isString);
+}
+
+bool containsFixedString(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isFixedString);
+}
+
+bool containsEnum(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isEnum);
+}
+
+bool containsVariant(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isVariant);
+}
+
+bool containsObject(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isObject);
+}
+
+bool containsDateOrTime(const DataTypePtr & type)
+{
+    return containsType(*type, &WhichDataType::isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64);
+}
+
+/// Replacing a filtered column with a `ColumnConst` is valid only when `equals` proves that all passed values
+/// have the same representation as the constant after conversion to the result type.
+/// For some comparisons in ClickHouse, different stored values can compare equal, e.g. `0.0 = -0.0`,
+/// `Decimal` vs `Float`, `String` vs `FixedString` / `Enum`, `Object` / `JSON`, mixed date/time-family types,
+/// or runtime-dispatched `Dynamic` / `Variant` comparisons.
+bool canReplaceColumnWithConstantAfterFilter(
+    const DataTypePtr & result_type,
+    const DataTypePtr & constant_type)
+{
+    if (hasDynamicType(result_type) || containsVariant(result_type) || containsObject(result_type) || containsFloat(result_type))
+        return false;
+
+    const bool constant_type_is_dynamic = hasDynamicType(constant_type);
+
+    if (containsColumnedAsDecimal(result_type)
+        && (containsFloat(constant_type) || constant_type_is_dynamic))
+        return false;
+
+    if (containsString(result_type)
+        && (containsFixedString(constant_type) || containsEnum(constant_type) || constant_type_is_dynamic))
+        return false;
+
+    if (containsFixedString(result_type) && !result_type->equals(*constant_type))
+        return false;
+
+    if (containsDateOrTime(result_type)
+        && (constant_type_is_dynamic || (containsDateOrTime(constant_type) && !result_type->equals(*constant_type))))
+        return false;
+
+    /// `ColumnConst(Nullable)` has a different physical layout from a filtered full nullable column.
+    /// This optimization preserves the post-filter column layout for nullable columns.
+    if (isNullableOrLowCardinalityNullable(result_type))
+        return false;
+
+    return true;
+}
+
+std::optional<ConstantColumnAfterFilter> tryMakeConstantColumnAfterFilter(
+    const ActionsDAG::Node * column_node,
+    const ActionsDAG::Node * constant_node,
+    const ActionsDAG & dag,
+    const Block & transformed_header)
+{
+    const auto * unwrapped_column_node = unwrapAlias(column_node);
+    if (unwrapped_column_node->type != ActionsDAG::ActionType::INPUT)
+        return {};
+
+    auto constant_field = tryGetConstantField(constant_node);
+    if (!constant_field)
+        return {};
+
+    std::optional<size_t> position;
+
+    for (const auto * output : dag.getOutputs())
+    {
+        if (unwrapAlias(output) != unwrapped_column_node)
+            continue;
+
+        position = transformed_header.findPositionByName(output->result_name);
+        if (position)
+            break;
+    }
+    if (!position)
+        return {};
+
+    const auto & result_column = transformed_header.getByPosition(*position);
+    if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
+        return {};
+
+    auto converted = tryConvertFieldToType(*constant_field, *result_column.type, constant_node->result_type.get());
+    if (converted.isNull() && (!constant_field->isNull() || !canContainNull(*result_column.type)))
+        return {};
+
+    return ConstantColumnAfterFilter{*position, std::move(converted)};
+}
+
+std::vector<ConstantColumnAfterFilter> collectConstantColumnsAfterFilter(
+    const ActionsDAG & dag,
+    const String & filter_column_name,
+    const Block & transformed_header)
+{
+    std::vector<ConstantColumnAfterFilter> result;
+    std::unordered_set<size_t> added_positions;
+
+    const auto * filter = &dag.findInOutputs(filter_column_name);
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(filter);
+
+    while (!nodes.empty())
+    {
+        const auto * node = unwrapAlias(nodes.top());
+        nodes.pop();
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            continue;
+
+        const auto & function_name = node->function_base->getName();
+        if (function_name == "and")
+        {
+            for (const auto * child : node->children)
+                nodes.push(child);
+            continue;
+        }
+
+        if (function_name != "equals" || node->children.size() != 2)
+            continue;
+
+        std::optional<ConstantColumnAfterFilter> constant_column;
+        if (tryGetConstantField(node->children[1]))
+            constant_column = tryMakeConstantColumnAfterFilter(node->children[0], node->children[1], dag, transformed_header);
+        if (!constant_column && tryGetConstantField(node->children[0]))
+            constant_column = tryMakeConstantColumnAfterFilter(node->children[1], node->children[0], dag, transformed_header);
+
+        if (constant_column && added_positions.insert(constant_column->first).second)
+            result.push_back(std::move(*constant_column));
+    }
+
+    return result;
+}
+
 }
 
 bool FilterTransform::canUseType(const DataTypePtr & filter_type)
@@ -93,6 +314,9 @@ FilterTransform::FilterTransform(
 
     if (expression)
     {
+        constant_columns_after_filter
+            = collectConstantColumnsAfterFilter(expression->getActionsDAG(), filter_column_name, transformed_header);
+
         /// Special check to stop queries like "WHERE ignore(...)"
         const auto * node = &expression->getActionsDAG().findInOutputs(filter_column_name);
         while (node->type == ActionsDAG::ActionType::ALIAS)
@@ -157,6 +381,28 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
         columns.erase(columns.begin() + filter_column_position);
 }
 
+void FilterTransform::applyConstantColumnsAfterFilter(Columns & columns, size_t num_rows) const
+{
+    if (constant_columns_after_filter.empty())
+        return;
+
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+    {
+        if (!query_context->getSettingsRef()[Setting::optimize_constant_columns_after_filter])
+            return;
+    }
+
+    for (const auto & constant_column : constant_columns_after_filter)
+    {
+        if (constant_column.first == filter_column_position && remove_filter_column)
+            continue;
+
+        const auto & type = transformed_header.getByPosition(constant_column.first).type;
+        auto column = type->createColumnConst(num_rows, constant_column.second);
+        columns[constant_column.first] = std::move(column);
+    }
+}
+
 void FilterTransform::transform(Chunk & chunk)
 {
     auto chunk_rows_before = chunk.getNumRows();
@@ -189,6 +435,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (constant_filter_description.always_true || on_totals || isVirtualRow(chunk))
     {
         incrementProfileEvents(num_rows_before_filtration, columns);
+        if (constant_filter_description.always_true && !on_totals && !isVirtualRow(chunk))
+            applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -272,6 +520,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (num_filtered_rows == num_rows_before_filtration)
     {
         /// No need to touch the rest of the columns.
+        applyConstantColumnsAfterFilter(columns, num_rows_before_filtration);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -294,6 +543,7 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
+    applyConstantColumnsAfterFilter(columns, num_filtered_rows);
     removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Chunk.h>
 
 #include <Core/SortCursor.h>
 
@@ -115,6 +116,9 @@ void DistinctSortedTransform::transform(Chunk & chunk)
 {
     if (unlikely(!chunk.hasRows()))
         return;
+
+    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfConst(chunk);
 
     /// get DISTINCT columns from chunk
     column_ptrs.clear();
