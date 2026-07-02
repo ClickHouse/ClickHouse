@@ -10,6 +10,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsBloomFilter.h>
@@ -246,6 +247,28 @@ TEST(BloomFilterData, ForgedNumHashesMismatchRejected)
         Exception);
 }
 
+TEST(BloomFilterData, InvalidSerializedDataFlagRejected)
+{
+    WriteBufferFromOwnString forged;
+    writeVarUInt(size_t{64}, forged);
+    writeVarUInt(size_t{3}, forged);
+    writeVarUInt(size_t{0}, forged);
+    writeBinary(UInt8(2), forged);
+
+    AggregateFunctionGroupBloomFilterData victim;
+    ReadBufferFromString in(forged.str());
+
+    try
+    {
+        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0);
+        FAIL() << "Expected invalid serialized Bloom filter state flag to be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
 TEST(BloomFilterAggregateFunction, DoesNotAllocateMemoryInArena)
 {
     const auto value_type = std::make_shared<DataTypeUInt64>();
@@ -268,6 +291,39 @@ TEST(BloomFilterContains, WrongNumericBloomColumnThrowsAfterTypeValidation)
 
     EXPECT_THROW(
         executeBloomFilterContains(std::move(wrong_bloom_column), bloom_type, std::move(probe_column), value_type, 1),
+        Exception);
+}
+
+TEST(BloomFilterContains, NonBloomFirstArgumentThrowsInExecute)
+{
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+
+    auto bloom_column = ColumnUInt64::create();
+    bloom_column->insertValue(42);
+
+    auto probe_column = ColumnUInt64::create();
+    probe_column->insertValue(42);
+
+    EXPECT_THROW(
+        executeBloomFilterContains(std::move(bloom_column), value_type, std::move(probe_column), value_type, 1),
+        Exception);
+}
+
+TEST(BloomFilterContains, IncompatibleProbeTypeThrowsInExecute)
+{
+    const auto value_type = std::make_shared<DataTypeUUID>();
+    const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
+    const auto bloom_type = createAggregateStateType(aggregate_function, value_type);
+    const auto probe_type = std::make_shared<DataTypeUInt64>();
+
+    auto bloom_column = ColumnUInt64::create();
+    bloom_column->insertValue(42);
+
+    auto probe_column = ColumnUInt64::create();
+    probe_column->insertValue(42);
+
+    EXPECT_THROW(
+        executeBloomFilterContains(std::move(bloom_column), bloom_type, std::move(probe_column), probe_type, 1),
         Exception);
 }
 

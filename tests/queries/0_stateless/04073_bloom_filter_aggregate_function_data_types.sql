@@ -159,3 +159,7 @@ LIMIT 0; -- { serverError NOT_IMPLEMENTED }
 
 -- bloomFilterContains with non-bloom first argument must throw
 SELECT bloomFilterContains(42, toUInt64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- bloomFilterContains with aggregate state from a different function must throw
+SELECT bloomFilterContains(sumState(number), toUInt64(1))
+FROM numbers(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
