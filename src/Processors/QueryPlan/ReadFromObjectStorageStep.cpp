@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -27,6 +29,57 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
+}
+
+namespace
+{
+
+/// Wraps an object iterator to record every object the read consumes into the query's
+/// `QueryConsumedObjectSets`. This lets `StorageObjectStorage::getModificationHash` validate the query
+/// result cache against the exact object set the read used, rather than a fresh listing that could
+/// differ under a concurrent change. See `QueryConsumedObjectSets`.
+class CapturingObjectIterator : public IObjectIterator
+{
+public:
+    CapturingObjectIterator(ObjectIterator inner_, QueryConsumedObjectSetsPtr consumed_object_sets_, UUID table_uuid_)
+        : inner(std::move(inner_)), consumed_object_sets(std::move(consumed_object_sets_)), table_uuid(table_uuid_)
+    {
+    }
+
+    ObjectInfoPtr next(size_t thread_num) override
+    {
+        auto object_info = inner->next(thread_num);
+        if (object_info)
+        {
+            QueryConsumedObjectSets::Object object;
+            object.path = object_info->getPath();
+            if (auto metadata = object_info->getObjectMetadata())
+            {
+                object.etag = metadata->etag;
+                object.size = metadata->size_bytes;
+                object.last_modified = metadata->last_modified.epochTime();
+                object.has_metadata = true;
+            }
+            consumed_object_sets->add(table_uuid, std::move(object));
+        }
+        return object_info;
+    }
+
+    size_t estimatedKeysCount() override { return inner->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return inner->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        inner->setEmitProfileEvents(value);
+    }
+
+private:
+    ObjectIterator inner;
+    QueryConsumedObjectSetsPtr consumed_object_sets;
+    UUID table_uuid;
+};
+
 }
 
 
@@ -171,6 +224,17 @@ void ReadFromObjectStorageStep::createIterator()
         configuration, configuration->getQuerySettings(context), object_storage, storage_snapshot->metadata, distributed_processing,
         context, predicate, filter_actions_dag.get(), virtual_columns, info.hive_partition_columns_to_read_from_file_path, nullptr, context->getFileProgressCallback(),
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
+
+    /// When the query result cache consistency check is active, record the exact object set this read
+    /// consumes so `StorageObjectStorage::getModificationHash` can hash it at finalization instead of
+    /// re-listing (closes a listing `A -> B -> A` race). Only wrapped when there is a capture to fill
+    /// and the table has a UUID to key it by. See `QueryConsumedObjectSets`.
+    if (storage_id.hasUUID())
+    {
+        if (auto consumed_object_sets = context->getQueryConsumedObjectSets())
+            iterator_wrapper = std::make_shared<CapturingObjectIterator>(
+                std::move(iterator_wrapper), std::move(consumed_object_sets), storage_id.uuid);
+    }
 }
 
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)

@@ -16,6 +16,7 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -1740,6 +1741,14 @@ static BlockIO executeQueryImpl(
             referenced_tables_modification_hash = computeQueryReferencedTablesModificationHash(out_ast, context);
         const bool can_use_consistent_query_result_cache
             = !query_cache_only_when_data_unchanged || referenced_tables_modification_hash.has_value();
+
+        /// Object-storage tables list their objects independently of the read, so the finalization
+        /// consistency check could re-list the same object set even though the read consumed a different
+        /// one (a listing `A -> B -> A` race). Give the query a place to record the object set it actually
+        /// consumed; `StorageObjectStorage::getModificationHash` then hashes that captured set at
+        /// finalization instead of re-listing. Only needed when the consistency check is active.
+        if (query_cache_only_when_data_unchanged && referenced_tables_modification_hash.has_value())
+            context->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
 
         if (!async_insert)
         {

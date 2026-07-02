@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -1107,6 +1108,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 out_unchanged = true;
                 return std::nullopt;
             }
+
+            /// Proceeding to rebuild: record the object-storage object set the read below actually
+            /// consumes, so the post-read source hash reflects exactly what was read rather than a fresh
+            /// listing that could differ under a concurrent change (closes a listing `A -> B -> A` race
+            /// for object-storage sources). See `QueryConsumedObjectSets`.
+            refresh_context->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
         }
 
         if (!refresh_append)

@@ -307,6 +307,9 @@ class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
+struct QueryConsumedObjectSets;
+using QueryConsumedObjectSetsPtr = std::shared_ptr<QueryConsumedObjectSets>;
+
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
@@ -674,6 +677,12 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+
+    /// Object-storage objects consumed by the current query's reads, used by the query result cache
+    /// consistency check (`query_cache_use_only_when_data_was_not_changed`). Owned here and reached via
+    /// `getQueryContext()` so the reading side and the finalization check see the same capture even
+    /// though they hold different (copied) Context instances. See `QueryConsumedObjectSets`.
+    QueryConsumedObjectSetsPtr query_consumed_object_sets;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -1737,6 +1746,11 @@ public:
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
     QueryMetadataCachePtr getQueryMetadataCache() const;
     void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
+
+    /// Reached via `getQueryContext()` so all copies of the query's Context share one capture. Returns
+    /// null when there is no query context or the consistency check is not active for this query.
+    QueryConsumedObjectSetsPtr getQueryConsumedObjectSets() const;
+    void setQueryConsumedObjectSets(const QueryConsumedObjectSetsPtr & query_consumed_object_sets_);
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;
