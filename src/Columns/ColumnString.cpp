@@ -202,6 +202,14 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     if (offsets.empty())
         return ColumnString::create();
 
+    /// Enforce the ColumnString invariant (offsets.back() == chars.size(), same as the copy
+    /// constructor) before filterArraysImpl trusts `offsets` to size its memcpys; a violated
+    /// invariant would otherwise read/write out of bounds instead of failing cleanly.
+    if (offsets.back() != chars.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnString::filter: offsets inconsistent with chars array. Last offset: {}, chars size: {}",
+            offsets.back(), chars.size());
+
     auto res = ColumnString::create();
 
     Chars & res_chars = res->chars;
@@ -216,6 +224,13 @@ void ColumnString::filter(const Filter & filt)
 {
     if (offsets.empty())
         return;
+
+    /// See the note in the const filter() overload: guard the invariant before the in-place
+    /// SIMD path trusts `offsets` to size its memmoves.
+    if (offsets.back() != chars.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnString::filter: offsets inconsistent with chars array. Last offset: {}, chars size: {}",
+            offsets.back(), chars.size());
 
     filterArraysImplInPlace<UInt8>(chars, offsets, filt);
 }

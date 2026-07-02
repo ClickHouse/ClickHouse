@@ -225,3 +225,97 @@ TEST(ColumnString, InsertRangeFromDippingIntermediateOffsetThrows)
         ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
     }
 }
+
+/// Build a ColumnString with `num_rows` rows and then push the final offset past the end of `chars`
+/// without growing `chars`. This is the same class of inconsistency the copy constructor rejects,
+/// but reached through ColumnString::filter instead of insertRangeFrom.
+static ColumnString::MutablePtr makeFilterableColumnWithOffsetsBeyondChars(size_t num_rows, size_t last_offset_overshoot)
+{
+    auto column = ColumnString::create();
+    for (size_t i = 0; i < num_rows; ++i)
+        column->insertData("abcd", 4);
+
+    auto & offsets = column->getOffsets();
+    offsets.back() += last_offset_overshoot;
+
+    return column;
+}
+
+/// Reproduces the out-of-bounds write in ColumnString::filter: when `offsets` are inconsistent with
+/// the `chars` array, filterArraysImpl's SIMD fast path computes a bogus chunk size from `offsets`
+/// and memcpys past the end of the destination/source buffer. The symbolized crash from CI was
+///   __asan_memcpy <- ColumnsCommon.cpp ResultOffsetsBuilder::insertChunk<64>
+///     <- filterArraysImpl<char8_t> <- ColumnString::filter <- ColumnNullable::filter
+///     <- FilterDescription::filter <- FilterTransform::doTransform
+/// Without the consistency guard this aborts under ASan; with the guard it throws INCORRECT_DATA.
+///
+/// >= 64 all-passing rows so the SIMD (insertChunk) fast path runs, matching the crash signature.
+TEST(ColumnString, FilterInconsistentOffsetsThrows)
+{
+    auto source = makeFilterableColumnWithOffsetsBeyondChars(/*num_rows=*/128, /*last_offset_overshoot=*/8);
+    IColumn::Filter filt(source->size(), 1);
+
+    try
+    {
+        source->filter(filt, /*result_size_hint=*/ -1);
+        FAIL() << "filter did not detect offsets inconsistent with chars";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// Same defect with a large overshoot, matching the magnitude of the symbolized CI over-read
+/// (hundreds of KB past the chars buffer).
+TEST(ColumnString, FilterInconsistentOffsetsLargeOvershoot)
+{
+    auto source = makeFilterableColumnWithOffsetsBeyondChars(/*num_rows=*/128, /*last_offset_overshoot=*/256 * 1024);
+    IColumn::Filter filt(source->size(), 1);
+
+    EXPECT_THROW(source->filter(filt, /*result_size_hint=*/ 0), DB::Exception);
+}
+
+/// The in-place filter overload shares the same SIMD offsets math (filterArraysImplInPlace) and must
+/// reject the same inconsistency before it memmoves out of bounds.
+TEST(ColumnString, FilterInPlaceInconsistentOffsetsThrows)
+{
+    auto source = makeFilterableColumnWithOffsetsBeyondChars(/*num_rows=*/128, /*last_offset_overshoot=*/8);
+    IColumn::Filter filt(source->size(), 1);
+
+    try
+    {
+        source->filter(filt);
+        FAIL() << "in-place filter did not detect offsets inconsistent with chars";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+    }
+}
+
+/// A consistent column (offsets.back() == chars.size()) must still filter correctly and not trip the
+/// new guard. Use a selective filter over > 64 rows to cover both the SIMD and the tail paths.
+TEST(ColumnString, FilterConsistentColumnStillWorks)
+{
+    auto column = ColumnString::create();
+    for (size_t i = 0; i < 200; ++i)
+        column->insertData("abcd", 4);
+
+    IColumn::Filter filt(column->size(), 0);
+    size_t expected = 0;
+    for (size_t i = 0; i < filt.size(); ++i)
+        if (i % 3 == 0)
+        {
+            filt[i] = 1;
+            ++expected;
+        }
+
+    auto filtered = column->filter(filt, /*result_size_hint=*/ -1);
+    ASSERT_EQ(filtered->size(), expected);
+    const auto & filtered_str = assert_cast<const ColumnString &>(*filtered);
+    for (size_t i = 0; i < filtered_str.size(); ++i)
+        ASSERT_EQ(filtered_str.getDataAt(i), std::string_view("abcd"));
+}
