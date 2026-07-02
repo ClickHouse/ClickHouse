@@ -25,7 +25,9 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <base/insertAtEnd.h>
+#include <Common/typeid_cast.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -806,6 +808,22 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
     }
 }
 
+static std::optional<Int32> readMetadataVersionFromBackup(
+    const IBackup & backup, const String & metadata_path_in_backup, const String & data_path_in_backup)
+{
+    String new_path = BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup);
+    String legacy_path = fs::path(data_path_in_backup) / "table_metadata_version.txt";
+    String effective_path = backup.fileExists(new_path)    ? new_path
+                          : backup.fileExists(legacy_path) ? legacy_path
+                          : String{};
+    if (effective_path.empty())
+        return std::nullopt;
+    auto buf = backup.readFile(effective_path);
+    String version_str;
+    readStringUntilEOF(version_str, *buf);
+    return parse<Int32>(version_str);
+}
+
 void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
 {
     try
@@ -859,6 +877,24 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     table_def_from_backup->formatForErrorMessage());
             }
         }
+
+        if (restore_settings.structure_only)
+        {
+            if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+            {
+                String metadata_path;
+                String data_path;
+                {
+                    std::lock_guard lock{mutex};
+                    const auto & table_info = table_infos.at(table_name);
+                    metadata_path = table_info.metadata_path_in_backup;
+                    data_path = table_info.data_path_in_backup;
+                }
+                if (auto version = readMetadataVersionFromBackup(*backup, metadata_path, data_path))
+                    replicated_storage->restoreMetadataVersionFromBackup(*version);
+            }
+        }
+
     }
     catch (Exception & e)
     {
@@ -895,21 +931,29 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     StoragePtr storage;
     String data_path_in_backup;
+    String metadata_path_in_backup;
     std::optional<ASTs> partitions;
     {
         std::lock_guard lock{mutex};
         auto & table_info = table_infos.at(table_name);
         storage = table_info.storage;
         data_path_in_backup = table_info.data_path_in_backup;
+        metadata_path_in_backup = table_info.metadata_path_in_backup;
         partitions = table_info.partitions;
     }
 
     schedule(
-        [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
+        [this, table_name, storage, data_path_in_backup, metadata_path_in_backup, partitions]()
+        { insertDataToTableImpl(table_name, storage, data_path_in_backup, metadata_path_in_backup, partitions); },
         ThreadName::RESTORE_TABLE_DATA);
 }
 
-void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+void RestorerFromBackup::insertDataToTableImpl(
+    const QualifiedTableName & table_name,
+    StoragePtr storage,
+    const String & data_path_in_backup,
+    const String & metadata_path_in_backup,
+    const std::optional<ASTs> & partitions)
 {
     try
     {
@@ -921,6 +965,12 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 storage->getName());
         }
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
+
+        if (auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(storage.get()))
+        {
+            if (auto version = readMetadataVersionFromBackup(*backup, metadata_path_in_backup, data_path_in_backup))
+                replicated_storage->restoreMetadataVersionFromBackup(*version);
+        }
     }
     catch (Exception & e)
     {
