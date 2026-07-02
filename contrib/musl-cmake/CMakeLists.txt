@@ -1,9 +1,9 @@
 set(MUSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/musl")
 
 # MUSL_ARCH is musl's name for the target architecture (the arch/<MUSL_ARCH>
-# directory in the musl sources), set by cmake/linux/toolchain-*-musl.cmake.
+# directory in the musl sources), set by the cmake/linux/toolchain-*.cmake files.
 if (NOT MUSL_ARCH)
-    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux/toolchain-*-musl.cmake toolchains")
+    message(FATAL_ERROR "Building musl from sources requires one of the cmake/linux toolchain files")
 endif()
 
 enable_language(ASM)
@@ -1647,6 +1647,11 @@ target_compile_options(musl PRIVATE
     -fno-stack-protector
     -fomit-frame-pointer
 
+    # Never instrument libc: its early-init code (__init_libc, CRT) runs before
+    # sanitizer runtimes are initialized, and sanitizers hook the public libc
+    # functions with interceptors instead (same model as with uninstrumented glibc).
+    -fno-sanitize=all
+
     # Unwind tables: required for C++ exceptions and stack traces through musl.
     -funwind-tables
     -fasynchronous-unwind-tables
@@ -1696,9 +1701,30 @@ target_compile_options(musl-crt1 PRIVATE
     -std=c99
     -ffreestanding
     -fno-stack-protector
+    -fno-sanitize=all
     -fno-builtin
 )
 add_dependencies(musl-crt1 musl-headers)
+
+# rcrt1.o: self-relocating startup for static-PIE executables (sanitizer and
+# other PIE builds); it inlines ldso/dlstart.c to apply its own relocations.
+add_library(musl-rcrt1 OBJECT "${MUSL_SOURCE_DIR}/crt/rcrt1.c")
+target_include_directories(musl-rcrt1 PRIVATE
+    # src/include first: provides features.h with the 'hidden' and 'weak' macros
+    "${MUSL_SOURCE_DIR}/src/include"
+    "${MUSL_SOURCE_DIR}/src/internal"
+    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}"
+    "${MUSL_GENERATED_DIR}"
+)
+target_compile_options(musl-rcrt1 PRIVATE
+    -std=c99
+    -ffreestanding
+    -fno-stack-protector
+    -fno-sanitize=all
+    -fno-builtin
+    -fPIC
+)
+add_dependencies(musl-rcrt1 musl-headers)
 
 add_library(musl-crti OBJECT "${MUSL_SOURCE_DIR}/crt/${MUSL_ARCH}/crti.s")
 set_source_files_properties(

@@ -547,6 +547,20 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
+if (USE_MUSL)
+    # Executables are linked with -nostartfiles (see cmake/linux/default_libs.cmake), so
+    # musl's CRT objects are added to each of them explicitly. PIE builds (sanitizers and
+    # builds without ThinLTO, see above) become static-PIE and need the self-relocating
+    # rcrt1 instead of crt1.
+    if (SANITIZE OR ENABLE_POSITION_INDEPENDENT_BINARY)
+        set (MUSL_CRT_OBJECTS $<TARGET_OBJECTS:musl-rcrt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-pie")
+    else ()
+        set (MUSL_CRT_OBJECTS $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+    endif ()
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -594,9 +608,9 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if USE_MUSL is on, also include musl CRT objects (crt1, crti, crtn) because we link with -nostartfiles.
+    # if USE_MUSL is on, also include musl CRT objects because we link with -nostartfiles.
     if (USE_MUSL)
-        add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc>)
+        add_executable (${ARGV} ${MUSL_CRT_OBJECTS} $<TARGET_OBJECTS:clickhouse_malloc>)
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
@@ -719,7 +733,6 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
-        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

@@ -424,11 +424,7 @@ if (NOT USE_MUSL)
 endif()
 # musl: executables need explicit CRT objects because of -nostartfiles.
 if (USE_MUSL)
-    target_sources(protoc PRIVATE
-        $<TARGET_OBJECTS:musl-crt1>
-        $<TARGET_OBJECTS:musl-crti>
-        $<TARGET_OBJECTS:musl-crtn>
-    )
+    target_sources(protoc PRIVATE ${MUSL_CRT_OBJECTS})
 endif()
 target_link_libraries(protoc
     utf8_validity
@@ -450,7 +446,7 @@ if (ENABLE_FUZZING)
 endif()
 
 add_native_target (protoc)
-if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
 endif()
 

@@ -30,8 +30,9 @@ if (OS_ANDROID)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
     # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
-    # from the sysroot; musl's own are added in clickhouse_add_executable.
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles")
+    # from the sysroot; musl's own are added per executable (MUSL_CRT_OBJECTS).
+    # -static / -static-pie is added to CMAKE_EXE_LINKER_FLAGS in the main CMakeLists.
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -nostartfiles")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
