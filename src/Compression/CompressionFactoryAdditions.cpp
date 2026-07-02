@@ -152,6 +152,15 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 else
                 {
                     result_codec = getImpl(codec_family_name, codec_arguments, nullptr);
+
+                    /// Codecs that need the column type to compress (such as the experimental PCO codec)
+                    /// can only be specified per column, where the type is known. They cannot be used in
+                    /// untyped contexts such as TTL recompression (RECOMPRESS CODEC(...)) or the untyped
+                    /// MergeTree compression settings, where the column type is not available.
+                    if (result_codec->requiresColumnTypeToCompress())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Codec {} requires the column type to compress and can only be specified for a column",
+                            codec_family_name);
                 }
 
                 if (!allow_experimental_codecs && result_codec->isExperimental())

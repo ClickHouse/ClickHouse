@@ -19,6 +19,13 @@ public:
 
     void updateHash(SipHash & hash) const override;
 
+    /// Propagate these properties from the wrapped codecs so that callers inspecting only the
+    /// outer `CompressionCodecMultiple` (e.g. the untyped compression settings validation in
+    /// `MergeTreeSettings`) still see an experimental or column-type-requiring child in a chain
+    /// such as `PCO, ZSTD(1)`.
+    bool isExperimental() const override;
+    bool requiresColumnTypeToCompress() const override;
+
 protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;

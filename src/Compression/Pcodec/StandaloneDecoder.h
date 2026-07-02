@@ -1,0 +1,487 @@
+#pragma once
+
+#include <Compression/Pcodec/PcoArray.h>
+
+#include <Compression/Pcodec/BitReader.h>
+#include <Compression/Pcodec/Constants.h>
+#include <Compression/Pcodec/LatentDecoder.h>
+#include <Compression/Pcodec/Metadata.h>
+#include <Compression/Pcodec/NumberTraits.h>
+#include <Compression/Pcodec/PcodecError.h>
+
+#include <array>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <type_traits>
+#include <vector>
+
+/** Top-level decoder for the standalone `.pco` container, ported from
+  * tmp/pcodec_ref/pco/src/standalone/decompressor.rs + wrapped/{file,chunk,page}_decompressor.rs.
+  *
+  * Decodes a whole standalone stream into native-endian values written to `out`.
+  * The source buffer MUST have at least `DECODE_BATCH_OVERSHOOT` readable slack bytes after
+  * `src_len`: the batch hot loops read positionally and only verify the reader position once per
+  * batch (see `decodeChunk`), so they may read that many bytes past the logical end before the
+  * `checkInBounds` catches a truncated or malformed stream.
+  */
+namespace DB::Pcodec
+{
+
+inline constexpr std::array<uint8_t, 4> MAGIC_HEADER = {112, 99, 111, 33}; // "pco!"
+inline constexpr uint8_t MAGIC_TERMINATION_BYTE = 0;
+inline constexpr Bitlen BITS_TO_ENCODE_N_ENTRIES = 24;
+inline constexpr Bitlen BITS_TO_ENCODE_STANDALONE_VERSION = 8;
+inline constexpr Bitlen BITS_TO_ENCODE_VARINT_POWER = 6;
+inline constexpr size_t CURRENT_STANDALONE_VERSION = 3;
+
+/// Per-latent-variable page metadata: delta state values (as wide latents) + 4 final ANS states.
+struct PageVarMeta
+{
+    PcoArray<uint64_t> delta_state;
+    std::array<AnsState, ANS_INTERLEAVING> finals{};
+};
+
+inline PageVarMeta readPageVarMeta(BitReader & reader, Bitlen latent_bits, size_t n_latents_per_state, Bitlen ans_size_log)
+{
+    PageVarMeta meta;
+    meta.delta_state.resize(n_latents_per_state);
+    for (size_t i = 0; i < n_latents_per_state; ++i)
+        meta.delta_state[i] = reader.readU64(latent_bits);
+    for (auto & f : meta.finals)
+        f = static_cast<AnsState>(reader.readU64(ans_size_log));
+    return meta;
+}
+
+template <Latent L>
+PcoArray<L> castDeltaState(const PcoArray<uint64_t> & src)
+{
+    PcoArray<L> res(src.size());
+    for (size_t i = 0; i < src.size(); ++i)
+        res[i] = static_cast<L>(src[i]);
+    return res;
+}
+
+/// Decodes one chunk's page of `n` values of number type T, writing native-endian values into
+/// `out_bytes` (which must be aligned to alignof(T)).
+template <typename T>
+void decodeChunk(BitReader & reader, const ChunkMeta & meta, size_t n, uint8_t * out_bytes)
+{
+    using L = typename NumberTraits<T>::Latent;
+    constexpr Bitlen l_bits = latentBits<L>;
+    // `out_bytes` is required to be aligned to alignof(T) (callers guarantee this); writing through
+    // a typed pointer keeps the join loops branch-free and vectorizable.
+    T * out = reinterpret_cast<T *>(out_bytes);
+
+    // --- delta latent variable (Lookback only; always u32) ---
+    std::optional<LatentVarDecoder<uint32_t>> delta_dec;
+    if (meta.delta_var)
+    {
+        delta_dec.emplace();
+        delta_dec->initChunk(*meta.delta_var, meta.forLatentVar(LatentVarKey::Delta));
+    }
+
+    size_t n_latents_per_delta_state = meta.forLatentVar(LatentVarKey::Primary).nLatentsPerState();
+
+    // --- read page metadata for every latent var, in order delta -> primary -> secondary ---
+    std::optional<PageVarMeta> delta_page;
+    if (meta.delta_var)
+        delta_page = readPageVarMeta(reader, meta.delta_var->latent_bits, 0, meta.delta_var->ans_size_log);
+    PageVarMeta primary_page = readPageVarMeta(
+        reader, meta.primary_var.latent_bits, meta.forLatentVar(LatentVarKey::Primary).nLatentsPerState(), meta.primary_var.ans_size_log);
+    std::optional<PageVarMeta> secondary_page;
+    if (meta.secondary_var)
+        secondary_page = readPageVarMeta(
+            reader, meta.secondary_var->latent_bits, meta.forLatentVar(LatentVarKey::Secondary).nLatentsPerState(),
+            meta.secondary_var->ans_size_log);
+    reader.drainEmptyByte("pcodec: non-zero bits at end of data page metadata");
+
+    if (delta_dec)
+        delta_dec->initPage(delta_page->finals, castDeltaState<uint32_t>(delta_page->delta_state));
+
+    auto run_batches = [&](auto & primary, auto * secondary, auto join)
+    {
+        size_t n_remaining = n;
+        size_t n_processed = 0;
+        while (n_processed < n)
+        {
+            size_t batch_n = std::min<size_t>(FULL_BATCH_N, n - n_processed);
+
+            const uint32_t * lookbacks = nullptr;
+            size_t lookbacks_len = 0;
+            if (delta_dec)
+            {
+                size_t limit = std::min<size_t>(
+                    n_remaining > n_latents_per_delta_state ? n_remaining - n_latents_per_delta_state : 0, batch_n);
+                delta_dec->readBatchPreDelta(reader, limit);
+                lookbacks = delta_dec->latents.data();
+                lookbacks_len = limit;
+            }
+
+            primary.readBatch(reader, lookbacks, lookbacks_len, n_remaining);
+            if (secondary)
+                secondary->readBatch(reader, lookbacks, lookbacks_len, n_remaining);
+
+            // The batch readers above advance the position positionally, reading up to
+            // DECODE_BATCH_OVERSHOOT slack bytes past the logical end (guaranteed available by the
+            // caller). Verify here, once per batch, that we have not consumed past the stream, so a
+            // truncated or malformed page fails closed rather than decoding from beyond the buffer.
+            reader.checkInBounds();
+
+            join(n_processed, batch_n);
+
+            n_remaining -= batch_n;
+            n_processed += batch_n;
+        }
+    };
+
+    if (meta.mode.variant == ModeVariant::Dict)
+    {
+        LatentVarDecoder<uint32_t> primary;
+        primary.initChunk(meta.primary_var, meta.forLatentVar(LatentVarKey::Primary));
+        primary.initPage(primary_page.finals, castDeltaState<uint32_t>(primary_page.delta_state));
+        const auto & dict = meta.mode.dict;
+        run_batches(primary, static_cast<LatentVarDecoder<uint32_t> *>(nullptr), [&](size_t off, size_t bn)
+        {
+            for (size_t i = 0; i < bn; ++i)
+            {
+                uint32_t idx = primary.latents[i];
+                if (idx >= dict.size())
+                    throw PcodecError("pcodec: dict index exceeded dict length");
+                out[off + i] = NumberTraits<T>::fromLatentOrdered(static_cast<L>(dict[idx]));
+            }
+        });
+        reader.drainEmptyByte("pcodec: expected trailing bits at end of page to be empty");
+        return;
+    }
+
+    LatentVarDecoder<L> primary;
+    primary.initChunk(meta.primary_var, meta.forLatentVar(LatentVarKey::Primary));
+    primary.initPage(primary_page.finals, castDeltaState<L>(primary_page.delta_state));
+
+    std::optional<LatentVarDecoder<L>> secondary;
+    if (meta.secondary_var)
+    {
+        secondary.emplace();
+        secondary->initChunk(*meta.secondary_var, meta.forLatentVar(LatentVarKey::Secondary));
+        secondary->initPage(secondary_page->finals, castDeltaState<L>(secondary_page->delta_state));
+    }
+    LatentVarDecoder<L> * sec_ptr = secondary ? &*secondary : nullptr;
+
+    // When the secondary latent variable is a single zero-width bin, every secondary value is the
+    // same constant and it contributes nothing to the page body. Skip decoding it entirely and fold
+    // the constant into the join — a large win for exactly-quantized / exact-multiple data.
+    // This shortcut is only valid when the secondary is *not* delta-encoded: with `secondary_uses_delta`
+    // a one-bin zero-width body still decodes to a non-constant sequence through the page delta state,
+    // so in that case the secondary must be decoded normally.
+    bool sec_const = sec_ptr && sec_ptr->n_bins <= 1 && sec_ptr->bytes_per_offset == 0
+        && meta.forLatentVar(LatentVarKey::Secondary).variant == DeltaEncodingVariant::None;
+    L sec_c = (sec_const && !sec_ptr->state_lowers.empty()) ? sec_ptr->state_lowers[0] : L{0};
+    LatentVarDecoder<L> * sec_decode = sec_const ? nullptr : sec_ptr;
+
+    const L * pl = primary.latents.data();
+    const L * sl = sec_ptr ? sec_ptr->latents.data() : nullptr;
+
+    if (meta.mode.variant == ModeVariant::Classic)
+    {
+        run_batches(primary, sec_decode, [&](size_t off, size_t bn)
+        {
+            for (size_t i = 0; i < bn; ++i)
+                out[off + i] = NumberTraits<T>::fromLatentOrdered(pl[i]);
+        });
+    }
+    else if constexpr (std::is_integral_v<T>)
+    {
+        if (meta.mode.variant != ModeVariant::IntMult)
+            throw PcodecError("pcodec: unexpected mode for integer type");
+        L base = static_cast<L>(meta.mode.base_latent);
+        // A valid `IntMult` stream splits each in-range latent `u` as `u = primary * base + secondary`
+        // with `base != 0` and `secondary < base` (see the encoder in `Modes.h::splitForMode`), so the
+        // reconstruction always reproduces `u` and never exceeds the latent width. A malformed stream
+        // can lie — `base == 0`, `secondary >= base`, or a `primary * base + secondary` that overflows
+        // the latent width — and would then fabricate a value by wrapping modularly. Because the shared
+        // `CompressedReadBuffer` dispatches external frames by method byte alone, a checksummed `0x9d`
+        // frame reaches this decoder without `allow_experimental_codecs`, so this is a current
+        // fail-closed boundary, not only a future raw-`.pco` concern. Validate the decomposition and
+        // throw instead; these checks never reject a valid stream.
+        //
+        // The overflow test itself must stay defined for sub-32-bit latents (`U8`/`U16`/`I8`/`I16`,
+        // whose `L` is `uint8_t`/`uint16_t`): plain `pl[i] * base` would be evaluated in signed `int`
+        // by integer promotion and can overflow it (e.g. `pl[i] = base = 65535`), so the product is
+        // formed in an explicitly unsigned accumulator at least 32 bits wide and the latent-width
+        // overflow is detected with the checked-arithmetic builtins.
+        using Acc = std::conditional_t<(sizeof(L) < sizeof(uint32_t)), uint32_t, L>;
+        if (base == 0)
+            throw PcodecError("pcodec: IntMult base is zero in a malformed stream");
+        const Acc max_latent = static_cast<Acc>(std::numeric_limits<L>::max());
+        auto reconstruct = [&](L p, L sec) -> L
+        {
+            Acc prod;
+            Acc full;
+            if (sec >= base
+                || __builtin_mul_overflow(static_cast<Acc>(p), static_cast<Acc>(base), &prod)
+                || __builtin_add_overflow(prod, static_cast<Acc>(sec), &full)
+                || full > max_latent)
+                throw PcodecError("pcodec: IntMult decomposition out of range in a malformed stream");
+            return static_cast<L>(full);
+        };
+        run_batches(primary, sec_decode, [&](size_t off, size_t bn)
+        {
+            if (sec_const)
+                for (size_t i = 0; i < bn; ++i)
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(reconstruct(pl[i], sec_c));
+            else
+                for (size_t i = 0; i < bn; ++i)
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(reconstruct(pl[i], sl[i]));
+        });
+    }
+    else // floating point
+    {
+        if (meta.mode.variant == ModeVariant::FloatMult)
+        {
+            T base = NumberTraits<T>::fromLatentOrdered(static_cast<L>(meta.mode.base_latent));
+            run_batches(primary, sec_decode, [&](size_t off, size_t bn)
+            {
+                for (size_t i = 0; i < bn; ++i)
+                {
+                    T unadjusted = NumberTraits<T>::intFloatFromLatent(pl[i]) * base;
+                    L adj = sec_const ? sec_c : sl[i];
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(
+                        toggleCenter(static_cast<L>(NumberTraits<T>::toLatentOrdered(unadjusted) + adj)));
+                }
+            });
+        }
+        else if (meta.mode.variant == ModeVariant::FloatQuant)
+        {
+            Bitlen k = meta.mode.quant_k;
+            // `quant_k` comes from the stream as an 8-bit value and is used directly in shifts below.
+            // A valid FloatQuant stream never quantizes beyond the float's significand precision
+            // (23 bits for Float32, 52 for Float64); reject anything larger so `1 << k`, `y << k`
+            // and `mid >> k` can never reach undefined behavior on a malformed stream.
+            if (k > NumberTraits<T>::PRECISION_BITS)
+                throw PcodecError("pcodec: FloatQuant k exceeds the float type precision");
+            L sign_cutoff = static_cast<L>(latentMid<L> >> k);
+            L lowest_k_bits_max = static_cast<L>((L{1} << k) - L{1});
+            run_batches(primary, sec_decode, [&](size_t off, size_t bn)
+            {
+                for (size_t i = 0; i < bn; ++i)
+                {
+                    L y = pl[i];
+                    L m = sec_const ? sec_c : sl[i];
+                    // A valid `FloatQuant` stream splits each latent `u` as `primary = u >> k` and a
+                    // remainder `m` in `[0, (1 << k) - 1]` (see the encoder in `Modes.h::splitForMode`),
+                    // so `primary` occupies at most `latentBits - k` bits. A malformed stream can lie:
+                    // an oversized `primary` makes `y << k` drop its high bits, and an `m` above the
+                    // `k`-bit range underflows the `lowest_k_bits_max - m` branch — either fabricates a
+                    // float instead of failing closed (a checksummed `0x9d` frame reaches this decoder
+                    // through the shared `CompressedReadBuffer`). Reject both; these checks never reject
+                    // a valid stream. `(y << k) >> k == y` stays defined because `k <= PRECISION_BITS`
+                    // is strictly less than the latent width.
+                    if (m > lowest_k_bits_max || static_cast<L>(static_cast<L>(y << k) >> k) != y)
+                        throw PcodecError("pcodec: FloatQuant decomposition out of range in a malformed stream");
+                    L low = (y >= sign_cutoff) ? m : static_cast<L>(lowest_k_bits_max - m);
+                    out[off + i] = NumberTraits<T>::fromLatentOrdered(static_cast<L>((y << k) + low));
+                }
+            });
+        }
+        else
+            throw PcodecError("pcodec: unexpected mode for float type");
+    }
+    reader.drainEmptyByte("pcodec: expected trailing bits at end of page to be empty");
+    (void)l_bits;
+}
+
+/// Reads the wrapped format version (2 bytes). Returns the major version.
+inline uint8_t readWrappedFormatVersion(BitReader & reader)
+{
+    uint8_t major = reader.readAlignedBytes(1)[0];
+    uint8_t minor = major >= 4 ? reader.readAlignedBytes(1)[0] : 0;
+    // can_be_decompressed: the highest format we know how to decode is 4.1. A newer 4.x minor may
+    // change metadata semantics, so reject it instead of risking a wrong (but exception-free) decode.
+    if (major > 4 || (major == 4 && minor > 1))
+        throw PcodecError("pcodec: file format version is too new to decompress");
+    return major;
+}
+
+/// Element width in bytes for a number-type byte.
+inline size_t widthForType(uint8_t type_byte)
+{
+    switch (static_cast<NumberTypeByte>(type_byte))
+    {
+        case NumberTypeByte::U8:
+        case NumberTypeByte::I8:
+            return 1;
+        case NumberTypeByte::U16:
+        case NumberTypeByte::I16:
+        case NumberTypeByte::F16:
+            return 2;
+        case NumberTypeByte::U32:
+        case NumberTypeByte::I32:
+        case NumberTypeByte::F32:
+            return 4;
+        case NumberTypeByte::U64:
+        case NumberTypeByte::I64:
+        case NumberTypeByte::F64:
+            return 8;
+    }
+    throw PcodecError("pcodec: unknown number type byte");
+}
+
+/// Dispatch a chunk by its number-type byte, decoding into `out` (advancing the output pointer by
+/// width*n bytes). Returns the element width in bytes.
+inline size_t decodeChunkByType(BitReader & reader, uint8_t type_byte, uint8_t format_major, size_t n, uint8_t * out)
+{
+    auto run = [&]<typename T>() -> size_t
+    {
+        constexpr Bitlen l_bits = latentBits<typename NumberTraits<T>::Latent>;
+        Mode mode = readMode(reader, format_major, l_bits);
+        DeltaEncoding de = readDeltaEncoding(reader, format_major);
+
+        // `Conv1` widens latents into a signed accumulator; the 64-bit widening is lossy and
+        // unsupported (see ConvTypeFor), so reject it when the latent variable it applies to is
+        // 64-bit, instead of casting arbitrary latents through signed `int64_t` arithmetic.
+        // `Conv1` only ever applies to the primary latent variable (its metadata has no
+        // `secondary_uses_delta` flag), and for `Dict` mode the primary latents are the 32-bit
+        // dictionary indices regardless of the chunk's number type — the reference decoder
+        // accepts `Conv1` there (its width check in `delta::new_conv1` is on the actual latents),
+        // so only reject based on the same width.
+        Bitlen conv_latent_bits = mode.variant == ModeVariant::Dict ? latentBits<uint32_t> : l_bits;
+        if (de.variant == DeltaEncodingVariant::Conv1 && conv_latent_bits >= 64)
+            throw PcodecError("pcodec: Conv1 delta encoding is not supported for 64-bit latent variables");
+
+        // A lookback window larger than the chunk is valid: the reference encoder clamps
+        // `window_n_log` to [4, 15] independently of the chunk size (lookbacks reaching before the
+        // start of the page read zeros), e.g. a 834-value chunk gets a 1024-value window. Reject
+        // only windows beyond both the chunk size and the reference encoder's maximum: a malformed
+        // stream could otherwise set `window_n_log` up to 32 and drive a multi-gigabyte scratch
+        // allocation in `LatentVarDecoder::initPage` before any value is read (`n` is already
+        // bounded by the caller's output capacity at this point).
+        if (de.variant == DeltaEncodingVariant::Lookback
+            && de.lookback.windowN() > std::max(n, size_t{1} << LOOKBACK_MAX_WINDOW_N_LOG))
+            throw PcodecError("pcodec: lookback window exceeds both the chunk size and the maximum encoder window");
+
+        ChunkMeta meta;
+        meta.mode = std::move(mode);
+        meta.delta_encoding = de;
+        if (de.variant == DeltaEncodingVariant::Lookback)
+            meta.delta_var = readChunkLatentVarMeta(reader, latentBits<uint32_t>);
+        Bitlen primary_bits = meta.mode.variant == ModeVariant::Dict ? latentBits<uint32_t> : l_bits;
+        meta.primary_var = readChunkLatentVarMeta(reader, primary_bits);
+        bool has_secondary = meta.mode.variant == ModeVariant::IntMult || meta.mode.variant == ModeVariant::FloatMult
+            || meta.mode.variant == ModeVariant::FloatQuant;
+        if (has_secondary)
+            meta.secondary_var = readChunkLatentVarMeta(reader, l_bits);
+        reader.drainEmptyByte("pcodec: nonzero bits at end of chunk metadata");
+
+        // A latent variable with no bins makes `AnsSpec::fromWeights` synthesize a single ANS state
+        // and `readBatchPreDelta` take the constant-`lower` fast path, decoding fabricated latents
+        // without consuming any body bits. That is only legitimate when the variable has no body
+        // values (all its latents come from the page delta state, i.e. `n <= latents_per_state`).
+        // Otherwise the stream is malformed; reject it so it fails closed instead of fabricating
+        // values. This never rejects a valid stream: a non-empty latent variable always has >= 1 bin.
+        size_t primary_per_state = meta.forLatentVar(LatentVarKey::Primary).nLatentsPerState();
+        auto reject_empty_with_body = [&](const ChunkLatentVarMeta & var, size_t latents_per_state, const char * msg)
+        {
+            if (var.bins.empty() && n > latents_per_state)
+                throw PcodecError(msg);
+        };
+        if (meta.delta_var)
+            reject_empty_with_body(*meta.delta_var, primary_per_state, "pcodec: empty bins for a non-empty delta latent variable");
+        reject_empty_with_body(meta.primary_var, primary_per_state, "pcodec: empty bins for a non-empty primary latent variable");
+        if (meta.secondary_var)
+            reject_empty_with_body(
+                *meta.secondary_var, meta.forLatentVar(LatentVarKey::Secondary).nLatentsPerState(),
+                "pcodec: empty bins for a non-empty secondary latent variable");
+
+        decodeChunk<T>(reader, meta, n, out);
+        return sizeof(T);
+    };
+
+    switch (static_cast<NumberTypeByte>(type_byte))
+    {
+        case NumberTypeByte::U32: return run.template operator()<uint32_t>();
+        case NumberTypeByte::U64: return run.template operator()<uint64_t>();
+        case NumberTypeByte::I32: return run.template operator()<int32_t>();
+        case NumberTypeByte::I64: return run.template operator()<int64_t>();
+        case NumberTypeByte::F32: return run.template operator()<float>();
+        case NumberTypeByte::F64: return run.template operator()<double>();
+        case NumberTypeByte::U16: return run.template operator()<uint16_t>();
+        case NumberTypeByte::I16: return run.template operator()<int16_t>();
+        case NumberTypeByte::U8: return run.template operator()<uint8_t>();
+        case NumberTypeByte::I8: return run.template operator()<int8_t>();
+        case NumberTypeByte::F16:
+            throw PcodecError("pcodec: 16-bit float (f16) is not supported");
+    }
+    throw PcodecError("pcodec: unknown number type byte");
+}
+
+/// Decodes a whole standalone `.pco` stream into `out`. Returns the number of bytes written.
+/// `src` must have `DECODE_BATCH_OVERSHOOT` readable slack after `src_len` (the per-batch hot loops
+/// may read that far past the logical end before the once-per-batch `checkInBounds`).
+///
+/// `expected_width` (in bytes, 0 = unconstrained) is the element width the caller is going to store
+/// through. Every chunk's number-type width must match it: the caller picks the direct/aligned output
+/// path from this same width, so a malformed stream whose inner type is wider (e.g. an outer width of
+/// 4 wrapping an `F64`/`U64` chunk) would otherwise write 8-byte stores through a only-4-byte-aligned
+/// pointer.
+inline size_t decodeStandalone(const uint8_t * src, size_t src_len, uint8_t * out, size_t out_capacity_bytes, size_t expected_width = 0)
+{
+    BitReader reader(src, src_len, 0);
+    const uint8_t * magic = reader.readAlignedBytes(MAGIC_HEADER.size());
+    if (std::memcmp(magic, MAGIC_HEADER.data(), MAGIC_HEADER.size()) != 0)
+        throw PcodecError("pcodec: magic header does not match");
+
+    size_t standalone_version = reader.readU64(BITS_TO_ENCODE_STANDALONE_VERSION);
+    if (standalone_version < 2 || standalone_version > CURRENT_STANDALONE_VERSION)
+        throw PcodecError("pcodec: unsupported standalone version");
+
+    std::optional<uint8_t> uniform_type;
+    if (standalone_version >= 3)
+    {
+        uint8_t byte = reader.readAlignedBytes(1)[0];
+        if (byte != MAGIC_TERMINATION_BYTE)
+            uniform_type = byte;
+    }
+    // varint n_hint (ignored; we size the output from the column metadata)
+    {
+        Bitlen power = 1 + static_cast<Bitlen>(reader.readU64(BITS_TO_ENCODE_VARINT_POWER));
+        reader.readU64(power);
+        reader.drainEmptyByte("pcodec: standalone size hint");
+    }
+
+    uint8_t format_major = readWrappedFormatVersion(reader);
+
+    size_t out_pos = 0;
+    while (true)
+    {
+        uint8_t type_byte = reader.readAlignedBytes(1)[0];
+        if (type_byte == MAGIC_TERMINATION_BYTE)
+            break;
+        if (uniform_type && *uniform_type != type_byte)
+            throw PcodecError("pcodec: chunk number type does not match file uniform type");
+
+        size_t n = reader.readU64(BITS_TO_ENCODE_N_ENTRIES) + 1;
+
+        size_t chunk_width = widthForType(type_byte);
+        if (expected_width != 0 && chunk_width != expected_width)
+            throw PcodecError("pcodec: chunk number type width does not match the codec element width");
+
+        // Bounds-check before decoding into out.
+        size_t bytes = n * chunk_width;
+        if (out_pos + bytes > out_capacity_bytes)
+            throw PcodecError("pcodec: decoded data exceeds expected size");
+        decodeChunkByType(reader, type_byte, format_major, n, out + out_pos);
+        out_pos += bytes;
+    }
+    // The standalone stream ends at the termination byte, which the loop above consumed. Reject any
+    // trailing bytes so a body such as `[valid .pco][garbage]` fails closed instead of being silently
+    // accepted: the block wrapper only checks the produced byte count against the expected size, so it
+    // would otherwise not notice bytes appended after the terminator. `readAlignedBytes` leaves the
+    // reader byte-aligned, so `byteIdx()` is the exact number of consumed bytes. A canonical stream
+    // (the reference encoder writes the terminator last) consumes exactly `src_len` bytes.
+    if (reader.byteIdx() != src_len)
+        throw PcodecError("pcodec: trailing bytes after standalone stream termination");
+    return out_pos;
+}
+
+}

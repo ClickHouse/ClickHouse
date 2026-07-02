@@ -739,6 +739,17 @@ MergeTreeData::MergeTreeData(
             allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
+    else if (mode <= LoadingStrictnessLevel::ATTACH)
+    {
+        /// The full sanity check is skipped for user `ATTACH` (and `SECONDARY_CREATE`, i.e. RESTORE
+        /// and DatabaseReplicated internal queries) so that existing tables with now-out-of-range
+        /// settings can still be loaded. The experimental / column-type-requiring codec gate must
+        /// still apply though: otherwise `ATTACH TABLE ... SETTINGS default_compression_codec = 'PCO'`
+        /// would let a typed experimental codec be used with `allow_experimental_codecs = 0`.
+        /// `FORCE_ATTACH` (server startup) and `FORCE_RESTORE` keep skipping it, so already-loaded
+        /// tables are never rejected.
+        settings->checkCompressionCodecSettings();
+    }
 
     if (!date_column_name.empty())
     {
