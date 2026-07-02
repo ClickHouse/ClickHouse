@@ -69,6 +69,8 @@
 #include <Core/Block.h>
 #include <Core/LogsLevel.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
+#include <Core/SettingsEnums.h>
 
 #include <base/UUID.h>
 #include <base/scope_guard.h>
@@ -123,6 +125,11 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace MergeTreeSetting
@@ -801,7 +808,25 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
-    if (all_sinks_support_parallel_insert && (settings[Setting::parallel_view_processing] || !isViewsInvolved()))
+
+    /// Fanning out the writing side to `max_insert_threads` sink chains also fans out the dependent
+    /// materialized-view chains when `parallel_view_processing` is enabled. Each branch then gets its own
+    /// per-stream `UpdateDeduplicationInfoWithViewIDTransform`, whose `view_block_number` restarts from zero.
+    /// Under the legacy deduplication hash modes (`old_separate_hashes` / `compatible_double_hashes`) the
+    /// VIEW-level block id is `hash(data_hash : view_id : view_block_number)` and drops the (global) source
+    /// block number, so two identical source blocks landing on different branches produce the same MV block id
+    /// and one of them is skipped as a duplicate - silently dropping rows of a single parallel `INSERT`.
+    /// Keep the dependent-MV deduplication path single-stream in that case (as it was before parallelization).
+    /// Under `new_unified_hash` the VIEW id also folds in the global source block number, so identical blocks
+    /// on different branches stay distinct and the fan-out is safe.
+    const auto dedup_version = init_context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    const bool legacy_mv_dedup_single_stream = isViewsInvolved()
+        && deduplicate_blocks_in_dependent_materialized_views
+        && dedup_version != InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
+
+    if (all_sinks_support_parallel_insert
+        && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        && !legacy_mv_dedup_single_stream)
         sink_stream_size = max_insert_threads;
 }
 

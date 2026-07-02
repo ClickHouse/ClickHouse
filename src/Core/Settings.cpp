@@ -270,11 +270,16 @@ This can speed up the non-joined phase when using the `parallel_hash` join algor
 When disabled, non-joined rows are processed by a single thread.
 )", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
-The maximum number of threads to execute the `INSERT SELECT` query.
+The maximum number of threads to execute the `INSERT` query.
+
+This applies both to `INSERT SELECT` and to a plain `INSERT` whose data is sent from
+`clickhouse-client` or over the HTTP interface. The writing side of the pipeline
+(squashing the blocks and writing them to the destination table) is parallelized
+across up to this many threads.
 
 Possible values:
 
-- 0 (or 1) — `INSERT SELECT` no parallel execution.
+- 0 (or 1) — no parallel execution.
 - Positive integer. Bigger than 1.
 
 Cloud default value:
@@ -283,6 +288,7 @@ Cloud default value:
 - `4` for larger nodes
 
 Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
+For a plain `INSERT`, the input data is read and parsed as a single stream, and the pipeline is then resized to this many streams for writing; the parallelization of the writing side additionally requires that all destination tables support parallel inserts.
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
