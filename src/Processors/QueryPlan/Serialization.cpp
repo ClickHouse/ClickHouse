@@ -62,6 +62,8 @@ static Block deserializeHeader(ReadBuffer & in)
 /// Nothing is here for now
 struct QueryPlan::SerializationFlags
 {
+    /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
+    UInt64 version = 0;
 };
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
@@ -70,6 +72,7 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
     writeVarUInt(version, out);
 
     SerializationFlags flags;
+    flags.version = version;
     serialize(out, flags);
 }
 
@@ -127,6 +130,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         settings.writeChangedBinary(out);
 
         IQueryPlanStep::Serialization ctx{out, registry};
+        ctx.version = flags.version;
         node->step->serialize(ctx);
     }
 
@@ -168,6 +172,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     SerializationFlags flags;
+    flags.version = version;
     return deserialize(in, context, flags);
 }
 
@@ -222,7 +227,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, {}, context, input_headers, output_header, settings, flags.version};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/KeyDescription.h>
@@ -19,6 +21,11 @@ struct SplitPartsRangesResult
 
 /// Check if the primary key types are safe for splitting (no floats with NaN, etc.).
 bool isSafePrimaryKey(const KeyDescription & primary_key);
+
+/// Derives whether parts are read in descending primary-key order from the sorting key's reverse
+/// flags. Returns nullopt when the primary-key columns mix ascending and descending order, in which
+/// case primary-key-range splitting is not possible.
+std::optional<bool> deriveReverseOrder(const KeyDescription & primary_key, const KeyDescription & sorting_key);
 
 /// Split ranges in data parts into non-intersecting (unique key ranges) and
 /// intersecting (overlapping key ranges that need FINAL merge).
@@ -81,6 +88,18 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
+    ContextPtr context);
+
+/// Trims `pipe` to PK-range layer `layer_index` (the interval (borders[layer_index-1], borders[layer_index]])
+/// via a FilterSortedStreamByRange; no-op for the open first/last interval. Used by the distributed
+/// parallel-FINAL read to drop boundary-granule rows that belong to neighbouring buckets. The pipe's
+/// streams must be sorted by the primary key.
+void addLayerRangeFilterToPipe(
+    Pipe & pipe,
+    const KeyDescription & primary_key,
+    const std::vector<std::vector<Field>> & borders,
+    size_t layer_index,
+    bool in_reverse_order,
     ContextPtr context);
 
 }

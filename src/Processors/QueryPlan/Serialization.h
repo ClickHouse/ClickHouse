@@ -22,6 +22,9 @@ struct IQueryPlanStep::Serialization
     bool skip_final_flag = false;
     // The same situation as above.
     bool skip_cache_key = false;
+
+    /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+    UInt64 version = 0;
 };
 
 struct SerializedSetsRegistry;
@@ -38,6 +41,9 @@ struct IQueryPlanStep::Deserialization
     const SharedHeaders & input_headers;
     const SharedHeader & output_header;
     const QueryPlanSerializationSettings & settings;
+
+    /// Query-plan serialization version the stream was written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
+    UInt64 version = 0;
 };
 
 }
