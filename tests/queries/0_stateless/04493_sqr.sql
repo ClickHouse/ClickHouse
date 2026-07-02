@@ -20,5 +20,8 @@ SELECT isNull(sqr(CAST(NULL, 'Nullable(Int32)')));
 SELECT sqr(toLowCardinality(number)) = number * number FROM numbers(5);
 SELECT sqr(toLowCardinality(toUInt64(1964064))) = 1964064 * 1964064;
 SELECT toTypeName(sqr(toLowCardinality(materialize(toUInt64(5)))));
+-- The exact AST fuzzer reproducer: a constant `LowCardinality` argument produced via `CAST` (the fuzzer runs with `allow_suspicious_low_cardinality_types`).
+SELECT sqr(CAST(1964064 AS LowCardinality(UInt64))) = 1964064 * 1964064 SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT toTypeName(sqr(CAST(1964064 AS LowCardinality(UInt64)))) SETTINGS allow_suspicious_low_cardinality_types = 1;
 
 SELECT sqr('abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

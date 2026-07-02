@@ -18,3 +18,5 @@
 1
 1
 LowCardinality(UInt64)
+1
+LowCardinality(UInt64)
