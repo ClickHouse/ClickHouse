@@ -105,6 +105,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <csignal>
+#include <poll.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -171,6 +172,7 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_POLL;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
@@ -1952,6 +1954,9 @@ void ClientBase::setInsertionTable(const ASTInsertQuery & insert_query)
 
 namespace
 {
+/// Returns false when stdin is unreadable (closed fd, broken pipe, etc.)
+/// because callers use this as a probe: "is there extra stdin data for this INSERT?"
+/// An unreadable stdin simply means there is no extra data, not an error to report.
 bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
 {
     try
@@ -1964,6 +1969,49 @@ bool isStdinNotEmptyAndValid(ReadBuffer & std_in)
             return false;
         throw;
     }
+}
+
+/// Non-blocking probe: does stdin appear to have data right now?
+/// Uses `poll(timeout=0)` to avoid blocking on empty pipes (the root cause of the hang).
+///
+/// This is intentionally best-effort: `poll(timeout=0)` is a point-in-time snapshot,
+/// so data arriving slightly later will be missed. This is acceptable because this
+/// function is only called when `INSERT` already has a primary data source (inline data
+/// or `INFILE`), so missing late-arriving stdin data only affects the unusual case of
+/// providing both inline data and piped stdin simultaneously.
+///
+/// Error handling mirrors `isStdinNotEmptyAndValid`: an unreadable stdin (closed fd,
+/// `POLLERR`/`POLLNVAL`) is reported as "no data" rather than failing the INSERT.
+/// Genuine `poll` failures (`ret < 0` after retrying `EINTR`) indicate system-level
+/// problems (`EFAULT`/`EINVAL`/`ENOMEM`) and are surfaced as exceptions instead of
+/// being silently swallowed.
+bool isStdinDataAvailableNonBlocking(ReadBuffer & std_in, int fd)
+{
+    if (std_in.hasPendingData())
+        return true;
+
+    struct pollfd pfd{};
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    int ret = 0;
+    do
+    {
+        ret = poll(&pfd, 1, 0);
+    }
+    while (ret < 0 && errno == EINTR);
+
+    if (ret < 0)
+        throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll stdin");
+
+    if (ret == 0)
+        return false;
+
+    if (pfd.revents & (POLLERR | POLLNVAL))
+        return false;
+
+    return (pfd.revents & POLLIN) != 0;
 }
 }
 
@@ -2071,7 +2119,20 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+    /// When INSERT already has a primary data source (inline data or INFILE),
+    /// use a non-blocking poll to check whether stdin also has data.
+    /// The blocking read in isStdinNotEmptyAndValid can hang indefinitely when stdin
+    /// is a pipe without data/EOF (stress tests, CI, Docker, --queries-file).
+    /// When there is no other data source, use the blocking check as before.
+    bool have_data_in_stdin = false;
+    if (!is_interactive && !stdin_is_a_tty)
+    {
+        if (parsed_insert_query->data || parsed_insert_query->infile)
+            have_data_in_stdin = isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
+        else
+            have_data_in_stdin = isStdinNotEmptyAndValid(*std_in);
+    }
 
     if (need_render_progress)
     {
@@ -2533,7 +2594,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_async_insert_with_inlined_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            /// Use non-blocking poll to check stdin — the blocking read in
+            /// isStdinNotEmptyAndValid hangs when stdin is an empty pipe (CI, Docker).
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
@@ -2543,7 +2608,11 @@ void ClientBase::processParsedSingleQuery(
 
         if (is_inline_insert_data)
         {
-            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty && isStdinNotEmptyAndValid(*std_in);
+            /// Use non-blocking poll to check stdin — the blocking read in
+            /// `isStdinNotEmptyAndValid` hangs when stdin is an empty pipe (CI, Docker).
+            bool have_data_in_stdin = !is_interactive && !stdin_is_a_tty
+                && isStdinDataAvailableNonBlocking(*std_in, stdin_fd)
+                && isStdinNotEmptyAndValid(*std_in);
             bool have_external_data = have_data_in_stdin || insert->infile;
 
             if (have_external_data)
