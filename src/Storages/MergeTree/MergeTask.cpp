@@ -66,6 +66,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include "Core/NamesAndTypes.h"
 #include "config.h"
 
 #ifndef NDEBUG
@@ -318,21 +319,33 @@ private:
 
 static SerializationInfoByName chooseSerializationInfosForMerge(
     const MergeTreeData::DataPartsVector & parts,
-    const NamesAndTypesList & columns,
+    const NamesAndTypesList & result_columns,
     const ColumnsDescription & metadata_columns,
     const SerializationInfo::Settings & info_settings)
 {
-    SerializationInfoByName infos(columns, info_settings);
+    SerializationInfoByName infos(result_columns, info_settings);
+
     if (info_settings.isAlwaysDefault())
         return infos;
 
-    EstimatesBuilder estimates_builder(columns, info_settings, {});
+    EstimatesBuilder estimates_builder(result_columns, info_settings, {});
 
     for (const auto & part : parts)
     {
-        const auto part_columns = part->getColumns().getNameSet();
+        auto part_estimates = part->getEstimates();
+        const auto & part_columns = part->getColumns();
 
-        NameSet absent_default_columns;
+        for (const auto & column : part_columns)
+        {
+            estimates_builder.addNumRows(column.name, column.type, part->rows_count);
+            const auto result_column = result_columns.tryGetByName(column.name);
+
+            if (!result_column || !result_column->type->equals(*column.type))
+                continue;
+
+            estimates_builder.addNumDefaults(column.name, column.type, part_estimates);
+        }
+
         for (const auto & column : metadata_columns)
         {
             if (part_columns.contains(column.name))
@@ -341,10 +354,8 @@ static SerializationInfoByName chooseSerializationInfosForMerge(
             if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.expression)
                 continue;
 
-            absent_default_columns.insert(column.name);
+            estimates_builder.addNumDefaults(column.name, column.type, part_estimates);
         }
-
-        estimates_builder.addPart(part->getEstimates(), absent_default_columns, part->rows_count);
     }
 
     estimates_builder.chooseKinds(infos);

@@ -11,29 +11,33 @@
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Exception.h>
+#include <DataTypes/NestedUtils.h>
 
 #include <algorithm>
 
 namespace DB
 {
 
-namespace
-{
+using SubcolumnCallback = std::function<void(const String &, const ISerialization::SubstreamData &)>;
 
-/// Increment the (optional) default count of an estimate, treating an absent count as 0.
-void addDefaultCount(Estimate & estimate, UInt64 delta)
+static ISerialization::SubstreamData getSubstreamData(const DataTypePtr & type, const ColumnPtr & column)
 {
-    estimate.num_defaults = estimate.num_defaults.value_or(0) + delta;
+    return ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type).withColumn(column);
 }
 
-/// End of the contiguous key range that holds the estimate of the column with key `key` and the
-/// estimates of all its subcolumns: the paths are joined with '\0' (see `subcolumnEstimateKey`),
-/// so in an ordered map the range is [key, key + '\x01').
-String subtreeEndKey(const String & key)
+static void forEachSubcolumnWithEstimates(const String & column_name, const SubcolumnCallback & callback, const ISerialization::SubstreamData & data)
 {
-    return key + '\x01';
-}
+    callback(column_name, data);
 
+    IDataType::forEachSubcolumn([&](const auto & subpath, const auto & subname, const auto & subdata)
+    {
+        if (subpath.back().type == ISerialization::Substream::TupleElement)
+        {
+            auto full_name = Nested::concatenateName(column_name, subname);
+            callback(full_name, subdata);
+        }
+    }, data);
 }
 
 EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings_, const Estimates & external_estimates)
@@ -63,108 +67,74 @@ EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const Seri
         }
         else
         {
-            addKeys(column.name, *column.type);
+            auto callback = [&](const auto & full_name, const auto &)
+            {
+                estimates.emplace(full_name, Estimate{});
+            };
+
+            forEachSubcolumnWithEstimates(column.name, callback, getSubstreamData(column.type, nullptr));
         }
-    }
-}
-
-void EstimatesBuilder::addKeys(const String & key, const IDataType & type)
-{
-    estimates.emplace(key, Estimate{});
-
-    /// Only `Tuple` has per-element serialization infos (mirrors `DataTypeTuple::createSerializationInfo`);
-    /// all other types are leaves whose elements (if any) are serialized as a whole. Each element becomes
-    /// a separate entry, keyed by its subcolumn path.
-    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
-    {
-        const auto & elements = type_tuple->getElements();
-        const auto & names = type_tuple->getElementNames();
-        for (size_t i = 0; i < elements.size(); ++i)
-            addKeys(subcolumnEstimateKey(key, names[i]), *elements[i]);
-    }
-}
-
-void EstimatesBuilder::sampleColumn(const String & key, const IColumn & column, const IDataType & type)
-{
-    auto it = estimates.find(key);
-    if (it == estimates.end())
-        return;
-
-    size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-    it->second.rows_count += rows;
-    addDefaultCount(it->second, static_cast<UInt64>(ratio * static_cast<double>(rows)));
-
-    /// The tuple structure and the element names are taken from the block's own type, so the element
-    /// columns always match them; an element whose key is not tracked is skipped by the lookup above.
-    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
-    {
-        const auto & elem_columns = assert_cast<const ColumnTuple &>(column).getColumns();
-        const auto & elem_types = type_tuple->getElements();
-        const auto & names = type_tuple->getElementNames();
-
-        for (size_t i = 0; i < names.size(); ++i)
-            sampleColumn(subcolumnEstimateKey(key, names[i]), *elem_columns[i], *elem_types[i]);
     }
 }
 
 void EstimatesBuilder::add(const Block & block)
 {
     for (const auto & column : block)
-        if (!columns_with_exact_counts.contains(column.name))
-            sampleColumn(column.name, *column.column, *column.type);
+    {
+        auto callback = [&](const auto & full_name, const auto & subdata)
+        {
+            if (columns_with_exact_counts.contains(full_name))
+                return;
+
+            size_t rows = subdata.column->size();
+            double ratio = subdata.column->getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+            auto it = estimates.find(full_name);
+
+            if (it == estimates.end())
+                return;
+
+            it->second.rows_count += rows;
+            it->second.num_defaults = it->second.num_defaults.value_or(0) + static_cast<UInt64>(ratio * static_cast<double>(rows));
+        };
+
+        forEachSubcolumnWithEstimates(column.name, callback, getSubstreamData(column.type, column.column));
+    }
 }
 
-void EstimatesBuilder::addPart(const Estimates & part_estimates, const NameSet & absent_default_columns, UInt64 part_rows_count)
+void EstimatesBuilder::addNumRows(const String & column_name, const DataTypePtr & type, size_t num_rows)
 {
-    /// The entries of one column are contiguous, so the loop visits each top-level column and then
-    /// consumes its whole key range.
-    auto it = estimates.begin();
-    while (it != estimates.end())
+    auto callback = [&](const auto & full_name, const auto &)
     {
-        const auto & name = it->first;
-        auto subtree_end = estimates.lower_bound(subtreeEndKey(name));
+        if (auto it = estimates.find(full_name); it != estimates.end())
+            it->second.rows_count += num_rows;
+    };
 
-        if (columns_with_exact_counts.contains(name))
-        {
-            it = subtree_end;
-            continue;
-        }
+    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
+}
 
-        if (auto part_it = part_estimates.find(name); part_it != part_estimates.end())
-        {
-            /// Every entry of one column in a part has the part's row count for that column, so a
-            /// tracked (sub)column missing from the part's estimates contributes that many all-default
-            /// rows.
-            UInt64 column_rows_count = part_it->second.rows_count;
+void EstimatesBuilder::addNumDefaults(const String & column_name, const DataTypePtr & type, size_t num_defaults)
+{
+    auto callback = [&](const auto & full_name, const auto &)
+    {
+        if (auto it = estimates.find(full_name); it != estimates.end())
+            it->second.num_defaults = it->second.num_defaults.value_or(0) + num_defaults;
+    };
 
-            for (; it != subtree_end; ++it)
-            {
-                if (auto entry_it = part_estimates.find(it->first); entry_it != part_estimates.end())
-                    addCounts(it->second, entry_it->second);
-                else
-                {
-                    it->second.rows_count += column_rows_count;
-                    addDefaultCount(it->second, column_rows_count);
-                }
-            }
-        }
-        else if (absent_default_columns.contains(name))
-        {
-            /// The column is absent from the part, so all of its rows are default.
-            for (; it != subtree_end; ++it)
-            {
-                it->second.rows_count += part_rows_count;
-                addDefaultCount(it->second, part_rows_count);
-            }
-        }
-        else
-        {
-            /// The column has no estimates in this part (e.g. the part predates them or the column was
-            /// not sparse-capable when the part was written): it contributes nothing.
-            it = subtree_end;
-        }
-    }
+    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
+}
+
+void EstimatesBuilder::addNumDefaults(const String & column_name, const DataTypePtr & type, const Estimates & source_estimates)
+{
+    auto callback = [&](const auto & full_name, const auto &)
+    {
+        auto it_dst = estimates.find(full_name);
+        auto it_src = source_estimates.find(full_name);
+
+        if (it_dst != estimates.end() && it_src != source_estimates.end())
+            it_dst->second.num_defaults = it_src->second.num_defaults.value_or(0);
+    };
+
+    forEachSubcolumnWithEstimates(column_name, callback, getSubstreamData(type, nullptr));
 }
 
 void EstimatesBuilder::mergeEstimates(const Estimates & external_estimates)
@@ -238,7 +208,7 @@ void EstimatesBuilder::chooseKinds(SerializationInfoByName & infos) const
 void EstimatesBuilder::addCounts(Estimate & dst, const Estimate & src)
 {
     dst.rows_count += src.rows_count;
-    addDefaultCount(dst, src.num_defaults.value_or(0));
+    dst.num_defaults = dst.num_defaults.value_or(0) + src.num_defaults.value_or(0);
 }
 
 void EstimatesBuilder::subtractCounts(Estimate & dst, const Estimate & src)

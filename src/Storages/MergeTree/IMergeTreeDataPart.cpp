@@ -1244,11 +1244,13 @@ Estimates IMergeTreeDataPart::buildEstimates(Estimates serialization_counts, con
     /// that have them; the serialization counts cover every column and subcolumn and fill in what the
     /// statistics do not provide (subcolumns, and columns without a default-count statistic).
     Estimates result = statistics_estimates;
+
     for (const auto & [key, serialization_estimate] : serialization_counts)
     {
         auto & dst = result[key];
         if (dst.rows_count == 0)
             dst.rows_count = serialization_estimate.rows_count;
+
         if (!dst.num_defaults.has_value())
             dst.num_defaults = serialization_estimate.num_defaults;
     }
