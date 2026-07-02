@@ -176,9 +176,10 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
 
 /// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
 /// `hash_functions` hash functions: m = -hash_functions * distinct_keys / ln(1 - fill_rate) bits
-UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes)
+UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
-    const UInt64 ideal_bloom_filter_bytes = static_cast<UInt64>(std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE) / 8.0));
+    const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
+    const UInt64 ideal_bloom_filter_bytes = static_cast<UInt64>(std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0));
     return std::max(std::min(ideal_bloom_filter_bytes, MAX_STATS_SIZED_BLOOM_FILTER_BYTES), default_bloom_filter_bytes);
 }
 
@@ -186,7 +187,7 @@ UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 
 bool checkBloomFilterSaturation(UInt64 distinct_keys, UInt64 hash_functions, UInt64 bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const double predicted_fill_ratio = -std::expm1(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / (static_cast<double>(bloom_filter_bytes) * 8.0));
-    return predicted_fill_ratio >= max_ratio_of_set_bits;
+    return predicted_fill_ratio > max_ratio_of_set_bits;
 }
 }
 
@@ -411,7 +412,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     UInt64 bloom_filter_bytes = getBytesLimit();
     if (distinct_keys_hint)
     {
-        bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit());
+        bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
         if (checkBloomFilterSaturation(*distinct_keys_hint, bloom_filter_hash_functions, bloom_filter_bytes, max_ratio_of_set_bits_in_bloom_filter))
         {
             /// Skip building when the filter will get saturated and disabled by checkBloomFilterWorthiness anyway.
