@@ -121,7 +121,11 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
         if (compress_primary_key)
         {
             CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
-            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
+            /// The index compressor is the sole writer of index_file_hashing_stream, so it may write
+            /// NONE-coded data directly into the output buffer without copying.
+            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(
+                *index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size,
+                /*use_adaptive_buffer_size_=*/ false, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE, /*out_buffer_is_exclusive=*/ true);
             index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
         }
 

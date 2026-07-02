@@ -46,6 +46,14 @@ public:
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
     UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
+    /// Write the compressed block header into the first getHeaderSize() bytes of `dest`, given the
+    /// size of the already-written compressed payload (which must directly follow the header) and
+    /// the size of the original uncompressed data. Returns the full block size (header + payload).
+    /// Exposed so that a caller which produced the payload in place (e.g. the NONE write path,
+    /// which lets data be written directly into the output buffer without copying) can fill in the
+    /// header without going through compress.
+    UInt32 writeHeader(char * dest, UInt32 compressed_data_size, UInt32 uncompressed_size) const;
+
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
 

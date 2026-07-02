@@ -392,7 +392,10 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     : WriteBuffer(nullptr, 0)
     , parent(parent_)
     , file_holder(parent->file_provider(parent->getSettings(), reserve_size))
-    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
+    /// This buffer is the sole writer of the underlying file buffer, so the compressor may write
+    /// NONE-coded data directly into the output buffer without copying (out_buffer_is_exclusive).
+    , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size,
+        /*use_adaptive_buffer_size_=*/ false, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE, /*out_buffer_is_exclusive=*/ true)
     , metrics(parent->getSettings().metrics)
 {
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
