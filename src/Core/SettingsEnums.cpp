@@ -388,6 +388,13 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
