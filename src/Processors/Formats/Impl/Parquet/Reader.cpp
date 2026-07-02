@@ -746,15 +746,62 @@ void Reader::preparePrewhere()
         if (!actions_settings.has_value())
             actions_settings.emplace();
 
-        auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
-        prewhere_info_patched->need_filter = needs_filter;
         PrewhereExprInfo prewhere_expr_info;
+        bool success = false;
 
-        bool success = tryBuildPrewhereSteps(
-            prewhere_info_patched,
-            *actions_settings,
-            prewhere_expr_info,
-            /*force_short_circuit_execution*/ false);
+        /// The split produces per-condition filter steps; it only helps when we actually filter
+        /// rows between steps. When needs_filter is false we just compute the prewhere column(s)
+        /// and pass them through, so use the single step below (which also registers the kept
+        /// prewhere output columns; the split branch only registers them while filtering).
+        if (needs_filter)
+        {
+            auto prewhere_info_patched = std::make_shared<PrewhereInfo>(dag.clone(), filter_column_name);
+            prewhere_info_patched->need_filter = needs_filter;
+
+            success = tryBuildPrewhereSteps(
+                prewhere_info_patched,
+                *actions_settings,
+                prewhere_expr_info,
+                /*force_short_circuit_execution*/ false);
+
+            /// The reader addresses every cross-step column by its index in `extended_sample_block`.
+            /// A split step may require either an original input of the whole prewhere expression
+            /// (always backed by a real column slot) or an intermediate that an earlier step computed
+            /// into a dedicated prewhere-output slot. A column the splitter promoted to a step boundary
+            /// that has no such slot - or whose generated name merely collides with an unrelated physical
+            /// column, which would silently feed user data instead of the computed value - cannot be
+            /// addressed correctly, so fall back to a single step.
+            NameSet addressable_columns;
+            for (const auto & col : dag.getRequiredColumns())
+                addressable_columns.insert(col.name);
+
+            for (const auto & step : prewhere_expr_info.steps)
+            {
+                if (!success)
+                    break;
+                for (const auto & col : step->actions->getActionsDAG().getRequiredColumns())
+                {
+                    if (!addressable_columns.contains(col.name))
+                    {
+                        success = false;
+                        break;
+                    }
+                }
+                if (!success)
+                    break;
+
+                /// An intermediate this step computes can be read by a later step only through a
+                /// dedicated prewhere-output slot: one present in `extended_sample_block` whose slot is
+                /// not an original output column. This mirrors how `add_single_step` registers prewhere
+                /// outputs, and excludes generated names that only collide with physical columns.
+                for (const auto * node : step->actions->getActionsDAG().getOutputs())
+                {
+                    auto idx = extended_sample_block.findPositionByName(node->result_name);
+                    if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value())
+                        addressable_columns.insert(node->result_name);
+                }
+            }
+        }
 
         if (success)
         {
@@ -762,8 +809,7 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                if (needs_filter)
-                    add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
+                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
