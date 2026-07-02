@@ -123,6 +123,11 @@ enum class ExecuteTTLType : uint8_t
 namespace MutationHelpers
 {
 
+/// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
+/// later by the mutation and is therefore not yet present in the part. It is not a real stream and
+/// must never be resolved against the source part's checksums (a part may happen to contain a real
+/// column whose name collides with this sentinel).
+static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -145,6 +150,36 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
+    }
+
+    return false;
+}
+
+/// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
+/// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
+/// the variant element streams, ...) are not recorded anywhere we can enumerate without a
+/// deserialization state. State-less `serialization->enumerateStreams` stops after `dynamic_structure`
+/// for such a column (see `getStreamCounts`), so a partial mutation cannot account for all of its
+/// streams and could leave one neither rewritten nor hardlinked into the new part. To stay safe we
+/// rewrite the whole part in that case (the resulting part gets a `columns_substreams.txt`, so later
+/// mutations can take the partial path again). The file is also discarded when found corrupted, which
+/// lands here too.
+///
+/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
+/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
+/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
+/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
+/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
+static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
+{
+    if (!isWidePart(data_part))
+        return false;
+
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
+    for (const auto & column : data_part->getColumns())
+    {
+        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
+            return true;
     }
 
     return false;
@@ -208,7 +243,8 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -828,7 +864,7 @@ getColumnsForNewDataPart(
             if (fill_columns_substreams)
             {
                 new_columns_substreams.addColumn(it->name);
-                new_columns_substreams.addSubstreamToLastColumn("dummy");
+                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
             }
 
             ++it;
@@ -986,9 +1022,62 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
     {
+        /// For columns with a dynamic structure (Dynamic, JSON, ...) enumerateStreams below is called
+        /// without a deserialization state, so SerializationDynamic::enumerateStreams stops after the
+        /// `dynamic_structure` substream and never reports the data-dependent substreams (e.g.
+        /// `variant_discr`). That makes the stream accounting incomplete and such streams can be
+        /// mishandled during mutation (e.g. a `variant_discr` stream that is neither rewritten nor
+        /// hardlinked into the new part, leaving it broken). Use the substreams recorded in
+        /// columns_substreams.txt, which are the ground truth of what exists in the part, for such columns.
+        /// The check is `hasDynamicStructure` (only `Dynamic`/`JSON` make state-less enumeration
+        /// incomplete), not the broader `hasDynamicSubcolumns` which also matches a plain `Map`/`Variant`
+        /// whose streams are fully enumerable without a state.
+        auto column = data_part->tryGetColumn(column_name);
+        const std::vector<String> * recorded_substreams = nullptr;
+        if (column && column->type->hasDynamicStructure())
+            recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
+
+        if (recorded_substreams)
+        {
+            std::vector<String> resolved;
+            resolved.reserve(recorded_substreams->size());
+            bool resolved_all = !recorded_substreams->empty();
+            for (const auto & substream : *recorded_substreams)
+            {
+                /// A not-yet-written column in a new part carries only the placeholder substream
+                /// (see getColumnsForNewDataPart). It is not a real stream, and it must not be
+                /// resolved against the source checksums: a part may contain an unrelated column
+                /// whose name happens to collide with the placeholder, and resolving it would mark
+                /// that unchanged stream as skipped, dropping it from the new part. Fall back to
+                /// enumeration in that case to preserve the previous behaviour.
+                if (substream == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER)
+                {
+                    resolved_all = false;
+                    break;
+                }
+
+                /// Other substreams that don't resolve (e.g. placeholders of old parts) also fall back.
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                    resolved.push_back(std::move(*stream_name));
+                else
+                {
+                    resolved_all = false;
+                    break;
+                }
+            }
+
+            if (resolved_all)
+            {
+                for (auto & stream_name : resolved)
+                    ++stream_counts[stream_name];
+                continue;
+            }
+        }
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -3502,6 +3591,7 @@ bool MutateTask::prepare()
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
     if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
         || !isWidePart(ctx->source_part)
         || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
