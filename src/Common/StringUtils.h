@@ -106,6 +106,12 @@ inline bool isAlphaNumericASCII(char c)
         || isNumericASCII(c);
 }
 
+inline bool isTokenSeparator(char c)
+{
+    /// `splitByNonAlpha` tokenizer semantics
+    return isASCII(c) && !isAlphaNumericASCII(c);
+}
+
 inline bool isWordCharASCII(char c)
 {
     return isAlphaNumericASCII(c)
