@@ -137,6 +137,7 @@ namespace ProfileEvents
     extern const Event PageCacheOvercommitResize;
     extern const Event MemoryAllocatedWithoutCheck;
     extern const Event MemoryAllocatedWithoutCheckBytes;
+    extern const Event MemoryCredits;
 }
 
 using namespace std::chrono_literals;
@@ -316,6 +317,10 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     Int64 will_be_rss = 0;
     if (level == VariableContext::Global)
         will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
+
+    /// Accumulate the time integral of memory usage (the MemoryCredits profile event).
+    /// `will_be - size` is the amount that was held during the interval that just elapsed.
+    updateMemoryCredits(will_be - size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -650,7 +655,12 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
     }
     else
     {
-        Int64 new_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed) - accounted_size;
+        Int64 prev_amount = amount.fetch_sub(accounted_size, std::memory_order_relaxed);
+        Int64 new_amount = prev_amount - accounted_size;
+
+        /// Accumulate the time integral of memory usage (the MemoryCredits profile event).
+        /// `prev_amount` is the amount that was held during the interval that just elapsed, before this free.
+        updateMemoryCredits(prev_amount);
 
         /** Sometimes, query could free some data, that was allocated outside of query context.
           * Example: cache eviction.
@@ -676,6 +686,27 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
         return loaded_next->free(size, _sample_probability);
 
     return AllocationTrace(_sample_probability);
+}
+
+
+void MemoryTracker::updateMemoryCredits(Int64 current_amount)
+{
+    /// MemoryCredits is the integral of memory usage over time, measured in bytes * microseconds.
+    /// It is accumulated only for the Process-level tracker, which corresponds to a single query or merge.
+    /// This keeps the value attributed to a query independent of the depth of the tracker hierarchy and
+    /// leaves the much hotter Global/Thread allocation paths untouched (they only pay a single branch).
+    if (level != VariableContext::Process || current_amount <= 0)
+        return;
+
+    const UInt64 now = clock_gettime_ns() / 1000;
+    const UInt64 prev = memory_credits_last_update_us.exchange(now, std::memory_order_relaxed);
+
+    /// `prev == 0` is the first update for this tracker, so there is no interval to attribute yet.
+    /// The atomic exchange makes each elapsed interval be counted exactly once, with no gaps or overlaps,
+    /// even when several threads of the same query allocate or free memory concurrently.
+    /// `now > prev` guards against a rare reordering where the clock is read before the winner stored its value.
+    if (prev != 0 && now > prev)
+        ProfileEvents::increment(ProfileEvents::MemoryCredits, static_cast<Int64>(static_cast<UInt64>(current_amount) * (now - prev)));
 }
 
 
