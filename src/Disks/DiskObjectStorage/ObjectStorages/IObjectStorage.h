@@ -106,7 +106,15 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
+    /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
+    /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the
+    /// default epoch would make the schema/count caches treat the object as older than any cached entry and
+    /// silently reuse a stale value. Cache validators must skip the cache when this is `false`.
+    bool is_last_modified_known = true;
     std::string etag;
     ObjectAttributes tags;
     ObjectAttributes attributes;
@@ -117,6 +125,10 @@ struct DataLakeObjectMetadata;
 struct RelativePathWithMetadata
 {
     String relative_path;
+    std::optional<size_t> read_source_index;
+    std::optional<String> path_for_glob_matching;
+    std::optional<String> path_for_deduplication;
+    bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
@@ -127,12 +139,31 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
+    RelativePathWithMetadata(String relative_path_, std::optional<size_t> read_source_index_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+        : relative_path(std::move(relative_path_))
+        , read_source_index(read_source_index_)
+        , metadata(std::move(metadata_))
+    {}
+
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
     ~RelativePathWithMetadata() = default;
 
-    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getFileName() const
+    {
+        if (!derive_file_name_from_url_path)
+            return std::filesystem::path(relative_path).filename();
+
+        /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
+        /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
+        /// extension-based format/compression detection, so strip them only for web paths, consistent
+        /// with how direct `url` reads use the URL path component.
+        const auto pos = relative_path.find_first_of("?#");
+        const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
+        return std::filesystem::path(path_without_query).filename();
+    }
     std::string getPath() const { return relative_path; }
+    std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }
 };
 
 struct ObjectKeyWithMetadata
@@ -206,9 +237,17 @@ public:
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return getObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
+    {
+        return tryGetObjectMetadata(object.getPath(), with_tags);
+    }
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
