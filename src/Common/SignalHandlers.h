@@ -126,7 +126,6 @@ struct HandledSignals
     std::atomic_flag fatal_error_printed;
 
     HandledSignals();
-    ~HandledSignals();
 
     void setupTerminateHandler();
     void setupCommonDeadlySignalHandlers();
