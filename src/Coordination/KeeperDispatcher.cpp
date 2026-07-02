@@ -37,6 +37,7 @@
 #include <IO/ReadHelpers.h>
 #include <Disks/IDisk.h>
 
+#include <algorithm>
 #include <atomic>
 #include <future>
 #include <chrono>
@@ -582,6 +583,20 @@ void KeeperDispatcher::clusterUpdateThread()
 void KeeperDispatcher::pushClusterUpdates(ClusterUpdateActions && actions)
 {
     if (keeper_context->isShutdownCalled()) return;
+
+    /// Sort AddRaftServer actions by priority (higher priority first).
+    /// When adding multiple servers at once, we should start with the higher priority servers.
+    std::stable_sort(actions.begin(), actions.end(), [](const ClusterUpdateAction & a, const ClusterUpdateAction & b)
+    {
+        const auto * add_a = std::get_if<AddRaftServer>(&a);
+        const auto * add_b = std::get_if<AddRaftServer>(&b);
+
+        if (add_a && add_b)
+            return add_a->priority > add_b->priority;
+
+        return false;
+    });
+
     for (auto && action : actions)
     {
         if (!cluster_update_queue.push(std::move(action)))
@@ -618,9 +633,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
         LOG_DEBUG(log, "Configuration change size ({})", diff.size());
 
     if (!reconfigEnabled())
-        for (auto & change : diff)
-            if (!cluster_update_queue.push(change))
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+        pushClusterUpdates(std::move(diff));
 
     snapshot_s3.updateS3Configuration(config, macros);
 

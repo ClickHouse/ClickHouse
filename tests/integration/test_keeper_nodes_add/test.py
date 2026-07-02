@@ -49,6 +49,9 @@ def test_nodes_add(started_cluster):
         zk_conn = get_fake_zk(node1)
 
         for i in range(100):
+            # Cleanup existing znodes from previous runs
+            if zk_conn.exists("/test_two_" + str(i)):
+                zk_conn.delete("/test_two_" + str(i))
             zk_conn.create("/test_two_" + str(i), b"somedata")
 
         p = Pool(3)
@@ -77,6 +80,9 @@ def test_nodes_add(started_cluster):
         zk_conn = get_fake_zk(node1)
 
         for i in range(100):
+            # Cleanup existing znodes from previous runs
+            if zk_conn.exists("/test_three_" + str(i)):
+                zk_conn.delete("/test_three_" + str(i))
             zk_conn.create("/test_three_" + str(i), b"somedata")
 
         node3.stop_clickhouse()
@@ -122,3 +128,102 @@ def test_nodes_add(started_cluster):
             if zk:
                 zk.stop()
                 zk.close()
+
+
+def test_nodes_add_respect_priority(started_cluster):
+    zk_conn = None
+
+    try:
+        node1.stop_clickhouse()
+        node2.stop_clickhouse()
+        node3.stop_clickhouse()
+
+        for node in (node1, node2, node3):
+            node.exec_in_container(
+                ["bash", "-c", "rm -rf /var/lib/clickhouse/coordination"]
+            )
+
+        node1.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper1.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+        )
+        node1.start_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node1)
+        zk_conn = get_fake_zk(node1)
+
+        # Verify initial config has only node1
+        initial_config = zk_conn.get("/keeper/config")[0].decode()
+        assert "server.1=" in initial_config
+        assert "server.2=" not in initial_config
+        assert "server.3=" not in initial_config
+
+        p = Pool(3)
+
+        node2.stop_clickhouse()
+        node2.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper_three_nodes_with_priority_2.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper2.xml",
+        )
+        node3.stop_clickhouse()
+        node3.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper_three_nodes_with_priority_3.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper3.xml",
+        )
+
+        waiter2 = p.apply_async(start, (node2,))
+        waiter3 = p.apply_async(start, (node3,))
+
+        # Update node1 config to add node2 (priority 90) and node3 (priority 80)
+        node1.copy_file_to_container(
+            os.path.join(CONFIG_DIR, "enable_keeper_three_nodes_with_priority_1.xml"),
+            "/etc/clickhouse-server/config.d/enable_keeper1.xml",
+        )
+        # Monitor config changes by collecting raw configs
+        configs = []
+        start_time = time.time()
+        timeout = 30.0
+        poll_interval = 0.1
+
+        while time.time() - start_time < timeout:
+            try:
+                config = zk_conn.get("/keeper/config")[0].decode()
+
+                # Record config if it changed
+                if not configs or configs[-1] != config:
+                    configs.append(config)
+
+                # Stop when both servers appear
+                if "server.2=" in config and "server.3=" in config:
+                    break
+
+                time.sleep(poll_interval)
+            except Exception:
+                # Config might be temporarily unavailable during update
+                time.sleep(poll_interval)
+
+        waiter2.wait()
+        waiter3.wait()
+
+        assert len(configs) == 3, (
+            f"Expected exactly 3 config states, got {len(configs)}. "
+            f"Config sequence:\n" + "\n---\n".join(configs)
+        )
+
+        # initial state with only server.1
+        assert "server.1=" in configs[0]
+        assert "server.2=" not in configs[0]
+        assert "server.3=" not in configs[0]
+
+        # server.2 added (higher priority)
+        assert "server.1=" in configs[1]
+        assert "server.2=" in configs[1]
+        assert "server.3=" not in configs[1]
+
+        # server.3 added (lower priority)
+        assert "server.1=" in configs[2]
+        assert "server.2=" in configs[2]
+        assert "server.3=" in configs[2]
+    finally:
+        if zk_conn:
+            zk_conn.stop()
+            zk_conn.close()
