@@ -42,6 +42,7 @@ namespace DB
 
 class Block;
 struct ColumnSize;
+struct MarkRanges;
 class DeserializationPrefixesCache;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
@@ -422,6 +423,10 @@ public:
     std::optional<UInt64> temp_projection_block_number;
 
     IndexPtr getIndex() const;
+    /// Load (and cache, when a `PrimaryIndexCache` is configured) only the primary index rows for
+    /// the given absolute mark ranges. Used by index analysis to avoid loading a huge part's
+    /// whole primary index. Ranges covering the whole part fall back to `getIndex`.
+    IndexPtr getIndex(const MarkRanges & ranges) const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
@@ -696,6 +701,9 @@ protected:
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
+    /// Range-qualified `PrimaryIndexCache` keys of partial indexes loaded for this part, so they
+    /// can all be dropped on part removal (the cache has no prefix-based eviction).
+    mutable std::vector<UInt128> cached_partial_index_keys TSA_GUARDED_BY(index_mutex);
 
 private:
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
@@ -810,6 +818,9 @@ private:
 
     /// Loads the index file.
     std::shared_ptr<Index> loadIndex() const;
+    /// Loads only the primary index rows for the given (sorted, disjoint) absolute mark ranges,
+    /// reading the file sequentially and discarding rows outside the ranges.
+    std::shared_ptr<Index> loadIndex(const MarkRanges & ranges) const;
 
     /// Optimize index. Drop useless columns from suffix of primary key.
     template <typename Columns>

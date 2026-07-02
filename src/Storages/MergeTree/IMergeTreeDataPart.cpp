@@ -33,6 +33,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -528,6 +529,34 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     return index;
 }
 
+IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex(const MarkRanges & ranges) const
+{
+    /// Whole-part (or empty) request: reuse the normal full, cached index.
+    if (ranges.empty() || ranges.isOneRangeForWholePart(index_granularity->getMarksCount()))
+        return getIndex();
+
+    auto index_cache = storage.getPrimaryIndexCache();
+    if (!index_cache)
+        return loadIndex(ranges);
+
+    /// Range-qualified key so a partial index does not collide with the full one, and identical
+    /// range sets (the common case across replicas) hit the cache.
+    String ranges_suffix;
+    for (const auto & range : ranges)
+        ranges_suffix += std::to_string(range.begin) + "-" + std::to_string(range.end) + ",";
+    auto key = PrimaryIndexCache::hash(
+        getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart() + ":" + ranges_suffix);
+
+    {
+        std::scoped_lock lock(index_mutex);
+        if (std::find(cached_partial_index_keys.begin(), cached_partial_index_keys.end(), key) == cached_partial_index_keys.end())
+            cached_partial_index_keys.push_back(key);
+    }
+
+    auto callback = [this, &ranges] { return loadIndex(ranges); };
+    return index_cache->getOrSet(key, callback);
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
 {
     std::scoped_lock lock(index_mutex);
@@ -562,6 +591,15 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
 
     auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
     index_cache->remove(key);
+
+    /// Partial (range-qualified) entries are keyed individually and cannot be evicted by prefix.
+    std::vector<UInt128> partial_keys;
+    {
+        std::scoped_lock lock(index_mutex);
+        partial_keys.swap(cached_partial_index_keys);
+    }
+    for (const auto & partial_key : partial_keys)
+        index_cache->remove(partial_key);
 }
 
 /// Remove all vector similarity index cache entries for this part.
@@ -1501,6 +1539,14 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
 
 std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
 {
+    return loadIndex(MarkRanges{MarkRange{0, index_granularity->getMarksCount()}});
+}
+
+std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex(const MarkRanges & ranges) const
+{
+    chassert(!ranges.empty());
+    assertSortedAndNonIntersecting(ranges);
+
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadIndex");
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
@@ -1520,32 +1566,52 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     if (!key_size)
         return std::make_shared<Index>();
 
+    size_t marks_count = index_granularity->getMarksCount();
+    size_t end_mark = 0;
+    size_t rows_to_keep = 0;
+    for (const auto & range : ranges)
+    {
+        chassert(range.end <= marks_count);
+        end_mark = std::max(end_mark, range.end);
+        rows_to_keep += range.getNumberOfMarks();
+    }
+
     MutableColumns loaded_index;
     loaded_index.resize(key_size);
-
     for (size_t i = 0; i < key_size; ++i)
     {
         loaded_index[i] = primary_key.data_types[i]->createColumn();
-        loaded_index[i]->reserve(index_granularity->getMarksCount());
+        loaded_index[i]->reserve(rows_to_keep);
     }
 
     String index_name = "primary" + getIndexExtensionFromFilesystem(getDataPartStorage());
     String index_path = fs::path(getDataPartStorage().getRelativePath()) / index_name;
     auto index_file = readFile(index_name);
-    size_t marks_count = index_granularity->getMarksCount();
 
     Serializations key_serializations(key_size);
     for (size_t j = 0; j < key_size; ++j)
         key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
 
+    /// The primary index has no per-mark offsets, so we read sequentially up to the last needed
+    /// mark and drop rows outside `ranges` (deserialize then popBack keeps peak at one extra row).
     FormatSettings format_settings;
-    for (size_t i = 0; i < marks_count; ++i)
+    size_t range_idx = 0;
+    for (size_t mark = 0; mark < end_mark; ++mark)
     {
+        while (range_idx < ranges.size() && mark >= ranges[range_idx].end)
+            ++range_idx;
+        const bool keep = range_idx < ranges.size() && mark >= ranges[range_idx].begin;
+
         for (size_t j = 0; j < key_size; ++j)
+        {
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
+            if (!keep)
+                loaded_index[j]->popBack(1);
+        }
     }
 
-    optimizeIndexColumns(marks_count, loaded_index);
+    /// Computed over the loaded rows, so suffix-column dropping is specific to these ranges.
+    optimizeIndexColumns(rows_to_keep, loaded_index);
     size_t total_bytes = 0;
 
     for (const auto & column : loaded_index)
@@ -1554,16 +1620,17 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
         column->protect();
         total_bytes += column->byteSize();
 
-        if (column->size() != marks_count)
+        if (column->size() != rows_to_keep)
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data from index file {}(expected size: "
-                "{}, read: {})", index_path, marks_count, column->size());
+                "{}, read: {})", index_path, rows_to_keep, column->size());
     }
 
-    if (!index_file->eof())
+    /// Only a load that consumed the file up to the last mark can validate its size.
+    if (end_mark == marks_count && !index_file->eof())
         throw Exception(ErrorCodes::EXPECTED_END_OF_FILE, "Index file {} is unexpectedly long", index_path);
 
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexFiles);
-    ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexRows, marks_count);
+    ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexRows, rows_to_keep);
     ProfileEvents::increment(ProfileEvents::LoadedPrimaryIndexBytes, total_bytes);
 
     return std::make_shared<Index>(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
