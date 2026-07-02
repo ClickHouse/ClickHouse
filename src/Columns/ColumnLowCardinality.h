@@ -291,6 +291,10 @@ public:
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
 
+    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
+    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
+    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
+
     ColumnPtr cloneWithDefaultOnNull() const;
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
