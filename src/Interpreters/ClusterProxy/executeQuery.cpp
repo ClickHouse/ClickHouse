@@ -54,6 +54,7 @@ namespace Setting
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsUInt64 limit;
     extern const SettingsLoadBalancing load_balancing;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsSeconds max_execution_time;
@@ -75,6 +76,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
+    extern const SettingsBool prefer_localhost_replica;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -259,6 +261,24 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     /// until filter generation for these modes are done on query plan level
     if (context->canUseOffsetParallelReplicas())
         new_settings[Setting::serialize_query_plan] = false;
+
+    /// A shard receiving either a serialized plan fragment or a rewritten AST sub-query must execute
+    /// it as-is and never re-distribute it: `make_distributed_plan` on the initiator must not leak to
+    /// shards, otherwise the shard's local `MergeTree` read enters MPP conversion and throws
+    /// `SUPPORT_IS_DISABLED`. This mirrors `DistributedPlanExecutor` and `StatelessTaskExecutor`
+    /// forcing the same reset.
+    new_settings[Setting::make_distributed_plan] = false;
+    new_settings[Setting::make_distributed_plan].changed = false;
+
+    /// When the initiator runs with `make_distributed_plan` but a query over a Distributed table
+    /// falls back to the AST path (e.g. it uses `shardNum`), local shards must be read over
+    /// connections like remote ones. Otherwise `prefer_localhost_replica` would inline regular
+    /// local reads into the initiator plan, the reads-from-remote check would not see that the
+    /// distributed split has already been decided, and the MPP conversion would wrongly try to
+    /// re-distribute the plan. The plan path behaves the same way: its finalized `ReadFromRemote`
+    /// reads every shard over a connection.
+    if (settings[Setting::make_distributed_plan])
+        new_settings[Setting::prefer_localhost_replica] = false;
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

@@ -1,0 +1,29 @@
+-- plain aggregate through the new path
+40	380
+-- WITH TOTALS (initiator guard)
+0	10
+1	10
+2	10
+3	10
+
+0	40
+-- ROLLUP (initiator guard)
+0	10
+0	40
+1	10
+2	10
+3	10
+-- shardNum in select list (legacy fallback + settings reset)
+1	20
+2	20
+-- distributed_group_by_no_merge = 1 (legacy path)
+0	5
+0	5
+1	5
+1	5
+2	5
+2	5
+3	5
+3	5
+-- distributed-over-distributed
+80	760
