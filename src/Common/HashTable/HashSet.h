@@ -3,6 +3,7 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
+#include <Common/HashTable/Prefetching.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
@@ -28,7 +29,9 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
-class HashSetTable final : public HashTable<Key, TCell, Hash, Grower, Allocator>
+/// Not `final`: `AggregationDataWithNullKey` derives from it for nullable set-mode GROUP BY (mirrors how
+/// the non-final `HashMapTable` is wrapped by `HashTableWithNullKey`).
+class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashSetTable;
@@ -65,6 +68,64 @@ public:
             if (!rhs.buf[i].isZero(*this))
                 this->insert(rhs.buf[i]);
     }
+
+    /// Call func(const Key &) for each set element. Mirrors HashMapTable::forEachValue (which passes the
+    /// mapped value too); used by the Aggregator to emit keys for `GROUP BY` without aggregate functions.
+    template <typename Func>
+    void forEachValue(Func && func)
+    {
+        for (auto & cell : *this)
+            func(cell.getKey());
+    }
+
+    /// Merge every key of *this into `that`, growing `that` incrementally (with optional prefetch), reusing
+    /// each source cell's stored hash. Unlike `merge`, it does NOT preemptively resize to dst+src - that
+    /// over-allocates and triggers a full rehash for high-overlap aggregation merges. The set analogue of
+    /// HashMapTable::mergeToViaEmplace (there is simply no mapped value to combine).
+    template <bool prefetch = false>
+    void ALWAYS_INLINE mergeToViaEmplace(Self & that)
+    {
+        DB::PrefetchingHelper prefetching;
+        size_t prefetch_look_ahead = DB::PrefetchingHelper::getInitialLookAheadValue();
+
+        size_t i = 0;
+        auto prefetch_it = advanceIterator(this->begin(), prefetch_look_ahead);
+
+        for (auto it = this->begin(), end = this->end(); it != end; ++it, ++i)
+        {
+            if constexpr (prefetch)
+            {
+                if (i == DB::PrefetchingHelper::iterationsToMeasure())
+                {
+                    prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+                    prefetch_it = advanceIterator(prefetch_it, prefetch_look_ahead - DB::PrefetchingHelper::getInitialLookAheadValue());
+                }
+
+                if (prefetch_it != end)
+                {
+                    that.prefetchByHash(prefetch_it.getHash());
+                    ++prefetch_it;
+                }
+            }
+
+            typename Self::LookupResult res_it;
+            bool inserted = false;
+            that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
+        }
+    }
+
+private:
+    using Iterator = typename Base::iterator;
+    Iterator advanceIterator(Iterator it, size_t n)
+    {
+        size_t i = 0;
+        while (i < n && it != this->end())
+        {
+            ++i;
+            ++it;
+        }
+        return it;
+    }
 };
 
 
@@ -74,7 +135,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator>
-class TwoLevelHashSetTable final
+class TwoLevelHashSetTable
     : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:

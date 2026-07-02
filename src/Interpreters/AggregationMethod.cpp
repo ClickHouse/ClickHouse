@@ -35,15 +35,24 @@ template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithUInt8Key, fa
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64Key>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoid, false>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidTwoLevel, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyVoidHash64, false>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32Key, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64Key, true, true>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyTwoLevel, true, true>;
 template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyTwoLevel, true, true>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoid, false, true>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoid, false, true>;
+template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt32KeyVoidTwoLevel, false, true>;
+template struct AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoidTwoLevel, false, true>;
 template struct AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false>;
 template struct AggregationMethodOneNumber<UInt16, AggregatedDataWithNullableUInt16Key, false>;
 template struct AggregationMethodOneNumber<UInt32, AggregatedDataWithNullableUInt64Key>;
@@ -182,16 +191,31 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256>;
+/// Void-mapped variants for `GROUP BY` without aggregate functions.
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoid>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Void>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyVoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidHash64>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidHash64>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128Void, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256Void, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidTwoLevel, true>;
+template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidTwoLevel, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256, false, true>;
 template struct AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, true>;
@@ -222,5 +246,19 @@ template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, f
 template struct AggregationMethodSerialized<AggregatedDataWithStringKey, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel, true, true>;
 template struct AggregationMethodSerialized<AggregatedDataWithStringKeyHash64, true, true>;
+
+// Void-mapped serialized variants (GROUP BY without aggregate functions).
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, true, false>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, false, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoid, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidTwoLevel, true, true>;
+template struct AggregationMethodSerialized<AggregatedDataWithStringKeyVoidHash64, true, true>;
 
 }

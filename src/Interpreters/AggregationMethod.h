@@ -6,6 +6,14 @@
 namespace DB
 {
 class IColumn;
+
+/// The aggregation "data" is a map (real `mapped_type`, e.g. `AggregateDataPtr`) for normal `GROUP BY`,
+/// and a set (cell reports `VoidMapped`) for `GROUP BY` without aggregate functions. Collapse `VoidMapped`
+/// to `void` so that the shared `ColumnsHashing` `HashMethod`s run in set mode (`has_mapped == false`) over
+/// the set data, while map data is unaffected. Mirrors `SetMethodMapped` in SetVariants.h.
+template <typename TData>
+using AggregationMethodMapped
+    = std::conditional_t<std::is_same_v<typename TData::mapped_type, VoidMapped>, void, typename TData::mapped_type>;
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -14,7 +22,7 @@ struct AggregationMethodOneNumber
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -57,7 +65,7 @@ struct AggregationMethodString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -93,7 +101,7 @@ struct AggregationMethodStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -126,7 +134,7 @@ struct AggregationMethodFixedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -159,7 +167,7 @@ struct AggregationMethodFixedStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -228,7 +236,7 @@ struct AggregationMethodKeysFixed
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
@@ -277,7 +285,7 @@ struct AggregationMethodSerialized
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
