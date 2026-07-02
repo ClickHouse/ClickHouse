@@ -58,7 +58,7 @@ void DiskLocalCheckThread::run()
     if (can_read)
     {
         if (disk->broken)
-            LOG_INFO(log, "Disk {0} seems to be fine. It can be recovered using `SYSTEM RESTART DISK {0}`", disk->getName());
+            LOG_INFO(log, "Disk {} seems to be fine. It is recovered automatically", disk->getName());
         retry = 0;
         if (can_write)
             disk->readonly = false;

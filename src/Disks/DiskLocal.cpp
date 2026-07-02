@@ -815,8 +815,8 @@ void DiskLocal::setup()
         {
             LOG_WARNING(
                 logger,
-                "Cannot create/write to {0}. Disk {1} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
-                "will not be started. Disk is assumed to be RW. Try manually fix the disk and do `SYSTEM RESTART DISK {1}`",
+                "Cannot create/write to {}. Disk {} is either readonly or broken. Without setting up disk checker file, DiskLocalCheckThread "
+                "will not be started. Disk is assumed to be RW. Try to manually fix the disk and restart the server",
                 disk_checker_path,
                 name);
             disk_checker_can_check_read = false;
