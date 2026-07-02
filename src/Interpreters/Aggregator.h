@@ -171,7 +171,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
