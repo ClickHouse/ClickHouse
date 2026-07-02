@@ -144,7 +144,7 @@ TEST(RowRefList, RangeRepresentation)
     list.setRange(RowRef(/*block_no=*/1, /*row_no=*/100).encode(), /*rows_=*/5, pool);
 
     ASSERT_FALSE(list.isInline());
-    list.asBatch()->assertIsRange();
+    EXPECT_TRUE(list.asBatch()->is_range);
     EXPECT_EQ(list.rows(), 5u);
 
     std::vector<UInt32> rows;
@@ -156,4 +156,11 @@ TEST(RowRefList, RangeRepresentation)
 
     const std::vector<UInt32> expected{100, 101, 102, 103, 104};
     EXPECT_EQ(rows, expected);
+
+    /// A single-row range is stored as the inline ref itself: no node allocation.
+    RowRefList single;
+    single.setRange(RowRef(/*block_no=*/1, /*row_no=*/7).encode(), /*rows_=*/1, pool);
+    EXPECT_TRUE(single.isInline());
+    EXPECT_EQ(single.rows(), 1u);
+    EXPECT_EQ(refWordRowNo(single.firstWord()), 7u);
 }

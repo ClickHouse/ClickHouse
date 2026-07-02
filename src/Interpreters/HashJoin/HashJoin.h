@@ -413,18 +413,14 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    /// The stored right-side block. Defined in ScatteredBlock.h (columns + replicated handles + selector
-    /// + block_no), where the emit table that resolves it to direct column pointers also lives.
-    using ScatteredColumns = StoredBlock;
-
     struct NullMapHolder
     {
-        const ScatteredColumns * columns{};
+        const StoredBlock * columns{};
         ColumnPtr column;
         size_t selector_rows = 0;
 
         NullMapHolder() = default;
-        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+        explicit NullMapHolder(const StoredBlock * columns_, ColumnPtr column_)
             : columns(columns_), column(column_)
         {
             // we can cache the selector size at construction to make the holder robust
@@ -436,7 +432,7 @@ public:
     };
 
     using NullmapList = std::deque<NullMapHolder>;
-    using ScatteredColumnsList = std::list<ScatteredColumns>;
+    using StoredBlocksList = std::list<StoredBlock>;
 
     struct RightTableData
     {
@@ -448,7 +444,7 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredColumnsList columns; /// Columns of "right" table.
+        StoredBlocksList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
 
         /// Resolves RowRef::block_no to the stored block.

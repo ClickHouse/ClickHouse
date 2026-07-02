@@ -342,21 +342,6 @@ HashJoin::HashJoin(
     }
 }
 
-size_t StoredBlock::allocatedBytes() const
-{
-    if (columns.empty())
-        return 0;
-
-    size_t rows = columns.front()->size();
-    if (rows == 0)
-        return 0;
-
-    size_t res = 0;
-    for (const auto & column : columns)
-        res += column->allocatedBytes();
-    return res * selector.size() / rows;
-}
-
 size_t HashJoin::NullMapHolder::allocatedBytes() const
 {
     if (!column)
@@ -745,9 +730,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (!data)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join data was released");
 
-    /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
+    /// RowRef::row_no is UInt32 (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
-    if (unlikely(selector.size() > std::numeric_limits<RowRef::SizeT>::max()))
+    if (unlikely(selector.size() > std::numeric_limits<decltype(RowRef::row_no)>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
@@ -1094,7 +1079,7 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
 class CrossJoinResult final : public IJoinResult
 {
     size_t left_row = 0;
-    std::optional<HashJoin::ScatteredColumnsList::iterator> right_block_it;
+    std::optional<HashJoin::StoredBlocksList::iterator> right_block_it;
     std::optional<TemporaryBlockStreamReaderHolder> reader;
     Block block;
     const HashJoin & join;
@@ -1624,19 +1609,19 @@ private:
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
-    std::optional<HashJoin::ScatteredColumnsList::const_iterator> used_position;
+    std::optional<HashJoin::StoredBlocksList::const_iterator> used_position;
 
     bool isBucketInRange(size_t bucket) const
     {
         return num_buckets <= 1 || (bucket % num_buckets) == bucket_idx;
     }
 
-    size_t fillColumnsFromData(const HashJoin::ScatteredColumnsList & columns, MutableColumns & columns_right)
+    size_t fillColumnsFromData(const HashJoin::StoredBlocksList & columns, MutableColumns & columns_right)
     {
         if (!position.has_value())
-            position = std::make_any<HashJoin::ScatteredColumnsList::const_iterator>(columns.begin());
+            position = std::make_any<HashJoin::StoredBlocksList::const_iterator>(columns.begin());
 
-        auto & block_it = std::any_cast<HashJoin::ScatteredColumnsList::const_iterator &>(position);
+        auto & block_it = std::any_cast<HashJoin::StoredBlocksList::const_iterator &>(position);
         auto end = columns.end();
 
         size_t rows_added = 0;
@@ -1739,6 +1724,7 @@ private:
 
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
+            const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
 
             /// case: two-level hash tables with parallel iteration
             if constexpr (requires { it.getBucket(); map.NUM_BUCKETS; })
@@ -1761,7 +1747,6 @@ private:
                 if (!skipToNextOwnedBucket())
                     return row_nums.size();
 
-                const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
                 while (it != end && row_nums.size() < max_block_size)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
@@ -1781,7 +1766,6 @@ private:
             else
             {
                 /// Single-level hash tables - no bucket filtering
-                const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
                 for (; it != end; ++it)
                 {
                     size_t offset = map.offsetInternal(it.getPtr());
@@ -1922,7 +1906,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+    auto extract_source_blocks = [](StoredBlocksList && columns_list, const Block & sample_block)
     {
         BlocksList result;
         for (auto & columns : columns_list)
@@ -1938,7 +1922,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         return result;
     };
 
-    ScatteredColumnsList right_columns = std::move(data->columns);
+    StoredBlocksList right_columns = std::move(data->columns);
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
@@ -2060,7 +2044,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     {
         const StoredBlock * const * stored_columns = data->stored_columns_index->blocksData();
 
-        auto merge_rows_into_one_block = [&](ScatteredColumnsList & columns_list, RowRefList & rows_ref)
+        auto merge_rows_into_one_block = [&](StoredBlocksList & columns_list, RowRefList & rows_ref)
         {
             auto it = rows_ref.begin();
             if (!it.ok())
@@ -2118,18 +2102,11 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             if (new_rows > start_row)
             {
                 const size_t merged_rows = new_rows - start_row;
-                if (merged_rows == 1)
-                    rows_ref = RowRefList(merged.block_no, start_row);
-                else
-                {
-                    RowRefList range_ref;
-                    range_ref.setRange(RowRef(merged.block_no, start_row).encode(), merged_rows, data->pool);
-                    rows_ref = range_ref;
-                }
+                rows_ref.setRange(RowRef(merged.block_no, start_row).encode(), merged_rows, data->pool);
             }
         };
 
-        auto visit_rows_map = [&](ScatteredColumnsList & columns, MapsAll & rows_map)
+        auto visit_rows_map = [&](StoredBlocksList & columns, MapsAll & rows_map)
         {
             switch (data->type)
             {
@@ -2144,7 +2121,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
                     break;
             }
         };
-        ScatteredColumnsList sorted_columns;
+        StoredBlocksList sorted_columns;
         visit_rows_map(sorted_columns, map);
         doDebugAsserts();
         data->columns.swap(sorted_columns);

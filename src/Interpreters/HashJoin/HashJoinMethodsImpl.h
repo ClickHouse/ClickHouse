@@ -500,13 +500,6 @@ void processMatch(
         if (row_ref)
         {
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            /// ASOF join never uses flags (MapGetter<*, Asof>::flagged is false), so both
-            /// calls below are compile-time no-ops; the block_no of an asof row is not tracked.
-            if constexpr (flag_per_row)
-                used_flags.template setUsed<join_features.need_flags, flag_per_row>(/*block_no=*/ 0, row_ref->rowNo(), 0);
-            else
-                used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-
             added_columns.appendFromBlock(row_ref->encode(), join_features.add_missing);
         }
         else

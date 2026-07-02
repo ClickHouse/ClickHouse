@@ -103,9 +103,8 @@ void addFoundRowAll(
     {
         std::vector<UInt64> new_known_rows;
 
-        for (auto it = mapped.begin(); it.ok(); ++it)
+        for (const UInt64 ref_word : refsOf(mapped.word))
         {
-            const UInt64 ref_word = *it;
             if (!known_rows.isKnown(ref_word))
             {
                 added.appendFromBlock(ref_word, false);
@@ -133,9 +132,9 @@ void addFoundRowAll(
     {
         /// No single-row fast path needed here (unlike the pre-RowRef code): a single ref lives
         /// inline in the cell word and the iterator decodes it without touching the arena node.
-        for (auto it = mapped.begin(); it.ok(); ++it)
+        for (const UInt64 ref_word : refsOf(mapped.word))
         {
-            added.appendFromBlock(*it, false);
+            added.appendFromBlock(ref_word, false);
             ++current_offset;
         }
     }

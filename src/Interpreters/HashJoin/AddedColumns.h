@@ -285,9 +285,6 @@ public:
 
 private:
 
-    /// Materializes one right-table row into the output columns (non-lazy mode and joinGet).
-    void appendFromBlockImpl(const StoredBlock * block, size_t row_num);
-
     void checkColumns(const Columns & to_check)
     {
         for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)

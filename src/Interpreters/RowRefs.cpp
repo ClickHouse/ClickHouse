@@ -240,6 +240,21 @@ void StoredBlock::rebuildReplicatedColumns()
         replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
+size_t StoredBlock::allocatedBytes() const
+{
+    if (columns.empty())
+        return 0;
+
+    size_t rows = columns.front()->size();
+    if (rows == 0)
+        return 0;
+
+    size_t res = 0;
+    for (const auto & column : columns)
+        res += column->allocatedBytes();
+    return res * selector.size() / rows;
+}
+
 void throwRowRefPointerTooLarge()
 {
     throw Exception(

@@ -582,36 +582,42 @@ static void fillColumnFromRowRefs(
     const IColumn * const * block_columns,
     const ColumnReplicated * const * block_replicated)
 {
+    /// Emit `len` consecutive rows [start, start + len) of one stored-block column, going through
+    /// the replicated indirection when the source column is a ColumnReplicated.
+    auto emit_range = [&](const IColumn * column, const ColumnReplicated * replicated, size_t start, size_t len)
+    {
+        if (replicated)
+        {
+            const auto & source_nested_column = replicated->getNestedColumn();
+            const auto & source_indexes = replicated->getIndexes();
+            for (size_t i = start; i != start + len; ++i)
+                col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
+        }
+        else
+        {
+            chassert(column != nullptr);
+            if (len == 1)
+                col->insertFrom(*column, start);
+            else
+                col->insertRangeFrom(*column, start, len);
+        }
+    };
+
     for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
     {
         if (*row_ref)
         {
             if constexpr (row_refs_are_ranges)
             {
-                RowRefList ref_list;
-                ref_list.word = *row_ref;
+                const RowRefList ref_list = RowRefList::fromWord(*row_ref);
                 /// A range entry is either a single inline ref (the rerange optimization stores
                 /// single-row keys that way) or a range node; firstWord()/rows() resolve both. The
                 /// chassert keeps the debug-only invariant that a non-range list node never reaches
                 /// this path - it would otherwise be mis-emitted as a run of consecutive rows.
                 chassert(ref_list.isInline() || ref_list.asBatch()->is_range);
                 const UInt64 start_word = ref_list.firstWord();
-                const size_t rows = ref_list.rows();
-
                 const UInt32 block_no = refWordBlockNo(start_word);
-                const size_t start_row = refWordRowNo(start_word);
-                if (const auto * source_replicated = block_replicated[block_no])
-                {
-                    const auto & source_nested_column = source_replicated->getNestedColumn();
-                    const auto & source_indexes = source_replicated->getIndexes();
-                    for (size_t i = start_row; i != start_row + rows; ++i)
-                        col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
-                }
-                else
-                {
-                    chassert(block_columns[block_no] != nullptr);
-                    col->insertRangeFrom(*block_columns[block_no], start_row, rows);
-                }
+                emit_range(block_columns[block_no], block_replicated[block_no], refWordRowNo(start_word), ref_list.rows());
             }
             else
             {
@@ -631,17 +637,7 @@ static void fillColumnFromRowRefs(
                 {
                     if (!run_length)
                         return;
-                    if (run_replicated)
-                    {
-                        const auto & source_nested_column = run_replicated->getNestedColumn();
-                        const auto & source_indexes = run_replicated->getIndexes();
-                        for (size_t i = run_start_row; i != run_start_row + run_length; ++i)
-                            col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
-                    }
-                    else if (run_length == 1)
-                        col->insertFrom(*run_column, run_start_row);
-                    else
-                        col->insertRangeFrom(*run_column, run_start_row, run_length);
+                    emit_range(run_column, run_replicated, run_start_row, run_length);
                     run_length = 0;
                 };
 
@@ -656,7 +652,6 @@ static void fillColumnFromRowRefs(
                     else
                     {
                         flush_run();
-                        chassert(block_columns[block_no] != nullptr);
                         run_column = block_columns[block_no];
                         run_replicated = block_replicated[block_no];
                         run_block_no = block_no;

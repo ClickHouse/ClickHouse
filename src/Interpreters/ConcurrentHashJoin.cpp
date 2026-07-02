@@ -797,7 +797,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         if (std::any_of(hash_joins.begin(), hash_joins.end(),
                         [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
-            /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
+            /// Keep the pointers in NullMapHolder to original StoredBlocks, which remain valid
             /// in their respective slots
             HashJoin::NullmapList combined;
             size_t combined_allocated = 0;
@@ -807,7 +807,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 const auto * sc = holder.columns;
                 if (!sc)
                     return;
-                // matches the original right block rows referenced by this slot's ScatteredColumns
+                // matches the original right block rows referenced by this slot's StoredBlocks
                 ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
@@ -828,7 +828,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
                 if (sc->selector.isContinuousRange())
                 {
-                    // Fast path: the slot's ScatteredColumns cover a single continuous range in the original right block
+                    // Fast path: the slot's StoredBlocks cover a single continuous range in the original right block
                     const auto range = sc->selector.getRange();
                     apply_range(range.first, range.second);
                 }
@@ -862,7 +862,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
                 // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                // we do not free StoredBlocks here; they are owned by the join and needed during probing/emission
                 src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }

@@ -238,9 +238,16 @@ void AddedColumns<false>::applyLazyDefaults()
 template<>
 void AddedColumns<true>::applyLazyDefaults() {}
 
-template <bool lazy>
-void AddedColumns<lazy>::appendFromBlockImpl(const StoredBlock * block, size_t row_num)
+/// Materializes one right-table row into the output columns (non-lazy mode and joinGet).
+template <>
+void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaults)
 {
+    if (has_defaults)
+        applyLazyDefaults();
+
+    chassert(refWordIsInline(ref_word));
+    const StoredBlock * block = lazy_output.stored_columns[refWordBlockNo(ref_word)];
+    const size_t row_num = refWordRowNo(ref_word);
 #ifndef NDEBUG
     checkColumns(block->columns);
 #endif
@@ -268,24 +275,12 @@ void AddedColumns<lazy>::appendFromBlockImpl(const StoredBlock * block, size_t r
 }
 
 template <>
-void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaults)
-{
-    if (has_defaults)
-        applyLazyDefaults();
-
-    chassert(refWordIsInline(ref_word));
-    appendFromBlockImpl(lazy_output.stored_columns[refWordBlockNo(ref_word)], refWordRowNo(ref_word));
-}
-
-template <>
 void AddedColumns<true>::appendFromBlock(UInt64 ref_word, bool)
 {
 #ifndef NDEBUG
     /// `ref_word` may be an inline single ref or a list word (pointer + count); firstWord yields
     /// the head ref of either, whose block is valid for the column-structure assertion.
-    RowRefList list;
-    list.word = ref_word;
-    checkColumns(lazy_output.stored_columns[refWordBlockNo(list.firstWord())]->columns);
+    checkColumns(lazy_output.stored_columns[refWordBlockNo(RowRefList::fromWord(ref_word).firstWord())]->columns);
 #endif
     if (has_columns_to_add)
     {

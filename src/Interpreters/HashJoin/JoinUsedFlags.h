@@ -96,9 +96,8 @@ public:
             auto & mapped = f.getMapped();
             if constexpr (std::is_same_v<std::decay_t<decltype(mapped)>, RowRefList>)
             {
-                for (auto it = mapped.begin(); it.ok(); ++it)
+                for (const UInt64 ref_word : refsOf(mapped.word))
                 {
-                    const UInt64 ref_word = *it;
                     auto & flag = per_row_flags[refWordBlockNo(ref_word)][refWordRowNo(ref_word)];
                     if (!flag.load(std::memory_order_relaxed))
                         flag.store(true, std::memory_order_relaxed);
@@ -106,7 +105,7 @@ public:
             }
             else
             {
-                auto & flag = per_row_flags[mapped.blockNo()][mapped.rowNo()];
+                auto & flag = headRowFlag(mapped);
                 if (!flag.load(std::memory_order_relaxed))
                     flag.store(true, std::memory_order_relaxed);
             }

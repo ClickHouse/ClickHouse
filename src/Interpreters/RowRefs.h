@@ -43,8 +43,6 @@ struct RowRef
     static constexpr UInt32 BLOCK_NO_MASK = 0x7FFFFFFFu;
     static constexpr UInt64 ENCODED_INLINE_FLAG = 1ull << 63;
 
-    using SizeT = UInt32; /// Do not use size_t cause of memory economy (block/row counts are bounded to 32 bits)
-
     UInt32 row_no = 0;
     UInt32 block_no = 0; /// includes INLINE_FLAG in the MSB
 
@@ -135,12 +133,6 @@ struct RowRefList
         /// by insert (Arena::alloc skips ctors). Keeping head and slots in one array lets the
         /// iterator form `&refs[0] + n` as in-array pointer arithmetic instead of undefined behavior.
         UInt64 refs[SLOTS + 1] {};
-
-        void assertIsRange() const
-        {
-            chassert(is_range, "RowRefList node does not represent a range");
-            chassert(total_rows >= 1, "RowRefList range should have at least one row");
-        }
     };
 
     /// refs[0] + the SLOTS local slots: rows a cell node holds before it has to chain (= 7).
@@ -150,6 +142,15 @@ struct RowRefList
 
     RowRefList() = default;
     RowRefList(size_t block_no_, size_t row_no_) : word(RowRef(block_no_, row_no_).encode()) {}
+
+    /// View an encoded cell / LazyOutput word as a RowRefList (the dominant runtime case: map
+    /// cells and LazyOutput entries hold words, not (block_no, row_no) pairs).
+    static RowRefList fromWord(UInt64 word_)
+    {
+        RowRefList list;
+        list.word = word_;
+        return list;
+    }
 
     bool isInline() const { return refWordIsInline(word); }
 
@@ -185,6 +186,15 @@ struct RowRefList
     void setRange(UInt64 start_word, size_t rows_, Arena & pool)
     {
         chassert(refWordIsInline(start_word));
+
+        /// A single-row range is just the inline ref itself: no node needed, and the emit paths
+        /// already treat an inline word as a 1-length range.
+        if (rows_ == 1)
+        {
+            word = start_word;
+            return;
+        }
+
         auto * b = pool.alloc<Batch>();
         b->is_range = 1;
         b->size = 0;
@@ -350,6 +360,7 @@ struct RowRefList
     };
 
     ForwardIterator begin() const { return ForwardIterator(*this); }
+    std::default_sentinel_t end() const { return {}; } /// NOLINT(readability-convert-member-functions-to-static)
 
 private:
     /// Repoint `word` at `b` with the saturating row count in bits 62..48. The cell-node pointer is
@@ -371,26 +382,15 @@ static_assert(sizeof(RowRefList::Batch) == 64, "RowRefList::Batch must stay one 
 /// range = its length), without spelling out a RowRefList at the call site. A zero word yields 0.
 inline UInt32 refWordRows(UInt64 word)
 {
-    RowRefList list;
-    list.word = word;
-    return list.rows();
+    return RowRefList::fromWord(word).rows();
 }
 
 /// Iterable view over the encoded refs of a cell / LazyOutput word, so a call site can write
 /// `for (UInt64 ref_word : refsOf(word))` instead of materializing a RowRefList and driving its
 /// ForwardIterator by hand. Covers inline, list, and range words alike.
-struct RowRefsRange
+inline RowRefList refsOf(UInt64 word)
 {
-    RowRefList list;
-    RowRefList::ForwardIterator begin() const { return list.begin(); }
-    std::default_sentinel_t end() const { return {}; }
-};
-
-inline RowRefsRange refsOf(UInt64 word)
-{
-    RowRefList list;
-    list.word = word;
-    return RowRefsRange{list};
+    return RowRefList::fromWord(word);
 }
 
 /// Encoded ref word of a key's first row: the "any row of the key" semantics used by ANY/RightAny/Semi
