@@ -15,7 +15,7 @@ For example, if you have a text file with important user identifiers, you can up
 
 If you need to run more than one query with a large volume of external data, do not use this feature. It is better to upload the data to the DB ahead of time.
 
-External data can be uploaded using the command-line client (in non-interactive mode), or using the HTTP interface.
+External data can be uploaded using either the command-line client (in both interactive and non-interactive modes) or the HTTP interface.
 
 In the command-line client, you can specify a parameters section in the format
 

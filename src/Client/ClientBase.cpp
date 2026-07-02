@@ -561,8 +561,8 @@ void ClientBase::adjustQueryEnd(
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
-    if (!select && !external_tables.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
+    if (!select && !external_tables.empty() && !is_interactive)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query in non-interactive mode");
 
     if (isEmbeeddedClient() && !external_tables.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
