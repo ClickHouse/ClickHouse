@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: long
+# Tag long: This test issues ~99 separate clickhouse-client invocations.
+#           Under sanitizer + flaky-check parallel load it takes >180s, so it
+#           must opt into the longer flaky-check budget via the `long` tag.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
