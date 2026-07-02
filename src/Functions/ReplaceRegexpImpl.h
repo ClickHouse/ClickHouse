@@ -177,15 +177,22 @@ struct ReplaceRegexpImpl
     /// anchors under RE2's default one-line mode, so a round-tripped short pattern would change semantics.
     static bool containsLineAnchor(re2::Regexp * re)
     {
-        if (re == nullptr)
-            return false;
-        if (re->op() == re2::kRegexpBeginLine || re->op() == re2::kRegexpEndLine)
-            return true;
-        const int n = re->nsub();
-        re2::Regexp * const * subs = re->sub();
-        for (int i = 0; i < n; ++i)
-            if (containsLineAnchor(subs[i]))
+        VectorWithMemoryTracking<re2::Regexp *> stack;
+        if (re != nullptr)
+            stack.push_back(re);
+        while (!stack.empty())
+        {
+            re2::Regexp * cur = stack.back();
+            stack.pop_back();
+            if (cur == nullptr)
+                continue;
+            if (cur->op() == re2::kRegexpBeginLine || cur->op() == re2::kRegexpEndLine)
                 return true;
+            const int n = cur->nsub();
+            re2::Regexp * const * subs = cur->sub();
+            for (int i = 0; i < n; ++i)
+                stack.push_back(subs[i]);
+        }
         return false;
     }
 
