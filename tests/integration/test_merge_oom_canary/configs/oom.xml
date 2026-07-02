@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- Enable the OOM canary so the server can survive a real kernel OOM kill: the kernel kills the
+         canary process first (it carries the highest oom_score_adj), and the server, on detecting the
+         canary's SIGKILL plus cgroup OOM evidence, runs its OOM response (cancel all merges, kill all
+         queries) and relaunches the canary instead of dying. This is the feature under test, not a knob
+         used to provoke the OOM. -->
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>104857600</oom_canary_size>
+    <oom_canary_relaunch>1</oom_canary_relaunch>
+</clickhouse>
