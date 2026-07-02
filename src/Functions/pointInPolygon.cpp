@@ -237,6 +237,30 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// `pointInPolygon((x, y), ring | rings | nested_rings...)` accepts a single
+    /// point tuple followed by one or more polygon/hole arrays. The polygon
+    /// arrays can be shaped as:
+    ///   Array(Tuple(N, N))                          — simple ring
+    ///   Array(Array(Tuple(N, N)))                   — polygon with holes
+    ///   Array(Array(Array(Tuple(N, N))))            — multi-polygon
+    /// or multiple ring/array arguments. The DSL's `Array` matcher with a bare
+    /// `Any` inner type accepts all of these; the runtime then validates the
+    /// nested shape, the tuple arity (must be 2), and the element types
+    /// (must be `NativeNumber`).
+    String getSignatureString() const override
+    {
+        /// The point's coordinates are dispatched at execution through `CallPointInPolygon`,
+        /// a raw `typeid_cast` over the native-number `ColumnVector` types, so a non-native-number
+        /// point element would otherwise fall through to its terminal case and raise a
+        /// `LOGICAL_ERROR` ("Unknown numeric column type"). Constrain the point tuple to
+        /// `NativeNumber` elements here — matching the `isNativeNumber` check the legacy
+        /// `getReturnTypeImpl` ran — so such a call is rejected with a clean
+        /// `ILLEGAL_TYPE_OF_ARGUMENT` during analysis instead. The polygon arguments stay loose
+        /// (`Array`); their coordinates are cast to `Float64` in bulk, which already reports a
+        /// clean error for incompatible element types.
+        return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)

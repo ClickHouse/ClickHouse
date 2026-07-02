@@ -56,6 +56,15 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    /// Documentation-only — the result type is parsed from the const-string
+    /// second argument; the override below stays authoritative because it
+    /// additionally validates that source and destination types are
+    /// memory-compatible.
+    String getSignatureString() const override
+    {
+        return "(Any, const t String) -> typeFromString(t)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto & column = arguments.back().column;
@@ -433,6 +442,25 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    /// `reinterpretAs<T>` accepts any type whose value fits unambiguously in a fixed-size
+    /// contiguous memory region — i.e. `canBeReinterpretedAsNumeric`-typed inputs plus
+    /// `String`/`FixedString`. Returns the requested target type. We can advertise a
+    /// signature when `ToDataType` is default-constructible (all the numeric/date/UUID
+    /// variants); `reinterpretAsFixedString` derives its `N` from the input's value size
+    /// so its signature is documentation-only.
+    String getSignatureString() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
+            return "(Any) -> FixedString";
+        else
+        {
+            static const String sig
+                = String("(Number | Date | Date32 | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                + ToDataType{}.getName();
+            return sig;
+        }
+    }
 
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
 

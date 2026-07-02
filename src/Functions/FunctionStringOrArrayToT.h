@@ -18,7 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -56,18 +55,14 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0])
-            && !isMap(arguments[0])
-            && !isUUID(arguments[0])
-            && !isIPv6(arguments[0])
-            && !isIPv4(arguments[0])
-            && !(supportsQBit() && isQBit(arguments[0])))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        /// `QBit` is accepted only by Impls that opt in (e.g. `length`): there the result is a
+        /// constant equal to the vector dimension, but its type is still the numeric `ResultType`,
+        /// so the same `-> ResultType` return applies and the dimension constant is produced in `executeImpl`.
+        if constexpr (supportsQBit())
+            return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6 | QBit) -> " + DataTypeNumber<ResultType>{}.getName();
+        return "(String | FixedString | Array | Map | UUID | IPv4 | IPv6) -> " + DataTypeNumber<ResultType>{}.getName();
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

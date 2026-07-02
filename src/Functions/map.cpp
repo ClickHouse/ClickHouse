@@ -84,6 +84,20 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// `map(K1, V1, K2, V2, ..., Kn, Vn)` — even number of arguments, alternating
+    /// keys and values. The captured `K`/`V` repeat in lockstep via the ellipsis,
+    /// and `leastSupertype{,OrVariant}` folds even-indexed and odd-indexed positions
+    /// independently. Picks the variant-falling-back type function when
+    /// `use_variant_as_common_type` is on.
+    String getSignatureString() const override
+    {
+        if (use_variant_as_common_type)
+            return "() -> Map(Nothing, Nothing)"
+                   " OR (K1, V1, ...) -> Map(leastSupertypeOrVariant(K1, ...), leastSupertypeOrVariant(V1, ...))";
+        return "() -> Map(Nothing, Nothing)"
+               " OR (K1, V1, ...) -> Map(leastSupertype(K1, ...), leastSupertype(V1, ...))";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() % 2 != 0)
@@ -163,6 +177,24 @@ public:
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    /// Documentation-only — zips parallel `keys` and `values` arrays into a
+    /// `Map`. Either argument may instead be a `Map` (its key+value pair
+    /// becomes the corresponding side). The composite return type isn't
+    /// expressible in the DSL, so legacy `getReturnTypeImpl(DataTypes)` stays
+    /// authoritative.
+    String getSignatureString() const override
+    {
+        return "(Array(K : Any) | Map(Any, Any), Array(V : Any) | Map(Any, Any)) -> Map(K, V)";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -271,27 +303,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// `mapUpdate(left, right)` — both arguments must be `Map`s with identical key and
+    /// value types. Capturing `K`/`V` from the first argument and re-using them in the
+    /// second forces type-level equality at type-check time.
+    String getSignatureString() const override
     {
-        if (arguments.size() != 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2",
-                getName(),
-                arguments.size());
-
-        const auto * left = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
-        const auto * right = checkAndGetDataType<DataTypeMap>(arguments[1].type.get());
-
-        if (!left || !right)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The two arguments for function {} must be both Map type", getName());
-
-        if (!left->getKeyType()->equals(*right->getKeyType()) || !left->getValueType()->equals(*right->getValueType()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The Key And Value type of Map for function {} must be the same", getName());
-
-        return std::make_shared<DataTypeMap>(left->getKeyType(), left->getValueType());
+        return "(M : Map(K, V), Map(K, V)) -> M";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

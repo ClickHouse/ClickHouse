@@ -21,6 +21,11 @@ enum class ArrayFirstLastIndexStrategy : uint8_t
 template <ArrayFirstLastIndexStrategy strategy>
 struct ArrayFirstLastIndexImpl
 {
+    /// Declarative signature — index of the first/last element matched by
+    /// the lambda; 0 if no element matches. Lambda return type follows the
+    /// boolean-predicate convention used by `arrayFilter`.
+    static constexpr auto signature = "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array, ...) -> UInt32";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

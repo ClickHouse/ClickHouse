@@ -78,6 +78,23 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// Declarative signature opt-in:
+    /// - `Impl::signature` (authoritative): the DSL applies and is the source
+    ///   of truth for argument validation and result-type computation.
+    /// - `Impl::signature_documentation` (docs-only): the string is surfaced
+    ///   via `system.functions` but legacy `getReturnTypeImpl` below stays
+    ///   authoritative — used when the widening rule isn't expressible in
+    ///   the current DSL (e.g. `arraySum`, `arrayCumSum`, `arrayDifference`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Impl::signature; })
+            return Impl::signature;
+        else if constexpr (requires { Impl::signature_documentation; })
+            return Impl::signature_documentation;
+        else
+            return {};
+    }
+
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.
     void getLambdaArgumentTypes(DataTypes & arguments) const override
@@ -167,6 +184,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// When the Impl exposes a declarative `signature`, defer to the base
+        /// IFunction path so that the DSL applies it (both argument validation
+        /// and result type come from the signature).
+        if constexpr (requires { Impl::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
         size_t min_args = (Impl::needExpression() ? 2 : 1) + num_fixed_params ;
         if (arguments.size() < min_args)
             throw Exception(

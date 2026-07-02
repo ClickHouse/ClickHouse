@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+
 namespace
 {
 
@@ -45,6 +46,11 @@ public:
         return 1;
     }
 
+    /// No declarative signature. The result type is the type *named by the argument value*,
+    /// so resolving it through `typeFromString(t)` in the signature would run inside
+    /// `applyFunctionSignature`'s `SuppressQueryFactoriesInfoScope` and hide the user-supplied
+    /// type from `query_log.used_data_type_families`. Resolve it explicitly here so the lookup
+    /// is attributed (see `01656_test_query_log_factories_info`).
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());

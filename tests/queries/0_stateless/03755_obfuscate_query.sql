@@ -31,7 +31,7 @@ CROSS JOIN (SELECT obfuscateQueryWithSeed('SELECT * FROM t', 200) AS obfuscated)
 SELECT
     length(obfuscateQuery('SELECT user_id, amount FROM orders', 'tag_A')) > 0 AS string_tag_non_empty,
     length(obfuscateQuery('SELECT user_id, amount FROM orders', 42)) > 0 AS int_tag_non_empty;
-SELECT obfuscateQuery('SELECT user_id, amount FROM orders', [1]); -- { serverError ILLEGAL_COLUMN }
+SELECT obfuscateQuery('SELECT user_id, amount FROM orders', [1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Test obfuscateQuery with column input
 SELECT uniq(obfuscateQuery(query_string)) AS uniq_column_input

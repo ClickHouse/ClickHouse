@@ -16,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -50,40 +48,12 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                            getName(), arguments.size());
-
-        if (arguments.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3.",
-                            getName(), arguments.size());
-
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type) && !isInterval(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
-
-        if (arguments.size() >= 2)
-        {
-            const auto * maximum_unit_arg = arguments[1].get();
-            if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
-                                maximum_unit_arg->getName(), getName());
-
-            if (arguments.size() == 3)
-            {
-                const auto * minimum_unit_arg = arguments[2].get();
-                if (!isStringOrFixedString(minimum_unit_arg))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument minimum_unit of function {}",
-                                    minimum_unit_arg->getName(), getName());
-            }
-        }
-
-        return std::make_shared<DataTypeString>();
+        /// `Interval` arguments are accepted in addition to numbers (master added
+        /// `formatReadableTimeDelta(INTERVAL ...)`); the value is converted to seconds in `executeImpl`.
+        return "(Number, [const StringOrFixedString], [const StringOrFixedString]) -> String"
+               " OR (Interval, [const StringOrFixedString], [const StringOrFixedString]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

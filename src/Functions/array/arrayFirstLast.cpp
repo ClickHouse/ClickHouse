@@ -28,6 +28,15 @@ enum class ArrayFirstLastElementNotExistsStrategy : uint8_t
 template <ArrayFirstLastStrategy strategy, ArrayFirstLastElementNotExistsStrategy element_not_exists_strategy>
 struct ArrayFirstLastImpl
 {
+    /// Declarative signature — element type of the first array is preserved
+    /// (wrapped in `Nullable` for the `OrNull` variants when the predicate
+    /// never matches). Lambda return type follows the boolean-predicate
+    /// convention used by `arrayFilter`.
+    static constexpr auto signature =
+        element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null
+            ? "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Nullable(T)"
+            : "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> T";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
     static bool needOneArray() { return false; }

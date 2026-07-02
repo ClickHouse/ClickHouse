@@ -29,7 +29,7 @@ public:
     explicit FunctionIsNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override { return name; }
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
+    String getSignatureString() const override { return "(Any) -> UInt8"; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }

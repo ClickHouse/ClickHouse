@@ -3586,6 +3586,39 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isVariadic() const override { return false; }
 
+    /// Per-Op opt-in to declarative signatures:
+    /// - `Op<UInt8, UInt8>::signature` (authoritative): the DSL is used for
+    ///   both argument validation and result-type resolution; the long-form
+    ///   `getReturnTypeImpl` below is skipped.
+    /// - `Op<UInt8, UInt8>::signature_documentation` (docs-only): surfaced via
+    ///   `system.functions` but the long-form `getReturnTypeImpl` stays
+    ///   authoritative — used when the promotion rule isn't expressible in
+    ///   the current DSL (e.g. `plus`, `minus`, `multiply`, `divide`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Op<UInt8, UInt8>::signature; })
+            return Op<UInt8, UInt8>::signature;
+        else if constexpr (requires { Op<UInt8, UInt8>::signature_documentation; })
+            return Op<UInt8, UInt8>::signature_documentation;
+        else
+            return {};
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// When `Op::signature` (authoritative) is defined, let the base path
+        /// run `applyFunctionSignature`. Otherwise fall through to the
+        /// long-form `getReturnTypeImpl(DataTypes)` so that
+        /// `signature_documentation` doesn't accidentally drive type checking.
+        if constexpr (requires { Op<UInt8, UInt8>::signature; })
+            return IFunctionOverloadResolver::getReturnTypeImpl(arguments);
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         /// Only division-like operations can have division_by_nullable=true.

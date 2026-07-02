@@ -358,7 +358,8 @@ CREATE TABLE system.functions
     `introduced_in` String,
     `categories` String,
     `deterministic` Nullable(UInt8),
-    `higher_order` Nullable(UInt8)
+    `higher_order` Nullable(UInt8),
+    `signature` String
 )
 ENGINE = SystemFunctions
 COMMENT 'Contains a list of all available ordinary and aggregate functions with their descriptions.'

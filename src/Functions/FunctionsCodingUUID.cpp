@@ -106,27 +106,6 @@ private:
     Representation first_half_binary_representation;
 };
 
-void checkArgumentCount(const DB::DataTypes & arguments, const std::string_view function_name)
-{
-    if (const auto argument_count = std::ssize(arguments); argument_count < 1 || argument_count > 2)
-        throw DB::Exception(
-            DB::ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-            function_name,
-            argument_count);
-}
-
-void checkFormatArgument(const DB::DataTypes & arguments, const std::string_view function_name)
-{
-    if (const auto argument_count = std::ssize(arguments);
-        argument_count > 1 && !DB::WhichDataType(arguments[1]).isInt8() && !DB::WhichDataType(arguments[1]).isUInt8())
-        throw DB::Exception(
-            DB::ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of second argument of function {}, expected Int8 or UInt8 type",
-            arguments[1]->getName(),
-            function_name);
-}
-
 UUIDSerializer::Variant parseVariant(const DB::ColumnsWithTypeAndName & arguments)
 {
     if (arguments.size() < 2)
@@ -159,19 +138,14 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        checkArgumentCount(arguments, name);
-
-        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ptr || ptr->getN() != uuid_bytes_length)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type {} of argument of function {}, expected FixedString({})",
-                            arguments[0]->getName(), getName(), uuid_bytes_length);
-
-        checkFormatArgument(arguments, name);
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (uuid_bytes_length) is the exact width `executeImpl` reads, so a
+        /// wrong-width FixedString is rejected at analysis time. The optional second argument
+        /// selects the UUID variant — `parseVariant` reads it via `getInt` and casts to the
+        /// enum's underlying type, which silently wraps for wider integers (e.g. UInt16(258)
+        /// becomes 2). Narrow to `Int8 | UInt8` to preserve the original validation contract.
+        return "(FixedString(16), [Int8 | UInt8]) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -235,23 +209,12 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        checkArgumentCount(arguments, name);
-
-        /// String or FixedString(36)
-        if (!isString(arguments[0]))
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            if (!ptr || ptr->getN() != uuid_text_length)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of first argument of function {}, expected FixedString({})",
-                                arguments[0]->getName(), getName(), uuid_text_length);
-        }
-
-        checkFormatArgument(arguments, name);
-
-        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
+        /// `FixedString(36)` (uuid_text_length) is the exact width the parser reads, so a
+        /// wrong-width FixedString is rejected at analysis time.
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
+        return "(String | FixedString(36), [Int8 | UInt8]) -> FixedString(16)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -343,22 +306,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        checkArgumentCount(arguments, name);
-
-        if (!isUUID(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected UUID",
-                arguments[0]->getName(),
-                getName());
-        }
-
-        checkFormatArgument(arguments, name);
-
-        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
+        /// See `FunctionUUIDNumToString::getSignatureString` for why `[Int8 | UInt8]`.
+        return "(UUID, [Int8 | UInt8]) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -417,6 +368,15 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
+
+    /// Declarative signature — extracts the timestamp embedded in a UUIDv7
+    /// as a `DateTime64(3)`, optionally tagged with the const-string timezone
+    /// from the second argument.
+    String getSignatureString() const override
+    {
+        return "(UUID) -> DateTime64(3)"
+               " OR (UUID, const tz String) -> DateTime64(3, tz)";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

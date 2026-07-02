@@ -57,6 +57,27 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
+    /// Documentation-only — the result is `Array(<agg>::ResultType)` where
+    /// `<agg>` is resolved at query time from the const-string first argument.
+    String getSignatureString() const override
+    {
+        return "(const String, Array(Tuple(Integer, Integer)), Array, ...) -> Array";
+    }
+
+    /// The declarative signature above is documentation-only — the exact result type isn't
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never evaluates the bare container return type (which would yield a wrong type or
+    /// an internal error).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override
     {
         return std::make_shared<DataTypeArray>(aggregate_function->getResultType());
@@ -339,6 +360,14 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
+    /// Declarative signature — like `arrayReduce` but per-range; the result
+    /// is `Array(R)` where `R` is the named aggregator's finalised return
+    /// type computed over the array element types.
+    String getSignatureString() const override
+    {
+        return "(const a String, Array(Tuple(UInt, UInt)), Array(T1 : Any), ...) -> Array(aggregateFunctionReturnType(AggregateFunction(a, T1, ...)))";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

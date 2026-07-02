@@ -65,6 +65,20 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
+    String getSignatureString() const override
+    {
+        if constexpr (is_null_mode)
+        {
+            /// `arrayElementOrNull` wraps the element/value type in `Nullable`
+            /// when the type permits it (Tuple-of-tuple chains and Map cannot
+            /// be inside Nullable, so they pass through bare). The DSL's
+            /// `makeNullableIfCanBe(T)` encodes that predicate.
+            return "(Array(T), NativeInteger) -> makeNullableIfCanBe(T)"
+                   " OR (Map(K, V), Any) -> makeNullableIfCanBe(V)";
+        }
+        return "(Array(T), NativeInteger) -> T OR (Map(K, V), Any) -> V";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr

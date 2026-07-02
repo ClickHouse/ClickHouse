@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
@@ -34,28 +33,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 5; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{
-            {"longitute_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_min", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"longitute_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"latitude_max", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeFloat), nullptr, "Float32 or Float64"},
-            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), nullptr, "UInt8"}
-        };
-        validateFunctionArguments(*this, arguments, args);
-
-        if (!(arguments[0].type->equals(*arguments[1].type) &&
-              arguments[0].type->equals(*arguments[2].type) &&
-              arguments[0].type->equals(*arguments[3].type)))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Illegal type of argument of {} all coordinate arguments must have the same type, "
-                            "instead they are:{}, {}, {}, {}.", getName(), arguments[0].type->getName(),
-                            arguments[1].type->getName(), arguments[2].type->getName(), arguments[3].type->getName());
-        }
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+        /// Enforce the same exact native Float type across the 4 coordinate args via a shared
+        /// type variable. The matcher is `NativeFloat` (Float32 or Float64), not `Float`, because
+        /// only Float32 and Float64 have an `execute` specialization; a `BFloat16` coordinate —
+        /// which `Float` would admit — must be rejected with a clean `ILLEGAL_TYPE_OF_ARGUMENT`
+        /// rather than reaching the dispatch below and raising a `LOGICAL_ERROR`.
+        return "(T : NativeFloat, T : NativeFloat, T : NativeFloat, T : NativeFloat, UInt8) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -27,6 +27,7 @@ private:
 
 public:
     static constexpr auto name = "alphaTokens";
+    static constexpr auto signature = "(String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
 

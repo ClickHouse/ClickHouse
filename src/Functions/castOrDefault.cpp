@@ -60,6 +60,14 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Documentation-only — result type is parsed from the const-string
+    /// type-name (2nd argument). If the value can't be cast, the optional
+    /// default (3rd argument) is returned instead.
+    String getSignatureString() const override
+    {
+        return "(Any, const String, [Any]) -> Any";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t arguments_size = arguments.size();
@@ -224,6 +232,21 @@ private:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return impl.isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
+
+    /// Documentation-only — the result type is the destination type bound at
+    /// construction time. For `Decimal*` / `DateTime64` a const-`UInt` scale
+    /// is required before the optional default value; for `DateTime` /
+    /// `DateTime64` a const-`String` timezone may follow; the trailing
+    /// argument is the optional fallback that's returned when parsing fails.
+    String getSignatureString() const override
+    {
+        const String target = type->getName();
+        if (isDecimal(type) || isDateTime64(type))
+            return "(Any, const UInt8, [const String], [" + target + "]) -> " + target;
+        if (isDateTimeOrDateTime64(type))
+            return "(Any, [const String], [" + target + "]) -> " + target;
+        return "(Any, [" + target + "]) -> " + target;
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

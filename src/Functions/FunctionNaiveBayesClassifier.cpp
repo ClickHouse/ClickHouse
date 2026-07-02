@@ -237,20 +237,17 @@ void NBModelRegistry::load(ContextPtr context)
     }
 }
 
-class FunctionNaiveBayesClassifier final : public IFunction
+class FunctionNaiveBayesClassifier final : public IFunction, public WithContext
 {
-private:
-    const NBModelRegistry::Models & models;
-
 public:
     static constexpr auto name = "naiveBayesClassifier";
 
-    explicit FunctionNaiveBayesClassifier(ContextPtr context_)
-        : models(NBModelRegistry::instance(context_))
-    {
-    }
+    /// Defer model-registry construction to `executeImpl` so the function can
+    /// be instantiated without an `<nb_models>` config block (e.g. by
+    /// `system.functions`).
+    explicit FunctionNaiveBayesClassifier(ContextPtr context_) : WithContext(context_) {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNaiveBayesClassifier>(context); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionNaiveBayesClassifier>(context_); }
 
     String getName() const override { return name; }
 
@@ -262,35 +259,40 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        const auto model_name_argument_type = WhichDataType(arguments[0].type);
-        if (!model_name_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} first argument type should be String. Actual {}",
-                getName(),
-                arguments[0].type->getName());
+        return "(StringOrFixedString, StringOrFixedString) -> UInt32";
+    }
 
-        const auto input_text_argument_type = WhichDataType(arguments[1].type);
-        if (!input_text_argument_type.isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function {} second argument type should be String. Actual {}",
-                getName(),
-                arguments[1].type->getName());
-
-        return std::make_shared<DataTypeUInt32>();
+    /// A dry run executes the function during plan-time partial-result evaluation and constant
+    /// folding (`ActionsDAG::addFunctionImpl` / `evaluatePartialResult`). For all-constant
+    /// arguments the folded value becomes the real query result, so the dry run must perform the
+    /// actual classification — otherwise a constant expression such as
+    /// `naiveBayesClassifier('model', 'text')` silently folds to a default `0` and the argument
+    /// validation (unknown model, empty input) never fires.
+    /// The only reason this cannot unconditionally defer to `executeImpl` is that the captured
+    /// query context may already have expired by plan-optimization time (e.g. a nested
+    /// table-function context), in which case `getContext` would raise a `Context has expired`
+    /// logical error. When that happens there is no model registry to consult, so we return a
+    /// column of the right type without loading any model; real execution still goes through
+    /// `executeImpl`.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (context.lock())
+            return executeImpl(arguments, result_type, input_rows_count);
+        return result_type->createColumn()->cloneResized(input_rows_count);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        const auto & models = NBModelRegistry::instance(getContext());
+
         const auto * const_model_name_col = checkAndGetColumn<ColumnConst>(arguments[0].column.get());
         const auto * const_input_text_col = checkAndGetColumn<ColumnConst>(arguments[1].column.get());
         if (const_model_name_col and const_input_text_col)
         {
             const String model_name = const_model_name_col->getValue<String>();
-            validateModelName(model_name);
+            validateModelName(models, model_name);
 
             const String input_text = const_input_text_col->getValue<String>();
             validateInputText(input_text, model_name);
@@ -308,7 +310,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const String model_name{model_name_column->getDataAt(i)};
-            validateModelName(model_name);
+            validateModelName(models, model_name);
 
             const String input_text{input_text_column->getDataAt(i)};
             validateInputText(input_text, model_name);
@@ -321,7 +323,7 @@ public:
     }
 
 private:
-    void validateModelName(const String & model_name) const
+    static void validateModelName(const NBModelRegistry::Models & models, const String & model_name)
     {
         if (!models.contains(model_name))
         {

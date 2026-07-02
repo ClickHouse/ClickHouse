@@ -37,10 +37,7 @@ public:
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return arguments.front();
-    }
+    String getSignatureString() const override { return "(T) -> T"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -90,6 +87,14 @@ public:
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
+    /// Override the inherited signature: `__actionName` takes two String
+    /// arguments, not one. The base `(T) -> T` is wrong here (wrong arity),
+    /// and existing tests annotate non-String rejection as `BAD_ARGUMENTS`,
+    /// which the legacy `getReturnTypeImpl` below preserves. Returning an
+    /// empty string disables the declarative-signature framework, so the
+    /// manual override is fully authoritative.
+    String getSignatureString() const override { return ""; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (const auto & arg : arguments)
@@ -99,7 +104,7 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
         }
 
-        return FunctionIdentityBase::getReturnTypeImpl(arguments);
+        return arguments.front();
     }
 };
 

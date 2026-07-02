@@ -16,8 +16,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -54,7 +52,14 @@ public:
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    String getSignatureString() const override
+    {
+        return
+            "(const String, const String, const String) -> UInt8"
+            " OR (const String, const String, const String, const String) -> UInt8"
+            " OR (const String, const String, const String, const String, const String) -> UInt8"
+            " OR (const String, const String, const String, const String, const String, const String) -> UInt8";
+    }
 
     bool isDeterministic() const override { return false; }
 
@@ -62,27 +67,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
-
-
-DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    if (arguments.size() < 3 || arguments.size() > 6)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
-
-    static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        const ColumnWithTypeAndName & argument = arguments[i];
-
-        if (!checkColumnConst<ColumnString>(argument.column.get()))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} argument for function {} must be const String.",
-                            arg_pos_description[i], getName());
-        }
-    }
-
-    return std::make_shared<DataTypeUInt8>();
-}
 
 
 ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const

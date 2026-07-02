@@ -61,18 +61,11 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        const auto * arg_ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        if (!arg_ipv6 && !(arg_string && arg_string->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads, so a
+        /// wrong-width FixedString is rejected at analysis time on every path.
+        return "(IPv6 | FixedString(16)) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -142,26 +135,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!checkAndGetDataType<DataTypeIPv6>(arguments[0].get()))
-        {
-            const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            if (!ptr || ptr->getN() != IPV6_BINARY_LENGTH)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Illegal type {} of argument 1 of function {}, expected FixedString({})",
-                                arguments[0]->getName(), getName(), toString(IPV6_BINARY_LENGTH));
-        }
-
-        if (!WhichDataType(arguments[1]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 2 of function {}",
-                            arguments[1]->getName(), getName());
-
-        if (!WhichDataType(arguments[2]).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument 3 of function {}",
-                            arguments[2]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width `executeImpl` reads. The
+        /// two byte-count arguments are always constant (see `getArgumentsThatAreAlwaysConstant`).
+        return "(IPv6 | FixedString(16), const UInt8, const UInt8) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -292,22 +270,14 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isStringOrFixedString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
-
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+            return "(MaybeNullable(StringOrFixedString)) -> Nullable(FixedString(16))";
+        else
+            return
+                "(Nullable(StringOrFixedString)) -> Nullable(FixedString(16))"
+                " OR (StringOrFixedString) -> FixedString(16)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -398,17 +368,9 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return mask_tail_octets == 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-        return std::make_shared<DataTypeString>();
+        return "(IPv4 | UInt8 | UInt16 | UInt32) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -463,22 +425,14 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(removeNullable(arguments[0])))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        auto result_type = std::make_shared<DataTypeUInt32>();
-
         if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
-        {
-            return makeNullable(result_type);
-        }
-
-        return arguments[0]->isNullable() ? makeNullable(result_type) : result_type;
+            return "(MaybeNullable(String)) -> Nullable(UInt32)";
+        else
+            return
+                "(Nullable(String)) -> Nullable(UInt32)"
+                " OR (String) -> UInt32";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -528,21 +482,12 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// for backward compatibility IPv4ToIPv6 is overloaded, and result type depends on type of argument -
-    ///   if it is UInt32 (presenting IPv4) then result is FixedString(16), if IPv4 - result is IPv6
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    /// For backward compatibility IPv4ToIPv6 is overloaded: UInt32 → FixedString(16), IPv4 → IPv6.
+    String getSignatureString() const override
     {
-        const auto * dt_uint32 = checkAndGetDataType<DataTypeUInt32>(arguments[0].get());
-        const auto * dt_ipv4 = checkAndGetDataType<DataTypeIPv4>(arguments[0].get());
-        if (!dt_uint32 && !dt_ipv4)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}", arguments[0]->getName(), getName()
-            );
-
-        if (dt_uint32)
-            return std::make_shared<DataTypeFixedString>(16);
-        return std::make_shared<DataTypeIPv6>();
+        return
+            "(UInt32) -> FixedString(16)"
+            " OR (IPv4) -> IPv6";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -615,13 +560,9 @@ public:
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!WhichDataType(arguments[0]).isUInt64())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}, expected UInt64",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeString>();
+        return "(UInt64) -> String";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -748,13 +689,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
-
-        return std::make_shared<DataTypeUInt64>();
+        return "(String) -> UInt64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -842,27 +779,12 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * ipv6 = checkAndGetDataType<DataTypeIPv6>(arguments[0].get());
-        const auto * str = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ipv6 && !(str && str->getN() == IPV6_BINARY_LENGTH))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv6 or FixedString({})",
-                arguments[0]->getName(), getName(), IPV6_BINARY_LENGTH
-            );
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = std::make_shared<DataTypeIPv6>();
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        /// `FixedString(16)` (IPV6_BINARY_LENGTH) is the exact width the implementation reads
+        /// (16 raw bytes per row); a narrower FixedString is rejected at analysis time, avoiding
+        /// out-of-bounds reads.
+        return "(IPv6 | FixedString(16), UInt8) -> Tuple(IPv6, IPv6)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1001,27 +923,9 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        WhichDataType arg_type(arguments[0]);
-        if (!(arg_type.isIPv4() || arg_type.isUInt8() || arg_type.isUInt16() || arg_type.isUInt32()))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of first argument of function {}, expected IPv4 or UInt8 or UInt16 or UInt32",
-                arguments[0]->getName(), getName()
-            );
-
-
-        const DataTypePtr & second_argument = arguments[1];
-        if (!isUInt8(second_argument))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of function {}, expected UInt8",
-                second_argument->getName(), getName()
-            );
-
-        DataTypePtr element = DataTypeFactory::instance().get("IPv4");
-        return std::make_shared<DataTypeTuple>(DataTypes{element, element});
+        return "(IPv4 | UInt8 | UInt16 | UInt32, UInt8) -> Tuple(IPv4, IPv4)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1067,12 +971,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -1124,15 +1025,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (!isString(arguments[0]))
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "(String) -> UInt8";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

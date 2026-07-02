@@ -79,14 +79,22 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{{"query", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
-        validateFunctionArguments(*this, arguments, args);
-
-        DataTypes types{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>(), Impl::makeEnumType()};
-        Strings names{"begin", "end", "type"};
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::move(types), std::move(names)));
+        /// The "type" tuple element is an Enum8 with a non-trivial member list — keep the
+        /// rendered type behind typeFromString to avoid having to teach the signature parser
+        /// to lex Enum literals. SQL-style escape every single quote inside the type name.
+        String enum_type = Impl::makeEnumType()->getName();
+        String escaped;
+        escaped.reserve(enum_type.size() + 16);
+        for (char c : enum_type)
+        {
+            if (c == '\'')
+                escaped += '\'';
+            escaped += c;
+        }
+        return "(String) -> Array(Tuple(begin UInt64, end UInt64, type typeFromString('"
+            + escaped + "')))";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

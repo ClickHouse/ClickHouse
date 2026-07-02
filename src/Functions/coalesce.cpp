@@ -3,6 +3,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -78,46 +79,74 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
+    String getSignatureString() const override
+    {
+        /// All non-last arguments are stripped of Nullable before computing the supertype,
+        /// so the result is non-Nullable iff the last argument is non-Nullable.
+        ///
+        /// `use_variant_as_common_type` selects `leastSupertypeOrVariant`, matching `if`/`multiIf`.
+        if (use_variant_as_common_type)
+            return
+                "() -> NULL"
+                " OR (T) -> T"
+                " OR (T1, ..., E) -> leastSupertypeOrVariant(removeNullable(T1), ..., E)";
+        return
+            "() -> NULL"
+            " OR (T) -> T"
+            " OR (T1, ..., E) -> leastSupertype(removeNullable(T1), ..., E)";
+    }
+
+    /// The declarative signature is bypassed on both the column and the types-only paths so
+    /// that the legacy short-circuit semantics are preserved: stop at the first non-nullable
+    /// argument and ignore trailing arguments for the supertype. The signature
+    /// `leastSupertype(removeNullable(T1), ..., E)` includes all arguments, so a query like
+    /// `coalesce(non_nullable_int, incompatible_type)` previously type-checked (returning the
+    /// int) but would otherwise fail during analysis. The `ColumnsWithTypeAndName` overload
+    /// forwards to the `DataTypes` one so both analysis paths share this logic.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & arg : arguments)
+            types.push_back(arg.type);
+        return getReturnTypeImpl(types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        /// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.
-        DataTypes filtered_args;
-        filtered_args.reserve(arguments.size());
-        for (const auto & arg : arguments)
+        if (arguments.empty())
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+
+        /// Mirror `executeImpl`'s filter: skip `Nothing`/`Null` arguments and stop at
+        /// the first argument that cannot be NULL. Strip `Nullable` from all but the
+        /// last surviving argument — the last one keeps its `Nullable` so the result
+        /// inherits its nullability (matching the legacy DSL).
+        DataTypes filtered_types;
+        filtered_types.reserve(arguments.size());
+        for (const auto & type : arguments)
         {
-            if (arg->onlyNull())
+            if (type->onlyNull())
                 continue;
-
-            filtered_args.push_back(arg);
-
-            if (!canContainNull(*arg))
+            filtered_types.push_back(type);
+            if (!canContainNull(*type))
                 break;
         }
 
-        DataTypes new_args;
-        for (size_t i = 0; i < filtered_args.size(); ++i)
-        {
-            bool is_last = i + 1 == filtered_args.size();
-
-            if (is_last)
-                new_args.push_back(filtered_args[i]);
-            else
-                new_args.push_back(removeNullable(filtered_args[i]));
-        }
-
-        if (new_args.empty())
+        if (filtered_types.empty())
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        if (new_args.size() == 1)
-            return new_args.front();
 
-        bool has_variant = std::any_of(new_args.begin(), new_args.end(), [](const auto & t) { return isVariant(t); });
-        auto res = (use_variant_as_common_type || has_variant) ? getLeastSupertypeOrVariant(new_args) : getLeastSupertype(new_args);
+        for (size_t i = 0; i + 1 < filtered_types.size(); ++i)
+            filtered_types[i] = removeNullable(filtered_types[i]);
 
-        /// if last argument is not nullable, result should be also not nullable
-        if (!canContainNull(*new_args.back()) && res->isNullable())
-            res = removeNullable(res);
+        if (filtered_types.size() == 1)
+            return filtered_types[0];
 
-        return res;
+        /// Preserve the legacy behavior: expand to a Variant whenever any surviving argument
+        /// is already a Variant, even if `use_variant_as_common_type` is off.
+        const bool has_variant = std::any_of(filtered_types.begin(), filtered_types.end(), [](const auto & t) { return isVariant(t); });
+        return (use_variant_as_common_type || has_variant)
+            ? getLeastSupertypeOrVariant(filtered_types)
+            : getLeastSupertype(filtered_types);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -165,29 +194,48 @@ public:
             }
         }
 
+        ColumnPtr res;
+        DataTypePtr res_type;
+
         /// If all arguments appeared to be NULL.
         if (multi_if_args.empty())
-            return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
-        if (multi_if_args.size() == 1)
-            return multi_if_args.front().column;
-
-        /// If there was only two arguments (3 arguments passed to multiIf)
-        /// use function "if" instead, because it's implemented more efficient.
-        /// TODO: make "multiIf" the same efficient.
-        FunctionOverloadResolverPtr if_or_multi_if = multi_if_args.size() == 3 ? if_function : multi_if_function;
-        ColumnPtr res = if_or_multi_if->build(multi_if_args)->execute(multi_if_args, result_type, input_rows_count, /* dry_run = */ false);
-
-        /// if last argument is not nullable, result should be also not nullable
-        if (!multi_if_args.back().column->isNullable() && res->isNullable())
         {
-            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
-                res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
-            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
-                res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
-            else
-                res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
+            res = result_type->createColumnConstWithDefaultValue(input_rows_count);
+            res_type = result_type;
         }
+        else if (multi_if_args.size() == 1)
+        {
+            res = multi_if_args.front().column;
+            res_type = multi_if_args.front().type;
+        }
+        else
+        {
+            /// If there was only two arguments (3 arguments passed to multiIf)
+            /// use function "if" instead, because it's implemented more efficient.
+            /// TODO: make "multiIf" the same efficient.
+            FunctionOverloadResolverPtr if_or_multi_if = multi_if_args.size() == 3 ? if_function : multi_if_function;
+            auto func = if_or_multi_if->build(multi_if_args);
+            res_type = func->getResultType();
+            res = func->execute(multi_if_args, res_type, input_rows_count, /* dry_run = */ false);
+
+            /// if last argument is not nullable, result should be also not nullable
+            if (!multi_if_args.back().column->isNullable() && res->isNullable())
+            {
+                if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(&*res))
+                    res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn()).getNestedColumnPtr();
+                else if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*res))
+                    res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn()).getNestedColumnPtr();
+                else
+                    res = checkAndGetColumn<ColumnNullable>(&*res)->getNestedColumnPtr();
+                res_type = removeNullable(res_type);
+            }
+        }
+
+        /// The DSL-declared return type is leastSupertype(removeNullable(non_last), ..., last),
+        /// but our "stop after first non-nullable" filter produces a narrower column type
+        /// (e.g. coalesce(Int32, Int64) declares Int64 but computes Int32). Cast to match.
+        if (!res_type->equals(*result_type))
+            res = castColumn({res, res_type, ""}, result_type);
 
         return res;
     }

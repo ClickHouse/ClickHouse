@@ -31,6 +31,23 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// Documentation-only — the input must be a named non-empty tuple; the
+    /// result is a flat tuple whose element names are the dot-joined paths.
+    /// The flattened layout isn't expressible in the DSL, so the override
+    /// below redirects the `ColumnsWithTypeAndName` path past the DSL.
+    String getSignatureString() const override
+    {
+        return "(MaybeNullable(NonEmptyTuple)) -> Tuple";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto & type = arguments[0];

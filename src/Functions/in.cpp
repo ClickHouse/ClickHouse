@@ -15,8 +15,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -50,12 +50,20 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        if (arguments[0]->hasDynamicStructure())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
+        return "(Any, Any) -> UInt8";
+    }
 
-        return std::make_shared<DataTypeUInt8>();
+    /// The `(Any, Any)` signature documents the arity and return type, but `Any` cannot
+    /// express the legacy rejection of an argument with a dynamic structure (`Dynamic`,
+    /// `JSON`/`Object`, and nested forms). Restore it here, then delegate to the signature.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments[0].type->hasDynamicStructure())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}", arguments[0].type->getName(), getName());
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     /// We can't use the default constant-folding wrapper because it would wrap a

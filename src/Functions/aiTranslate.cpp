@@ -25,6 +25,21 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    String getSignatureString() const override
+    {
+        /// `instructions` and `temperature` are optional, but `temperature` is only
+        /// valid once `instructions` is present, so the optional positions are spelled
+        /// as explicit prefix alternatives rather than two independent optionals (see
+        /// the note in `aiGenerate.cpp`).
+        return
+            "(const String, Nullable(String), const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String) -> Nullable(String)"
+            " OR (const String, Nullable(String), const String, const String, const Number) -> Nullable(String)"
+            " OR (const String, String, const String) -> String"
+            " OR (const String, String, const String, const String) -> String"
+            " OR (const String, String, const String, const String, const Number) -> String";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
@@ -37,7 +52,6 @@ public:
             {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
         return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
     }
 

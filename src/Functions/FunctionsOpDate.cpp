@@ -32,6 +32,15 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Documentation-only — the override below is authoritative (it delegates
+    /// to plus/minus, whose own resolution determines the exact result type).
+    /// String inputs are accepted and parsed as a Date/DateTime by the
+    /// underlying operator.
+    String getSignatureString() const override
+    {
+        return "(DateOrDateTime | String, Interval) -> DateOrDateTime";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type) && !isString(arguments[0].type))

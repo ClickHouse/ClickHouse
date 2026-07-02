@@ -17,6 +17,13 @@ namespace ErrorCodes
   */
 struct ArrayCountImpl
 {
+    /// Declarative signature — `f(array)` overload counts non-zero elements;
+    /// the lambda return type follows the boolean-predicate convention used
+    /// by `arrayFilter` (UInt8, optionally Nullable, or Nothing).
+    static constexpr auto signature =
+        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array, ...) -> UInt32"
+        " OR (Array(UInt8)) -> UInt32";
+
     static bool needBoolean() { return true; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

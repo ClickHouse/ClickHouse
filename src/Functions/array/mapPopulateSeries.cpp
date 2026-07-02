@@ -43,6 +43,18 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Two call shapes:
+    ///   `mapPopulateSeries(map [, max_key])`              -> Map(K, V)
+    ///   `mapPopulateSeries(keys, values [, max_key])`     -> Tuple(Array(K), Array(V))
+    /// `K` and `V` must be signed/unsigned integer types; `max_key` is also
+    /// a non-Nullable integer. The runtime additionally rejects mixed-width
+    /// keys and out-of-range `max_key`.
+    String getSignatureString() const override
+    {
+        return "(M : Map(Integer, Integer), [Integer]) -> M"
+               " OR (Array(K : Integer), Array(V : Integer), [Integer]) -> Tuple(Array(K), Array(V))";
+    }
+
     void checkTypes(const DataTypePtr & key_type, const DataTypePtr & value_type, const DataTypePtr & max_key_type) const
     {
         WhichDataType key_data_type(key_type);
@@ -519,7 +531,7 @@ In case keys repeat, only the first value (in order of appearance) is associated
         {"values", "Array of values.", {"Array(T)"}},
         {"max", "Optional. Maximum key value.", {"Int8", "Int16", "Int32", "Int64", "Int128", "Int256"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array(Any))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a map or a tuple of two arrays where the first has keys in sorted order, and the second values for the corresponding keys.", {"Map(K, V)", "Tuple(Array(UInt*), Array)"}};
     FunctionDocumentation::Examples examples = {
         {"With Map type", "SELECT mapPopulateSeries(map(1, 10, 5, 20), 6)", "{1:10, 2:0, 3:0, 4:0, 5:20, 6:0}"},
         {"With mapped arrays", "SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)", "([1, 2, 3, 4, 5], [11, 22, 0, 44, 0])"}

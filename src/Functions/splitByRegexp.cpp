@@ -42,6 +42,7 @@ private:
 
 public:
     static constexpr auto name = "splitByRegexp";
+    static constexpr auto signature = "(const String, String, [const NativeInteger]) -> Array(String)";
 
     static bool isVariadic() { return true; }
     static size_t getNumberOfArguments() { return 0; }
@@ -185,6 +186,8 @@ public:
     {
         return split_by_regexp->getReturnTypeImpl(arguments);
     }
+
+    String getSignatureString() const override { return split_by_regexp->getSignatureString(); }
 
 private:
     bool patternIsTrivialChar(const ColumnsWithTypeAndName & arguments) const

@@ -20,6 +20,16 @@ struct ArraySortImpl
 {
     static constexpr auto num_fixed_params = is_partial;
 
+    /// Documentation-only — sorts by the lambda's return value (or by the
+    /// array's own values when called without a lambda). For partial sort,
+    /// a positional `limit` argument follows the lambda (if present).
+    static constexpr auto signature =
+        is_partial
+            ? "(Function((Any, ...), Any), UInt | Int, Array(T : Any), ...) -> Array(T)"
+              " OR (UInt | Int, Array(T : Any)) -> Array(T)"
+            : "(Function((Any, ...), Any), Array(T : Any), ...) -> Array(T)"
+              " OR (Array(T : Any)) -> Array(T)";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

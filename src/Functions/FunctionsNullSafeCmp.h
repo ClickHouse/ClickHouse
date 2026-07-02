@@ -75,6 +75,26 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
+    /// Documentation-only — null-safe comparison treats `NULL` as comparable
+    /// and always returns a definite `UInt8` (or `Nothing` when an argument
+    /// contains the bare `Nothing` type).
+    String getSignatureString() const override
+    {
+        return "(Any, Any) -> UInt8";
+    }
+
+    /// The `(Any, Any) -> UInt8` signature is documentation-only: the actual result type is
+    /// value-dependent (`Nothing` when an argument contains `Nothing`, otherwise `UInt8`) and the
+    /// least-supertype check cannot be expressed in the DSL, so keep the legacy
+    /// `getReturnTypeImpl(DataTypes)` authoritative.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)

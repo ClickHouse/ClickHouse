@@ -57,6 +57,24 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — accepts 1..3 integer (or `IPv4`-as-`UInt32`) args
+    /// and returns an array whose element type is the least common supertype
+    /// of those inputs. Legacy `getReturnTypeImpl(DataTypes)` stays
+    /// authoritative; the override below redirects the `ColumnsWithTypeAndName`
+    /// path past the DSL so this string is purely advertised.
+    String getSignatureString() const override
+    {
+        return "(MaybeNullable(Integer | IPv4), [MaybeNullable(Integer)], [MaybeNullable(Integer)]) -> Array(Integer)";
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() > 3 || arguments.empty())

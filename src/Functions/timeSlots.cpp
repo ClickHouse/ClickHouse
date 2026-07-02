@@ -235,6 +235,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
+    /// Documentation-only — there are two call shapes:
+    ///   `timeSlots(DateTime, UInt32 [, UInt])`     -> `Array(DateTime)`
+    ///   `timeSlots(DateTime64(s), Decimal64(d) [, Decimal64])` -> `Array(DateTime64(max(s, d)))`
+    /// The DateTime64 result's scale is `max(start_scale, duration_scale)`,
+    /// not derivable from the DSL — the override below is authoritative.
+    String getSignatureString() const override
+    {
+        return "(DateTime, UInt32, [const UInt]) -> Array(DateTime)"
+               " OR (DateTime64, Decimal64, [const Decimal64]) -> Array(DateTime64)";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         validateNumberOfFunctionArguments(*this, arguments, 2, 3);

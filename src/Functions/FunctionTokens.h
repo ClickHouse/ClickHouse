@@ -78,6 +78,18 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return Generator::getArgumentsThatAreAlwaysConstant(); }
 
+    /// Per-Generator opt-in to declarative signatures: when the Generator defines a
+    /// `signature` static member the framework uses it for type checking and return-type
+    /// resolution; otherwise we fall back to the legacy `Generator::checkArguments` path
+    /// which always returns `Array(String)`.
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Generator::signature; })
+            return Generator::signature;
+        else
+            return {};
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         Generator::checkArguments(*this, arguments);

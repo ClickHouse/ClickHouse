@@ -16,13 +16,16 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags final : public IFunction
+class FunctionTimeSeriesStoreTags final : public IFunction, public WithContext
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesStoreTags>(context); }
-    explicit FunctionTimeSeriesStoreTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionTimeSeriesStoreTags>(context_); }
+    /// Defer query-context access to `executeImpl` so the function can be instantiated
+    /// without a query context (e.g. by `system.functions` which only needs to read
+    /// `getSignatureString`).
+    explicit FunctionTimeSeriesStoreTags(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
 
@@ -45,6 +48,39 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Declarative signature — returns the `id` argument as-is, so the
+    /// result type follows the first argument's type. The mandatory prefix is
+    /// `(id, tags_array)`; the loose `(tag_name, tag_value)` pairs are an
+    /// optional group repeated by the ellipsis. Writing the pair as a bracketed
+    /// `[T1, V1]` group keeps the preceding `tags_array` argument out of the
+    /// repeated unit (the ellipsis-walk-back would otherwise fold the adjacent
+    /// `Array(...) | Nothing` argument into it), so the accepted arities are
+    /// `2 + 2 * N` and calls like `timeSeriesStoreTags(id, [])` are valid.
+    String getSignatureString() const override
+    {
+        return "(I : Any,"
+               " Array(Tuple(String, String)) | Nothing,"
+               " [T1 : MaybeNullable(StringOrFixedString | IsNothing),"
+               " V1 : MaybeNullable(StringOrFixedString | IsNothing)], ...) -> I";
+    }
+
+    /// The declarative signature above is documentation-only — the exact accepted shapes
+    /// aren't expressible in the DSL yet (the `id` capture `I : Any` is looser than the
+    /// helper-accepted `UInt64 | UInt128 | UUID | FixedString(16)` and their `Nullable` /
+    /// `LowCardinality` wrappers, and the `tags_array` matcher is narrower than the helper's
+    /// `Map` / `FixedString`-element / `Nullable` / `LowCardinality` shapes). The
+    /// `ColumnsWithTypeAndName` override below is authoritative (it runs the helpers). Route
+    /// the types-only path to it too, so the base `IFunction::getReturnTypeImpl(DataTypes)`
+    /// fallback never applies the approximate signature string as a validator.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
@@ -61,6 +97,17 @@ public:
         }
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0, /* allow_nullable = */ true);
         TimeSeriesTagsFunctionHelpers::checkArgumentTypesForTagNamesAndValues(name, arguments, 1);
+    }
+
+    /// A dry run is used to compute headers / partial results during query planning
+    /// (e.g. constant folding in `tryMergeExpressions`). It must not perform the side effect
+    /// of storing tags, nor access the query context via `getContext`: the context the function
+    /// was created with may already have expired by plan-optimization time, which would otherwise
+    /// raise a `Context has expired` logical error. The function returns its `id` argument
+    /// unchanged, so the dry-run result is just that column.
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
+    {
+        return arguments[0].column;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -82,6 +129,7 @@ public:
     {
         auto tags_vector = TimeSeriesTagsFunctionHelpers::extractTagNamesAndValuesFromArguments(name, arguments, 1);
 
+        auto tags_collector = getContext()->getQueryContext()->getTimeSeriesTagsCollector();
         if constexpr (id_is_nullable)
         {
             auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
@@ -107,9 +155,6 @@ public:
 
         return arguments[0].column;
     }
-
-private:
-    std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
 };
 
 

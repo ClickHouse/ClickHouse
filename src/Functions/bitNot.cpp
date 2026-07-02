@@ -18,6 +18,10 @@ struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
     static constexpr bool allow_string_or_fixed_string = true;
+    static constexpr auto signature =
+        "(A : NativeNumber) -> nativeNumber(maxBits(A), anySigned(A), 0)"
+        " OR (F : FixedString) -> F"
+        " OR (String) -> String";
 
     static ResultType NO_SANITIZE_UNDEFINED apply(A a)
     {

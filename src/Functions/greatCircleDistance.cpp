@@ -249,6 +249,18 @@ private:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// All 4 args must be numeric (lat1, lon1, lat2, lon2). The result type is
+    /// `Float64` when any argument is `Float64` and the `geo_distance_returns_
+    /// float64_on_float64_arguments` setting is on (the default); otherwise
+    /// `Float32`. The two underlying classes (`SPHERE_DEGREES`/`SPHERE_METERS`
+    /// vs. `WGS84_METERS`) share this rule.
+    String getSignatureString() const override
+    {
+        if (always_float32)
+            return "(Number, Number, Number, Number) -> Float32";
+        return "(A : Number, B : Number, C : Number, D : Number) -> selectIf(anyFloat64(A, B, C, D), Float64, Float32)";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         bool has_float64 = false;

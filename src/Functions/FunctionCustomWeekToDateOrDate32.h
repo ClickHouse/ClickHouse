@@ -32,6 +32,24 @@ public:
     {
     }
 
+    /// Documentation-only — covers `toStartOfWeek` and `toLastDayOfWeek`.
+    /// The result is `Date` by default, or `Date32` when the input is
+    /// `Date32`/`DateTime64` and `enable_extended_results_for_datetime_functions`
+    /// is set — a runtime-setting-dependent choice the DSL can't express.
+    String getSignatureString() const override
+    {
+        /// The optional `mode` and `timezone` arguments are positional (see
+        /// `IFunctionCustomWeek::checkArguments`): argument 2 is always the `week_mode` (`UInt8`)
+        /// and argument 3 the `timezone` (`String`); both are always constant
+        /// (see `IFunctionCustomWeek::getArgumentsThatAreAlwaysConstant`), so encode them as `const`.
+        /// Spell the legal arities as explicit alternatives rather than two independent optional
+        /// groups `[const UInt8], [const String]`, which would let a two-argument call skip the
+        /// `UInt8` mode and bind a timezone string in the mode position.
+        return "(Date | Date32 | DateTime | DateTime64 | String) -> Date"
+               " OR (Date | Date32 | DateTime | DateTime64 | String, const UInt8) -> Date"
+               " OR (Date | Date32 | DateTime | DateTime64 | String, const UInt8, const String) -> Date";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         this->checkArguments(arguments, /*is_result_type_date_or_date32*/ true, Transform::value_may_be_string);

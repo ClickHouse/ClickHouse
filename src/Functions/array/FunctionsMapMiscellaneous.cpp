@@ -78,6 +78,25 @@ public:
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
+    /// Per-`Name` opt-in to declarative signatures:
+    /// - `Name::signature` (authoritative): the DSL is used directly; the
+    ///   adapter override below is skipped. Useful when the result type is a
+    ///   pure shape transform of the input `Map` (e.g. `mapKeys(Map(K, V)) ->
+    ///   Array(K)`).
+    /// - `Name::signature_documentation` (docs-only): surfaced via
+    ///   `system.functions` but the adapter override stays authoritative —
+    ///   used when the result type depends on the wrapped `Impl`'s widening
+    ///   logic or on a value-side dispatch (e.g. `mapConcat`, `mapApply`).
+    String getSignatureString() const override
+    {
+        if constexpr (requires { Name::signature; })
+            return Name::signature;
+        else if constexpr (requires { Name::signature_documentation; })
+            return Name::signature_documentation;
+        else
+            return {};
+    }
+
     /// Reflect the SQL-level signature, not the internal `impl` plumbing.
     /// An adapter may opt out via `Adapter::first_argument_is_lambda = false` when its
     /// user-facing first argument is not a lambda (for example, `MapLikeAdapter` accepts
@@ -98,6 +117,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// When `Name::signature` (authoritative) is set, delegate to the base
+        /// path so the DSL drives the result. Otherwise run the legacy adapter
+        /// logic so `signature_documentation` doesn't accidentally take over.
+        if constexpr (requires { Name::signature; })
+            return IFunction::getReturnTypeImpl(arguments);
+
         if (arguments.empty())
             throw Exception(
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -487,49 +512,146 @@ struct MapLikeAdapter
     }
 };
 
-struct NameMapConcat { static constexpr auto name = "mapConcat"; };
+struct NameMapConcat
+{
+    static constexpr auto name = "mapConcat";
+    /// Docs-only — keys/values across inputs are widened via `leastSupertype`
+    /// (a `Map(K1, V1)` and a `Map(K2, V2)` produce `Map(leastSupertype(K1,
+    /// K2), leastSupertype(V1, V2))`), which isn't expressible compactly in
+    /// the DSL — kept on the adapter's nested-type path.
+    static constexpr auto signature_documentation = "(Map(K : Any, V : Any), ...) -> Map(K, V)";
+};
 using FunctionMapConcat = FunctionMapToArrayAdapter<FunctionArrayConcat, MapToNestedAdapter<NameMapConcat>, NameMapConcat>;
 
-struct NameMapKeys { static constexpr auto name = "mapKeys"; };
+struct NameMapKeys
+{
+    static constexpr auto name = "mapKeys";
+    static constexpr auto signature = "(Map(K : Any, V : Any)) -> Array(K)";
+};
 using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapKeys, 0>, NameMapKeys>;
 
-struct NameMapValues { static constexpr auto name = "mapValues"; };
+struct NameMapValues
+{
+    static constexpr auto name = "mapValues";
+    static constexpr auto signature = "(Map(K : Any, V : Any)) -> Array(V)";
+};
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
-struct NameMapContainsKey { static constexpr auto name = "mapContainsKey"; };
+struct NameMapContainsKey
+{
+    static constexpr auto name = "mapContainsKey";
+    /// Docs-only — the legacy adapter uses `leastSupertype(K, search_type)`
+    /// to allow searches whose value is castable to the key type (e.g.
+    /// `mapContains(Map(Int32, ...), 'abc')` → `NO_COMMON_TYPE`). A
+    /// DSL-authoritative `(Map(K, V), K) -> UInt8` would tighten this
+    /// to require an exact key-type match.
+    static constexpr auto signature_documentation = "(Map(K : Any, V : Any), K) -> UInt8";
+};
 using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsKey>, MapToSubcolumnAdapter<NameMapContainsKey, 0>, NameMapContainsKey>;
 
-struct NameMapContainsValue { static constexpr auto name = "mapContainsValue"; };
+struct NameMapContainsValue
+{
+    static constexpr auto name = "mapContainsValue";
+    /// Docs-only — same `leastSupertype` reason as `mapContainsKey`.
+    static constexpr auto signature_documentation = "(Map(K : Any, V : Any), V) -> UInt8";
+};
 using FunctionMapContainsValue = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsValue>, MapToSubcolumnAdapter<NameMapContainsValue, 1>, NameMapContainsValue>;
 
-struct NameMapFilter { static constexpr auto name = "mapFilter"; };
+struct NameMapFilter
+{
+    static constexpr auto name = "mapFilter";
+    /// Docs-only — the lambda's argument types are bound after the adapter
+    /// unwraps `Map(K, V)` into `Tuple(K, V)`-element-wise, which the DSL
+    /// can't model in advance.
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(K : Any, V : Any)) -> Map(K, V)";
+};
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;
 
-struct NameMapApply { static constexpr auto name = "mapApply"; };
+struct NameMapApply
+{
+    static constexpr auto name = "mapApply";
+    /// Docs-only — same lambda-unwrap reason as `mapFilter`.
+    static constexpr auto signature_documentation = "(Function((Any, Any), Tuple(K2 : Any, V2 : Any)), Map(Any, Any)) -> Map(K2, V2)";
+};
 using FunctionMapApply = FunctionMapToArrayAdapter<FunctionArrayMap, MapToNestedAdapter<NameMapApply>, NameMapApply>;
 
-struct NameMapExists { static constexpr auto name = "mapExists"; };
+struct NameMapExists
+{
+    static constexpr auto name = "mapExists";
+    /// Docs-only — same lambda-unwrap reason as `mapFilter`.
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(Any, Any)) -> UInt8";
+};
 using FunctionMapExists = FunctionMapToArrayAdapter<FunctionArrayExists, MapToNestedAdapter<NameMapExists, false>, NameMapExists>;
 
-struct NameMapAll { static constexpr auto name = "mapAll"; };
+struct NameMapAll
+{
+    static constexpr auto name = "mapAll";
+    /// Docs-only — same lambda-unwrap reason as `mapFilter`.
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(Any, Any)) -> UInt8";
+};
 using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
 
-struct NameMapContainsKeyLike { static constexpr auto name = "mapContainsKeyLike"; };
+struct NameMapContainsKeyLike
+{
+    static constexpr auto name = "mapContainsKeyLike";
+    /// Docs-only — internally builds a `LIKE` lambda via `MapLikeAdapter`,
+    /// which calls `FunctionLike::getReturnTypeImpl(DataTypes &)`. That
+    /// overload isn't provided by `FunctionsStringSearch`, so the legacy
+    /// adapter path must remain in use.
+    static constexpr auto signature_documentation = "(Map(Any, Any), String) -> UInt8";
+};
 using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>;
 
-struct NameMapContainsValueLike { static constexpr auto name = "mapContainsValueLike"; };
+struct NameMapContainsValueLike
+{
+    static constexpr auto name = "mapContainsValueLike";
+    static constexpr auto signature_documentation = "(Map(Any, Any), String) -> UInt8";
+};
 using FunctionMapContainsValueLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsValueLike, false, 1>, NameMapContainsValueLike>;
 
-struct NameMapExtractKeyLike { static constexpr auto name = "mapExtractKeyLike"; };
+struct NameMapExtractKeyLike
+{
+    static constexpr auto name = "mapExtractKeyLike";
+    static constexpr auto signature_documentation = "(Map(K : Any, V : Any), String) -> Map(K, V)";
+};
 using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractKeyLike, true, 0>, NameMapExtractKeyLike>;
 
-struct NameMapExtractValueLike { static constexpr auto name = "mapExtractValueLike"; };
+struct NameMapExtractValueLike
+{
+    static constexpr auto name = "mapExtractValueLike";
+    static constexpr auto signature_documentation = "(Map(K : Any, V : Any), String) -> Map(K, V)";
+};
 using FunctionMapExtractValueLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractValueLike, true, 1>, NameMapExtractValueLike>;
 
-struct NameMapSort { static constexpr auto name = "mapSort"; };
-struct NameMapReverseSort { static constexpr auto name = "mapReverseSort"; };
-struct NameMapPartialSort { static constexpr auto name = "mapPartialSort"; };
-struct NameMapPartialReverseSort { static constexpr auto name = "mapPartialReverseSort"; };
+struct NameMapSort
+{
+    static constexpr auto name = "mapSort";
+    /// Docs-only — lambda-form requires `Tuple(K, V)`-element unwrap.
+    static constexpr auto signature_documentation =
+        "(Function((Any, Any), Any), Map(K : Any, V : Any)) -> Map(K, V)"
+        " OR (Map(K : Any, V : Any)) -> Map(K, V)";
+};
+struct NameMapReverseSort
+{
+    static constexpr auto name = "mapReverseSort";
+    static constexpr auto signature_documentation =
+        "(Function((Any, Any), Any), Map(K : Any, V : Any)) -> Map(K, V)"
+        " OR (Map(K : Any, V : Any)) -> Map(K, V)";
+};
+struct NameMapPartialSort
+{
+    static constexpr auto name = "mapPartialSort";
+    static constexpr auto signature_documentation =
+        "(Function((Any, Any), Any), UInt | Int, Map(K : Any, V : Any)) -> Map(K, V)"
+        " OR (UInt | Int, Map(K : Any, V : Any)) -> Map(K, V)";
+};
+struct NameMapPartialReverseSort
+{
+    static constexpr auto name = "mapPartialReverseSort";
+    static constexpr auto signature_documentation =
+        "(Function((Any, Any), Any), UInt | Int, Map(K : Any, V : Any)) -> Map(K, V)"
+        " OR (UInt | Int, Map(K : Any, V : Any)) -> Map(K, V)";
+};
 
 using FunctionMapSort = FunctionMapToArrayAdapter<FunctionArraySort, MapToNestedAdapter<NameMapSort>, NameMapSort>;
 using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSort, MapToNestedAdapter<NameMapReverseSort>, NameMapReverseSort>;

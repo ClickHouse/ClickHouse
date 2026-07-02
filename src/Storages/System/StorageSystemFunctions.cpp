@@ -105,20 +105,34 @@ namespace
             res_columns[13]->insertDefault();
         }
 
+        /// Declarative signature (see IFunction::getSignatureString) and the
+        /// deterministic / higher-order flags. Only regular functions in the
+        /// system FunctionFactory carry these; for everything else (aggregates,
+        /// user-defined, WASM) leave the cells empty. Aliases resolve to their
+        /// canonical function below and inherit its metadata.
+        String signature;
+        bool inserted_function_flags = false;
         if constexpr (std::is_same_v<Factory, FunctionFactory>)
         {
             try
             {
-                auto resolver = factory.tryGet(name, context);
-                if (resolver)
+                /// `fillData` runs under `SuppressQueryFactoriesInfoScope`, so the normal
+                /// resolution path does not register names in `query_log.used_functions`.
+                /// `tryGet` resolves aliases to the canonical function (so aliases inherit
+                /// its metadata) and honors `use_legacy_to_time`, unlike a duplicated lookup.
+                if (auto resolver = factory.tryGet(name, context))
                 {
+                    signature = resolver->getSignatureString();
                     res_columns[14]->insert(resolver->isDeterministic() ? UInt8{1} : UInt8{0});
                     res_columns[15]->insert(resolver->isHigherOrderFunction() ? UInt8{1} : UInt8{0});
-                    return;
+                    inserted_function_flags = true;
                 }
             }
             catch (...)
             {
+                /// Some functions throw on construction unless certain settings are set
+                /// (e.g. deprecated/error-prone functions). Treat them as having no
+                /// signature and unknown determinism / higher-order flags.
                 LOG_DEBUG(
                     getLogger("system.functions"),
                     "Cannot resolve function {} for introspection: {}",
@@ -126,8 +140,12 @@ namespace
                     getCurrentExceptionMessage(/* with_stacktrace */ false));
             }
         }
-        res_columns[14]->insertDefault();
-        res_columns[15]->insertDefault();
+        if (!inserted_function_flags)
+        {
+            res_columns[14]->insertDefault();
+            res_columns[15]->insertDefault();
+        }
+        res_columns[16]->insert(signature);
     }
 
 }
@@ -164,7 +182,8 @@ ColumnsDescription StorageSystemFunctions::getColumnsDescription()
         {"deterministic", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
             "Whether the function returns the same result for the same arguments. NULL when unknown (e.g. aggregate or user-defined functions)."},
         {"higher_order", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
-            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."}
+            "Whether the function is higher-order — i.e. accepts at least one lambda expression as an argument (e.g. arrayMap, arrayFilter, mapApply). NULL when unknown."},
+        {"signature", std::make_shared<DataTypeString>(), "Declarative signature of the function, when available."}
     };
 }
 
@@ -179,12 +198,16 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & function_name : function_names)
+    {
         fillRow(res_columns, function_name, 0, "", FunctionOrigin::SYSTEM, functions_factory, context);
+    }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
     const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
     for (const auto & function_name : aggregate_function_names)
+    {
         fillRow(res_columns, function_name, 1, "", FunctionOrigin::SYSTEM, aggregate_functions_factory, context);
+    }
 
     const auto & user_defined_sql_functions_factory = UserDefinedSQLFunctionFactory::instance();
     const auto & user_defined_sql_functions_names = user_defined_sql_functions_factory.getAllRegisteredNames();
@@ -273,6 +296,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[13]->insertDefault(); // categories
         res_columns[14]->insertDefault(); // is_deterministic
         res_columns[15]->insert(UInt8{0}); // higher_order
+        res_columns[16]->insertDefault(); // signature
     }
 }
 
