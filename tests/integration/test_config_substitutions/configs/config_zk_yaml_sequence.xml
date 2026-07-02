@@ -1,0 +1,17 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a YAML document whose root is a *sequence* of two mappings.
+             Every item must be spliced under the single synthetic root, so both settings survive
+             (a top-level sequence used to clone the root and keep only the first item). -->
+        <include from_zk="/profile_settings_yaml_sequence" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>

@@ -1,0 +1,17 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a leaf value that contains the `]]>` sequence, which the XML
+             grammar forbids in character data. It uses the same escaping helper as from_env, so it
+             must be kept as literal text and must not break config parsing. -->
+        <log_comment from_zk="/leaf_with_cdata_end" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>

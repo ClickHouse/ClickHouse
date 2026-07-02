@@ -61,6 +61,96 @@ node8 = cluster.add_instance(
     user_configs=["configs/config_include_from_yml.xml"],
     main_configs=["configs/include_from_source.yml"],
 )
+# env var with XML special characters (should be auto-escaped).
+# `instance_env_variables=True` keeps `LOG_COMMENT_VALUE` exclusive to this node: env variables are
+# otherwise shared across the whole cluster, so node9 and node10 (same variable name) would collide.
+node9 = cluster.add_instance(
+    "node9",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "a&b<c>d"},
+    instance_env_variables=True,
+)
+# env var that looks like an XML fragment: it must be taken as literal text, not parsed as XML
+node10 = cluster.add_instance(
+    "node10",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "<a>1</a>"},
+    instance_env_variables=True,
+)
+# from_zk value that is a YAML subtree, referenced from a structural <include>: it must be
+# autodetected as YAML and expanded. A leaf scalar with YAML comment syntax must stay literal.
+node11 = cluster.add_instance(
+    "node11",
+    user_configs=["configs/config_zk_yaml.xml"],
+    with_zookeeper=True,
+)
+# from_zk value that is a valid YAML mapping ("abc: def"), but used as a leaf substitution:
+# it must be kept as literal text, not expanded into an <abc>def</abc> sub-element.
+node12 = cluster.add_instance(
+    "node12",
+    user_configs=["configs/config_zk_yaml_leaf.xml"],
+    with_zookeeper=True,
+)
+# env var whose value contains the `]]>` sequence: the XML grammar forbids `]]>` in character
+# data, so it must be escaped (as `]]&gt;`) rather than embedded verbatim, otherwise the synthetic
+# document `<from_env>]]></from_env>` would be rejected as not well-formed before substitution.
+node13 = cluster.add_instance(
+    "node13",
+    user_configs=["configs/config_env_xml_chars.xml"],
+    env_variables={"LOG_COMMENT_VALUE": "a]]>b"},
+    instance_env_variables=True,
+)
+# from_zk leaf value that contains the `]]>` sequence: it uses the same escaping helper as
+# from_env, so it must be kept as literal text and not break config parsing.
+node14 = cluster.add_instance(
+    "node14",
+    user_configs=["configs/config_zk_leaf_cdata.xml"],
+    with_zookeeper=True,
+)
+# from_zk structural <include> whose YAML document root is a sequence of two mappings: both
+# items must be inserted, not just the first.
+node15 = cluster.add_instance(
+    "node15",
+    user_configs=["configs/config_zk_yaml_sequence.xml"],
+    with_zookeeper=True,
+)
+# from_zk leaf value that contains a CR/LF: it must survive byte-for-byte.
+node16 = cluster.add_instance(
+    "node16",
+    user_configs=["configs/config_zk_leaf_crlf.xml"],
+    with_zookeeper=True,
+)
+# from_zk subtree substitution into an ordinary (non-<include>) element such as <merge_tree>:
+# a value beginning with '<' is an XML fragment, so its subtree is spliced in as child elements.
+# This confirms subtree substitution works on any element, not only a structural <include>.
+# The config uses replace="replace" because the common instance config injected into every node
+# (helpers/0_common_instance_config.xml) already defines <merge_tree>, so after merging the element
+# has content and a from_zk subtree can only be spliced into it with "replace".
+node17 = cluster.add_instance(
+    "node17",
+    main_configs=["configs/config_zk_ordinary_xml_subtree.xml"],
+    with_zookeeper=True,
+)
+# from_zk on an ordinary (non-<include>) element such as <merge_tree> with a YAML (non-'<') value:
+# it must be kept as literal text, not autodetected as YAML, so the setting inside is NOT applied.
+# YAML subtree autodetection is applied only to a structural <include from_zk=...>.
+# The config uses replace="replace" for the same reason as node17: the common instance config
+# already defines <merge_tree>, so the merged element has content that a from_zk value can only be
+# substituted into with "replace".
+node18 = cluster.add_instance(
+    "node18",
+    main_configs=["configs/config_zk_ordinary_yaml_is_literal.xml"],
+    with_zookeeper=True,
+)
+# from_zk leaf value that was XML-entity-encoded (`a&amp;b`) for the old parser path: it is now kept
+# as literal text, so it resolves to the literal `a&amp;b`, NOT the decoded `a&b` the old XML-reparse
+# path produced. This locks in the deliberate behaviour change on upgrade: a value needing a literal
+# `&`, `<` or `>` must be stored raw (which the old path rejected), not entity-encoded.
+node19 = cluster.add_instance(
+    "node19",
+    user_configs=["configs/config_zk_leaf_entity_encoded.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -87,6 +177,79 @@ def start_cluster():
             zk.create(
                 path="/merge_max_block_size",
                 value=b"<merge_max_block_size>8888</merge_max_block_size>",
+                makepath=True,
+            )
+            # A YAML subtree (does not start with '<') stored in a ZooKeeper node: it must
+            # be autodetected and parsed as YAML, just like a config file.
+            zk.create(
+                path="/profile_settings_yaml",
+                value=b"max_query_size: 99999\n",
+                makepath=True,
+            )
+            # A plain scalar that happens to contain YAML syntax ('#' starts a YAML comment):
+            # it must be kept as literal text, not reinterpreted by the YAML parser (which would
+            # otherwise turn "abc # rotated" into "abc").
+            zk.create(
+                path="/scalar_with_yaml_syntax",
+                value=b"abc # rotated",
+                makepath=True,
+            )
+            # A value that is a valid YAML mapping ("abc: def"), used as a leaf substitution:
+            # it must be kept as literal text, not expanded into an <abc>def</abc> sub-element,
+            # so an existing scalar setting or secret is preserved unchanged on upgrade.
+            zk.create(
+                path="/leaf_yaml_mapping",
+                value=b"abc: def",
+                makepath=True,
+            )
+            # A leaf value containing the `]]>` sequence, which the XML grammar forbids in
+            # character data: it must be escaped and kept as literal text, not break parsing.
+            zk.create(
+                path="/leaf_with_cdata_end",
+                value=b"a]]>b",
+                makepath=True,
+            )
+            # A YAML document whose root is a *sequence* of two mappings, referenced from a
+            # structural <include from_zk=...>: every item must be spliced under one synthetic
+            # root, so both settings survive (a top-level sequence used to clone the synthetic
+            # `clickhouse` root and keep only the first item).
+            zk.create(
+                path="/profile_settings_yaml_sequence",
+                value=b"- max_query_size: 99999\n- max_result_rows: 12345\n",
+                makepath=True,
+            )
+            # A leaf value that contains a CR/LF (`a\r\nb`): it must survive byte-for-byte. XML
+            # end-of-line normalization would otherwise rewrite `\r\n` to `\n` when the synthetic
+            # <from_zk> document is reparsed.
+            zk.create(
+                path="/leaf_with_crlf",
+                value=b"a\r\nb",
+                makepath=True,
+            )
+            # A leaf value that was XML-entity-encoded (`a&amp;b`) to satisfy the old parser, which
+            # reparsed every from_zk value as XML and would have decoded this to `a&b`. A non-`<` leaf
+            # value is now kept as literal text using its exact original bytes, so it resolves to the
+            # literal `a&amp;b`. This is a deliberate, documented behaviour change on upgrade.
+            zk.create(
+                path="/leaf_entity_encoded",
+                value=b"a&amp;b",
+                makepath=True,
+            )
+            # An XML fragment (begins with '<'), referenced from an ordinary (non-<include>) element
+            # `<merge_tree from_zk=.../>`: it is spliced in as child elements, so the subtree
+            # substitution applies just like it does for a structural <include>.
+            zk.create(
+                path="/merge_tree_xml_subtree",
+                value=b"<min_bytes_for_wide_part>33</min_bytes_for_wide_part>",
+                makepath=True,
+            )
+            # A YAML subtree (does not begin with '<'), referenced from an ordinary (non-<include>)
+            # element `<merge_tree from_zk=.../>`: it must be kept as literal text, not autodetected
+            # as YAML, so the `min_bytes_for_wide_part` setting inside must NOT be applied. YAML
+            # autodetection is reserved for a structural <include from_zk=...>.
+            zk.create(
+                path="/merge_tree_yaml_subtree",
+                value=b"min_bytes_for_wide_part: 33\n",
                 makepath=True,
             )
 
@@ -359,3 +522,159 @@ def test_config_multiple_zk_substitutions(start_cluster):
             )
     finally:
         zk.delete(path="/background_pool_size")
+
+
+def test_config_env_xml_special_chars(start_cluster):
+    """Env var values with XML special characters (&, <, >) should be auto-escaped."""
+    assert (
+        node9.query(
+            "SELECT value FROM system.settings WHERE name = 'log_comment'"
+        )
+        == "a&b<c>d\n"
+    )
+
+
+def test_config_env_xml_fragment_is_literal_text(start_cluster):
+    """Env var values are always plain text: an XML-looking value must not be parsed as XML."""
+    assert (
+        node10.query(
+            "SELECT value FROM system.settings WHERE name = 'log_comment'"
+        )
+        == "<a>1</a>\n"
+    )
+
+
+def test_config_zk_yaml_is_autodetected(start_cluster):
+    """A structural <include from_zk=...> whose value does not start with '<' is autodetected as YAML."""
+    assert (
+        node11.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
+        == "99999\n"
+    )
+
+
+def test_config_zk_scalar_keeps_literal_text(start_cluster):
+    """A from_zk leaf scalar that contains YAML syntax must be kept as literal text.
+
+    "abc # rotated" must not be reinterpreted by the YAML parser (which would drop the
+    "# rotated" comment and yield just "abc"), so existing scalar substitutions such as
+    secrets keep their exact value.
+    """
+    assert (
+        node11.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "abc # rotated\n"
+    )
+
+
+def test_config_zk_leaf_yaml_mapping_keeps_literal_text(start_cluster):
+    """A from_zk leaf value that is a valid YAML mapping must be kept as literal text.
+
+    "abc: def" is a valid YAML mapping, but as a leaf substitution it must stay the literal
+    text "abc: def" instead of being expanded into an <abc>def</abc> sub-element. This keeps
+    existing scalar settings and secrets that happen to look like YAML working unchanged.
+    """
+    assert (
+        node12.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "abc: def\n"
+    )
+
+
+def test_config_env_cdata_end_sequence(start_cluster):
+    """An env var value containing `]]>` must be escaped, not break config parsing.
+
+    The XML grammar forbids the literal `]]>` in character data, so embedding the value verbatim
+    would yield the not-well-formed `<from_env>]]></from_env>`. The value must round-trip to its
+    exact original bytes.
+    """
+    assert (
+        node13.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a]]>b\n"
+    )
+
+
+def test_config_zk_leaf_cdata_end_sequence(start_cluster):
+    """A from_zk leaf value containing `]]>` uses the same escaping helper as from_env.
+
+    It must be kept as literal text and must not break config parsing.
+    """
+    assert (
+        node14.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a]]>b\n"
+    )
+
+
+def test_config_zk_yaml_top_level_sequence_include(start_cluster):
+    """A structural <include from_zk=...> whose YAML document root is a sequence must insert every item.
+
+    A top-level sequence used to clone the synthetic `clickhouse` root, appending several root
+    elements of which only the first was kept, so every item after the first was silently dropped.
+    Both settings from the two-item sequence must therefore be present.
+    """
+    assert (
+        node15.query("SELECT value FROM system.settings WHERE name = 'max_query_size'")
+        == "99999\n"
+    )
+    assert (
+        node15.query("SELECT value FROM system.settings WHERE name = 'max_result_rows'")
+        == "12345\n"
+    )
+
+
+def test_config_zk_leaf_crlf_preserved(start_cluster):
+    """A from_zk leaf value containing a CR/LF must survive byte-for-byte.
+
+    XML end-of-line normalization (XML 1.0, section 2.11) rewrites `\\r\\n` to `\\n` when the
+    synthetic <from_zk> document is reparsed, so the value would otherwise be silently corrupted.
+    `a\\r\\nb` is 0x61 0x0D 0x0A 0x62, i.e. hex `610D0A62`.
+    """
+    assert (
+        node16.query("SELECT hex(value) FROM system.settings WHERE name = 'log_comment'")
+        == "610D0A62\n"
+    )
+
+
+def test_config_zk_leaf_entity_encoded_stays_literal(start_cluster):
+    """A from_zk leaf value that was XML-entity-encoded now resolves to its literal bytes.
+
+    Before this change every from_zk value was reparsed as XML, so a leaf scalar stored as
+    `a&amp;b` (the only way to smuggle a `&` past the old parser, which rejected a raw `&` as not
+    well-formed) decoded to `a&b`. A non-`<` leaf value is now kept as literal text using its exact
+    original bytes, so it resolves to the literal `a&amp;b` instead. This is a deliberate behaviour
+    change on upgrade, documented in configuration-files.md: a value needing a literal `&`, `<` or
+    `>` must now be stored raw rather than entity-encoded.
+    """
+    assert (
+        node19.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a&amp;b\n"
+    )
+
+
+def test_config_zk_ordinary_element_xml_subtree(start_cluster):
+    """A from_zk value beginning with '<' is spliced as child elements into an ordinary element.
+
+    Subtree substitution via from_zk works on any element, not only a structural <include>: an XML
+    fragment stored at the ZooKeeper node becomes child elements of an ordinary container such as
+    `<merge_tree from_zk=.../>`, so `min_bytes_for_wide_part` is set to 33.
+    """
+    assert (
+        node17.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"
+        )
+        == "33\n"
+    )
+
+
+def test_config_zk_ordinary_element_yaml_is_literal(start_cluster):
+    """A from_zk YAML (non-'<') value on an ordinary element is kept literal, not expanded as YAML.
+
+    YAML subtree autodetection is applied only to a structural <include from_zk=...>. On an ordinary
+    element such as `<merge_tree from_zk=.../>` a non-'<' value is kept as literal text (an ordinary
+    element may just as well be a leaf whose exact scalar bytes must be preserved), so the YAML
+    `min_bytes_for_wide_part: 33` is NOT applied and the setting keeps its default value (not 33). To
+    splice a subtree into an ordinary element, an XML fragment (a value beginning with '<') is used.
+    """
+    assert (
+        node18.query(
+            "SELECT value FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'"
+        )
+        != "33\n"
+    )
