@@ -288,11 +288,17 @@ private:
     template <typename DateOrTime, typename Divisor>
     static DateOrTime roundDownToMultiple(DateOrTime value, Divisor divisor)
     {
+        const Int64 d = static_cast<Int64>(divisor);
+        /// A caller can derive `divisor` from an extreme interval count (e.g. `60 * minutes`), which wraps to a
+        /// non-positive value. Such intervals are meaningless, so leave the value unchanged instead of dividing
+        /// by zero or overflowing below.
+        if (unlikely(d <= 0))
+            return value;
+
         if (value >= 0) [[likely]]
-            return static_cast<DateOrTime>(value / divisor * divisor);
+            return static_cast<DateOrTime>(value / d * d);
 
         const Int64 v = static_cast<Int64>(value);
-        const Int64 d = static_cast<Int64>(divisor);
         const Int64 remainder = v % d; /// In (-d, 0] for negative v.
         if (remainder == 0)
             return static_cast<DateOrTime>(v);
@@ -1159,7 +1165,13 @@ public:
     template <typename DateOrTime>
     DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
     {
-        Int64 divisor = 60 * minutes;
+        const Int64 divisor = 60 * minutes;
+        /// `60 * minutes` wraps to a non-positive divisor for an extreme interval count; the slow path below
+        /// would then divide by zero. Leave the value unchanged (the fast path's roundDownToMultiple guards
+        /// the same case, but the slow path has no such chokepoint).
+        if (unlikely(divisor <= 0))
+            return t;
+
         if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
             return roundDownToMultiple(t, divisor);
 
