@@ -111,7 +111,7 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
             if (!canConsiderPart(*part))
                 continue;
 
-            time_t ttl = getTTLForPart(*part);
+            time_t ttl = getTTLForPartForCenter(*part);
             if (!ttl || ttl > current_time)
                 continue;
 
@@ -137,7 +137,7 @@ PartsIterator ITTLMergeSelector::findLeftRangeBorder(
             break;
 
         auto next_to_check = std::prev(left);
-        if (!canConsiderPart(*next_to_check))
+        if (!canIncludeInRange(*next_to_check))
             break;
 
         if (disjoint_set.isCovered(center_position.range, next_to_check))
@@ -170,7 +170,7 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(
         if (!usable_parts)
             break;
 
-        if (!canConsiderPart(*right))
+        if (!canIncludeInRange(*right))
             break;
 
         if (disjoint_set.isCovered(center_position.range, right))
@@ -230,6 +230,34 @@ time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) cons
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
+    if (!part.general_ttl_info.has_value())
+        return false;
+
+    /// Skip parts whose `part_max_ttl`-contributing TTLs are all marked as
+    /// finished. Without this gate `TTLDrop` would re-pick the same part on
+    /// every scheduler tick - there is no per-partition cooldown for
+    /// `TTLDrop` (`MergeTreeDataMergerMutator::updateTTLMergeTimes` is a
+    /// no-op for it). See issue #105647, where `TTL ... GROUP BY`
+    /// re-aggregates the same single-row part forever.
+    ///
+    /// We deliberately consult `has_any_non_finished_rows_affecting_ttls`
+    /// here rather than `has_any_non_finished_ttls`: `moves_ttl` and
+    /// `recompression_ttl` entries are never marked `finished` and do not
+    /// feed `part_max_ttl`, so a table that combines a finished rows /
+    /// group-by / column TTL with a move or recompression TTL would
+    /// otherwise keep this gate open and reproduce the same infinite loop.
+    return part.general_ttl_info->has_any_non_finished_rows_affecting_ttls;
+}
+
+bool TTLPartDropMergeSelector::canIncludeInRange(const PartProperties & part) const
+{
+    /// Center selection already passed `canConsiderPart` for some other part
+    /// in this range. A finished neighbor is harmless to fold in: its
+    /// `part_max_ttl` was set when it was last touched, persists across
+    /// merges, and `canIncludeToRange` (in this file) still gates inclusion
+    /// on that value being expired. Allowing it here just lets one TTL merge
+    /// sweep adjacent finished + unfinished parts together rather than
+    /// leaving the finished one for a later regular merge.
     return part.general_ttl_info.has_value();
 }
 
@@ -243,6 +271,11 @@ time_t TTLRowDeleteMergeSelector::getTTLForPart(const PartProperties & part) con
     return part.general_ttl_info->part_min_ttl;
 }
 
+time_t TTLRowDeleteMergeSelector::getTTLForPartForCenter(const PartProperties & part) const
+{
+    return part.general_ttl_info->part_min_unfinished_rows_affecting_ttl;
+}
+
 bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
 {
     if (part.is_in_volume_where_merges_avoid)
@@ -251,7 +284,23 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
     if (!part.general_ttl_info.has_value())
         return false;
 
-    return part.general_ttl_info->has_any_non_finished_ttls;
+    /// Same reasoning as `TTLPartDropMergeSelector::canConsiderPart`, with
+    /// one extra wrinkle: CENTER selection uses the smallest unfinished
+    /// rows-affecting TTL, not the aggregate `part_min_ttl`. The aggregate is
+    /// still useful for range inclusion, but it may come from an already
+    /// finished expired entry next to a future unfinished one.
+    return part.general_ttl_info->has_any_non_finished_rows_affecting_ttls;
+}
+
+bool TTLRowDeleteMergeSelector::canIncludeInRange(const PartProperties & part) const
+{
+    /// See the matching override on `TTLPartDropMergeSelector`. The volume
+    /// guard still applies - a finished neighbor on a no-merge volume must
+    /// stay out.
+    if (part.is_in_volume_where_merges_avoid)
+        return false;
+
+    return part.general_ttl_info.has_value();
 }
 
 TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)

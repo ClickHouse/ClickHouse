@@ -243,31 +243,58 @@ time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
     return max;
 }
 
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
+time_t MergeTreeDataPartTTLInfos::getMinimalUnfinishedRowsAffectingTTL() const
+{
+    time_t min = std::numeric_limits<time_t>::max();
+
+    auto update_min_ttl = [&min] (const MergeTreeDataPartTTLInfo & info)
+    {
+        if (info.min && info.max && !info.finished())
+            min = std::min(info.min, min);
+    };
+
+    auto update_min_ttl_from_map = [&update_min_ttl] (const TTLInfoMap & map)
+    {
+        for (const auto & [name, info] : map)
+            update_min_ttl(info);
+    };
+
+    update_min_ttl(table_ttl);
+    update_min_ttl_from_map(columns_ttl);
+    update_min_ttl_from_map(rows_where_ttl);
+    update_min_ttl_from_map(group_by_ttl);
+
+    if (min == std::numeric_limits<time_t>::max())
+        return 0;
+
+    return min;
+}
+
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowsAffectingTTLs() const
 {
     auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
     {
         for (const auto & [name, info] : map)
         {
-            if (!info.finished())
+            if (info.max && !info.finished())
                 return true;
         }
         return false;
     };
 
-    if (!table_ttl.finished())
+    /// Mirrors the branches of `TTLUpdateInfoAlgorithm::finalize` that call
+    /// `updatePartMinMaxTTL`. `moves_ttl` and `recompression_ttl` are excluded
+    /// on purpose: they never set `ttl_finished = true` and do not feed
+    /// `part_max_ttl`, so including them would keep `TTLDrop` selecting the
+    /// same part forever for tables with mixed TTL definitions
+    /// (issue #105647).
+    if (table_ttl.max && !table_ttl.finished())
         return true;
 
     if (has_non_finished_ttl(columns_ttl))
         return true;
 
     if (has_non_finished_ttl(rows_where_ttl))
-        return true;
-
-    if (has_non_finished_ttl(moves_ttl))
-        return true;
-
-    if (has_non_finished_ttl(recompression_ttl))
         return true;
 
     if (has_non_finished_ttl(group_by_ttl))
