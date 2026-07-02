@@ -7,6 +7,7 @@
 namespace DB
 {
 enum class UserDefinedSQLObjectType : uint8_t;
+enum class WorkloadEntityType : uint8_t;
 class ASTCreateQuery;
 struct ZooKeeperRetriesInfo;
 
@@ -68,6 +69,10 @@ public:
     /// Sets that this replica is going to restore replicated user-defined functions.
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     virtual bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) = 0;
+
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    virtual bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) = 0;
 
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.

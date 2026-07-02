@@ -1,0 +1,13 @@
+<clickhouse>
+    <!--
+        Workload and resource entities defined via server configuration.
+        These live in the read-only WorkloadEntityConfigStorage (the next storage in the chain)
+        and must NOT be included in BACKUP - the configuration is expected to be backed up and
+        restored separately together with all its entities.
+    -->
+    <resources_and_workloads>
+        CREATE RESOURCE cfg_res (WRITE DISK cfg_disk, READ DISK cfg_disk);
+        CREATE WORKLOAD all;
+        CREATE WORKLOAD cfg_wl IN all SETTINGS priority = 5;
+    </resources_and_workloads>
+</clickhouse>

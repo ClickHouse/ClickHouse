@@ -165,6 +165,7 @@ namespace
     };
 
     using SettingFieldRestoreUDFCreationMode = SettingFieldRestoreAccessCreationMode;
+    using SettingFieldRestoreWorkloadsAndResourcesCreationMode = SettingFieldRestoreAccessCreationMode;
 }
 
 /// List of restore settings except base_backup_name and cluster_host_ids.
@@ -187,6 +188,7 @@ namespace
     M(Bool, restore_access_entities_with_current_grants) \
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
+    M(RestoreWorkloadsAndResourcesCreationMode, create_workloads_and_resources) \
     M(Bool, allow_azure_native_copy) \
     M(Bool, allow_s3_native_copy) \
     M(Bool, use_same_s3_credentials_for_base_backup) \

@@ -6,6 +6,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 
@@ -66,6 +67,7 @@ void RestoreCoordinationOnCluster::createRootNodes()
             zk->createIfNotExists(zookeeper_path + "/repl_tables_data_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_access_storages_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/repl_sql_objects_acquired", "");
+            zk->createIfNotExists(zookeeper_path + "/repl_workload_entities_acquired", "");
             zk->createIfNotExists(zookeeper_path + "/keeper_map_tables", "");
             zk->createIfNotExists(zookeeper_path + "/table_uuids", "");
 
@@ -276,6 +278,41 @@ bool RestoreCoordinationOnCluster::acquireReplicatedSQLObjects(const String & lo
             }
 
             /// We need to check who created that node
+            result = zk->get(path) == toString(current_host_index);
+        });
+    return result;
+}
+
+bool RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities(const String & loader_zk_path)
+{
+    auto component_guard = Coordination::setCurrentComponent("RestoreCoordinationOnCluster::acquireReplicatedWorkloadEntities");
+    bool result = false;
+    auto holder = with_retries.createRetriesControlHolder("acquireReplicatedWorkloadEntities");
+    holder.retries_ctl.retryLoop(
+        [&, &zk = holder.faulty_zookeeper]()
+        {
+            with_retries.renewZooKeeper(zk);
+
+            /// Acquire ownership once per workload storage (keyed by replication id), not per entity type.
+            /// The winning replica must restore BOTH system.workloads and system.resources together, so that a
+            /// workload referencing a resource (SETTINGS ... FOR <resource>) can be created after that resource
+            /// exists. Acquiring separately per entity type could let different replicas win the two types and
+            /// break such references.
+            String path = zookeeper_path + "/repl_workload_entities_acquired/" + escapeForFileName(loader_zk_path);
+
+            /// Record current_host_index as the node value so that a host which creates the node but loses the
+            /// Keeper response can still recognize itself as the owner on retry (sees ZNODEEXISTS, reads the value).
+            auto code = zk->tryCreate(path, toString(current_host_index), zkutil::CreateMode::Persistent);
+            if ((code != Coordination::Error::ZOK) && (code != Coordination::Error::ZNODEEXISTS))
+                throw zkutil::KeeperException::fromPath(code, path);
+
+            if (code == Coordination::Error::ZOK)
+            {
+                result = true;
+                return;
+            }
+
+            /// The node already exists - this replica owns the restore only if it is the one that created the node.
             result = zk->get(path) == toString(current_host_index);
         });
     return result;

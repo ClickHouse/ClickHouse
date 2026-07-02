@@ -430,6 +430,35 @@ graph TD
 * `precedence_allocation` - enforces eviction according to static precedence (lower value means higher precedence); pending allocation of higher precedence evicts lower precedence allocations; children nodes should specify `precedence` (default is 0).
 * `queue` - leaf of the hierarchy capable of holding running and pending allocations.
 
+## Backup and restore {#backup-restore}
+
+SQL-defined workloads and resources can be included in a ClickHouse backup:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+Only SQL-defined entities are backed up. Configuration-based workloads and resources (defined via `<resources_and_workloads>` in the server configuration file) are not included — they are part of the server configuration, which should be backed up separately.
+
+To restore workloads and resources from a backup:
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+Restore requires `CREATE WORKLOAD` and `CREATE RESOURCE` privileges. Entities are restored using `CREATE IF NOT EXISTS` semantics — existing entities are preserved unchanged. If the server uses ZooKeeper storage (`workload_zookeeper_path`), only one replica in the cluster will create each entity; the other replicas pick up the change through the normal replication mechanism.
+
+For replicated setups, both tables can be backed up and restored with `ON CLUSTER`:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+The `create_workloads_and_resources` restore setting controls whether workload and resource entities are restored when restoring a full database or cluster backup. It is enabled by default.
+:::
+
 ## Deprecated XML configuration {#deprecated-configuration}
 
 An alternative way to express which disks are used by a resource is server's `storage_configuration`:

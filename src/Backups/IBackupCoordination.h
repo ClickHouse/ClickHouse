@@ -10,6 +10,7 @@ struct BackupFileInfo;
 using BackupFileInfos = std::vector<BackupFileInfo>;
 enum class AccessEntityType : uint8_t;
 enum class UserDefinedSQLObjectType : uint8_t;
+enum class WorkloadEntityType : uint8_t;
 struct ZooKeeperRetriesInfo;
 
 /// Replicas use this class to coordinate what they're writing to a backup while executing BACKUP ON CLUSTER.
@@ -104,6 +105,10 @@ public:
     /// Adds a path to a directory with user-defined SQL objects inside the backup.
     virtual void addReplicatedSQLObjectsDir(const String & loader_zk_path, UserDefinedSQLObjectType object_type, const String & dir_path) = 0;
     virtual Strings getReplicatedSQLObjectsDirs(const String & loader_zk_path, UserDefinedSQLObjectType object_type) const = 0;
+
+    /// Adds a path to a directory with workload entities (WORKLOAD and RESOURCE) inside the backup.
+    virtual void addReplicatedWorkloadEntitiesDir(const String & loader_zk_path, WorkloadEntityType entity_type, const String & dir_path) = 0;
+    virtual Strings getReplicatedWorkloadEntitiesDirs(const String & loader_zk_path, WorkloadEntityType entity_type) const = 0;
 
     /// Adds file information.
     /// If specified checksum+size are new for this IBackupContentsInfo the function sets `is_data_file_required`.
