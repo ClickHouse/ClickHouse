@@ -27,6 +27,11 @@ void useMemoryBufferForCommonSubplanResult(QueryPlan::Node & node, const QueryPl
     if (!subplan_reference)
         return;
 
+    /// References that require materialization (e.g. join_kind = left, where the buffer cannot guarantee
+    /// the producer finishes before the consumer reads) are materialized earlier and must never be buffered.
+    if (subplan_reference->mustMaterialize())
+        return;
+
     auto * subplan_reference_root = subplan_reference->getSubplanReferenceRoot();
     auto * common_subplan = typeid_cast<CommonSubplanStep *>(subplan_reference_root->step.get());
     if (!common_subplan)

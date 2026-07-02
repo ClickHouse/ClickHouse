@@ -222,7 +222,8 @@ QueryPlan decorrelateQueryPlan(
         rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
             buffer_header,
             context.query_plan.getRootNode(),
-            context.correlated_subquery.correlated_column_identifiers));
+            context.correlated_subquery.correlated_column_identifiers,
+            /*must_materialize_=*/default_join_kind == DecorrelationJoinKind::LEFT));
         rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
