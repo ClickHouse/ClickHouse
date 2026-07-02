@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-parallel
+# Tag no-parallel: FileLog -> MV streaming latency depends on `BackgroundSchedulePool`
+# scheduling; under heavy parallel load the detection wait can drift past its timeout even
+# with a bounded backoff. Same precedent as `02968_file_log_multiple_read.sh`.
 
 set -eu
 
