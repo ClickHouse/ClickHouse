@@ -857,6 +857,10 @@ static ColumnPtr buildAdditionalFilter(
         required_columns.reserve(required_cols.size());
         auto rhs_pos_it = added_columns.additional_filter_required_rhs_pos.begin();
         auto req_cols_it = required_cols.begin();
+        /// Right-side values are read straight from the stored `ColumnsInfo`, which may be
+        /// `ColumnCompressed` when `enable_join_in_memory_compression` triggered. Route them through the
+        /// same decompressed-blocks cache the output paths use; a transparent pass-through otherwise.
+        DecompressResolver resolve(added_columns.lazy_output);
         for (size_t pos = 0; pos < required_cols.size(); ++pos, ++req_cols_it)
         {
             if (rhs_pos_it != added_columns.additional_filter_required_rhs_pos.end() && pos == rhs_pos_it->first)
@@ -867,7 +871,8 @@ static ColumnPtr buildAdditionalFilter(
                 auto col = req_col.type->createColumn();
                 for (const auto & selected_row : selected_rows)
                 {
-                    const auto [src_col, row_pos] = getBlockColumnAndRow(selected_row, rhs_pos_it->second);
+                    const auto [src_col, row_pos]
+                        = getColumnAndRow(*resolve(selected_row->columns_info), selected_row->row_num, rhs_pos_it->second);
                     col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);

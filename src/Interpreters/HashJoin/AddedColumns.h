@@ -6,6 +6,8 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -53,6 +55,11 @@ struct LazyOutput
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
     size_t join_data_avg_perkey_rows = 0;
+
+    /// Set when the join compressed its stored right-side blocks (`enable_join_in_memory_compression`).
+    /// In that case stored `ColumnsInfo` must be decompressed (via `join->getDecompressedColumns`) before reading.
+    const HashJoin * join = nullptr;
+    bool have_compressed = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
     size_t getRowCount() const { return row_count; }
@@ -104,6 +111,38 @@ struct LazyOutput
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
 
 private:
+};
+
+/// Translates a stored (possibly compressed) `ColumnsInfo` pointer to one that can be read directly.
+/// When the join compressed its right-side blocks, decompressed blocks are fetched from the join's cache
+/// and kept alive in `held` for as long as this resolver lives (i.e. while the output is being built).
+/// When compression is off, it is a transparent pass-through with no overhead.
+struct DecompressResolver
+{
+    const HashJoin * join;
+    const bool active;
+    std::vector<DecompressedColumnsPtr> held;
+    std::unordered_map<const ColumnsInfo *, const ColumnsInfo *> resolved;
+
+    explicit DecompressResolver(const LazyOutput & lazy_output)
+        : join(lazy_output.join), active(lazy_output.have_compressed)
+    {
+    }
+
+    const ColumnsInfo * operator()(const ColumnsInfo * columns_info)
+    {
+        if (!active || columns_info == nullptr)
+            return columns_info;
+
+        auto [it, inserted] = resolved.try_emplace(columns_info, nullptr);
+        if (inserted)
+        {
+            auto decompressed = join->getDecompressedColumns(columns_info);
+            it->second = decompressed.get();
+            held.push_back(std::move(decompressed));
+        }
+        return it->second;
+    }
 };
 
 template <bool lazy>
@@ -178,6 +217,9 @@ public:
             if (columns[j]->isNullable() && !saved_column->isNullable())
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
+
+        lazy_output.join = &join;
+        lazy_output.have_compressed = join.haveCompressed();
     }
 
     size_t size() const { return columns.size(); }
@@ -272,6 +314,10 @@ private:
 
     void checkColumns(const Columns & to_check)
     {
+        /// When stored blocks are compressed, `to_check` holds ColumnCompressed placeholders whose type
+        /// differs from the destination columns; the consistency check is decompression-unaware, so skip it.
+        if (lazy_output.have_compressed)
+            return;
         for (size_t j = 0; j < lazy_output.right_indexes.size(); ++j)
         {
             const auto * column_from_block = to_check.at(lazy_output.right_indexes[j]).get();
@@ -320,6 +366,6 @@ private:
     }
 };
 
-std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
+std::pair<const IColumn *, size_t> getColumnAndRow(const ColumnsInfo & columns_info, size_t row_num, size_t column_index);
 
 }

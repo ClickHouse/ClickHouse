@@ -112,6 +112,15 @@ public:
     /// Check if already serialized
     bool isSerialized() const;
 
+    /// Serialize the plan for a receiver that supports query plan serialization up to `receiver_version`.
+    /// Reuses the cached serialization (see `ensureSerialized`) when it is compatible with the receiver,
+    /// and otherwise re-serializes on the fly at the receiver's version. This is what keeps the
+    /// pre-serialized parallel-replicas path version-correct in a mixed-version (rolling-upgrade) cluster:
+    /// the same cached plan is sent to connections with different negotiated versions, and a peer that
+    /// only understands an older version must get a stream at that version (with newer settings omitted)
+    /// instead of the cached newer-versioned stream, which it would reject.
+    void serializeForReceiver(WriteBuffer & out, size_t receiver_version) const;
+
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
@@ -209,6 +218,9 @@ private:
     /// Cached serialized representation
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
     mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+    /// The plan serialization version `serialized_plan` above was actually written at, used by
+    /// `serializeForReceiver` to decide whether the cache can be reused for a given receiver.
+    mutable UInt64 serialized_version = 0;
 };
 
 /// This is a structure which contains a query plan and a list of sets.

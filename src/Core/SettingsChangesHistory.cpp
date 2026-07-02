@@ -51,6 +51,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"enable_join_in_memory_compression", false, false, "New setting to compress right-side blocks of hash-based joins under memory pressure."},
+            {"join_decompressed_columns_cache_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting controlling the size of the decompressed right-side blocks cache used by enable_join_in_memory_compression."},
             {"text_index_lazy_intersection_density_threshold", 0.2, 0.2, "Renamed from `text_index_density_threshold` (kept as an alias); selects the posting list intersection algorithm in lazy posting list apply mode."},
             {"allow_experimental_text_index_lazy_apply", false, true, "Lazy posting list apply mode for the text index is no longer experimental; the setting is now obsolete and has no effect (lazy mode is selected via `text_index_posting_list_apply_mode = 'lazy'`)."},
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},

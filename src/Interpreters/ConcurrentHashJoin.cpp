@@ -779,6 +779,12 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
             getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
 
+            /// The merged slot 0 now holds slot i's stored columns; if those were compressed
+            /// (`enable_join_in_memory_compression`), slot 0 must decompress them at probe time even
+            /// when slot 0 itself did not compress, so propagate the flag.
+            if (hash_joins[i]->data->haveCompressed())
+                hash_joins[0]->data->setHaveCompressed(true);
+
             getData(hash_joins[i])->allocated_size = 0;
             getData(hash_joins[i])->rows_to_join = 0;
             getData(hash_joins[i])->keys_to_join = 0;

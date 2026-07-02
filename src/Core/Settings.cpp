@@ -3555,6 +3555,18 @@ Minimal count of rows to compress block in CROSS JOIN. Zero value means - disabl
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
+    DECLARE(Bool, enable_join_in_memory_compression, false, R"(
+Compress the right-side blocks held in memory by hash-based joins (`hash`, `parallel_hash`, `grace_hash`) when the join is about to exceed its memory budget, instead of only shrinking them.
+
+For `hash` and `parallel_hash`, compression kicks in adaptively, using the same memory-pressure signal as block shrinking: when the join data accounts for more than half of `max_bytes_in_join`, or the query memory growth exceeds half of the query memory limit (`max_memory_usage`). It is therefore only effective when one of these limits is set; without a limit there is no "before out of memory" signal and the right table is never compressed.
+
+For standalone `grace_hash`, compression is applied as a one-time compaction of the active in-memory bucket when it reaches `max_bytes_in_join`, just before that bucket would otherwise be rehashed or spilled to disk. The `max_memory_usage` trigger does not apply to a `grace_hash` bucket, and blocks inserted into the bucket after it has been compacted are not compressed again.
+
+This trades probe-time CPU (right-side blocks must be decompressed on the fly, with a bounded cache controlled by `join_decompressed_columns_cache_bytes`) for lower peak memory, allowing larger joins to run in memory before reaching an out-of-memory condition or spilling to disk.
+)", 0) \
+    DECLARE(UInt64, join_decompressed_columns_cache_bytes, 128_MiB, R"(
+Maximum size in bytes of the per-join cache of decompressed right-side blocks used when `enable_join_in_memory_compression` is on. The cache avoids decompressing the same block repeatedly during the probe phase. A larger cache reduces decompression work but uses more memory.
+)", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \

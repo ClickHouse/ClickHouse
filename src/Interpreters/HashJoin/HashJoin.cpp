@@ -1,6 +1,7 @@
 #include <any>
 #include <limits>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <base/getL2CacheSize.h>
@@ -42,6 +43,17 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric HashJoinDecompressedColumnsCacheBytes;
+    extern const Metric HashJoinDecompressedColumnsCacheCells;
+}
+
+namespace ProfileEvents
+{
+    extern const Event JoinInMemoryCompressedColumns;
+}
 
 namespace DB
 {
@@ -197,6 +209,10 @@ HashJoin::HashJoin(
     , instance_id(instance_id_)
     , asof_inequality(table_join->getAsofInequality())
     , data(std::make_shared<RightTableData>())
+    , decompressed_columns_cache(
+          CurrentMetrics::HashJoinDecompressedColumnsCacheBytes,
+          CurrentMetrics::HashJoinDecompressedColumnsCacheCells,
+          table_join->joinDecompressedColumnsCacheBytes())
     , tmp_data(table_join_->getTempDataOnDisk())
     , right_sample_block(*right_sample_block_)
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
@@ -739,6 +755,28 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t num_rows, bool 
     return addBlockToJoin(materialized, ScatteredBlock::Selector(rows), check_limits);
 }
 
+namespace
+{
+/// Per-column compaction used under memory pressure when `enable_join_in_memory_compression` is on.
+/// A column is kept in compressed form only when compression shrinks its data by at least 10%;
+/// otherwise it is just shrunk to fit. This keeps barely- or in-compressible columns directly readable,
+/// so they incur no probe-time decompression cost (and `have_compressed` stays false if nothing helped).
+ColumnPtr compressColumnIfWorthwhile(const ColumnPtr & column, bool & compressed_any)
+{
+    auto compressed = column->compress(/*force_compression=*/true);
+    /// `byteSize` is the actual data size; comparing the compressed footprint against it (rather than
+    /// against the possibly over-allocated `allocatedBytes`) measures real data compressibility, since
+    /// `cloneResized` already reclaims over-allocation for free.
+    if (compressed->allocatedBytes() * 10 <= column->byteSize() * 9)
+    {
+        compressed_any = true;
+        ProfileEvents::increment(ProfileEvents::JoinInMemoryCompressedColumns);
+        return compressed;
+    }
+    return column->cloneResized(column->size());
+}
+}
+
 bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits)
 {
     if (!data)
@@ -807,7 +845,13 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    if (shrink_blocks)
+
+    /// Once the join hits memory pressure, new blocks are compacted on insertion too. With
+    /// `enable_join_in_memory_compression`, compaction means compression (a stronger form of shrinking)
+    /// for hash-family joins; it is applied below, after the structure check, since compressed columns
+    /// would not pass it. Otherwise just shrink here.
+    const bool compress_on_insert = shrink_blocks && kind != JoinKind::Cross && table_join->enableJoinInMemoryCompression();
+    if (shrink_blocks && !compress_on_insert)
         block_to_save = block_to_save.shrinkToFit();
 
     size_t max_bytes_in_join = table_join->sizeLimits().max_bytes;
@@ -845,6 +889,15 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             chassert(rows == block.rows()); /// We don't run parallel_hash for cross join
             block_to_save = block_to_save.compress();
             have_compressed = true;
+        }
+        else if (compress_on_insert)
+        {
+            /// Compress each column only when it is worthwhile (>= 10% smaller), otherwise shrink it.
+            for (size_t i = 0; i < block_to_save.columns(); ++i)
+            {
+                auto & elem = block_to_save.getByPosition(i);
+                elem.column = compressColumnIfWorthwhile(elem.column, have_compressed);
+            }
         }
 
         doDebugAsserts();
@@ -977,8 +1030,37 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+size_t DecompressedColumnsWeightFunction::operator()(const ColumnsInfo & info) const
+{
+    size_t res = 0;
+    for (const auto & column : info.columns)
+        res += column->allocatedBytes();
+    return res;
+}
+
+DecompressedColumnsPtr HashJoin::getDecompressedColumns(const ColumnsInfo * compressed) const
+{
+    auto [res, _] = decompressed_columns_cache.getOrSet(
+        compressed,
+        [&]
+        {
+            Columns decompressed;
+            decompressed.reserve(compressed->columns.size());
+            for (const auto & column : compressed->columns)
+                decompressed.push_back(column->decompress());
+            return std::make_shared<ColumnsInfo>(std::move(decompressed));
+        });
+    return res;
+}
+
 void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize)
 {
+    /// Stored blocks are already compacted (some columns are `ColumnCompressed`, which cannot be
+    /// `cloneResized`). Nothing more to do, and re-running would be unsafe. This also guards the
+    /// `force_optimize` path (`StorageJoin::optimize`) from touching already-compressed data.
+    if (have_compressed)
+        return;
+
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
     Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
@@ -1001,9 +1083,15 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
             return;
     }
 
+    /// With `enable_join_in_memory_compression`, the response to memory pressure is to compress the stored
+    /// blocks (a stronger form of compaction than shrinking), trading probe-time decompression for lower
+    /// peak memory. CROSS JOIN keeps its own dedicated, threshold-based compression path.
+    const bool compress_in_memory = kind != JoinKind::Cross && table_join->enableJoinInMemoryCompression();
+
     LOG_DEBUG(
         log,
-        "Shrinking stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
+        "{} stored blocks, memory consumption is {} {} calculated by join, {} {} by memory tracker",
+        compress_in_memory ? "Compressing" : "Shrinking",
         ReadableSize(total_bytes_in_join),
         max_total_bytes_in_join ? fmt::format("/ {}", ReadableSize(max_total_bytes_in_join)) : "",
         ReadableSize(query_memory_usage_delta),
@@ -1018,9 +1106,9 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
         try
         {
             for (auto & column : stored_columns.columns_info.columns)
-                column = column->cloneResized(column->size());
+                column = compress_in_memory ? compressColumnIfWorthwhile(column, have_compressed) : column->cloneResized(column->size());
 
-            /// `cloneResized` replaces each column with a new object.
+            /// `cloneResized`/`compress` replaces each column with a new object.
             /// The raw pointers in `replicated_columns` pointed at the old objects and are now dangling.
             stored_columns.columns_info.rebuildReplicatedColumns();
         }
@@ -1510,6 +1598,39 @@ void HashJoin::updateNonJoinedRowsStatus()
     has_non_joined_rows_checked = true;
 }
 
+namespace
+{
+
+/// Resolves stored (possibly compressed) `ColumnsInfo` pointers to decompressed ones when the join
+/// compressed its right-side blocks, keeping the decompressed blocks alive while it is in scope.
+/// Used by the non-joined-rows streams (RIGHT/FULL JOIN) which read stored columns directly.
+struct NonJoinedDecompressResolver
+{
+    const HashJoin & join;
+    const bool active;
+    std::vector<DecompressedColumnsPtr> held;
+    std::unordered_map<const ColumnsInfo *, const ColumnsInfo *> resolved;
+
+    explicit NonJoinedDecompressResolver(const HashJoin & join_) : join(join_), active(join_.haveCompressed()) { }
+
+    const ColumnsInfo * operator()(const ColumnsInfo * columns_info)
+    {
+        if (!active || columns_info == nullptr)
+            return columns_info;
+
+        auto [it, inserted] = resolved.try_emplace(columns_info, nullptr);
+        if (inserted)
+        {
+            auto decompressed = join.getDecompressedColumns(columns_info);
+            it->second = decompressed.get();
+            held.push_back(std::move(decompressed));
+        }
+        return it->second;
+    }
+};
+
+}
+
 template <typename Mapped>
 struct CollectorNonJoined
 {
@@ -1620,12 +1741,14 @@ private:
         auto end = columns.end();
 
         size_t rows_added = 0;
+        NonJoinedDecompressResolver resolve(parent);
         for (; block_it != end; ++block_it)
         {
-            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, block_it->columns_info.columns.at(0)->size() - current_block_start);
+            const ColumnsInfo & columns_info = *resolve(&block_it->columns_info);
+            size_t rows_from_block = std::min<size_t>(max_block_size - rows_added, columns_info.columns.at(0)->size() - current_block_start);
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                if (const auto * replicated_column = block_it->columns_info.replicated_columns[j])
+                if (const auto * replicated_column = columns_info.replicated_columns[j])
                 {
                     size_t current_block_end = current_block_start + rows_from_block;
                     for (size_t row = current_block_start; row < current_block_end; ++row)
@@ -1633,7 +1756,7 @@ private:
                 }
                 else
                 {
-                    const auto & col = block_it->columns_info.columns[j];
+                    const auto & col = columns_info.columns[j];
                     columns_right[j]->insertRangeFrom(*col, current_block_start, rows_from_block);
                 }
             }
@@ -1643,7 +1766,7 @@ private:
             {
                 /// How many rows have been read
                 current_block_start += rows_from_block;
-                if (block_it->columns_info.columns.at(0)->size() <= current_block_start)
+                if (columns_info.columns.at(0)->size() <= current_block_start)
                 {
                     /// current block was fully read
                     ++block_it;
@@ -1778,6 +1901,12 @@ private:
             }
         }
 
+        /// If stored blocks were compressed, swap the collected pointers for decompressed views.
+        NonJoinedDecompressResolver resolve(parent);
+        if (resolve.active)
+            for (auto & columns_info : many_columns)
+                columns_info = resolve(columns_info);
+
         for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
             columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
 
@@ -1818,6 +1947,12 @@ private:
                 }
             }
         }
+
+        /// If stored blocks were compressed, swap the collected pointers for decompressed views.
+        NonJoinedDecompressResolver resolve(parent);
+        if (resolve.active)
+            for (auto & columns_info : many_columns)
+                columns_info = resolve(columns_info);
 
         for (size_t j = 0; j < columns_keys_and_right.size(); ++j)
             columns_keys_and_right[j]->fillFromBlocksAndRowNumbers(j, columns_with_row_numbers);
@@ -1900,11 +2035,18 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+    auto extract_source_blocks = [this](ScatteredColumnsList && columns_list, const Block & sample_block)
     {
         BlocksList result;
         for (auto & columns : columns_list)
         {
+            /// Stored columns may be `ColumnCompressed` (when `enable_join_in_memory_compression` triggered).
+            /// The released blocks are handed to another algorithm (grace_hash bucket rehash, switching to
+            /// `GraceHashJoin`, spilling), which reads them as ordinary columns, so decompress here.
+            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+            if (have_compressed)
+                for (auto & column : columns.columns_info.columns)
+                    column = column->decompress();
             Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
             /// When used with ConcurrentHashJoin, each slot stores full original block columns
             /// with a selector indicating which rows belong to that slot. Apply the selector
@@ -1949,6 +2091,11 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         {
             auto column = data->sample_block.getByPosition(positions[i]);
             column.column = saved_columns.columns_info.columns[positions[i]];
+            /// Decompress stored columns before handing the restructured blocks to another algorithm
+            /// (e.g. `JoinSwitcher` switching to `MergeJoin`), which reads them as ordinary columns.
+            /// `decompress` is a cheap no-op for columns that were only shrunk (not compressed).
+            if (have_compressed)
+                column.column = column.column->decompress();
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
@@ -2134,7 +2281,10 @@ bool HashJoin::rightTableCanBeReranged() const
     return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
         && strictness == JoinStrictness::All && data && !data->sorted && !data->columns.empty() && data->maps.size() == 1
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
-        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
+        && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows()
+        /// Reranging physically rebuilds the stored value columns into ColumnReplicated form, which is
+        /// incompatible with compressed (ColumnCompressed) blocks. Skip it when blocks were compressed.
+        && !have_compressed;
 }
 
 size_t HashJoin::getAndSetRightTableKeys() const
