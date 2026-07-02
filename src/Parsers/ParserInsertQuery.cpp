@@ -280,10 +280,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// limits/context.
         if (has_returning && s_settings.ignore(pos, expected))
         {
-            if (settings_ast)
-                throw Exception(ErrorCodes::SYNTAX_ERROR,
-                                "You have SETTINGS both before and after the source SELECT, this is not allowed.");
-
             ParserSetQuery parser_settings(true);
             if (!parser_settings.parse(pos, source_select_settings_ast, expected))
                 return false;
