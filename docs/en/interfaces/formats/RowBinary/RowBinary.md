@@ -1221,10 +1221,10 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 Syntax:
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension. The optional `stride` only controls how the bit planes are grouped into storage streams server-side; it does not affect the RowBinary wire format, which is always the full array of `dimension` elements.
 
 Wire format: identical to `Array(element_type)`:
 

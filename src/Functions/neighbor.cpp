@@ -243,6 +243,7 @@ The function can be enabled by setting `allow_deprecated_error_prone_window_func
         {
             "Usage example",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
             )",
             R"(
@@ -263,6 +264,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
         {
             "With default value",
             R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
             )",
             R"(

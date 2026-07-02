@@ -35,8 +35,12 @@ public:
 
     String getSignatureString() const override
     {
-        /// Enforce same exact Float type across the 4 coordinate args via type variables.
-        return "(T : Float, T : Float, T : Float, T : Float, UInt8) -> Array(String)";
+        /// Enforce the same exact native Float type across the 4 coordinate args via a shared
+        /// type variable. The matcher is `NativeFloat` (Float32 or Float64), not `Float`, because
+        /// only Float32 and Float64 have an `execute` specialization; a `BFloat16` coordinate —
+        /// which `Float` would admit — must be rejected with a clean `ILLEGAL_TYPE_OF_ARGUMENT`
+        /// rather than reaching the dispatch below and raising a `LOGICAL_ERROR`.
+        return "(T : NativeFloat, T : NativeFloat, T : NativeFloat, T : NativeFloat, UInt8) -> Array(String)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -147,7 +151,10 @@ public:
         const IColumn * precision = arguments[4].column.get();
         ColumnPtr res;
 
-        if (checkColumn<ColumnVector<Float32>>(lon_min))
+        // Dispatch on the declared argument type, not the runtime column class: a constant
+        // coordinate stays wrapped in ColumnConst when the call mixes const and non-const
+        // arguments, so checkColumn<ColumnVector<...>> on the raw column would misclassify it.
+        if (WhichDataType(arguments[0].type).isFloat32())
             execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
         else
             execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
