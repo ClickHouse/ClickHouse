@@ -18,9 +18,11 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IStoragePolicy.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
@@ -173,9 +175,14 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     {
         if (object_storage->exists(StoredObject(relative_path_with_metadata.relative_path)))
         {
-            auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
-            String hint_version_string;
-            readStringUntilEOF(hint_version_string, *buf);
+            /// Read the hint atomically, not via createReadBuffer(): a concurrent writer
+            /// rewrites this file, and createReadBuffer's AsynchronousBoundedReadBuffer caches
+            /// the file size at open and aborts when a later read passes it (chassert in nextImpl).
+            auto hint_data = object_storage->readSmallObjectAndGetObjectMetadata(
+                StoredObject(relative_path_with_metadata.relative_path),
+                getContext()->getReadSettings(),
+                PAIMON_MAX_HINT_FILE_SIZE);
+            const String & hint_version_string = hint_data.data;
             {
                 auto [_, ec]
                     = std::from_chars(hint_version_string.data(), hint_version_string.data() + hint_version_string.size(), snapshot_version);
