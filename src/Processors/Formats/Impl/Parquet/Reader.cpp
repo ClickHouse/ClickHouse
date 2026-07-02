@@ -1014,18 +1014,25 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     bool has_dictionary_data_page = false;
     for (const parq::PageEncodingStats & s : column_meta.meta_data.encoding_stats)
     {
-        /// These fields come from Thrift metadata, so a malformed file can carry out-of-range enum
-        /// values just like `PageHeader` can. Validate them before comparing: `checkThriftEnum` reads
-        /// the underlying integer via `memcpy`, avoiding the `-fsanitize=enum` undefined behavior of
-        /// loading an out-of-range enumerator, and rejects malformed metadata as `INCORRECT_DATA`.
-        checkThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES, "page type");
-        checkThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
+        /// An empty entry (`count == 0`) describes no pages, so nothing about it - neither its
+        /// `page_type` nor its `encoding` - is relevant to eligibility. Skip it before validating those
+        /// Thrift enums, otherwise a garbage enum value on an advisory empty entry would turn a file
+        /// that reads fine (with a full scan) into a hard `INCORRECT_DATA` failure under the default-on
+        /// dictionary filter. A negative count is genuine corruption, not an empty page, so it is
+        /// rejected; `count` is a plain integer, so reading it needs no enum validation.
         if (s.count < 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Negative page count in Parquet metadata");
-        if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
-            continue;
         if (s.count == 0)
             continue;
+        /// The remaining fields come from Thrift metadata, so a malformed file can carry out-of-range
+        /// enum values just like `PageHeader` can. Validate each one right before comparing it:
+        /// `checkThriftEnum` reads the underlying integer via `memcpy`, avoiding the `-fsanitize=enum`
+        /// undefined behavior of loading an out-of-range enumerator, and rejects malformed metadata as
+        /// `INCORRECT_DATA`.
+        checkThriftEnum(s.page_type, parq::_PageType_VALUES_TO_NAMES, "page type");
+        if (s.page_type != parq::PageType::DATA_PAGE && s.page_type != parq::PageType::DATA_PAGE_V2)
+            continue;
+        checkThriftEnum(s.encoding, parq::_Encoding_VALUES_TO_NAMES, "encoding");
         if (s.encoding != parq::Encoding::PLAIN_DICTIONARY && s.encoding != parq::Encoding::RLE_DICTIONARY)
             return false;
         has_dictionary_data_page = true;
