@@ -20,6 +20,12 @@ public:
     ASTPtr clone() const override;
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
+    /// The selected `setting_name` is a plain member, not part of `children`, and `getID` is a
+    /// constant. Fold it into the hash so the rewrite-rule matcher (which treats an equal tree hash
+    /// as semantic equality) does not let a rule template for `SHOW SETTING a` over-match
+    /// `SHOW SETTING b`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
