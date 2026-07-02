@@ -1,0 +1,6 @@
+ClickHouse <span class="accent">Reference</span>
+so drop a trailing slash before stripping the extension.
+'dictionaries': '/sql-reference/dictionaries',
+'merge-tree-settings': '/operations/settings/merge-tree-settings',
+1
+1

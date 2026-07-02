@@ -7,6 +7,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import (
     PostgresManager,
+    assert_number_of_columns,
     check_several_tables_are_synchronized,
     check_tables_are_synchronized,
     get_postgres_conn,
@@ -1031,6 +1032,69 @@ def test_use_extended_date_and_time_types_setting_alter_database_atomic(started_
 
     pg_manager.drop_materialized_db()
     cursor.execute("DROP TABLE IF EXISTS test_alter_atomic_date_types")
+
+
+def test_table_schema_changed_while_server_down(started_cluster):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/66273:
+    # when the structure of a replicated PostgreSQL table changes while it is not observed
+    # through the replication stream (e.g. the change happens and then the server restarts),
+    # MaterializedPostgreSQL used to abort startup of the whole database with
+    # `LOGICAL_ERROR: Columns number mismatch`, stopping replication of *all* tables.
+    # Now only the affected table is skipped, the rest keep replicating, and the affected
+    # table can be brought back with DETACH/ATTACH.
+    NUM_TABLES = 3
+    pg_manager.create_and_fill_postgres_tables(NUM_TABLES, numbers=10)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_several_tables_are_synchronized(instance, NUM_TABLES)
+
+    # Change the structure of one table in PostgreSQL and restart ClickHouse, so that the
+    # change is detected during startup rather than through the replication stream.
+    pg_manager.execute("ALTER TABLE postgresql_replica_0 ADD COLUMN col_added integer")
+    instance.restart_clickhouse()
+
+    # The other tables must keep replicating despite the structure mismatch on replica_0.
+    for i in range(1, NUM_TABLES):
+        instance.query(
+            f"INSERT INTO postgres_database.postgresql_replica_{i} SELECT number, number from numbers(10, 10)"
+        )
+    for i in range(1, NUM_TABLES):
+        check_tables_are_synchronized(instance, f"postgresql_replica_{i}")
+
+    # Write to the affected table while it is skipped. The consumer observes its `Relation` message,
+    # finds no storage for it, and puts the table into the internal skip list (an empty start-LSN
+    # entry keyed by the PostgreSQL relation id). The DETACH/ATTACH recovery below must clear that
+    # entry, otherwise replication of the table would stay blocked forever after recovery.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(100, 5)"
+    )
+    # Wait until the table is actually marked as skipped in the replication stream, so the recovery
+    # really exercises the stale-skip-list path rather than winning a benign race.
+    instance.wait_for_log_line(
+        "postgresql_replica_0 is skipped from replication stream", timeout=60
+    )
+
+    # The affected table is recoverable with DETACH/ATTACH (it picks up the new structure).
+    instance.query("DETACH TABLE test_database.postgresql_replica_0 PERMANENTLY")
+    instance.query("ATTACH TABLE test_database.postgresql_replica_0")
+    assert_number_of_columns(instance, 3, "postgresql_replica_0")
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    # Prove that replication really resumes for the recovered table: a write that happens *after*
+    # ATTACH must be replicated. Without clearing the stale skip-list entry, this insert would be
+    # skipped indefinitely and the tables would never converge.
+    instance.query(
+        "INSERT INTO postgres_database.postgresql_replica_0 (key, value, col_added) SELECT number, number, number from numbers(200, 5)"
+    )
+    check_tables_are_synchronized(instance, "postgresql_replica_0")
+
+    pg_manager.drop_materialized_db()
 
 
 def test_numeric_to_int256(started_cluster):
