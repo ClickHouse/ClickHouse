@@ -3162,15 +3162,9 @@ CONV_FN(ColumnDef, cdf)
     }
 }
 
-CONV_FN(IndexDef, idef)
+/// The `TYPE type(params) [GRANULARITY n]` tail shared by table indexes and hypothetical indexes
+static void IndexDefTypeToString(String & ret, const IndexDef & idef)
 {
-    ret += "INDEX ";
-    if (idef.has_idx())
-    {
-        SQLIdentifierToString(ret, idef.idx());
-        ret += " ";
-    }
-    ExprToString(ret, idef.expr());
     ret += " TYPE ";
     ret += IndexType_Name(idef.type()).substr(4);
     if (idef.params_size())
@@ -3191,6 +3185,18 @@ CONV_FN(IndexDef, idef)
         ret += " GRANULARITY ";
         ret += std::to_string(idef.granularity());
     }
+}
+
+CONV_FN(IndexDef, idef)
+{
+    ret += "INDEX ";
+    if (idef.has_idx())
+    {
+        SQLIdentifierToString(ret, idef.idx());
+        ret += " ";
+    }
+    ExprToString(ret, idef.expr());
+    IndexDefTypeToString(ret, idef);
 }
 
 CONV_FN(ProjectionSelectDef, psdef)
@@ -3543,6 +3549,7 @@ CONV_FN(SQLObjectName, son)
         case SQLObjectNameType::kDatabase: SQLIdentifierToString(ret, son.database()); break;
         case SQLObjectNameType::kFunction: SQLIdentifierToString(ret, son.function()); break;
         case SQLObjectNameType::kPolicy: SQLIdentifierToString(ret, son.policy()); break;
+        case SQLObjectNameType::kIndex: SQLIdentifierToString(ret, son.index()); break;
         default: ret += "t0";
     }
 }
@@ -3553,6 +3560,8 @@ static String SQLObjectToString(const SQLObject obj)
         return "ROW POLICY";
     if (obj == SQLObject::MASKING_POLICY)
         return "MASKING POLICY";
+    if (obj == SQLObject::HYPOTHETICAL_INDEX)
+        return "HYPOTHETICAL INDEX";
     return SQLObject_Name(obj);
 }
 
@@ -3561,6 +3570,11 @@ CONV_FN(Drop, dt)
     const bool is_table = dt.sobject() == SQLObject::TABLE;
 
     ret += "DROP ";
+    if (dt.sobject() == SQLObject::HYPOTHETICAL_INDEX && dt.all())
+    {
+        ret += "ALL HYPOTHETICAL INDEXES";
+        return;
+    }
     if ((is_table || dt.sobject() == SQLObject::VIEW) && dt.is_temp())
     {
         ret += "TEMPORARY ";
@@ -3585,7 +3599,9 @@ CONV_FN(Drop, dt)
     {
         ClusterToString(ret, true, dt.cluster());
     }
-    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY) && dt.has_target())
+    if ((dt.sobject() == SQLObject::ROW_POLICY || dt.sobject() == SQLObject::MASKING_POLICY
+         || dt.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+        && dt.has_target())
     {
         ret += " ON ";
         ExprSchemaTableToString(ret, dt.target());
@@ -3954,6 +3970,7 @@ CONV_FN(Exchange, et)
         case SQLObject::FUNCTION: ret += "FUNCTIONS"; break;
         case SQLObject::ROW_POLICY: ret += "ROW POLICIES"; break;
         case SQLObject::MASKING_POLICY: ret += "MASKING POLICIES"; break;
+        case SQLObject::HYPOTHETICAL_INDEX: ret += "HYPOTHETICAL INDEXES"; break;
     }
     ret += " ";
     SQLObjectNameToString(ret, et.object1());
@@ -5793,6 +5810,31 @@ CONV_FN(CreatePolicy, cp)
     }
 }
 
+CONV_FN(CreateHypotheticalIndex, hi)
+{
+    const IndexDef & idef = hi.create_def();
+
+    ret += "CREATE HYPOTHETICAL INDEX ";
+    if (hi.if_not_exists())
+    {
+        ret += "IF NOT EXISTS ";
+    }
+    if (idef.has_idx())
+    {
+        SQLIdentifierToString(ret, idef.idx());
+    }
+    else
+    {
+        ret += "i0";
+    }
+    ret += " ON ";
+    ExprSchemaTableToString(ret, hi.est());
+    ret += " (";
+    ExprToString(ret, idef.expr());
+    ret += ")";
+    IndexDefTypeToString(ret, idef);
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5827,6 +5869,7 @@ CONV_FN(SQLQueryInner, query)
         case QueryType::kShow: ShowStatementToString(ret, query.show()); break;
         case QueryType::kCreatePolicy: CreatePolicyToString(ret, query.create_policy()); break;
         case QueryType::kSnapshotQuery: SnapshotQueryToString(ret, query.snapshot_query()); break;
+        case QueryType::kCreateHypoIndex: CreateHypotheticalIndexToString(ret, query.create_hypo_index()); break;
         default: ret += "SELECT 1";
     }
 }

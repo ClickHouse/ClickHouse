@@ -1946,6 +1946,7 @@ enum SQLObject {
     VIEW = 5;
     ROW_POLICY = 6;
     MASKING_POLICY = 7;
+    HYPOTHETICAL_INDEX = 8;
 }
 
 message SQLObjectName {
@@ -1954,6 +1955,7 @@ message SQLObjectName {
         SQLIdentifier database = 2;
         SQLIdentifier function = 3;
         SQLIdentifier policy = 4;
+        SQLIdentifier index = 5;
     }
 }
 
@@ -1968,6 +1970,8 @@ message Drop {
     optional ExprSchemaTable target = 8;
     optional bool sync = 9;
     optional SettingValues setting_values = 10;
+    /// DROP ALL HYPOTHETICAL INDEXES
+    optional bool all = 11;
 }
 
 message InsertFromFile {
@@ -2839,6 +2843,12 @@ message CreatePolicy {
     }
 }
 
+message CreateHypotheticalIndex {
+    required IndexDef create_def = 1;
+    required ExprSchemaTable est = 2;
+    optional bool if_not_exists = 3;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -2867,6 +2877,7 @@ message SQLQueryInner {
         ShowStatement show = 24;
         CreatePolicy create_policy = 25;
         SnapshotQuery snapshot_query = 26;
+        CreateHypotheticalIndex create_hypo_index = 27;
     }
 }
 
@@ -2895,6 +2906,8 @@ message ExplainOption {
         input_headers = 21;
         column_structure = 22;
         pretty = 23;
+        empirical = 24;
+        compact_repeated_processor_chains = 25;
     }
     required ExplainOpt opt = 1;
     required uint32 val = 2;
@@ -2910,6 +2923,7 @@ message ExplainQuery {
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
         CURRENT_TRANSACTION = 8;
+        WHATIF = 9;
     }
     optional string execute_as = 1;
     optional bool is_explain = 2;

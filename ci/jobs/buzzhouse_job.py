@@ -203,6 +203,7 @@ def main():
         "max_dictionaries": random.randint(0, 10),
         "max_functions": random.randint(0, 8),
         "max_policies": random.randint(0, 8),
+        "max_hypotheticals": random.randint(0, 8),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, max_nested_rows),

@@ -455,6 +455,9 @@ public:
     std::unordered_map<String, SQLColumn> cols;
     std::unordered_map<String, SQLColumn> staged_cols;
     std::unordered_map<String, String> frozen_partitions;
+    /// Names of hypothetical (WHAT-IF) indexes created on this table. They are session
+    /// scoped on the server, so this is best effort only.
+    std::unordered_set<String> hypothetical_indexes;
 
     SQLTable()
         : SQLBase("t")

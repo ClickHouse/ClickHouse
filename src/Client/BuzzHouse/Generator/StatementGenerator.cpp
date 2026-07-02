@@ -72,7 +72,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// Kill
               {0.01, 0.08}, /// ShowStatement
               {0.02, 0.08}, /// CreatePolicy
-              {0.01, 0.15} /// SnapshotQuery
+              {0.01, 0.15}, /// SnapshotQuery
+              {0.01, 0.08} /// CreateHypotheticalIndex
           }},
           "SQL statements"))
     , litGen(ProbabilityGenerator(
@@ -171,7 +172,7 @@ StatementGenerator::StatementGenerator(
               {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))
-    , SQLMask(static_cast<size_t>(SQLOp::SnapshotQuery) + 1, true)
+    , SQLMask(static_cast<size_t>(SQLOp::CreateHypotheticalIndex) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::LitAccurateCast) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
@@ -757,6 +758,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
     const uint32_t drop_policy = 1 * static_cast<uint32_t>(policies.size() > 3);
+    const uint32_t drop_hypothetical_index = 2 * static_cast<uint32_t>(totalHypotheticalIndexes() > 3);
     std::optional<String> cluster;
 
     rg.pickWeighted(
@@ -825,9 +827,34 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
               {
                   dp->mutable_target()->mutable_table()->set_value(rp.table_key);
               }
+          }},
+         {drop_hypothetical_index,
+          [&]
+          {
+              dp->set_sobject(SQLObject::HYPOTHETICAL_INDEX);
+              if (!collectionHas<SQLTable>(attached_tables_for_drop_hypothetical_index) || rg.nextMediumNumber() < 8)
+              {
+                  /// DROP ALL HYPOTHETICAL INDEXES. The `object` field is required by the proto, but not rendered for this statement.
+                  dp->set_all(true);
+                  sot->mutable_index()->set_value("i0");
+              }
+              else
+              {
+                  /// Hypothetical indexes are session scoped on the server, so the tracked names are
+                  /// best effort: the index may no longer exist on the server.
+                  const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables_for_drop_hypothetical_index));
+
+                  dp->set_if_exists(rg.nextSmallNumber() < 7);
+                  sot->mutable_index()->set_value(rg.pickRandomly(t.hypothetical_indexes));
+                  t.setName(dp->mutable_target(), false);
+              }
           }}});
-    setClusterClause(rg, cluster, dp->mutable_cluster());
-    if (dp->sobject() != SQLObject::FUNCTION && dp->sobject() != SQLObject::ROW_POLICY && dp->sobject() != SQLObject::MASKING_POLICY)
+    if (dp->sobject() != SQLObject::HYPOTHETICAL_INDEX)
+    {
+        setClusterClause(rg, cluster, dp->mutable_cluster());
+    }
+    if (dp->sobject() != SQLObject::FUNCTION && dp->sobject() != SQLObject::ROW_POLICY && dp->sobject() != SQLObject::MASKING_POLICY
+        && dp->sobject() != SQLObject::HYPOTHETICAL_INDEX)
     {
         dp->set_sync(rg.nextSmallNumber() < 3);
         if (rg.nextSmallNumber() < 3)
@@ -3280,7 +3307,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::Drop)] = !in_parallel
         && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
             || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
+            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3 || policies.size() > 3
+            || totalHypotheticalIndexes() > 3);
     SQLMask[static_cast<size_t>(SQLOp::Insert)] = has_tables;
     SQLMask[static_cast<size_t>(SQLOp::LightDelete)] = has_mergeable_mt;
     SQLMask[static_cast<size_t>(SQLOp::Truncate)] = has_databases || has_tables;
@@ -3313,6 +3341,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::ShowStatement)] = !in_parallel;
     SQLMask[static_cast<size_t>(SQLOp::CreatePolicy)]
         = !in_parallel && static_cast<uint32_t>(policies.size()) < this->fc.max_policies && collectionHas<SQLTable>(attached_tables);
+    SQLMask[static_cast<size_t>(SQLOp::CreateHypotheticalIndex)] = collectionHas<SQLTable>(attached_tables_for_create_hypothetical_index);
     SQLGen.setEnabled(SQLMask);
 
     switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time
@@ -3347,6 +3376,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateNextCreatePolicy(rg, !supports_cloud_features || rg.nextBool(), sq->mutable_create_policy());
             break;
         case SQLOp::SnapshotQuery: generateNextSnapshot(rg, sq->mutable_snapshot_query()); break;
+        case SQLOp::CreateHypotheticalIndex: generateNextCreateHypotheticalIndex(rg, sq->mutable_create_hypo_index()); break;
     }
 }
 
@@ -3390,7 +3420,21 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_projections, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_input_headers, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_empirical, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt)};
+
+void StatementGenerator::generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi)
+{
+    /// The drop counterparts are generated by `generateNextDrop`
+    SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables_for_create_hypothetical_index));
+    IndexDef * idef = hi->mutable_create_def();
+
+    addTableIndex(rg, t, false, idef);
+    idef->mutable_idx()->set_value(rg.nextIdentifier("i", this->hindex_counter++, fc.allow_nasty_identifiers));
+    hi->set_if_not_exists(rg.nextSmallNumber() < 4);
+    t.setName(hi->mutable_est(), false);
+}
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3421,7 +3465,11 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                     this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.insert(this->ids.end(), {0, 8, 15, 16});
+                    this->ids.insert(this->ids.end(), {0, 8, 15, 16, 24});
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF:
+                    /// `empirical` is the only supported setting for EXPLAIN WHATIF
+                    this->ids.insert(this->ids.end(), {23});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION: break;
                 default: break;
@@ -3447,7 +3495,15 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             this->ids.clear();
         }
     }
-    generateNextQuery(rg, in_parallel, eq->mutable_inner_query());
+    if (val.has_value() && val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF)
+    {
+        /// Only SELECT is supported for EXPLAIN WHATIF
+        generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select());
+    }
+    else
+    {
+        generateNextQuery(rg, in_parallel, eq->mutable_inner_query());
+    }
 }
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
@@ -3738,9 +3794,34 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->policies.erase(drp.object().policy().value());
         }
+        else if (drp.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+        {
+            if (drp.all())
+            {
+                clearHypotheticalIndexes();
+            }
+            else
+            {
+                const String tkey = getNameFromProto(drp.target().table().value());
+
+                if (this->tables.contains(tkey))
+                {
+                    this->tables.at(tkey).hypothetical_indexes.erase(drp.object().index().value());
+                }
+            }
+        }
         else
         {
             UNREACHABLE();
+        }
+    }
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_create_hypo_index() && success)
+    {
+        const String tkey = getNameFromProto(query.create_hypo_index().est().table().value());
+
+        if (this->tables.contains(tkey))
+        {
+            this->tables.at(tkey).hypothetical_indexes.insert(query.create_hypo_index().create_def().idx().value());
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)

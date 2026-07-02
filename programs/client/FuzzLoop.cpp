@@ -1117,6 +1117,7 @@ bool Client::buzzHouse()
 
                              /// Step 3: Reconnect to reset session back to admin user before running the comparison query.
                              fuzz_config->outf << restart_cmd << std::endl;
+                             gen.clearHypotheticalIndexes();
                              server_up &= fuzzLoopReconnect();
 
                              /// Step 4: SELECT count() FROM db.t [FINAL] WHERE pred INTO OUTFILE — admin user + explicit WHERE predicate.
@@ -1133,6 +1134,7 @@ bool Client::buzzHouse()
                      {
                          fuzz_config->outf << restart_cmd << std::endl;
                          gen.setInTransaction(false);
+                         gen.clearHypotheticalIndexes();
                          server_up &= fuzzLoopReconnect();
                      }},
                     {10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)),

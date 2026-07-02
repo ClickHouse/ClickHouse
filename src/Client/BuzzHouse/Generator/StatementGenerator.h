@@ -198,7 +198,8 @@ private:
     uint32_t aliases_counter = 0;
     uint32_t id_counter = 0;
     uint32_t freeze_counter = 0;
-    std::set<String> freeze_names;
+    uint32_t hindex_counter = 0;
+    std::unordered_set<String> freeze_names;
 
     std::unordered_map<String, std::shared_ptr<SQLDatabase>> staged_databases;
     std::unordered_map<String, std::shared_ptr<SQLDatabase>> databases;
@@ -282,7 +283,8 @@ private:
         Kill,
         ShowStatement,
         CreatePolicy,
-        SnapshotQuery
+        SnapshotQuery,
+        CreateHypotheticalIndex
     };
 
     enum class LitOp
@@ -482,6 +484,17 @@ private:
 
         t.setName(est, false);
         return t.getCluster();
+    }
+
+    uint32_t totalHypotheticalIndexes() const
+    {
+        uint32_t res = 0;
+
+        for (const auto & [_, t] : tables)
+        {
+            res += static_cast<uint32_t>(t.hypothetical_indexes.size());
+        }
+        return res;
     }
 
 public:
@@ -715,6 +728,7 @@ private:
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextSnapshot(RandomGenerator & rg, SnapshotQuery * sq);
+    void generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi);
     void updateGeneratorFromSingleQuery(const SingleSQLQuery & sq, ExternalIntegrations & ei, bool success);
 
     template <typename T>
@@ -876,6 +890,20 @@ public:
     const std::function<bool(const SQLDictionary &)> attached_dictionaries = [](const SQLDictionary & d) { return d.isAttached(); };
     const std::function<bool(const SQLTable &)> has_mergeable_tables
         = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges; };
+    /// Hypothetical (WHAT-IF) indexes are only supported on MergeTree family tables
+    const std::function<bool(const SQLTable &)> attached_tables_for_create_hypothetical_index = [this](const SQLTable & t)
+    { return t.isAttached() && t.isMergeTreeFamily(true) && static_cast<uint32_t>(t.hypothetical_indexes.size()) < fc.max_hypotheticals; };
+    const std::function<bool(const SQLTable &)> attached_tables_for_drop_hypothetical_index
+        = [](const SQLTable & t) { return t.isAttached() && !t.hypothetical_indexes.empty(); };
+
+    /// Hypothetical indexes are session scoped on the server, so they are all gone after a reconnect
+    void clearHypotheticalIndexes()
+    {
+        for (auto & [_, t] : tables)
+        {
+            t.hypothetical_indexes.clear();
+        }
+    }
 
     const std::function<bool(const SQLTable &)> attached_tables_to_test_format = [](const SQLTable & t)
     { return t.isAttached() && !t.isNotTruncableEngine() && t.engine.value != TableEngineValues::GenerateRandom; };

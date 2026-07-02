@@ -381,6 +381,7 @@ public:
     uint32_t max_views = 5;
     uint32_t max_dictionaries = 5;
     uint32_t max_policies = 8;
+    uint32_t max_hypotheticals = 8;
     uint32_t max_columns = 5;
     uint32_t time_to_run = 0;
     uint32_t port = 9000;
