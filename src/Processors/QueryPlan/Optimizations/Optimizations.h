@@ -271,6 +271,12 @@ void enableMemoryBoundMerging(QueryPlan::Node & node);
 /// `make_distributed_plan` conversion — the distributed split has already been decided.
 bool planReadsFromRemote(const QueryPlan::Node & root);
 
+/// Push a serializable `ExpressionStep`/`FilterStep` sitting directly above a `ReadFromRemotePlanStep`
+/// placeholder into the placeholder's inner (per-shard) plan, so the expression/filter executes on the
+/// shards instead of on the initiator. Runs in the same bottom-up traversal as the `tryMakeDistributed*`
+/// rules and before `finalizeReadFromRemotePlan`.
+void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
 /// Replace every `ReadFromRemotePlanStep` placeholder with a `ReadFromRemote` step whose shards
 /// carry the (shared) inner query plan. Runs at the end of the second optimization pass, so
 /// `EXPLAIN PLAN` already shows the final `ReadFromRemote` step.

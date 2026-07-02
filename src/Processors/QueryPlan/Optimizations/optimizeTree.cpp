@@ -338,6 +338,12 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedSorting(frame_node, nodes, optimization_settings);
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
+
+            /// Push serializable Expression/Filter steps into the per-shard plan of a
+            /// `ReadFromRemotePlanStep` placeholder. Gated on the raw setting (not `make_distributed_plan`,
+            /// which is false here because the plan already reads from remote) and runs before finalize.
+            if (optimization_settings.make_distributed_plan)
+                tryPushDownToRemotePlan(frame_node, nodes, optimization_settings);
         });
 
     stack.push_back({.node = &root});

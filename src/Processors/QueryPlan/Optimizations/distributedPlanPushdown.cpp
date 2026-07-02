@@ -5,6 +5,8 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -113,6 +115,46 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
 
     node.step = std::move(read_from_remote);
     node.children.clear();
+}
+
+void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
+{
+    /// Pattern: an `ExpressionStep` or `FilterStep` whose single child is a `ReadFromRemotePlanStep`
+    /// placeholder. Such a step can be evaluated on the shards inside the serialized inner plan.
+    auto * step = node.step.get();
+    if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
+        return;
+
+    if (node.children.size() != 1)
+        return;
+
+    auto * child_node = node.children.front();
+    auto * placeholder = typeid_cast<ReadFromRemotePlanStep *>(child_node->step.get());
+    if (!placeholder)
+        return;
+
+    /// Graceful degradation: only move a step that can be serialized to the shard and that carries no
+    /// correlated expressions (`PLACEHOLDER` action nodes referencing outer-query columns absent on the
+    /// shard). Otherwise leave the step on the initiator.
+    if (!step->isSerializable() || step->hasCorrelatedExpressions())
+        return;
+
+    /// A shard plan that outputs zero columns cannot carry its row count across `ReadFromRemote`:
+    /// an empty block loses `num_rows` over the wire, which would make e.g. `count()` return 0. This
+    /// happens when the pushed step projects everything away (bare `count()` needs no columns). Keep
+    /// such a step on the initiator so the shard still emits at least one column and the initiator does
+    /// the empty projection itself.
+    if (step->getOutputHeader()->columns() == 0)
+        return;
+
+    /// Move the step into the inner (per-shard) plan, then reconnect. Mirrors the
+    /// `ReadFromLocalParallelReplicaStep` idiom in `filterPushDown.cpp`: after the swap the parent node
+    /// holds the placeholder (now carrying the absorbed step) with empty children, and the orphaned node
+    /// stays in the `QueryPlan::Nodes` list harmlessly. Repeated application chains naturally in the
+    /// bottom-up traversal: a `Filter` above an `Expression` above a placeholder absorbs both, one at a
+    /// time, because after each swap the parent's child points at the node now holding the placeholder.
+    placeholder->absorbStep(std::move(node.step));
+    std::swap(node, *child_node);
 }
 
 void finalizeReadFromRemotePlan(QueryPlan::Node & root)
