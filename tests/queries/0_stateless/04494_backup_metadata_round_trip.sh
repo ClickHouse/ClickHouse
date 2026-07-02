@@ -57,8 +57,8 @@ compare "${CLICKHOUSE_DATABASE}.src_from_full" "${CLICKHOUSE_DATABASE}.expected_
 compare "${CLICKHOUSE_DATABASE}.src_from_incr" "${CLICKHOUSE_DATABASE}.src" "incremental"
 
 ${CLICKHOUSE_CLIENT} -m --query "
-DROP TABLE src;
-DROP TABLE expected_full;
-DROP TABLE src_from_full;
-DROP TABLE src_from_incr;
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS expected_full;
+DROP TABLE IF EXISTS src_from_full;
+DROP TABLE IF EXISTS src_from_incr;
 "
