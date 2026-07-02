@@ -46,6 +46,44 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
+### Inserting into a normal view {#inserting-into-a-normal-view}
+
+`INSERT` is supported into a normal view when its definition is a simple column selection from a single table. Inserted rows are forwarded to the underlying table, missing target columns receive their defaults, and column aliases are remapped back to their target names.
+
+```sql
+CREATE TABLE t (a Int32, b String, c Float64 DEFAULT 0.5) ENGINE = MergeTree ORDER BY a;
+
+CREATE VIEW v AS SELECT a, b FROM t;
+INSERT INTO v VALUES (1, 'hello');
+-- column `c` gets its default value 0.5
+```
+
+A `WHERE` clause in the view definition acts as a check constraint for inserts: rows that do not satisfy it are rejected with `VIOLATED_CONSTRAINT`. The `WHERE` clause may only reference columns that the view's `SELECT` list projects. If the `WHERE` clause references a name that is both a column alias and a different column of the underlying table (for example, `SELECT a AS b, b AS a FROM t WHERE a > 0`), the constraint is ambiguous and `INSERT` into such a view is rejected with `NOT_IMPLEMENTED`.
+
+```sql
+CREATE VIEW v_positive AS SELECT a, b FROM t WHERE a > 0;
+INSERT INTO v_positive VALUES (3, 'ok');     -- succeeds
+INSERT INTO v_positive VALUES (-1, 'fail');  -- VIOLATED_CONSTRAINT
+```
+
+Only a plain `ORDER BY` is allowed in the view, and it is ignored for inserts. Every other clause that changes which rows the view represents on read makes the view non-insertable: any such view raises `NOT_IMPLEMENTED` on `INSERT`. This includes `JOIN`, `UNION`, `GROUP BY`, `HAVING`, `DISTINCT`, `LIMIT`, `LIMIT BY`, `OFFSET`, `SAMPLE`, `PREWHERE`, `ARRAY JOIN`, `QUALIFY`, `WINDOW`, `WITH`, `FINAL`, a `SETTINGS` clause, `ORDER BY ... WITH FILL` / `INTERPOLATE`, and any non-trivial expression in the `SELECT` list (only bare column references, optionally with `AS` aliases, are accepted).
+
+Combined with `SQL SECURITY DEFINER`, a writable view can act as a permissioned alias of an underlying table: the view's owner grants read/write through the view while the caller is not granted any direct access to the target. This is convenient for renaming or restricting columns without exposing the base table.
+
+```sql
+CREATE TABLE accounts_raw (id Int64, owner String, balance Decimal(18, 2)) ENGINE = MergeTree ORDER BY id;
+
+-- Expose only the columns the caller is allowed to write, and remap them.
+CREATE VIEW accounts
+    DEFINER = admin SQL SECURITY DEFINER
+    AS SELECT id AS account_id, balance AS amount FROM accounts_raw;
+
+GRANT INSERT, SELECT ON accounts TO reporting_user;
+-- `reporting_user` does NOT need any privilege on `accounts_raw`.
+
+INSERT INTO accounts (account_id, amount) VALUES (1, 100.0);
+```
+
 ## Parameterized View {#parameterized-view}
 
 Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
