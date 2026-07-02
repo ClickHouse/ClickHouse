@@ -38,9 +38,6 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToYear>(documentation);
-
-    /// MySQL compatibility alias.
-    factory.registerAlias("YEAR", "toYear", FunctionFactory::Case::Insensitive);
 }
 
 }
