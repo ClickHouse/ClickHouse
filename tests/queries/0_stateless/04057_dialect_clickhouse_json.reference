@@ -1,0 +1,36 @@
+=== Default values ===
+allow_experimental_json_ast_dialect	0	0
+dialect	clickhouse	clickhouse
+=== Without gate, client-side TCP query fails with SUPPORT_IS_DISABLED ===
+Code: 344
+SUPPORT_IS_DISABLED
+=== Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ===
+Code: 344
+SUPPORT_IS_DISABLED
+=== Error message mentions the setting to enable ===
+allow_experimental_json_ast_dialect
+=== With gate, hand-written JSON-AST for SELECT 1 ===
+1
+=== Round-trip: SELECT 1 + 2 + 3 (arithmetic) ===
+6
+=== Round-trip: SELECT with aliases ===
+100	200
+=== Round-trip: SELECT FROM numbers with WHERE / ORDER BY ===
+2
+3
+4
+=== Round-trip: SELECT with GROUP BY and aggregates ===
+0	4
+1	3
+2	3
+=== With gate, SET in plain SQL works under clickhouse_json dialect (HTTP) ===
+OK
+=== With gate, malformed JSON yields BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
+=== With gate, empty JSON object yields BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
+=== With gate, unknown AST type yields BAD_ARGUMENTS ===
+Code: 36
+BAD_ARGUMENTS
