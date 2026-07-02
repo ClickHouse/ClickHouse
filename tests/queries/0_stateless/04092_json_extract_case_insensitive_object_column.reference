@@ -1,0 +1,23 @@
+string lower	value
+string upper	value
+int nested	42
+raw	"value"
+exact match	value
+wrong case	
+multi-key match	1
+multi-key int match	1
+mixed rows string	1	alice
+mixed rows string	2	bob
+mixed rows string	3	charlie
+mixed rows string	4	
+mixed rows raw	1	"alice"
+mixed rows raw	2	"bob"
+mixed rows raw	3	"charlie"
+mixed rows raw	4	
+mixed rows int	1	11
+mixed rows int	2	22
+mixed rows int	3	33
+mixed rows int	4	0
+nested object raw	{"InnerKey":42}
+nested object raw exact	{"InnerKey":42}
+nested object deep raw	{"Deep":7}
