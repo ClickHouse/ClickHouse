@@ -46,6 +46,59 @@ def get_clusters_hosts(node, expected):
     return hosts
 
 
+def test_cluster_discovery_retries_after_missing_shards_node(start_cluster):
+    """
+    Regression test: ClusterDiscovery must retry after a KEEPER_EXCEPTION when
+    the /shards node does not exist yet at first discovery time.
+
+    Without the fix, the retry went through the clusters loop where upsertCluster
+    had no try/catch, causing the exception to propagate out of runMainThread into
+    the outer backoff loop instead of retrying cleanly via the wait() mechanism.
+    """
+    zk = cluster.get_kazoo_client("zoo1")
+
+    cluster_name = "test_zk_only_cluster"
+    discovery_path = f"/clickhouse/discovery/{cluster_name}"
+
+    # Clean slate, then create only the cluster root — deliberately omitting
+    # /shards so the first discovery attempt on the observer hits a KEEPER_EXCEPTION.
+    if zk.exists(discovery_path):
+        zk.delete(discovery_path, recursive=True)
+    zk.ensure_path(discovery_path)
+
+    # Assertion 1: cluster is absent from system.clusters because /shards does
+    # not exist and ClusterDiscovery cannot populate the entry.
+    resp = nodes["node_observer"].query(
+        f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}'"
+    )
+    assert resp.strip() == "0", (
+        f"Cluster must not be visible when /shards is absent, got count={resp.strip()}"
+    )
+
+    # Create the complete path — /shards/<node> with a valid NodeInfo payload —
+    # simulating a ClickHouse node registering itself in ZooKeeper.
+    # Format mirrors ClusterDiscovery::NodeInfo::serialize(): version, address, shard_id.
+    node_data = b'{"version":1,"address":"node0:9000","shard_id":1}'
+    zk.create(f"{discovery_path}/shards/node0", node_data, makepath=True)
+
+    # Assertion 2: ClusterDiscovery on the observer must recover from the earlier
+    # KEEPER_EXCEPTION and discover the cluster now that /shards is populated.
+    found = False
+    for _ in range(30):
+        resp = nodes["node_observer"].query(
+            f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}'"
+        )
+        if resp.strip() != "0":
+            found = True
+            break
+        time.sleep(1)
+
+    # Clean up the ZK path so subsequent tests see a consistent cluster count.
+    zk.delete(discovery_path, recursive=True)
+
+    assert found, "ClusterDiscovery did not recover after KEEPER_EXCEPTION on missing /shards node"
+
+
 def test_cluster_discovery_startup_and_stop(start_cluster):
     """
     Start cluster, check nodes count in system.clusters,
