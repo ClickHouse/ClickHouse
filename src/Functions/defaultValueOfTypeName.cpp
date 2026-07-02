@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Core/Field.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -48,7 +49,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const ColumnConst * col_type_const = typeid_cast<const ColumnConst *>(arguments.front().column.get());
-        if (!col_type_const || !isString(arguments.front().type))
+        if (!col_type_const || !isString(removeLowCardinality(arguments.front().type)))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be a constant string describing type.",
                 getName());
 

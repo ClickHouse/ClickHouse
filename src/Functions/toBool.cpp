@@ -17,6 +17,8 @@ namespace
     private:
         static String getReturnTypeName(const DataTypePtr & argument)
         {
+            if (argument->lowCardinality())
+                return argument->isLowCardinalityNullable() ? "LowCardinality(Nullable(Bool))" : "LowCardinality(Bool)";
             return argument->isNullable() ? "Nullable(Bool)" : "Bool";
         }
 
@@ -36,6 +38,11 @@ namespace
         size_t getNumberOfArguments() const override { return 1; }
         bool useDefaultImplementationForConstants() const override { return true; }
         bool useDefaultImplementationForNulls() const override { return false; }
+        /// Do not let the LowCardinality wrapper strip the argument: the wrapper would cast the
+        /// dictionary (including its unused default entry) and throw on that entry even for valid
+        /// data. Operating on the full column instead casts row by row and keeps the throwing
+        /// behavior for invalid non-`NULL` values.
+        bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

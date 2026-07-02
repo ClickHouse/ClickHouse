@@ -1,0 +1,230 @@
+With optimize_if_transform_strings_to_enum = 0
+if
+x	LowCardinality(String)
+y	LowCardinality(String)
+x	LowCardinality(String)
+x	LowCardinality(String)
+y	LowCardinality(String)
+x	LowCardinality(String)
+if strings expected to work
+0	Even	LowCardinality(String)
+1	Odd	LowCardinality(String)
+2	Even	LowCardinality(String)
+3	Odd	LowCardinality(String)
+0	Even	LowCardinality(String)
+1	Odd	LowCardinality(String)
+2	Even	LowCardinality(String)
+3	Odd	LowCardinality(String)
+0	\N	LowCardinality(Nullable(String))
+1	Odd	LowCardinality(Nullable(String))
+2	\N	LowCardinality(Nullable(String))
+3	Odd	LowCardinality(Nullable(String))
+0	\N	LowCardinality(Nullable(String))
+1	Odd	LowCardinality(Nullable(String))
+2	\N	LowCardinality(Nullable(String))
+3	Odd	LowCardinality(Nullable(String))
+if strings not expected to work
+0	Even	String
+1	Odd	String
+2	Even	String
+3	Odd	String
+0	Even	String
+1	Odd	String
+2	Even	String
+3	Odd	String
+0	\N	Nullable(String)
+1	Odd	Nullable(String)
+2	\N	Nullable(String)
+3	Odd	Nullable(String)
+multiIf
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+multiIf strings expected to work
+1	Normal	LowCardinality(String)
+2	Normal	LowCardinality(String)
+3	Fizz	LowCardinality(String)
+4	Normal	LowCardinality(String)
+5	Buzz	LowCardinality(String)
+6	Fizz	LowCardinality(String)
+7	Normal	LowCardinality(String)
+8	Normal	LowCardinality(String)
+9	Fizz	LowCardinality(String)
+10	Buzz	LowCardinality(String)
+11	Normal	LowCardinality(String)
+12	Fizz	LowCardinality(String)
+13	Normal	LowCardinality(String)
+14	Normal	LowCardinality(String)
+15	FizzBuzz	LowCardinality(String)
+1	Normal	LowCardinality(String)
+2	Normal	LowCardinality(String)
+3	Fizz	LowCardinality(String)
+4	Normal	LowCardinality(String)
+5	Buzz	LowCardinality(String)
+6	Fizz	LowCardinality(String)
+7	Normal	LowCardinality(String)
+8	Normal	LowCardinality(String)
+9	Fizz	LowCardinality(String)
+10	Buzz	LowCardinality(String)
+11	Normal	LowCardinality(String)
+12	Fizz	LowCardinality(String)
+13	Normal	LowCardinality(String)
+14	Normal	LowCardinality(String)
+15	FizzBuzz	LowCardinality(String)
+1	\N	LowCardinality(Nullable(String))
+2	\N	LowCardinality(Nullable(String))
+3	Fizz	LowCardinality(Nullable(String))
+4	\N	LowCardinality(Nullable(String))
+5	Buzz	LowCardinality(Nullable(String))
+6	Fizz	LowCardinality(Nullable(String))
+7	\N	LowCardinality(Nullable(String))
+8	\N	LowCardinality(Nullable(String))
+9	Fizz	LowCardinality(Nullable(String))
+10	Buzz	LowCardinality(Nullable(String))
+11	\N	LowCardinality(Nullable(String))
+12	Fizz	LowCardinality(Nullable(String))
+13	\N	LowCardinality(Nullable(String))
+14	\N	LowCardinality(Nullable(String))
+15	FizzBuzz	LowCardinality(Nullable(String))
+1	\N	LowCardinality(Nullable(String))
+2	\N	LowCardinality(Nullable(String))
+3	Fizz	LowCardinality(Nullable(String))
+4	\N	LowCardinality(Nullable(String))
+5	Buzz	LowCardinality(Nullable(String))
+6	Fizz	LowCardinality(Nullable(String))
+7	\N	LowCardinality(Nullable(String))
+8	\N	LowCardinality(Nullable(String))
+9	Fizz	LowCardinality(Nullable(String))
+10	Buzz	LowCardinality(Nullable(String))
+11	\N	LowCardinality(Nullable(String))
+12	Fizz	LowCardinality(Nullable(String))
+13	\N	LowCardinality(Nullable(String))
+14	\N	LowCardinality(Nullable(String))
+15	FizzBuzz	LowCardinality(Nullable(String))
+multiIf strings not expected to work
+1	Normal	String
+2	Normal	String
+3	Fizz	String
+4	Normal	String
+5	Buzz	String
+6	Fizz	String
+7	Normal	String
+8	Normal	String
+9	Fizz	String
+10	Buzz	String
+11	Normal	String
+12	Fizz	String
+13	Normal	String
+14	Normal	String
+15	FizzBuzz	String
+1	\N	Nullable(String)
+2	\N	Nullable(String)
+3	Fizz	Nullable(String)
+4	\N	Nullable(String)
+5	Buzz	Nullable(String)
+6	Fizz	Nullable(String)
+7	\N	Nullable(String)
+8	\N	Nullable(String)
+9	Fizz	Nullable(String)
+10	Buzz	Nullable(String)
+11	\N	Nullable(String)
+12	Fizz	Nullable(String)
+13	\N	Nullable(String)
+14	\N	Nullable(String)
+15	FizzBuzz	Nullable(String)
+transform with default - should become LowCardinality
+100	US	United States	LowCardinality(String)
+101	GB	United Kingdom	LowCardinality(String)
+102	DE	Germany	LowCardinality(String)
+103	FR	Unknown	LowCardinality(String)
+104	IT	Unknown	LowCardinality(String)
+105	US	United States	LowCardinality(String)
+106	GB	United Kingdom	LowCardinality(String)
+107	DE	Germany	LowCardinality(String)
+108	FR	Unknown	LowCardinality(String)
+109	IT	Unknown	LowCardinality(String)
+transform with default and NULLs - should become LowCardinality(Nullable(String))
+100	US	United States	LowCardinality(Nullable(String))
+101	GB	United Kingdom	LowCardinality(Nullable(String))
+102	DE	Germany	LowCardinality(Nullable(String))
+103	FR	Unknown	LowCardinality(Nullable(String))
+104	IT	Unknown	LowCardinality(Nullable(String))
+105	US	United States	LowCardinality(Nullable(String))
+106	GB	United Kingdom	LowCardinality(Nullable(String))
+107	DE	Germany	LowCardinality(Nullable(String))
+108	FR	Unknown	LowCardinality(Nullable(String))
+109	IT	Unknown	LowCardinality(Nullable(String))
+transform with default * - leave String
+United States	String
+GB	String
+Germany	String
+FR	String
+IT	String
+United States	String
+GB	String
+Germany	String
+FR	String
+IT	String
+transform without default - leave String
+100	US	United States	String
+101	GB	United Kingdom	String
+102	DE	Germany	String
+103	FR	FR	String
+104	IT	IT	String
+105	US	United States	String
+106	GB	United Kingdom	String
+107	DE	Germany	String
+108	FR	FR	String
+109	IT	IT	String
+From 02366_kql_func_dynamic.sql
+
+toBool(LowCardinality(Nullable(String))) from if
+\N	LowCardinality(Nullable(Bool))
+true	LowCardinality(Nullable(Bool))
+multiIf weirdness
+B	LowCardinality(String)
+C	LowCardinality(String)
+With optimize_if_transform_strings_to_enum = 1
+if
+x	String
+y	String
+x	String
+x	String
+y	String
+x	String
+multiIf
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+a	LowCardinality(String)
+NUM	LowCardinality(String)
+a	LowCardinality(String)
+hello	LowCardinality(String)
+transform with default
+100	US	United States	String
+101	GB	United Kingdom	String
+102	DE	Germany	String
+103	FR	Unknown	String
+104	IT	Unknown	String
+105	US	United States	String
+106	GB	United Kingdom	String
+107	DE	Germany	String
+108	FR	Unknown	String
+109	IT	Unknown	String
+transform with default and NULLs
+100	US	United States	Nullable(String)
+101	GB	United Kingdom	Nullable(String)
+102	DE	Germany	Nullable(String)
+103	FR	Unknown	Nullable(String)
+104	IT	Unknown	Nullable(String)
+105	US	United States	Nullable(String)
+106	GB	United Kingdom	Nullable(String)
+107	DE	Germany	Nullable(String)
+108	FR	Unknown	Nullable(String)
+109	IT	Unknown	Nullable(String)

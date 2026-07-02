@@ -940,6 +940,12 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// The time zone argument may be a non-constant LowCardinality(String) column (e.g. produced by
+    /// `if`/`multiIf` with `optimize_if_transform_const_strings_to_lowcardinality`). A LowCardinality
+    /// dictionary always carries a default (empty) value, which is an invalid time zone, so the
+    /// function must not be executed on it (mirrors `1 % LowCardinality(Int)` and `FunctionConvert`).
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }

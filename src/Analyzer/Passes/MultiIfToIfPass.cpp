@@ -10,6 +10,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool optimize_multiif_to_if;
     extern const SettingsBool use_variant_as_common_type;
 }
@@ -62,8 +64,14 @@ private:
 void MultiIfToIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     const auto & settings = context->getSettingsRef();
+    /// Mirror FunctionIf::create so the rewritten `if` reproduces the exact result type of a real
+    /// `if`. Otherwise, with `optimize_if_transform_const_strings_to_lowcardinality` enabled, the
+    /// `multiIf` returns `LowCardinality(String)` while a flag-less `if` returns `String`, the
+    /// type-equality guard below fails, and the `multiIf` is never rewritten.
+    const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+        && !settings[Setting::optimize_if_transform_strings_to_enum];
     auto if_function_ptr
-        = createInternalFunctionIfOverloadResolver(settings[Setting::use_variant_as_common_type]);
+        = createInternalFunctionIfOverloadResolver(settings[Setting::use_variant_as_common_type], use_low_cardinality_optimisation);
     MultiIfToIfVisitor visitor(std::move(if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }
