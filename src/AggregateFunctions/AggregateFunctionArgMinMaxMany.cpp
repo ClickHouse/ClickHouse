@@ -338,7 +338,7 @@ void registerAggregateFunctionsArgMinMaxMany(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description description_argMaxMany = R"(
 Returns an array of the `arg` values corresponding to the `N` largest `val` values, sorted in descending order of `val`.
 If there are fewer than `N` rows, all `arg` values are returned.
-Null `val` values are ignored.
+Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/`argMin`).
 
 **See also**
 
@@ -393,7 +393,7 @@ SELECT argMaxMany(2)(user, salary) FROM salary;
     FunctionDocumentation::Description description_argMinMany = R"(
 Returns an array of the `arg` values corresponding to the `N` smallest `val` values, sorted in ascending order of `val`.
 If there are fewer than `N` rows, all `arg` values are returned.
-Null `val` values are ignored.
+Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/`argMin`).
 
 **See also**
 
