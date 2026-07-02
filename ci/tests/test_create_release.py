@@ -336,14 +336,13 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert "New release" in final.stdout
 
 
-def test_prepare_refuses_out_of_order_release(tmp_path):
-    """Creating a release whose predecessor tag is missing must fail.
+def test_prepare_recovers_already_released_commit(tmp_path):
+    """A commit whose release tag already exists degrades to recovery.
 
-    The versions file is at patch 3, but the branch only carries the
-    ``v26.6.1.1-stable`` tag — ``v26.6.2.*`` is missing, so releasing
-    ``v26.6.3`` would skip a tag. Passing a plain commit ref means "create a
-    new release" (not recovery), so ``prepare`` must refuse rather than create
-    an out-of-order tag.
+    ``auto_releases.yml`` dispatches with ``ref=<commit_sha>`` and GitHub reruns
+    keep that same SHA even after the first attempt created ``v26.6.2.1-stable``.
+    On a rerun ``prepare`` must recognise the existing release tag and set
+    ``create_new_release=false`` (recovery) instead of trying to create it again.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -361,21 +360,103 @@ def test_prepare_refuses_out_of_order_release(tmp_path):
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
 
-    versions = (
-        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
-        .replace("v26.6.2.1-stable", "v26.6.3.1-stable")
-        .replace("26.6.2.1", "26.6.3.1")
-    )
     (repo / "cmake").mkdir()
-    (repo / _VERSIONS_FILE).write_text(versions, encoding="utf-8")
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
     (repo / "src" / "Storages" / "System").mkdir(parents=True)
     (repo / _CONTRIBUTORS_FILE).write_text(
         "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
     )
     git("add", "-A")
     git("commit", "-q", "-m", "Base release commit")
-    # Only the first patch tag exists; v26.6.2.* is missing.
-    git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
+    # The release for this commit was already created on a previous attempt.
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            commit_sha,
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"recovery prepare failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.2.1-stable"
+    assert info["create_new_release"] is False
+
+
+def test_prepare_refuses_out_of_order_commit(tmp_path):
+    """A commit ref that points behind a newer release must fail.
+
+    The versions file is at patch 2 (the run would create ``v26.6.2``), but the
+    branch already carries a newer ``v26.6.3.1-stable`` tag while ``v26.6.2.*``
+    does not exist. Passing a plain commit ref (not the tag) means it is neither
+    recovery nor a branch advancing forward — creating ``v26.6.2`` behind
+    ``v26.6.3`` is out of order, so ``prepare`` must refuse it.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit")
+    # A newer release than the one this commit would create (v26.6.2) exists.
+    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-q", "-m", "Post-release commit")

@@ -133,38 +133,30 @@ def update_contributors(raise_error: bool = False) -> None:
     Path(GENERATED_CONTRIBUTORS).write_text(content, encoding="utf-8")
 
 
-def check_out_of_order(version: ClickHouseVersion, git: Git) -> None:
-    """Refuse to create a release out of order (skipping a tag).
+def has_newer_release_tag(version: ClickHouseVersion) -> bool:
+    """Whether the release branch already has a release tag with a higher version
+    than `version`.
 
-    A release may be created only in strict tag order: the expected predecessor
-    tag must already be the latest tag on the branch — the `-new` branch-cut tag
-    for the first patch, otherwise the previous patch's stable/lts tag. If it is
-    missing, creating this release would skip a tag (a missed release), so raise.
-
-    Only call this when creating a release. Recovery re-publishes an
-    already-tagged release, whose branch may legitimately have a newer latest
-    tag, so the order check does not apply there.
+    Scans all `vX.Y.*` tags on the branch (by name, so it sees the whole branch
+    regardless of what is reachable from the current commit) and ignores the
+    `-new` branch-cut tag. This decides whether the release is the latest on its
+    branch (`is_branch_release`), which controls the floating minor/major Docker
+    tags: recovering the current release re-applies them, recovering a superseded
+    one does not.
     """
-    if version.patch == 1:
-        next_version = copy(version)
-        next_version.bump()
-        expected_tag_prefix = f"v{next_version.major}.{next_version.minor}."
-        expected_tag_suffix = "-new"
-    else:
-        expected_tag_prefix = f"v{version.major}.{version.minor}.{version.patch - 1}."
-        expected_tag_suffix = f"-{version.get_stable_release_type()}"
-
-    predecessor_present = git.latest_tag.startswith(
-        expected_tag_prefix
-    ) and git.latest_tag.endswith(expected_tag_suffix)
-    if not predecessor_present:
-        raise RuntimeError(
-            f"Refusing to create out-of-order release [{version.describe}]: the "
-            f"latest tag on branch [{version.major}.{version.minor}] is "
-            f"[{git.latest_tag}], but the expected predecessor is "
-            f"[{expected_tag_prefix}*{expected_tag_suffix}]. To recover an "
-            f"already-created release, pass its tag as the ref."
-        )
+    branch_tags = Shell.get_output(
+        f"git tag --list 'v{version.major}.{version.minor}.*'"
+    ).split()
+    for tag in branch_tags:
+        if tag.endswith("-new"):
+            continue
+        try:
+            other = _version_from_tag(tag)
+        except Exception:
+            continue
+        if version < other:
+            return True
+    return False
 
 
 class ReleaseProgress:
@@ -279,14 +271,6 @@ class ReleaseInfo:
         latest_release = False
         codename = ""
 
-        # Recovery vs. create-attempt is decided by the KIND of ref, not by
-        # comparing versions: an existing release tag (e.g. v26.3.17.4-lts) means
-        # "re-publish that release" (recovery); a branch (26.3) or a commit means
-        # "create the next release on the branch". This only classifies the ref —
-        # whether a create attempt is actually valid depends on tag order, checked
-        # below. `self.create_new_release` is set once that is known.
-        recover = Git.tag_exists(commit_ref)
-
         if release_type == "new":
             if commit_ref != "master":
                 Shell.check(
@@ -320,10 +304,6 @@ class ReleaseInfo:
                 strict=True,
                 verbose=True,
             )
-            # When creating a new release (not recovery), allow it only in strict
-            # tag order — refuse to skip a tag.
-            if not recover:
-                check_out_of_order(version, git)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -346,40 +326,43 @@ class ReleaseInfo:
         self.codename = codename
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
-        # The release is the latest on its branch unless an existing release tag
-        # on the same branch already has a higher version. This is what decides
-        # the floating minor/major docker tags, independent of recovery mode:
-        # recovering the current release re-applies them, recovering a superseded
-        # one does not.
-        is_branch_release = True
-        branch_tags = Shell.get_output(
-            f"git tag --list 'v{version.major}.{version.minor}.*'"
-        ).split()
-        for tag in branch_tags:
-            if tag.endswith("-new"):
-                continue
-            try:
-                other = _version_from_tag(tag)
-            except Exception:
-                continue
-            if version < other:
-                is_branch_release = False
-                break
-        self.is_branch_release = is_branch_release
 
-        # The create attempt (`check_out_of_order`) and the "new" release's tag
-        # assert have both passed by now, so the outcome is validated: only here
-        # is it safe to record that this run will create a release.
-        self.create_new_release = not recover
-        if recover:
-            # Recovery: the ref is an existing release tag, so the version derived
-            # from its commit must describe exactly that tag — otherwise we'd
-            # re-publish a different release than the one requested.
+        # Does the branch already carry a release tag newer than this version?
+        newer_release_exists = has_newer_release_tag(version)
+        # This release is the latest on its branch unless a newer tag exists —
+        # controls the floating minor/major Docker tags (recovering the current
+        # release re-applies them; recovering a superseded one does not).
+        self.is_branch_release = not newer_release_exists
+
+        # Decide recovery vs. create. The kind of ref comes first:
+        if Git.tag_exists(commit_ref):
+            # The ref is an existing release tag → recovery: re-publish exactly
+            # that release (allowed even for a superseded one). The version at the
+            # tag's commit must describe the same tag.
+            recover = True
             assert release_tag == commit_ref, (
                 f"ref [{commit_ref}] is a release tag but the version at its commit "
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
+        elif newer_release_exists:
+            # A non-tag ref (branch or commit) while the branch already has a newer
+            # release tag. A branch ref can't reach this — its version is always
+            # ahead of every tag — so this is a commit/SHA that points behind the
+            # latest release. Creating it would be an out-of-order (backwards)
+            # release; refuse it. Re-publish a superseded release via its tag.
+            raise RuntimeError(
+                f"Refusing to create out-of-order release [{release_tag}]: branch "
+                f"[{release_branch}] already has a newer release tag. To re-publish "
+                f"an existing release, pass its tag as the ref."
+            )
+        else:
+            # A branch advancing forward, or a rerun whose release was already
+            # tagged (auto_releases keeps the same commit SHA across reruns). Only
+            # here is a commit ref allowed to recover, and only if its own tag
+            # already exists; otherwise we create the release.
+            recover = Git.tag_exists(release_tag)
+        self.create_new_release = not recover
         self.release_type = release_type
         return self
 
