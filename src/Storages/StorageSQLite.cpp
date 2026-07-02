@@ -137,7 +137,8 @@ StorageSQLite::StorageSQLite(
     /// The explicit-column path (`registerStorageSQLite`) re-derives the generated-column classification from
     /// the remote schema, but only when the database file could be opened at construction time. If it was
     /// unavailable (`sqlite_db_` is null - a persisted table attached while the file is temporarily missing),
-    /// the classification is still pending: `read`/`write` reopen the database and repair it then, so a
+    /// the classification is still pending: `updateExternalDynamicMetadataIfExists` reopens the database and
+    /// repairs it before the query's metadata snapshot is taken (with `read`/`write` as a fallback), so a
     /// generated column does not stay insertable for the rest of the table's lifetime. The auto-inferred case
     /// (empty column list) gets the classification straight from `getTableStructureFromData` above, and a
     /// query-backed source is read-only, so neither needs the lazy repair.
@@ -165,6 +166,32 @@ void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_contex
     setInMemoryMetadata(new_metadata);
 
     generated_columns_reclassification_pending.store(false, std::memory_order_release);
+}
+
+void StorageSQLite::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (!generated_columns_reclassification_pending.load(std::memory_order_acquire))
+        return;
+
+    /// The interpreters call this hook right before they freeze the query's metadata snapshot and run the
+    /// materialized-column checks (`InterpreterInsertQuery`, `InterpreterSelectQuery`, `InterpreterDescribeQuery`),
+    /// so repairing the pending generated-column classification here - rather than only in `read`/`write`, which
+    /// run after the snapshot is taken - lets even the first query after the database file becomes reachable
+    /// (including an `INSERT`, whose column list and `SQLiteSink` omit-set both depend on the classification)
+    /// see the corrected metadata.
+    ///
+    /// Best-effort: if the file is still unavailable, keep the classification pending and do nothing. The
+    /// subsequent `read`/`write` reopen the database with `throw_on_error = true` and surface the error, so no
+    /// operation runs on a stale classification silently.
+    if (!sqlite_db)
+    {
+        auto reopened_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ false);
+        if (!reopened_db)
+            return;
+        sqlite_db = reopened_db;
+    }
+
+    reclassifyGeneratedColumnsFromRemote(query_context);
 }
 
 VirtualColumnsDescription StorageSQLite::createVirtuals()
@@ -205,6 +232,8 @@ Pipe StorageSQLite::read(
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
+    /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
+    /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
     reclassifyGeneratedColumnsFromRemote(context_);
 
     storage_snapshot->check(column_names);
@@ -328,6 +357,9 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
+    /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
+    /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.
+    /// Idempotent - it runs at most once and is a no-op once the classification has been repaired.
     reclassifyGeneratedColumnsFromRemote(context_);
 
     return std::make_shared<SQLiteSink>(*this, metadata_snapshot, sqlite_db, remote_table_or_query.getTableName());

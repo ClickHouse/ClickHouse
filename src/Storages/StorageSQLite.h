@@ -51,6 +51,11 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
+    /// Repair the pending generated-column classification before the interpreters freeze the query's metadata
+    /// snapshot (this hook is called right before `getInMemoryMetadataPtr`), so even the first query after the
+    /// database file becomes reachable - including an `INSERT` - is planned against the corrected metadata.
+    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+
     static ColumnsDescription getTableStructureFromData(
         const SQLitePtr & sqlite_db_,
         const TableNameOrQuery & table_or_query);
@@ -59,8 +64,8 @@ private:
     friend class SQLiteSink; /// for write_context
 
     /// Re-derive the generated-column classification from the remote schema on the first successful open,
-    /// when it could not be applied at construction time because the database file was unavailable. See the
-    /// constructor and `generated_columns_reclassification_pending`.
+    /// when it could not be applied at construction time because the database file was unavailable. Runs at
+    /// most once. See the constructor and `generated_columns_reclassification_pending`.
     void reclassifyGeneratedColumnsFromRemote(ContextPtr query_context);
 
     TableNameOrQuery remote_table_or_query;
@@ -72,7 +77,8 @@ private:
     /// True while the generated-column classification of an explicitly declared column list still has to be
     /// re-derived from the remote schema because the database file was unavailable when the storage was
     /// constructed (e.g. a persisted `SQLite` table attached on startup while the file is temporarily
-    /// missing). It is repaired lazily on the first successful open in `read`/`write`.
+    /// missing). It is repaired lazily on the first successful open, from `updateExternalDynamicMetadataIfExists`
+    /// (before the query's metadata snapshot is taken) and, as a fallback, from `read`/`write`.
     std::atomic<bool> generated_columns_reclassification_pending{false};
     std::mutex reclassify_mutex;
 };
