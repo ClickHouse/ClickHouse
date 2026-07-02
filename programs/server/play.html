@@ -5666,14 +5666,22 @@ function acceptCompletion(index) {
     /// Capture the prefix and its position before closeCompletions() resets them.
     const prefix = completionPrefix;
     const start = completionPrefixStart;
-    completionUsage.set(word, (completionUsage.get(word) || 0) + 1);
 
     closeCompletions();
 
-    /// Nothing to do when the word is exactly what was already typed (same text, same case).
-    if (word === prefix) {
+    /// Nothing to do when the completion is the already-typed word itself: either the exact
+    /// same text, or the same word in a different canonical case (an "empty completion" whose
+    /// suffix is empty — every candidate starts with the prefix, so an equal length means an
+    /// equal word ignoring case). Accepting it must not rewrite the user's casing, e.g. typing
+    /// `hash` and pressing Right/Tab/Enter (with `HASH` offered) must leave `hash` unchanged.
+    if (word.length === prefix.length) {
         return;
     }
+
+    /// Record the acceptance only when we actually replace text, so the equal-word no-op
+    /// above stays a true no-op: accepting `HASH` for a typed `hash` must not bump its usage
+    /// and thus re-rank later suggestions (e.g. make `HASH` win the next time `ha` is typed).
+    completionUsage.set(word, (completionUsage.get(word) || 0) + 1);
 
     /// Replace the whole typed identifier with the canonical-cased completion word, so the
     /// already-typed prefix also takes the suggestion's case (e.g. "se" + accept -> "SELECT").
@@ -5704,9 +5712,50 @@ function tryOpenCompletions() {
     return true;
 }
 
+/// Indent (or, with `dedent`, unindent) every line touched by the current selection by 4
+/// spaces. Uses `execCommand('insertText')` on the whole line block so the change is a single
+/// undo step and fires an `input` event (which refreshes the backdrop and completions).
+function indentSelection(elem, dedent) {
+    const INDENT = '    ';
+    const value = elem.value;
+
+    /// Expand the selection to whole lines (same line semantics as the comment shortcut).
+    const blockStart = value.lastIndexOf('\n', elem.selectionStart - 1) + 1;
+    let blockEnd = value.indexOf('\n', elem.selectionEnd);
+    if (blockEnd === -1) blockEnd = value.length;
+
+    const block = value.substring(blockStart, blockEnd);
+    const newBlock = block.split('\n').map((line) => {
+        if (dedent) {
+            /// Remove up to 4 leading spaces, or a single leading tab.
+            const m = line.match(/^( {1,4}|\t)/);
+            return m ? line.substring(m[0].length) : line;
+        }
+        /// Do not add trailing whitespace to blank lines (empty or whitespace-only).
+        return /^\s*$/.test(line) ? line : INDENT + line;
+    }).join('\n');
+
+    if (newBlock === block) return; /// Nothing to unindent — leave the selection untouched.
+
+    elem.setSelectionRange(blockStart, blockEnd);
+    document.execCommand('insertText', false, newBlock);
+    /// Reselect the whole (re)indented block so repeated Tab / Shift+Tab keeps working.
+    elem.setSelectionRange(blockStart, blockStart + newBlock.length);
+}
+
 /// Capture-phase key handling so it runs before the textarea's own `onkeydown` (which would
 /// otherwise treat Tab as "insert spaces").
 query_area.addEventListener('keydown', (e) => {
+    /// Tab / Shift+Tab with a non-empty selection indents / unindents the selected lines by 4
+    /// spaces. Handled here (before the completion logic and the space-insert `onkeydown`) so a
+    /// selection takes priority.
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !user_prefers_tab_navigation
+        && query_area.selectionStart !== query_area.selectionEnd) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        indentSelection(query_area, e.shiftKey);
+        return;
+    }
     if (!completionCandidates.length) {
         /// Completions are closed: Tab at the end of a word manually opens them if a
         /// continuation is possible; otherwise let the default Tab (indentation) happen.

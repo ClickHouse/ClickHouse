@@ -36,7 +36,7 @@ private:
 
     String getSignatureString() const override
     {
-        return "(NativeNumber | Decimal, NativeNumber | Decimal) -> Float64";
+        return "(NativeNumber | Decimal | BFloat16, NativeNumber | Decimal | BFloat16) -> Float64";
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

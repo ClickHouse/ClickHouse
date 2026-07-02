@@ -1938,6 +1938,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_named_collection_num_to_throw", {std::to_string(context->getMaxNamedCollectionNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_table_num_to_throw", {std::to_string(context->getMaxTableNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_replicated_table_num_to_throw", {std::to_string(context->getMaxReplicatedTableNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_view_num_to_throw", {std::to_string(context->getMaxViewNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_dictionary_num_to_throw", {std::to_string(context->getMaxDictionaryNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_database_num_to_throw", {std::to_string(context->getMaxDatabaseNumToThrow()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},
