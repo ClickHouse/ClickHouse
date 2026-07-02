@@ -104,6 +104,12 @@ private:
     TableProperties getTablePropertiesAndNormalizeCreateQuery(ASTCreateQuery & create, LoadingStrictnessLevel mode);
     void validateTableStructure(const ASTCreateQuery & create, const TableProperties & properties) const;
     void validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database);
+
+    /// For CREATE ... AS SELECT / POPULATE that immediately runs an INSERT SELECT (fillTableIfNeeded),
+    /// verify access to every table the SELECT references before the table is created, so a denied query
+    /// leaves no empty orphan table behind (issue #26746). Builds the full query plan, which is column-aware
+    /// and also covers WHERE/IN/scalar subqueries, mirroring the subsequent INSERT SELECT.
+    void checkAccessForImmediateInsertSelectPopulate(const ASTCreateQuery & create, const TableProperties & properties);
     void setEngine(ASTCreateQuery & create) const;
     AccessRightsElements getRequiredAccess() const;
 
@@ -146,6 +152,13 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+
+    /// Set when the CREATE ... AS SELECT access pre-check (checkAccessForImmediateInsertSelectPopulate) was
+    /// skipped in getTablePropertiesAndNormalizeCreateQuery because `IF NOT EXISTS` resolved to an existing
+    /// table (an expected no-op). That existence check is not held under the table DDL guard, so doCreateTable
+    /// re-runs the pre-check under the guard if it finds the table was concurrently dropped and it is in fact
+    /// creating it -- otherwise the orphan-table bug this fixes could reappear under concurrent DDL.
+    bool deferred_as_select_access_check = false;
 
     String as_database_saved;
     String as_table_saved;

@@ -742,6 +742,47 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 }
 
 
+/// True when this is a `CREATE ... IF NOT EXISTS` whose target table already exists, so `doCreateTable`
+/// will return false and `execute` will skip `fillTableIfNeeded` (the populating INSERT SELECT). In that
+/// case the SELECT is a no-op against the untouched existing table, so the orphan-table access pre-check
+/// must not run -- otherwise a missing grant on a source table would turn the no-op into an ACCESS_DENIED.
+static bool createIfNotExistsResolvesToExistingTable(const ASTCreateQuery & create, const ContextPtr & context)
+{
+    if (!create.if_not_exists)
+        return false;
+
+    if (create.isTemporary())
+        return static_cast<bool>(context->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal));
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(create.getDatabase());
+    return database && database->isTableExist(create.getTable(), context);
+}
+
+
+void InterpreterCreateQuery::checkAccessForImmediateInsertSelectPopulate(
+    const ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties)
+{
+    /// Building the full query plan of the SELECT (rather than only a sample block) is required: a
+    /// sample-block (only_analyze) build does not recursively plan subqueries in WHERE/IN/scalar
+    /// positions, so their (column-aware) access checks would be missed.
+    ///
+    /// Mirror the subsequent INSERT SELECT (see fillTableIfNeeded) exactly, so this check cannot introduce
+    /// a failure mode the insert would not also hit. In particular that INSERT SELECT sets the just-created
+    /// table as the insertion table, which lets table functions in the SELECT infer their structure from the
+    /// target table's columns (use_structure_from_insertion_table_in_table_functions), e.g.
+    /// `CREATE TABLE t (a Int32) AS SELECT * FROM file('x.bin', RowBinary)`. The table does not exist yet, so
+    /// provide the structure we just computed (which is what the table will have). Options match
+    /// InterpreterInsertQuery: SelectQueryOptions(Complete, subquery_depth = 1).
+    auto check_context = Context::createCopy(getContext());
+    check_context->setInsertionTable(
+        StorageID(create.getDatabase(), create.getTable(), create.uuid),
+        /*column_names=*/std::nullopt,
+        std::make_shared<ColumnsDescription>(properties.columns));
+    InterpreterSelectQueryAnalyzer(create.select->clone(), check_context,
+        SelectQueryOptions(QueryProcessingStage::Complete, /*subquery_depth_=*/1)).getQueryPlan();
+}
+
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
@@ -975,9 +1016,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
+            SelectQueryOptions sample_block_options = SelectQueryOptions{}.analyze();
+
+            /// For an immediate INSERT SELECT, access to all referenced tables was already verified up-front
+            /// by the full query plan built at the top of this function (which is column-aware and also covers
+            /// WHERE/IN/scalar subqueries). For a plain view definition there is no such insert, so keep the
+            /// lighter FROM-position subquery access check here.
+            if (!create.isCreateQueryWithImmediateInsertSelect())
+                sample_block_options.checkSubqueryTableAccess();
+
             as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                 select_context,
-                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+                sample_block_options);
         }
         else
         {
@@ -1017,6 +1067,34 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// supports schema inference (will determine table structure in it's constructor).
     else if (!StorageFactory::instance().getStorageFeatures(create.storage->engine->name).supports_schema_inference)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Incorrect CREATE query: required list of column descriptions or AS section or SELECT.");
+
+    /// For queries that populate the table immediately (CREATE ... AS SELECT, or a materialized/window
+    /// view with POPULATE), the table is created first and the data is inserted afterwards by an
+    /// INSERT SELECT (see fillTableIfNeeded). If the user lacks access to a table referenced by the
+    /// SELECT, that INSERT SELECT would fail only after the table has already been created, leaving an
+    /// empty orphan table behind (issue #26746: a retry then reports `TABLE_ALREADY_EXISTS` instead of
+    /// the access error). To prevent this, verify access to all referenced tables now, before the table
+    /// is created (checkAccessForImmediateInsertSelectPopulate).
+    ///
+    /// This runs for every isCreateQueryWithImmediateInsertSelect() form (columns inferred from the SELECT
+    /// or given explicitly, and materialized/window views with POPULATE), so it lives here, after the
+    /// column structure is known but before the table is created.
+    ///
+    /// It is skipped when `IF NOT EXISTS` resolves to an already-existing table: there `doCreateTable`
+    /// returns false and `fillTableIfNeeded` is never reached, so the populating INSERT SELECT (and its
+    /// access checks) does not run and we must not raise a spurious access error for the no-op. That
+    /// existence check is not held under the table DDL guard, so it can race with a concurrent DROP of the
+    /// target table; in that case the skip is only deferred -- `doCreateTable` re-runs the pre-check under
+    /// the guard before creating the table (see `deferred_as_select_access_check`), so the orphan-table
+    /// fix still holds under concurrent DDL.
+    if (create.isCreateQueryWithImmediateInsertSelect()
+        && getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        if (createIfNotExistsResolvesToExistingTable(create, getContext()))
+            deferred_as_select_access_check = true;
+        else
+            checkAccessForImmediateInsertSelectPopulate(create, properties);
+    }
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
@@ -2029,6 +2107,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
     }
+
+    /// We have now confirmed under the DDL guard that the table does not exist and we are about to create it.
+    /// If the CREATE ... AS SELECT access pre-check was deferred in getTablePropertiesAndNormalizeCreateQuery
+    /// because `IF NOT EXISTS` had resolved to an existing table (outside this guard) that has since been
+    /// concurrently dropped, run the pre-check now -- before the table is created -- so a denied source SELECT
+    /// in the subsequent fillTableIfNeeded cannot leave an empty orphan table behind.
+    if (deferred_as_select_access_check)
+        checkAccessForImmediateInsertSelectPopulate(create, properties);
 
     data_path = database->getTableDataPath(create);
     // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
