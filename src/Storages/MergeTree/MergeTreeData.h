@@ -54,6 +54,7 @@ struct AlterCommand;
 class AlterCommands;
 class ASTFunction;
 class InterpreterSelectQuery;
+namespace DiskFromAST { class CustomDiskRegistrationScope; }
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
 class MutationCommands;
@@ -1008,11 +1009,22 @@ public:
         const Settings & settings,
         ContextPtr local_context) const override;
 
-    /// Change MergeTreeSettings
+    /// Change MergeTreeSettings.
+    ///
+    /// `disk_scope` carries ownership of any custom-disk registrations that an inline
+    /// `disk = disk(...)` setting in `new_settings` produces during this call. When the
+    /// caller passes a non-null scope, the function does NOT commit it; the caller must
+    /// call `disk_scope->commit()` after its own outer metadata transition has succeeded
+    /// (e.g. `DatabaseCatalog::alterTable` and the ZooKeeper commit on the replicated
+    /// path). If the outer transition throws, the scope's destructor rolls the new disk
+    /// back. When the caller passes a null scope, the function creates and commits its
+    /// own scope — used by the catch-block revert call where `new_settings` is the old
+    /// settings AST and is not expected to introduce any new inline disks.
     void changeSettings(
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder,
-        bool run_sanity_checks = true);
+        bool run_sanity_checks = true,
+        DiskFromAST::CustomDiskRegistrationScope * disk_scope = nullptr);
 
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);

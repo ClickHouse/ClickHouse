@@ -58,11 +58,21 @@ public:
 
     FileCacheDataPtr getByName(const std::string & cache_name);
 
+    /// Like `getByName`, but returns nullptr instead of throwing when no cache by this name
+    /// exists. Used by `Context::getOrCreateDisk` to snapshot cache-name presence around
+    /// custom-disk creation without being forced to swallow exceptions (issue #63019).
+    FileCacheDataPtr tryGetByName(const std::string & cache_name);
+
     void loadDefaultCaches(const Poco::Util::AbstractConfiguration & config, ContextPtr context);
 
     void updateSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
 
     void remove(FileCachePtr cache);
+
+    /// Remove a cache entry by name. Used to roll back a `disk(name = ..., type = cache, ...)`
+    /// registration that was performed as part of an ALTER validation pass and rejected before
+    /// commit (issue #63019). Returns true if an entry was removed.
+    bool removeByName(const std::string & cache_name);
 
     void clear();
 

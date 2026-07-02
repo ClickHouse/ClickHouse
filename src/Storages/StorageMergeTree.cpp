@@ -11,6 +11,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/IDatabase.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
@@ -81,6 +82,7 @@ namespace FailPoints
     extern const char mt_select_parts_to_mutate_max_part_size[];
     extern const char storage_shared_merge_tree_mutate_pause_before_wait[];
     extern const char storage_merge_tree_background_schedule_merge_fail[];
+    extern const char storage_merge_tree_alter_fail_after_change_settings_before_metadata[];
 }
 
 namespace Setting
@@ -127,6 +129,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
     extern const int NOT_ENOUGH_SPACE;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
@@ -478,13 +481,42 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        changeSettings(new_metadata.settings_changes, table_lock_holder);
+        /// Caller-owned disk-registration scope: any inline `disk = disk(...)` setting in
+        /// `new_metadata.settings_changes` is registered tentatively. The scope is committed
+        /// only after `alterTable` has succeeded; if anything throws first, the scope's
+        /// destructor rolls the new disk back. See `MergeTreeData::changeSettings` and
+        /// issue #63019.
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
 
-        if (statistics_changed)
-            setInMemoryMetadata(new_metadata);
+        try
+        {
+            /// `changeSettings` runs INSIDE the `try`: it mutates the live `storage_settings` and
+            /// in-memory metadata and can itself throw AFTER that mutation (its post-transition work
+            /// `startBackgroundMovesIfNeeded` / `startStatisticsCache` schedules pool tasks). The
+            /// catch below must cover that whole window, otherwise a throw from changeSettings would
+            /// skip the revert while `disk_scope`'s destructor still rolls the tentative disk back.
+            changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
 
-        /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+            if (statistics_changed)
+                setInMemoryMetadata(new_metadata);
+
+            /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        }
+        catch (...)
+        {
+            /// `changeSettings` may have already mutated the live `storage_settings` (and the
+            /// in-memory metadata when statistics changed). Restore the old live state before
+            /// `disk_scope`'s destructor rolls the freshly-registered inline disk back, otherwise
+            /// the table would keep settings resolving to a disk no longer present in
+            /// `DiskSelector`. Mirrors the full-ALTER branch below. See issue #63019.
+            LOG_ERROR(log, "Failed to alter table in database, reverting changes");
+            if (statistics_changed)
+                setInMemoryMetadata(old_metadata);
+            changeSettings(old_metadata.settings_changes, table_lock_holder);
+            throw;
+        }
+        disk_scope.commit();
     }
     else if (commands.isCommentAlter())
     {
@@ -515,14 +547,32 @@ void StorageMergeTree::alter(
         }
 
         {
-            changeSettings(new_metadata.settings_changes, table_lock_holder);
-            checkTTLExpressions(new_metadata, old_metadata);
-
-            /// Reinitialize primary key because primary key column types might have changed.
-            setProperties(new_metadata, old_metadata, false, local_context);
-
+            /// Caller-owned disk-registration scope. `changeSettings` registers any inline
+            /// `disk = disk(...)` setting tentatively against this scope and immediately mutates
+            /// the live in-memory `storage_settings`; the scope is committed only after the whole
+            /// metadata transition succeeds. The entire sequence (`changeSettings` ->
+            /// `checkTTLExpressions` -> `setProperties` -> `alterTable`) runs inside one `try`: any
+            /// throw reverts the live metadata via a second `changeSettings(old, ...)` /
+            /// `setProperties(old, ...)` call BEFORE `disk_scope`'s destructor rolls the new disk
+            /// back, so the table never ends up pointing at a disk no longer present in
+            /// `DiskSelector` / `FileCacheFactory`. See `MergeTreeData::changeSettings` and issue #63019.
+            DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
             try
             {
+                changeSettings(new_metadata.settings_changes, table_lock_holder, /*run_sanity_checks=*/true, &disk_scope);
+                checkTTLExpressions(new_metadata, old_metadata);
+
+                /// Reinitialize primary key because primary key column types might have changed.
+                setProperties(new_metadata, old_metadata, false, local_context);
+
+                /// Throws in the window after `changeSettings` (live settings mutated, inline disk
+                /// registered) but before the metadata write, proving the catch below reverts the
+                /// live settings before `disk_scope` rolls the new disk back. See 04159 and issue #63019.
+                fiu_do_on(FailPoints::storage_merge_tree_alter_fail_after_change_settings_before_metadata,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in StorageMergeTree::alter after changeSettings");
+                });
+
                 DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
             }
             catch (...)
@@ -532,6 +582,7 @@ void StorageMergeTree::alter(
                 setProperties(old_metadata, new_metadata, false, local_context);
                 throw;
             }
+            disk_scope.commit();
 
             {
                 auto parts_lock = lockParts();

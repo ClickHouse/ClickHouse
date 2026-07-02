@@ -1,0 +1,3 @@
+alter_failed_injected: yes
+ttl_reverted_to_100_after_reload: 1
+table_queryable: 0

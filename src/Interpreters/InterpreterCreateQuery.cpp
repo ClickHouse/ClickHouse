@@ -103,6 +103,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Disks/DiskFromAST.h>
+#include <Common/FailPoint.h>
 
 
 namespace CurrentMetrics
@@ -159,6 +161,7 @@ namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int FAULT_INJECTED;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_DATABASE_ENGINE;
@@ -182,6 +185,42 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+}
+
+namespace FailPoints
+{
+    /// Test-only: throw inside `doCreateTable` AFTER the inline custom disk has been registered
+    /// (and the ambient CREATE scope tracks it) but BEFORE the table metadata is durable. Used by
+    /// 04156 to prove the ambient scope rolls a freshly-registered custom disk back on a late
+    /// CREATE failure (issue #63019).
+    extern const char create_table_fail_after_disk_registration_before_metadata[];
+
+    /// Test-only: throw inside `doCreateOrReplaceTable` AFTER the inner temporary `doCreateTable`
+    /// has made the temporary table's metadata durable (and registered any inline custom disk under
+    /// the caller-owned ambient scope) but BEFORE the final rename/exchange. Emulates a fill or
+    /// rename failure. Used by 04162 to prove the caller-owned scope rolls a freshly-registered
+    /// custom disk back when the outer CREATE OR REPLACE fails after the inner create (issue #63019).
+    extern const char create_or_replace_fail_after_inner_create[];
+
+    /// Test-only: throw inside the catch path of `doCreateOrReplaceTable` when it tries to DROP the
+    /// leftover temporary table. The temporary table's metadata is still durable and references the
+    /// inline custom disk, so on this path the caller-owned scope must be committed (disk kept), not
+    /// rolled back. Used by 04163 to prove the disk is not rolled out from under durable metadata
+    /// when cleanup fails (issue #63019).
+    extern const char create_or_replace_fail_cleanup_drop[];
+
+    /// Test-only: throw inside `createDatabase` AFTER the database metadata file has been made
+    /// durable (`renamed = true`, and any inline metadata custom disk is registered under the
+    /// ambient scope) but BEFORE the scope is committed, to enter the catch cleanup path. Used by
+    /// 04165 (issue #63019).
+    extern const char create_database_fail_after_metadata[];
+
+    /// Test-only: throw inside the catch path of `createDatabase` when it tries to remove the
+    /// durable metadata file. The metadata file (and attached database) still references the inline
+    /// custom disk, so on this path the ambient scope must be committed (disk kept), not rolled
+    /// back. Used by 04165 to prove the disk is not rolled out from under durable metadata when
+    /// cleanup fails (issue #63019).
+    extern const char create_database_fail_cleanup[];
 }
 
 namespace fs = std::filesystem;
@@ -328,6 +367,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
+    /// Own any inline custom disk used for the database's metadata storage
+    /// (`SETTINGS disk = disk(...)`). `DatabaseFactory::get` -> `DatabaseMetadataDiskSettings::
+    /// loadFromQuery` -> `getOrCreateCustomDisk` registers it with no scope parameter; the ambient
+    /// scope tracks it so it is rolled back if database creation fails before the metadata is
+    /// durable, and committed once the metadata file is in place. See issue #63019.
+    DiskFromAST::CustomDiskRegistrationScope create_disk_scope(getContext(), /*install_as_ambient_create_scope=*/true);
+
     DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
 
     if (create.uuid != UUIDHelpers::Nil)
@@ -384,19 +430,54 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             /// Only then prioritize, schedule and wait all the startup tasks
             waitLoad(currentPoolOr(TablesLoaderForegroundPoolId), startup_tasks);
         }
+
+        /// Test-only: emulate a load/startup failure after the metadata file is durable
+        /// (`renamed = true`) and the database is attached, to enter the catch cleanup path while
+        /// `create_disk_scope` is still uncommitted. See 04165 and issue #63019.
+        fiu_do_on(FailPoints::create_database_fail_after_metadata,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure after database metadata commit, before scope commit");
+        });
     }
     catch (...)
     {
-        if (renamed)
+        try
         {
-            chassert(default_db_disk->existsFile(metadata_file_path));
-            default_db_disk->removeFileIfExists(metadata_file_path);
+            if (renamed)
+            {
+                chassert(default_db_disk->existsFile(metadata_file_path));
+                /// Test-only: emulate a cleanup that itself throws while the database metadata file
+                /// is still durable and references the inline custom disk. See 04165, issue #63019.
+                fiu_do_on(FailPoints::create_database_fail_cleanup,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in CREATE DATABASE cleanup");
+                });
+                default_db_disk->removeFileIfExists(metadata_file_path);
+            }
+            if (added)
+                DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
         }
-        if (added)
-            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
+        catch (...)
+        {
+            /// The cleanup failed, so the database metadata file may still be durable and the
+            /// database may still be attached, both referencing the inline custom disk. Rolling the
+            /// disk registration back here (via `~CustomDiskRegistrationScope`) would leave that
+            /// durable metadata / attached database pointing at a disk no longer present in
+            /// `DiskSelector` / `FileCacheFactory`. Commit the scope instead so the disk is kept
+            /// while something still references it; a later DROP DATABASE releases it through the
+            /// normal path. See issue #63019.
+            create_disk_scope.commit();
+            tryLogCurrentException("InterpreterCreateQuery", "Cannot clean up database after failed creation");
+        }
 
         throw;
     }
+
+    /// Database is attached and its metadata is durable; commit any inline custom disk used for
+    /// its metadata storage so it stays registered permanently. On the failure paths above the
+    /// scope destructor rolls it back instead. See issue #63019.
+    create_disk_scope.commit();
 
     return {};
 }
@@ -1928,7 +2009,8 @@ catch (...)
 
 bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
-                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
+                                           DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode,
+                                           bool disk_scope_owned_by_caller)
 {
     if (create.isTemporary())
     {
@@ -1938,6 +2020,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
         String temporary_table_name = create.getTable();
+        /// Own any inline custom disk (`SETTINGS disk = disk(...)`) registered while building the
+        /// storage, so it is rolled back if the storage creation or `addExternalTable` fails. See
+        /// the ambient-scope note in the persistent path below and issue #63019. When the caller
+        /// owns the scope (`disk_scope_owned_by_caller`), it has already installed an ambient scope
+        /// spanning a wider transition; do not install another or commit here.
+        std::optional<DiskFromAST::CustomDiskRegistrationScope> create_disk_scope;
+        if (!disk_scope_owned_by_caller)
+            create_disk_scope.emplace(getContext(), /*install_as_ambient_create_scope=*/true);
         auto creator = [&](const StorageID & table_id)
         {
             auto res = StorageFactory::instance().get(create,
@@ -1954,11 +2044,34 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
 
         getContext()->getSessionContext()->addExternalTable(temporary_table_name, std::move(temporary_table));
+        if (create_disk_scope)
+            create_disk_scope->commit();
         return true;
     }
 
     if (!ddl_guard && likely(need_ddl_guard))
         ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
+
+    /// Own any inline custom disk (`SETTINGS disk = disk(...)`) registered while building the
+    /// storage below. The inline `disk(...)` conversion happens deep inside `StorageFactory::get`
+    /// -> `MergeTreeSettings::loadFromQuery` -> `getOrCreateCustomDisk`, which has no scope
+    /// parameter; installing the scope as the thread's ambient CREATE / ATTACH scope lets that
+    /// conversion track the registration under us. The scope is committed only AFTER the table
+    /// metadata is durable (`database->createTable` below). If anything between here and the
+    /// commit throws (validateStorage, the replicated-create fault injection, `createTable` /
+    /// `writeMetadataFile`), the scope destructor rolls the freshly-registered disk back from
+    /// `DiskSelector` / `FileCacheFactory`, mirroring the caller-owned scope used by ALTER.
+    ///
+    /// When `disk_scope_owned_by_caller` is set, this create is the inner temporary create of
+    /// `doCreateOrReplaceTable`: that caller has installed an ambient scope spanning the temporary
+    /// create + fill + final rename/exchange and commits only after the rename succeeds. Here the
+    /// metadata of the temporary table is durable, but the outer DDL is not: a fill or rename
+    /// failure drops the temporary table, so the inline disk must roll back with it. We therefore
+    /// neither install a nested scope nor commit; the disk stays tracked under the caller's scope.
+    /// See issue #63019, PR #103818.
+    std::optional<DiskFromAST::CustomDiskRegistrationScope> create_disk_scope;
+    if (!disk_scope_owned_by_caller)
+        create_disk_scope.emplace(getContext(), /*install_as_ambient_create_scope=*/true);
 
     String data_path;
     DatabasePtr database;
@@ -2147,6 +2260,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateStorage(*res, mode, getContext());
 
+    /// Test-only: emulate a CREATE that fails AFTER the inline custom disk has been registered (and
+    /// is tracked by `create_disk_scope`) but BEFORE the table metadata is durable. Proves the
+    /// ambient scope rolls the disk back instead of leaking it. See 04156 and issue #63019.
+    fiu_do_on(FailPoints::create_table_fail_after_disk_registration_before_metadata,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED,
+            "Injected failure after custom disk registration, before table metadata commit");
+    });
+
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
@@ -2177,6 +2299,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
+
+    /// The table metadata is now durable, so commit any inline custom disk registered for this
+    /// table: it must stay in `DiskSelector` / `FileCacheFactory` permanently. A later failure
+    /// (`rename`, `startup`) leaves the committed table in place, so the disk must not be rolled
+    /// back from this point on. When the caller owns the scope (CREATE OR REPLACE), the durability
+    /// point is the caller's final rename/exchange, not this temporary create; the caller commits.
+    /// See issue #63019.
+    if (create_disk_scope)
+        create_disk_scope->commit();
 
     /// Move table data to the proper place. Wo do not move data earlier to avoid situations
     /// when data directory moved, but table has not been created due to some error.
@@ -2304,16 +2435,39 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_drop->kind = ASTDropQuery::Drop;
     }
 
+    /// Own any inline custom disk (`SETTINGS disk = disk(...)`) across the WHOLE replace transition,
+    /// not just the inner temporary create. The inner `doCreateTable` makes the temporary table's
+    /// metadata durable, but the user-visible DDL is durable only after the final rename/exchange
+    /// below. If `fillTableIfNeeded` or the rename throws, the catch path drops the temporary table;
+    /// the inline disk must roll back with it. We therefore install the ambient scope here and pass
+    /// `disk_scope_owned_by_caller` to the inner create so it does not commit the disk early. The
+    /// scope is committed only after the rename succeeds; on the catch path the temporary table is
+    /// dropped while the scope is still uncommitted, so its destructor rolls the disk back. See
+    /// issue #63019, PR #103818.
+    DiskFromAST::CustomDiskRegistrationScope create_disk_scope(current_context, /*install_as_ambient_create_scope=*/true);
+
     bool created = false;
     bool renamed = false;
     try
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode);
+        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context)
+            .doCreateTable(create, properties, ddl_guard, mode, /*disk_scope_owned_by_caller=*/true);
         ddl_guard.reset();
         chassert(done);
         created = true;
+
+        /// Test-only: emulate a CREATE OR REPLACE that fails AFTER the inner temporary create made
+        /// the temporary table's metadata durable (and registered an inline custom disk under our
+        /// caller-owned scope) but BEFORE the final rename/exchange. The catch below drops the
+        /// temporary table while `create_disk_scope` is still uncommitted, so the disk rolls back.
+        /// See 04162 and issue #63019.
+        fiu_do_on(FailPoints::create_or_replace_fail_after_inner_create,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure after inner create, before rename/exchange");
+        });
 
         /// If table has dependencies - add them to the graph
         addTableDependencies(create, query_ptr, getContext());
@@ -2361,6 +2515,12 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         interpreter_rename.execute();
         renamed = true;
 
+        /// The rename/exchange succeeded: the user-visible table now owns any inline custom disk
+        /// permanently. Commit before dropping the replaced table - if that drop throws, the catch
+        /// below rethrows and this scope's destructor must NOT roll a disk back out from under the
+        /// now-live table. See issue #63019.
+        create_disk_scope.commit();
+
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
             /// Target table was replaced with new one, drop old table
@@ -2380,10 +2540,24 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             try
             {
+                /// Test-only: emulate a cleanup DROP that itself throws. The temporary table's
+                /// metadata is still durable and references the inline custom disk, so the scope
+                /// must be committed (disk kept) rather than rolled back. See 04163, issue #63019.
+                fiu_do_on(FailPoints::create_or_replace_fail_cleanup_drop,
+                {
+                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in CREATE OR REPLACE cleanup DROP");
+                });
                 InterpreterDropQuery(ast_drop, drop_context).execute();
             }
             catch (...)
             {
+                /// The cleanup DROP failed, so the temporary table's metadata is still durable and
+                /// keeps referencing the inline custom disk. Rolling the disk registration back here
+                /// (via `~CustomDiskRegistrationScope`) would leave that durable metadata pointing at
+                /// a disk no longer present in `DiskSelector` / `FileCacheFactory`. Commit the scope
+                /// instead so the disk is kept while a table still references it; a later DROP of the
+                /// leftover temporary table will release it through the normal path. See issue #63019.
+                create_disk_scope.commit();
                 tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
             }
         }
@@ -2398,6 +2572,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
 
     String temporary_table_name = create.getTable();
 
+    /// Own any inline custom disk (`SETTINGS disk = disk(...)`) registered while building the
+    /// storage, committing it only after the temporary table is installed in the session.
+    /// A bare `REPLACE TEMPORARY TABLE` on a name that does not exist throws `UNKNOWN_TABLE`
+    /// from `updateExternalTable` after the disk was already registered; without this scope
+    /// the disk would leak in `DiskSelector` / `FileCacheFactory`. Mirrors the persistent
+    /// temporary path in `doCreateTable`. See issue #63019.
+    DiskFromAST::CustomDiskRegistrationScope create_disk_scope(getContext(), /*install_as_ambient_create_scope=*/true);
     auto creator = [&](const StorageID & table_id)
     {
         auto res = StorageFactory::instance().get(create,
@@ -2420,6 +2601,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
         session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
     else
         session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
+    create_disk_scope.commit();
     /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
     return fillTableIfNeeded(create);
 }

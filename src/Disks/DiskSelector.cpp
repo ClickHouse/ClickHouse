@@ -251,6 +251,17 @@ void DiskSelector::addToDiskMap(const String & name, DiskPtr disk)
     recordDisk(name, disk);
 }
 
+DiskPtr DiskSelector::removeFromDiskMap(const String & name)
+{
+    assertInitialized();
+    auto it = disks.find(name);
+    if (it == disks.end())
+        return nullptr;
+    auto disk = std::move(it->second);
+    disks.erase(it);
+    return disk;
+}
+
 void DiskSelector::shutdown()
 {
     assertInitialized();

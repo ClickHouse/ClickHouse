@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Disks/DiskFromAST.h>
 #include <Disks/DiskType.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
@@ -332,6 +333,11 @@ namespace ServerSetting
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_change_settings_fail_after_set_metadata[];
 }
 
 namespace ErrorCodes
@@ -4526,7 +4532,19 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (new_metadata.settings_changes)
         {
-            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            /// Validation-only scope: any custom disk newly registered while normalising
+            /// `new_changes` is rolled back on exit (issue #63019, bot review).
+            DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+
+            /// Take a non-const copy so any inline `disk = disk(...)` setting (a parser-
+            /// produced `CustomType` `Field`) is converted to a registered disk name
+            /// `String` before `safeGet<String>` below. Without this conversion, a
+            /// `UNIQUE KEY` table created with inline `SETTINGS disk = disk(...)`
+            /// would still trip `Bad get: has CustomType, requested String` here on
+            /// any later `ALTER` that reaches this validation block (issue #63019).
+            SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false, &disk_scope);
+
             for (const auto & changed : new_changes)
             {
                 StoragePolicyPtr new_policy;
@@ -4949,7 +4967,22 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (old_metadata.hasSettingsChanges())
     {
         const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+        /// Validation pass: any custom disk registered here will be rolled back on scope
+        /// exit. The actual apply path (`MergeTreeData::changeSettings`) re-registers it.
+        /// Without rollback a `MODIFY SETTING disk = disk(...)` ALTER rejected by the
+        /// storage-policy migration guard at line 4862 below would leak the new disk's
+        /// name in the global `DiskSelector` until restart (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(local_context);
+
+        /// Take a non-const copy so we can convert any inline `disk = disk(...)` setting (a parser-
+        /// produced `CustomType` `Field`) into a registered disk name string. Without this every
+        /// subsequent `safeGet<String>`, `MergeTreeSettings::checkCanSet` and `applyChanges` call
+        /// in this block would throw `Bad get: has CustomType, requested String` (issue #63019)
+        /// when the table was created with `SETTINGS disk = disk(...)`.
+        SettingsChanges new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(new_changes, local_context, /* attach */ false, &disk_scope);
+
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
@@ -5194,13 +5227,42 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
-    bool run_sanity_checks)
+    bool run_sanity_checks,
+    DiskFromAST::CustomDiskRegistrationScope * caller_disk_scope)
 {
     if (new_settings)
     {
         bool has_storage_policy_changed = false;
 
-        const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        /// Apply scope: track newly-registered custom disks. If the caller passes a non-null
+        /// `caller_disk_scope`, that scope owns the registrations and the caller is responsible
+        /// for committing it AFTER its outer metadata transition has succeeded (e.g.
+        /// `DatabaseCatalog::alterTable` + ZooKeeper commit). If the caller passes null, this
+        /// function manages a local scope and commits it once `setInMemoryMetadata` returns —
+        /// the legacy mode used by the catch-block revert call where `new_settings` is the old
+        /// settings AST and is not expected to introduce any new inline disks.
+        ///
+        /// The caller-owned mode (used by `StorageMergeTree::alter` and
+        /// `StorageReplicatedMergeTree::alter`) closes the gap reported by the bot on
+        /// PR #103818: previously this function committed the scope right after
+        /// `setInMemoryMetadata`, but the outer caller still had to run `alterTable` (and a
+        /// ZooKeeper `tryMulti` on the replicated path) which can throw. After commit a thrown
+        /// outer step would revert the in-memory metadata via a second `changeSettings(old)` call,
+        /// yet the newly registered inline disk would already be permanently in `DiskSelector`.
+        std::optional<DiskFromAST::CustomDiskRegistrationScope> local_disk_scope;
+        if (!caller_disk_scope)
+            local_disk_scope.emplace(getContext());
+        DiskFromAST::CustomDiskRegistrationScope * disk_scope = caller_disk_scope ? caller_disk_scope : &*local_disk_scope;
+
+        /// Take a non-const copy so an inline `disk = disk(...)` setting (a `CustomType` `Field`
+        /// produced by the parser) is converted to a registered disk name string before any
+        /// `safeGet<String>` or `applyChanges` call. This mirrors the pre-processing done by
+        /// `MergeTreeSettingsImpl::loadFromQuery` on the `CREATE TABLE ... SETTINGS disk = disk(...)`
+        /// path; without it, every ALTER that re-applies the table's settings would throw
+        /// `Bad get: has CustomType, requested String` (issue #63019).
+        SettingsChanges new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(new_changes, getContext(), /* attach */ false, disk_scope);
+
         StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -5285,6 +5347,32 @@ void MergeTreeData::changeSettings(
         }
 
         setInMemoryMetadata(new_metadata);
+
+        /// In-memory metadata transition done. If we own the scope (legacy mode, used by the
+        /// catch-block revert), commit it here so the rolled-back-to settings AST stays
+        /// permanently registered: anything thrown after this point inside this function
+        /// (`startBackgroundMovesIfNeeded`, statistics cache restart) would corrupt state if
+        /// the destructor un-registered already-committed disks.
+        ///
+        /// In caller-owned mode (`caller_disk_scope != nullptr`), we deliberately do NOT
+        /// commit here. The outer caller (`StorageMergeTree::alter` /
+        /// `StorageReplicatedMergeTree::alter`) still has to run `DatabaseCatalog::alterTable`
+        /// (and a ZooKeeper `tryMulti` on the replicated path) which can throw; only after
+        /// that succeeds is the metadata transition truly committed. The caller is
+        /// responsible for invoking `caller_disk_scope->commit()` at that point.
+        if (local_disk_scope)
+            local_disk_scope->commit();
+
+        /// Simulate a throw from the post-transition work below (`startBackgroundMovesIfNeeded` /
+        /// `startStatisticsCache`, both of which create and schedule pool tasks and can throw) in
+        /// caller-owned mode. The live `storage_settings` and in-memory metadata are already
+        /// mutated at this point but `caller_disk_scope` has not been committed, so the caller must
+        /// revert the live state before the scope's destructor rolls the tentative inline disk back.
+        fiu_do_on(FailPoints::merge_tree_change_settings_fail_after_set_metadata,
+        {
+            if (caller_disk_scope)
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in changeSettings after setInMemoryMetadata");
+        });
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
@@ -9471,7 +9559,18 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     auto settings = getDefaultSettings();
     if (metadata.settings_changes)
     {
-        const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        /// Validation-only scope: any custom disk newly registered here is rolled back on
+        /// exit. The disk is not actually consulted by the column-filename collision check;
+        /// the conversion is only needed so `applyChanges` does not trip
+        /// `SettingFieldString::operator=` -> `safeGet<String>` -> `BAD_GET` on the still-
+        /// `CustomType` value (issue #63019, bot review).
+        DiskFromAST::CustomDiskRegistrationScope disk_scope(getContext());
+
+        /// Take a non-const copy so any inline `disk = disk(...)` setting can be normalised to a
+        /// registered disk name string before `applyChanges` reaches `SettingFieldString::operator=`
+        /// (issue #63019).
+        SettingsChanges changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        DiskFromAST::convertCustomDiskSettings(changes, getContext(), /* attach */ false, &disk_scope);
         settings->applyChanges(changes);
     }
 

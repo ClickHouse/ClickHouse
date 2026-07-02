@@ -1,0 +1,4 @@
+alter_failed_injected: yes
+ttl_reverted_to_100: 1
+comment_not_leaked: 1
+table_queryable: 0

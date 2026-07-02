@@ -1686,7 +1686,46 @@ public:
     /// Provides storage disks
     DiskPtr getDisk(const String & name) const;
     using DiskCreator = std::function<DiskPtr(const DisksMap & disks_map)>;
-    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator) const;
+    /// `pending_rollback_owner` is an opaque pointer that uniquely identifies a
+    /// `DiskFromAST::CustomDiskRegistrationScope`. When non-null and the disk does not yet
+    /// exist, the new registration is recorded in the global pending-rollback table
+    /// associated with this owner. When the disk already exists, any prior pending-rollback
+    /// entry for that name is cleared (the caller has just observed it and may commit
+    /// metadata against this disk, so the original validation scope must NOT delete it).
+    /// See `DiskFromAST::CustomDiskRegistrationScope` and issue #63019.
+    DiskPtr getOrCreateDisk(const String & name, DiskCreator creator, const void * pending_rollback_owner = nullptr) const;
+
+    /// Atomically check the global pending-rollback table for `disk_name`. If the entry is
+    /// owned by `owner`, remove the disk and its single-disk storage policy from the global
+    /// selectors and erase the entry; return true. Otherwise return false (the caller MUST
+    /// NOT remove the disk: another DDL has observed the registration and may have committed
+    /// metadata against it).
+    /// Used by `~CustomDiskRegistrationScope` to roll back failed ALTER validations.
+    bool removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const;
+
+    /// Atomically clear the pending-rollback entry for `disk_name` if owned by `owner`.
+    /// The disk and its storage policy stay in the global selectors. Used by
+    /// `CustomDiskRegistrationScope::commit` after the apply path commits its metadata.
+    void clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const;
+
+    /// Two-phase commit for unscoped CREATE / ATTACH observers (callers that pass
+    /// `pending_rollback_owner == nullptr` to `getOrCreateDisk`). When such a caller observes
+    /// a disk whose name is currently in flight as a tentative scoped registration,
+    /// `getOrCreateDisk` takes an anonymous reference (the entry's `unscoped_observers`
+    /// counter) to keep the disk pinned during the unscoped caller's own validation (e.g. the
+    /// settings-hash check in `getOrCreateCustomDisk`). Each observer holds exactly one
+    /// reference, independent of any co-observer of the same disk name. The caller then drops
+    /// its reference by calling either of:
+    /// - `commitUnscopedDiskObservation` after the validation has succeeded and the caller
+    ///   is about to commit metadata against the disk; this also flips `committed = true`
+    ///   so no still-in-flight scope's destructor rolls the disk back later. Returns true if
+    ///   the entry was found, false if it had already been cleared.
+    /// - `releaseUnscopedDiskObservation` if the validation failed; this drops the observer's
+    ///   reference without committing, and rolls the disk back itself only if it is the last
+    ///   reference to leave with the entry uncommitted (otherwise a still-active scope or
+    ///   co-observer performs the rollback).
+    bool commitUnscopedDiskObservation(const String & disk_name) const;
+    void releaseUnscopedDiskObservation(const String & disk_name) const;
 
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
@@ -1889,6 +1928,14 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// Internal helper for the tentative-disk rollback path. Erases the bookkeeping entry
+    /// for `disk_name` if present, removes the disk from `DiskSelector`, drops the
+    /// auto-registered single-disk storage policy, removes any owned `FileCacheFactory`
+    /// alias, and shuts down the disk so storage-backed background pools stop before the
+    /// last `shared_ptr` is released. Caller must already hold `shared->storage_policies_mutex`.
+    /// Used by `removePendingCustomDiskIfOwned` and `releaseUnscopedDiskObservation`.
+    bool rollbackTentativeDiskUnderLock(const String & disk_name, std::lock_guard<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);

@@ -1,0 +1,25 @@
+<clickhouse>
+    <!-- Pre-existing filesystem cache used exclusively by
+         `04151_alter_inline_disk_cache_rollback_ownership` to exercise the rollback-ownership
+         path in `Context::removePendingCustomDiskIfOwned` (issue #63019).
+
+         The `<path>` is RELATIVE so it is resolved per-instance against the server's
+         `filesystem_caches_path` by `getPathPrefixForRelativeCachePath`. An absolute path
+         would collide across the two DatabaseReplicated instances (install.sh rewrites each
+         instance to a distinct `filesystem_caches_path`), and would also be eagerly created
+         at startup under an unwritable path on non-Linux runners. The 04151 test reads the
+         resolved path from `system.filesystem_cache_settings` at runtime and passes it as the
+         inline `disk(type = cache, name = 'cache_for_rollback_test', path = '<resolved>')`,
+         so `FileCacheFactory::getOrCreate` matches by path and reuses this entry instead of
+         inserting a new one (the only way to reach `we_inserted_cache_entry == false` on a
+         fresh tentative-disk registration in user-facing SQL).
+
+         The cache is intentionally tiny (`max_size = 1Mi`) and has a unique name so it cannot
+         interfere with other tests. -->
+    <filesystem_caches>
+        <cache_for_rollback_test>
+            <path>cache_for_rollback_test/</path>
+            <max_size>1Mi</max_size>
+        </cache_for_rollback_test>
+    </filesystem_caches>
+</clickhouse>

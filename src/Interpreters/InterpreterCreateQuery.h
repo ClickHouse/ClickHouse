@@ -108,7 +108,12 @@ private:
     AccessRightsElements getRequiredAccess() const;
 
     /// Create IStorage and add it to database. If table already exists and IF NOT EXISTS specified, do nothing and return false.
-    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
+    /// `disk_scope_owned_by_caller`: when true, the caller (e.g. `doCreateOrReplaceTable`) has installed the ambient
+    /// `CustomDiskRegistrationScope` and owns the inline-disk commit/rollback lifecycle across a wider transition (temporary
+    /// create + fill + rename). This create then neither installs its own ambient scope nor commits the disk; the disk stays
+    /// tracked under the caller's scope until the caller's final durability point. See issue #63019.
+    bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode,
+                       bool disk_scope_owned_by_caller = false);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTemporaryTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
 #if CLICKHOUSE_CLOUD

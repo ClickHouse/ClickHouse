@@ -1,0 +1,4 @@
+mt alter_failed_injected: yes
+mt ttl_reverted_to_100: 1
+mt column_b_not_added: 1
+mt table_queryable: 0

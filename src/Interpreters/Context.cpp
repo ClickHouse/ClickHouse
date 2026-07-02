@@ -658,6 +658,43 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
     mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
+    /// Tracks custom-disk registrations performed by in-flight ALTER validations.
+    ///
+    /// The `active_owners` vector lists every scoped `CustomDiskRegistrationScope *` (used as
+    /// opaque tokens, never dereferenced) that has either freshly registered the disk or
+    /// merely observed an existing tentative registration via `getOrCreateDisk`.
+    ///
+    /// `unscoped_observers` counts the unscoped CREATE / ATTACH callers (those that pass no
+    /// `CustomDiskRegistrationScope *`) currently validating an observed registration. Each
+    /// such observer is a single anonymous reference: `getOrCreateDisk` increments the counter
+    /// when it observes a tentative entry, and the observer drops it exactly once via
+    /// `commitUnscopedDiskObservation` (success) or `releaseUnscopedDiskObservation` (failure).
+    /// A plain counter rather than a sentinel value in `active_owners` is required because
+    /// every unscoped observer of the same disk name would otherwise push an identical token,
+    /// and removing "the" token would drop every co-observer's reference at once.
+    ///
+    /// The disk is rolled back from the global `DiskSelector` only when (a) `committed` is
+    /// `false`, AND (b) the last reference leaves, i.e. `active_owners` is empty AND
+    /// `unscoped_observers == 0`. Any scope that calls `clearPendingCustomDiskRegistration`
+    /// (after committing its metadata transition) flips `committed` to `true`; from that point
+    /// no destructor rolls the disk back, which keeps the disk reachable for the metadata that
+    /// is now committed against it.
+    ///
+    /// `we_inserted_cache_entry` records whether the FIRST registrar of this name also
+    /// inserted a fresh entry into `FileCacheFactory::caches_by_name` (i.e. `disk(type =
+    /// cache, name = X, ...)` registered a new cache by name `X`). The rollback path removes
+    /// the cache entry only when this flag is set, so a same-name pre-existing cache is
+    /// never silently torn down by an unrelated rejected ALTER.
+    ///
+    /// See `DiskFromAST::CustomDiskRegistrationScope` and issue #63019.
+    struct TentativeDiskRegistration
+    {
+        std::vector<const void *> active_owners;
+        size_t unscoped_observers = 0;
+        bool committed = false;
+        bool we_inserted_cache_entry = false;
+    };
+    mutable std::unordered_map<String, TentativeDiskRegistration> tentative_disk_registrations TSA_GUARDED_BY(storage_policies_mutex);
 
     ServerSettings server_settings;
 
@@ -6720,7 +6757,7 @@ DiskPtr Context::getDisk(const String & name) const
     return disk_selector->get(name);
 }
 
-DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
+DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator, const void * pending_rollback_owner) const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -6729,11 +6766,288 @@ DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
     auto disk = disk_selector->tryGet(name);
     if (!disk)
     {
-        disk = creator(getDisksMap(lock));
-        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+        /// Snapshot whether a `FileCacheFactory` entry by this name pre-exists. Used below
+        /// to decide whether the rollback path is allowed to remove the cache entry: if a
+        /// cache by this name was already registered (e.g. by a still-active table or by
+        /// `disk(type = cache, name = preexisting, ...)` reusing the same path), then this
+        /// scope does not own the cache registration even if it newly registers the disk,
+        /// and the rollback must leave the cache alone.
+        const bool cache_pre_existed = FileCacheFactory::instance().tryGetByName(name) != nullptr;
+
+        /// Make `creator` plus `addToDiskMap` a single rollback unit. Either step can register
+        /// resources before throwing: `creator` may insert a `FileCacheFactory` alias for
+        /// `disk(type = cache, name = X, ...)` before reaching `RegisterDiskCache`'s
+        /// `dynamic_cast` check (handled by `DiskFromAST` in-tree, but mirrored here as
+        /// defense in depth so future custom-disk creators do not silently leak); and
+        /// `DiskSelector::addToDiskMap` can throw from `recordDisk` (plain-disk overlap,
+        /// duplicate name) AFTER the disk was constructed and any side aliases registered.
+        /// If anything throws between here and a successful `addToDiskMap`, undo the cache
+        /// alias we did not own, shut down the constructed disk, and rethrow.
+        try
+        {
+            disk = creator(getDisksMap(lock));
+            const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
+        }
+        catch (...)
+        {
+            if (!cache_pre_existed && FileCacheFactory::instance().tryGetByName(name) != nullptr)
+                FileCacheFactory::instance().removeByName(name);
+            /// Best-effort shutdown of the disk we created but never published. The default
+            /// `IDisk::shutdown` is a no-op; storage-backed disks override it to release
+            /// background pools and outstanding writes. Skip when `creator` itself threw
+            /// (no disk was returned).
+            if (disk)
+            {
+                try
+                {
+                    disk->shutdown();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("getOrCreateDisk"),
+                        fmt::format("Failed to shut down half-registered disk {}", name));
+                }
+            }
+            throw;
+        }
+
+        if (pending_rollback_owner)
+        {
+            auto & entry = shared->tentative_disk_registrations[name];
+            entry.active_owners.push_back(pending_rollback_owner);
+            /// Only the first registrar can claim ownership of a fresh cache entry. Repeat
+            /// observers (`active_owners.size() > 1`) cannot, even if the cache happened to
+            /// appear after their join: that cache belongs to someone else's tentative
+            /// registration or to a committed table.
+            if (entry.active_owners.size() == 1)
+                entry.we_inserted_cache_entry = !cache_pre_existed
+                    && FileCacheFactory::instance().tryGetByName(name) != nullptr;
+        }
+    }
+    else if (pending_rollback_owner)
+    {
+        /// The caller has observed an existing custom disk by this name. Join the rollback
+        /// chain: the disk must not be removed while we hold a reference, because we may
+        /// later commit metadata against it. The disk is removed only when ALL active
+        /// owners leave AND none has committed (see `removePendingCustomDiskIfOwned` and
+        /// `clearPendingCustomDiskRegistration`).
+        ///
+        /// If no tentative entry is currently tracked for this disk, the disk has long
+        /// been committed by a previous DDL and there is nothing to track. We do NOT
+        /// create an entry in that case: doing so would let an unrelated later rollback
+        /// remove a disk that no in-flight scope ever tentatively registered.
+        auto it = shared->tentative_disk_registrations.find(name);
+        if (it != shared->tentative_disk_registrations.end())
+            it->second.active_owners.push_back(pending_rollback_owner);
+    }
+    else
+    {
+        /// Unscoped observer (CREATE / ATTACH path that does not own a
+        /// `CustomDiskRegistrationScope`). If a tentative entry is in flight for this name,
+        /// pin it with an anonymous reference (`unscoped_observers` counter) so a concurrent
+        /// scope's destructor cannot roll the disk back while this caller is still validating
+        /// it (e.g. the settings-hash check in `getOrCreateCustomDisk`). The caller MUST drop
+        /// the reference after validation by calling either `commitUnscopedDiskObservation`
+        /// (success path, flips `committed`) or `releaseUnscopedDiskObservation` (failure
+        /// path, lets a still-active scope or the last leaver roll back normally). A counter
+        /// rather than a token in `active_owners` keeps co-observers of the same disk name
+        /// independent: dropping one observer's reference must not drop another's.
+        auto it = shared->tentative_disk_registrations.find(name);
+        if (it != shared->tentative_disk_registrations.end())
+            ++it->second.unscoped_observers;
     }
 
     return disk;
+}
+
+bool Context::commitUnscopedDiskObservation(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return false;
+
+    auto & entry = it->second;
+
+    /// Drop this observer's anonymous reference (paired with the `else` branch in
+    /// `getOrCreateDisk`) and flip the registration to committed. Tolerates being called on
+    /// an entry where no reference is outstanding (e.g. `getOrCreateDisk` did not take one
+    /// because no tentative was in flight at observation time, but a subsequent ALTER created
+    /// one before this commit ran): the caller's metadata is still about to land, so
+    /// committing is the correct outcome.
+    if (entry.unscoped_observers > 0)
+        --entry.unscoped_observers;
+    entry.committed = true;
+
+    /// If we are the last reference to leave a now-committed entry, drop the bookkeeping
+    /// (the disk stays registered). Symmetric with the erase-on-last-reference branches in
+    /// `clearPendingCustomDiskRegistration` and `releaseUnscopedDiskObservation`.
+    if (entry.active_owners.empty() && entry.unscoped_observers == 0)
+        shared->tentative_disk_registrations.erase(it);
+    return true;
+}
+
+/// Internal helper that performs the global rollback for a tentative disk entry. Called
+/// when the last remaining owner has been removed and no one ever flipped `committed` to
+/// true. Erases the bookkeeping entry, removes the disk from `DiskSelector`, drops the
+/// auto-registered single-disk storage policy, removes any owned `FileCacheFactory` alias,
+/// and shuts down the disk so background pools stop before the last `shared_ptr` is
+/// released. Must be called under `shared->storage_policies_mutex`.
+///
+/// Returns true if a custom disk was removed from the selector. Returns false if there was
+/// no disk to remove or the disk was config-defined (defensive guard).
+bool Context::rollbackTentativeDiskUnderLock(
+    const String & disk_name,
+    std::lock_guard<std::mutex> & lock) const TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    /// Caller has `shared->storage_policies_mutex` locked via `lock`. TSA cannot prove the
+    /// equivalence of the parameter and the guarded mutex, so disable analysis for this body.
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return false;
+    auto & entry = it->second;
+    const bool we_inserted_cache_entry = entry.we_inserted_cache_entry;
+    shared->tentative_disk_registrations.erase(it);
+
+    auto disk_selector = getDiskSelector(lock);
+    auto disk = disk_selector->tryGet(disk_name);
+    if (!disk || !disk->isCustomDisk())
+    {
+        /// Defensive: never remove a non-custom (config-defined) disk via this rollback path.
+        return false;
+    }
+
+    /// `getStoragePolicyFromDisk` lazily registers a `__<disk_name>` single-disk storage
+    /// policy alongside the disk; remove it too so the next `getStoragePolicyFromDisk` call
+    /// rebuilds a fresh one rather than returning a stale policy referencing the removed disk.
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+    const String storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
+    const_cast<StoragePolicySelector *>(storage_policy_selector.get())->remove(storage_policy_name);
+
+    /// Drop the cache entry we own. `we_inserted_cache_entry` is set only when the first
+    /// registrar inserted a fresh entry into `FileCacheFactory::caches_by_name`; a
+    /// preexisting cache reused via the same path remains untouched.
+    if (we_inserted_cache_entry)
+        FileCacheFactory::instance().removeByName(disk_name);
+
+    auto removed_disk = const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(disk_name);
+    /// Shut down the rolled-back disk so storage-backed background pools (`DiskObjectStorage`
+    /// blob threads, metadata storage, underlying object storages) are stopped before the
+    /// last `shared_ptr` is released. `IDisk` destruction does not call `shutdown` itself,
+    /// so without this call object-storage rollbacks would leave background work running
+    /// against a disk no metadata still references. Mirrors the half-registered-disk
+    /// shutdown path in `getOrCreateDisk`'s catch block.
+    if (removed_disk)
+    {
+        try
+        {
+            removed_disk->shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("rollbackTentativeDisk"),
+                fmt::format("Failed to shut down rolled-back disk {}", disk_name));
+        }
+    }
+    return removed_disk != nullptr;
+}
+
+void Context::releaseUnscopedDiskObservation(const String & disk_name) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return;
+
+    auto & entry = it->second;
+
+    /// Drop only this observer's anonymous reference. Co-observers of the same disk name keep
+    /// their own references, so a failing observer can never tear another observer's slot out.
+    if (entry.unscoped_observers > 0)
+        --entry.unscoped_observers;
+
+    /// If any scoped owner is still in flight, another unscoped observer is still validating,
+    /// or someone has committed, leave the rollback to whichever path runs next
+    /// (`removePendingCustomDiskIfOwned` for the last scoped owner, this function for the last
+    /// unscoped observer, or `clearPendingCustomDiskRegistration` for an explicit commit).
+    if (!entry.active_owners.empty() || entry.unscoped_observers > 0 || entry.committed)
+    {
+        if (entry.active_owners.empty() && entry.unscoped_observers == 0 && entry.committed)
+            shared->tentative_disk_registrations.erase(it);
+        return;
+    }
+
+    /// We are the last reference to leave AND no one committed. This happens when a scoped
+    /// owner's destructor ran first (e.g. an outer alterTable / ZK commit failed) and then
+    /// the unscoped observer's validation failed too. The scoped owner saw outstanding
+    /// references (this observer still counted), deferred the rollback, and is gone now;
+    /// the unscoped observer must perform the rollback itself or the disk leaks until
+    /// server restart.
+    rollbackTentativeDiskUnderLock(disk_name, lock);
+}
+
+bool Context::removePendingCustomDiskIfOwned(const String & disk_name, const void * owner) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return false;
+
+    auto & entry = it->second;
+
+    /// Drop ourselves from the active set. Robust to repeated `track`s of the same name
+    /// (the scope's `track` is best-effort; double-tracking only adds duplicate slots).
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
+
+    /// If anyone in the chain has committed, the disk is permanently reachable. Drop our
+    /// slot, leak everything else (the existing settings-hash check protects future ALTERs
+    /// from redefining the name with different settings). Only erase the bookkeeping entry
+    /// once every reference (scoped owners AND unscoped observers) is gone.
+    if (entry.committed)
+    {
+        if (owners.empty() && entry.unscoped_observers == 0)
+            shared->tentative_disk_registrations.erase(it);
+        return false;
+    }
+
+    /// Other scopes are still in flight, or an unscoped CREATE / ATTACH observer is still
+    /// validating an observed registration. They might commit; defer removal to whichever
+    /// reference is the last to leave (`removePendingCustomDiskIfOwned` for the last scope,
+    /// `releaseUnscopedDiskObservation` for the last observer).
+    if (!owners.empty() || entry.unscoped_observers > 0)
+        return false;
+
+    /// We are the last reference to leave and no one committed. Roll back globally. The helper
+    /// re-locates the iterator from `disk_name`; we drop our reference (`entry`/`owners`)
+    /// before calling it so the helper's `erase` does not invalidate anything live here.
+    return rollbackTentativeDiskUnderLock(disk_name, lock);
+}
+
+void Context::clearPendingCustomDiskRegistration(const String & disk_name, const void * owner) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto it = shared->tentative_disk_registrations.find(disk_name);
+    if (it == shared->tentative_disk_registrations.end())
+        return;
+
+    auto & entry = it->second;
+
+    /// Mark the registration as committed: from now on no destructor of any scope still
+    /// holding a slot will roll back the disk. This is the only place that flips the flag.
+    entry.committed = true;
+
+    /// Drop our slot. Other scopes / unscoped observers may still be in flight; their
+    /// destructors or release calls will see `committed == true` and merely shrink the
+    /// reference set. Only erase the bookkeeping entry once every reference is gone.
+    auto & owners = entry.active_owners;
+    owners.erase(std::remove(owners.begin(), owners.end(), owner), owners.end());
+    if (owners.empty() && entry.unscoped_observers == 0)
+        shared->tentative_disk_registrations.erase(it);
 }
 
 StoragePolicyPtr Context::getStoragePolicy(const String & name) const
