@@ -25,6 +25,11 @@ struct ColumnsInfo
     /// to the replicated column for each column in the list above.
     /// If columns is not Replicated, pointer will be nullptr.
     PODArray<const ColumnReplicated *> replicated_columns;
+
+    /// Must be called after `columns` are replaced in-place (e.g. by cloneResized).
+    /// Raw pointers in `replicated_columns` point into the old column objects and become
+    /// dangling as soon as those objects are released.
+    void rebuildReplicatedColumns();
 };
 
 /// Reference to the row in block.

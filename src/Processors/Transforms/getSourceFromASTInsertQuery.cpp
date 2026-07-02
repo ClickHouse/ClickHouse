@@ -84,7 +84,7 @@ Pipe getSourceFromInputFormat(
     if (context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && ast_insert_query->table_id && !input_function)
     {
         StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         const auto & columns = metadata_snapshot->getColumns();
         if (columns.hasDefaults())
         {
@@ -134,7 +134,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
         return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
 
-    std::vector<ReadBufferUniquePtr> buffers;
+    ConcatReadBuffer::Buffers buffers;
     if (insert_query->data)
     {
         /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.

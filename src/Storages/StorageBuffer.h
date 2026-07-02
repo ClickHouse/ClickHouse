@@ -2,9 +2,8 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Event.h>
 

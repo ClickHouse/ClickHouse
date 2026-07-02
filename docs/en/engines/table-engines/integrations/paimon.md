@@ -8,8 +8,6 @@ title: 'Paimon table engine'
 doc_type: 'reference'
 ---
 
-# Paimon table engine {#paimon-table-engine}
-
 This engine provides a read-only integration with existing Apache [Paimon](https://paimon.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 It supports snapshot reads, incremental reads, and basic partition pruning provided by the engine.
 
@@ -22,7 +20,7 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
 
 CREATE TABLE paimon_table_azure
     ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -96,12 +94,27 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-Targeted snapshot delta read (query-level):
+### Query-level settings for incremental read {#query-level-settings-for-incremental-read}
+
+The following settings are **query-level** (passed via `SELECT ... SETTINGS`, not in `CREATE TABLE`). They control per-query behavior of incremental reads:
+
+- `paimon_target_snapshot_id` — read only the delta of the specified snapshot. The committed watermark in Keeper is **not** advanced, so the same snapshot can be re-read any number of times. Default: `-1` (disabled).
+- `max_consume_snapshots` — maximum number of snapshots to consume in a single incremental read. When the source has accumulated many unread snapshots, this limits how many are consumed per query to control batch size. `0` means no limit. Default: `0`.
+
+**Targeted snapshot read** — always returns the delta of snapshot 1, regardless of the current watermark:
 
 ```sql
 SELECT count()
 FROM paimon_inc
 SETTINGS paimon_target_snapshot_id = 1;
+```
+
+**Limiting snapshots per batch** — if three new snapshots are pending, consume at most two per query:
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS max_consume_snapshots = 2;
 ```
 
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
@@ -110,7 +123,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 
 **Step 1 — Create the Paimon source table with incremental read and metadata refresh enabled.**
 
-The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the `Paimon` alias as appropriate for your storage backend:
+The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
 SET allow_experimental_paimon_storage_engine = 1;
@@ -124,7 +137,7 @@ SETTINGS
     paimon_replica_name = '{replica}',
     paimon_metadata_refresh_interval_sec = 1;
 
--- S3 storage (Paimon is an alias for PaimonS3)
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
 CREATE TABLE paimon_mv_source
 ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
 SETTINGS
@@ -174,12 +187,13 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 - Incremental read requires Keeper (ZooKeeper) to be configured.
 - Incremental read requires `paimon_keeper_path` to be set and unique per table.
 - `paimon_replica_name` must be unique per replica within the same Keeper path.
+- Incremental read uses at-most-once delivery: the committed snapshot is advanced when data files are collected, before the data is actually consumed. If the query fails after file collection, the skipped snapshots will not be re-read on retry.
 - The table engine is read-only; data modification is not supported.
 - Incremental read does not handle historical data deletions from the Paimon source. If upstream Paimon data is deleted or updated, the corresponding rows already written to a ClickHouse MergeTree destination table will not be automatically removed. You must manually issue `ALTER TABLE ... DELETE` on the MergeTree table to clean up stale data.
 
 ## Aliases {#aliases}
 
-Table engine `Paimon` is an alias to `PaimonS3` now.
+The `Paimon` table engine auto-detects the storage backend from the `disk` setting and dispatches to `PaimonS3`, `PaimonAzure`, or `PaimonLocal` accordingly. When no `disk` is specified, it defaults to the `PaimonS3` implementation.
 
 ## Virtual Columns {#virtual-columns}
 

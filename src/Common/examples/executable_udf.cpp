@@ -9,10 +9,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 using namespace DB;
 
-int main(int argc, char **argv)
+int mainEntryExampleExecutableUdf(int argc, char **argv)
 {
     (void)(argc);
     (void)(argv);
@@ -22,7 +23,7 @@ int main(int argc, char **argv)
     ReadBufferFromFileDescriptor read_buffer(0);
     WriteBufferFromFileDescriptor write_buffer(1);
     size_t rows = 0;
-    char dummy;
+    char dummy = {};
 
     while (!read_buffer.eof())
     {

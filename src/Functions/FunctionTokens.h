@@ -2,17 +2,13 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
@@ -56,7 +52,7 @@ namespace ErrorCodes
 
 /// A function that takes a string, and returns an array of substrings created by some generator.
 template <typename Generator>
-class FunctionTokens : public IFunction
+class FunctionTokens final : public IFunction
 {
 private:
     using Pos = const char *;
@@ -91,7 +87,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        Generator generator;
+        Generator generator{};
         generator.init(arguments, max_substrings_includes_remaining_string);
 
         const auto & array_argument = arguments[generator.strings_argument_position];

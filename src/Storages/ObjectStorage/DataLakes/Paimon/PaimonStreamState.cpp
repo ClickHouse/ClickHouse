@@ -3,6 +3,8 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonStreamState.h>
+#include <Core/Field.h>
+#include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -28,6 +30,7 @@ PaimonStreamState::PaimonStreamState(
     , replica_name(replica_name_)
     , fs_keeper_path(keeper_path_)
     , log(log_)
+    , active_node_identifier(Field(ServerUUID::get()).dump())
 {
     if (!keeper)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PaimonStreamState requires a valid Keeper instance");
@@ -147,22 +150,50 @@ bool PaimonStreamState::activate()
 
     try
     {
-        // Try to delete existing ephemeral node if it belongs to us (stale session)
-        keeper->tryRemove(is_active_path, -1);
+        /// Check whether an existing is_active node belongs to this server.
+        /// Only reclaim it when the stored identifier matches ours (stale
+        /// session from the same server). If it belongs to another server,
+        /// refuse to activate to avoid stealing another replica's marker.
+        Coordination::Stat stat;
+        String existing_identifier;
+        if (keeper->tryGet(is_active_path, existing_identifier, &stat))
+        {
+            if (existing_identifier == active_node_identifier)
+            {
+                /// Stale node from our previous session — safe to reclaim.
+                /// Use versioned delete (CAS) to guard against TOCTOU races.
+                auto remove_code = keeper->tryRemove(is_active_path, stat.version);
+                if (remove_code != Coordination::Error::ZOK)
+                {
+                    LOG_WARNING(log, "Failed to remove stale is_active node at {} (code: {}). "
+                        "Will retry on next attempt.", is_active_path.string(), remove_code);
+                    return false;
+                }
+                LOG_INFO(log, "Removed stale is_active node from previous session at {}", is_active_path.string());
+            }
+            else
+            {
+                LOG_WARNING(log, "Paimon replica {} is_active node belongs to another server instance "
+                    "(expected: {}, found: {}). Refusing to activate.",
+                    replica_name, active_node_identifier, existing_identifier);
+                return false;
+            }
+        }
 
-        // Create new ephemeral node
-        keeper->create(is_active_path, replica_name, zkutil::CreateMode::Ephemeral);
+        /// Create new ephemeral node with our server identifier.
+        keeper->create(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral);
         replica_is_active_node = zkutil::EphemeralNodeHolder::existing(is_active_path, *keeper);
         is_active = true;
 
-        LOG_INFO(log, "Paimon replica {} activated", replica_name);
+        LOG_INFO(log, "Paimon replica {} activated with identifier {}", replica_name, active_node_identifier);
         return true;
     }
     catch (const Coordination::Exception & e)
     {
         if (e.code == Coordination::Error::ZNODEEXISTS)
         {
-            LOG_WARNING(log, "Paimon replica {} appears to be already active. Another instance may be running.", replica_name);
+            LOG_WARNING(log, "Paimon replica {} is_active node was created by another session "
+                "between our check and create. Will retry on next attempt.", replica_name);
             return false;
         }
         throw;
@@ -239,6 +270,7 @@ void PaimonStreamState::removeProcessingLock()
 {
     auto processing_lock_path = fs_keeper_path / PROCESSING_LOCK_NODE;
     keeper->tryRemove(processing_lock_path, -1);
+    LOG_DEBUG(log, "Released processing lock at {}", processing_lock_path.string());
 }
 
 }

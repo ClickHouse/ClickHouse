@@ -16,7 +16,7 @@ namespace
 {
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
-class FunctionToNullable : public IFunction
+class FunctionToNullable final : public IFunction
 {
 public:
     static constexpr auto name = "toNullable";

@@ -25,6 +25,11 @@ workflow = Workflow.Config(
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
         *[job for job in JobConfigs.functional_tests_jobs if "amd_asan_ubsan" in job.name],
+        *[
+            job
+            for job in JobConfigs.unittest_jobs
+            if any(t in job.name for t in ("asan_ubsan", "tsan"))
+        ],
         *[job for job in JobConfigs.stress_test_jobs if "amd_tsan" in job.name],
         *[
             job

@@ -11,6 +11,7 @@
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -64,9 +65,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
+    extern const S3AuthSettingsS3UriStyle uri_style;
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -88,7 +91,6 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
-extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -101,7 +103,7 @@ std::unique_ptr<S3::Client> getClient(
     std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
 
 {
-    auto url = S3::URI(endpoint);
+    auto url = S3::URI(endpoint, false, true, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
     return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback);
@@ -115,12 +117,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     const auto & request_settings = settings.request_settings;
 
     const bool is_s3_express_bucket = S3::isS3ExpressEndpoint(url.endpoint);
-    if (is_s3_express_bucket && auth_settings[S3AuthSetting::region].value.empty())
-    {
-        throw Exception(
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-            "Region should be explicitly specified for directory buckets");
-    }
 
     const Settings & local_settings = context->getSettingsRef();
 
@@ -207,6 +203,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         auth_settings[S3AuthSetting::no_sign_request],
         auth_settings[S3AuthSetting::role_arn],
         auth_settings[S3AuthSetting::role_session_name],
+        auth_settings[S3AuthSetting::external_id],
         /*sts_endpoint_override=*/""
     };
 
@@ -244,7 +241,10 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             }
         }
     }
+
     context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+
+    auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 
     return S3::ClientFactory::instance().create(
         client_configuration,
@@ -255,7 +255,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         auth_settings.server_side_encryption_kms_config,
         headers,
         credentials_configuration,
-        session_token);
+        session_token,
+        shared_cache);
 }
 
 }

@@ -120,6 +120,7 @@ protected:
     void runNonInteractive();
 
     char * argv0 = nullptr;
+    String app_name; /// Application name for help messages (e.g., "clickhouse client" or "clickhouse-client")
     void runLibFuzzer();
 
     /// This is the analogue of Poco::Application::config()
@@ -153,6 +154,15 @@ protected:
     virtual void setupSignalHandler() = 0;
 
     ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
+    /// Echo the query before execution, honoring the echo, echo-formatted and highlight settings.
+    void echoQuery(std::string_view full_query, const ASTPtr & parsed_query);
+
+    /// Resolve echo, echo-formatted, echo-query-id and highlight settings from the configuration,
+    /// using interactive-mode-aware defaults. Must be called after is_interactive is determined.
+    /// `clickhouse-local` historically makes `--verbose` imply query echoing; other clients do not,
+    /// so the implication is opt-in via `verbose_implies_echo`.
+    void setupEchoAndHighlightSettings(bool verbose_implies_echo = false);
 
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
@@ -217,6 +227,11 @@ protected:
 
     static fs::path getHistoryFilePath();
 private:
+    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
+    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
+    /// output path, so it neither prints anything nor disturbs the visible query state.
+    Block fetchDocumentation(const String & query, const String & word);
+
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
@@ -264,6 +279,12 @@ private:
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
+    /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
+    /// matches exactly, lists similar names and entities whose documentation mentions the word.
+    /// Always returns true: the input was consumed as a meta-command.
+    bool processHelpCommand(const String & word);
 
 protected:
 
@@ -318,17 +339,22 @@ protected:
 
     String default_database;
     String query_id;
-    Int32 suggestion_limit;
+    Int32 suggestion_limit{};
     bool enable_highlight = true;
     bool multiline = false;
+    bool rainbow_parentheses = true;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool delayed_interactive = false;
 
-    bool echo_queries = false; /// Print queries before execution in batch mode.
+    bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
+    bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
+    bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
+    bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
+    bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
 
     std::optional<Suggest> suggest;
     bool load_suggestions = false;
@@ -380,6 +406,9 @@ protected:
     std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
+    /// Wrapper for hooking into the flush event.
+    std::unique_ptr<WriteBuffer> std_out_wrapper;
+
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
     std::shared_ptr<IOutputFormat> output_format;
@@ -397,7 +426,7 @@ protected:
 
     fs::path home_path;
     fs::path history_file; /// Path to a file containing command history.
-    UInt32 history_max_entries; /// Maximum number of entries in the history file.
+    UInt32 history_max_entries{}; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
     String server_version;
@@ -408,6 +437,9 @@ protected:
     SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
+    /// Progress received before the output format was created (e.g. from scalar subqueries during analysis).
+    /// Replayed into output_format once it's available.
+    Progress pending_progress;
     ProgressTable progress_table;
     bool need_render_progress = true;
     bool need_render_progress_table = true;
@@ -468,7 +500,7 @@ protected:
         Block last_block;
     } profile_events;
 
-    QueryProcessingStage::Enum query_processing_stage;
+    QueryProcessingStage::Enum query_processing_stage{};
     ClientInfo::QueryKind query_kind{ClientInfo::QueryKind::INITIAL_QUERY};
 
     struct HostAndPort

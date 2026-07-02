@@ -97,6 +97,9 @@ void ASTCreateWasmFunctionQuery::formatImpl(WriteBuffer & ostr, const FormatSett
         abi_ast->format(ostr, settings, state, frame);
     }
 
+    if (is_deterministic)
+        ostr << " DETERMINISTIC";
+
     if (module_hash_ast)
     {
         ostr << " SHA256_HASH ";
@@ -167,6 +170,8 @@ ASTCreateWasmFunctionQuery::Definition ASTCreateWasmFunctionQuery::validateAndGe
         String abi_name = getIdentifierName(abi_ast);
         info.abi_version = getWasmAbiFromString(abi_name);
     }
+
+    info.is_deterministic = is_deterministic;
 
     for (const auto & setting : function_settings)
         info.settings.trySet(setting.name, setting.value);

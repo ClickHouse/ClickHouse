@@ -18,7 +18,7 @@ namespace DB
 ///
 /// Keeper path structure:
 ///   {keeper_path}/
-///   ├── committed_snapshot      # Last successfully processed snapshot ID
+///   ├── committed_snapshot      # Last consumed snapshot ID (advanced at read time)
 ///   ├── processing_lock         # Ephemeral lock to prevent concurrent incremental reads
 ///   └── replicas/
 ///       └── {replica_name}/
@@ -28,13 +28,13 @@ namespace DB
 /// 1. Read committed_snapshot from Keeper
 /// 2. Find all snapshots > committed_snapshot
 /// 3. Acquire processing_lock (ephemeral). If exists, wait/fail/cleanup stale.
-/// 4. Process the data
-/// 5. Update committed_snapshot after successful processing
-/// 6. Release processing_lock (delete or session-expire)
+/// 4. Collect data files and advance committed_snapshot
+/// 5. Release processing_lock (delete or session-expire)
+/// 6. Return data to the consumer for processing
 ///
-/// If processing fails before commit, committed_snapshot will not advance and
-/// the lock will be released (explicitly or by session expiry), so the same
-/// delta can be retried (At-Least-Once).
+/// Note: committed_snapshot is advanced before data consumption completes
+/// (At-Most-Once). If processing fails after commit, the skipped snapshots
+/// will not be re-read on retry.
 class PaimonStreamState
 {
 public:
@@ -95,6 +95,11 @@ private:
     const String replica_name;
     const std::filesystem::path fs_keeper_path;
     LoggerPtr log;
+    /// Unique identifier for this server instance, used for ownership
+    /// checks when reclaiming stale is_active ephemeral nodes.
+    /// Generated from ServerUUID so it survives server restarts
+    /// but differs across distinct servers.
+    const String active_node_identifier;
 
     std::atomic<bool> is_active{false};
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;

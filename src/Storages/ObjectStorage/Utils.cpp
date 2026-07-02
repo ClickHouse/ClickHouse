@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
@@ -8,9 +9,6 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/IO/getThreadPoolReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
-#include <Interpreters/Cache/FileCacheKey.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
@@ -187,7 +185,7 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
         if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate key value argument: {}", arg_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: {}", arg_name);
     }
     return key_value_args;
 }
@@ -295,9 +293,14 @@ void expandPaimonKeeperMacrosIfNeeded(
     auto replica_name = (*storage_settings)[DataLakeStorageSetting::paimon_replica_name].value;
 
     auto context = args.getContext();
-    const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
     const auto is_replicated_database = is_on_cluster
         && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
+    /// Unlike ReplicatedMergeTree (which uses the stricter is_on_cluster || is_replicated_database ||
+    /// query.attach || query.has_uuid pattern in TableZnodeInfo::resolve), Paimon's keeper_path stores
+    /// per-table incremental read state and does not require cross-replica path consistency.
+    /// Using hasUUID() allows {uuid} expansion in Atomic databases, which is essential to guarantee
+    /// unique keeper paths — especially after DROP + re-CREATE of the same table name.
     const auto allow_uuid_macro = args.table_id.hasUUID();
 
     if (args.mode < LoadingStrictnessLevel::ATTACH)

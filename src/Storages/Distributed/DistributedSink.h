@@ -7,7 +7,6 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -37,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink : public SinkToStorage
+class DistributedSink final : public SinkToStorage
 {
 public:
     DistributedSink(

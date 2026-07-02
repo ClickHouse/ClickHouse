@@ -208,14 +208,12 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
         {
             nested_column = nested_type->createColumn();
             auto settings_copy = settings;
-            /// In Compact part each granule is deserialized with new deserialize state,
-            /// so we always have empty nested_column. If we also read another subcolumn from the same Map
-            /// (like keys/values), we cannot use whole columns from substreams cache here, because we will
-            /// get wrong size for nested_column (substreams cache works per block, not per granule).
-            if (settings.data_part_type == MergeTreeDataPartType::Compact)
-                settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
+            /// We need only rows from current range to be inserted into temporary nested column.
+            settings_copy.insert_only_rows_in_current_range_from_substreams_cache = true;
             map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_column, rows_offset, limit, settings_copy, map_key_value_state->nested_state, cache);
             num_read_rows = nested_column->size();
+            /// Add the whole Map to cache so other key-value subcolumns reuse it instead of re-reading the same range.
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
         }
     }
     /// Multiple buckets. Only the bucket containing our key was opened, so read it directly.

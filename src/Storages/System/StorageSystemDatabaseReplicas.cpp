@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <future>
 #include <memory>
@@ -7,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
@@ -41,7 +43,7 @@ using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TSta
 namespace
 {
 
-class SystemDatabaseReplicasSource : public ISource
+class SystemDatabaseReplicasSource final : public ISource
 {
 public:
     SystemDatabaseReplicasSource(
@@ -103,7 +105,7 @@ Chunk SystemDatabaseReplicasSource::generate()
             }
         }
 
-        const TStatus * status;
+        const TStatus * status = nullptr;
         try
         {
             status = &futures[index].get();
@@ -254,7 +256,7 @@ void ReadFromSystemDatabaseReplicas::initializePipeline(QueryPipelineBuilder & p
 } // anonymous namespace
 
 StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , pools(std::make_shared<TPools>(DEFAULT_THREAD_COUNT))
 {
     ColumnsDescription description
@@ -272,10 +274,19 @@ StorageSystemDatabaseReplicas::StorageSystemDatabaseReplicas(const StorageID & t
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(description);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageSystemDatabaseReplicas::read(
+VirtualColumnsDescription StorageSystemDatabaseReplicas::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
+
+void StorageSystemDatabaseReplicas::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -291,7 +302,7 @@ void StorageSystemDatabaseReplicas::read(
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     std::map<String, DatabasePtr> replicated_databases;
-    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;
@@ -328,3 +339,6 @@ void StorageSystemDatabaseReplicas::read(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseReplicas) }

@@ -1,8 +1,9 @@
-## Paimon Incremental Read Integration Test (Scheme B)
+## Paimon Incremental Read Integration Test
 
 This test validates Paimon incremental read with:
 
-- A dedicated writer jar (`paimon-incremental-writer`) that creates and writes a normal Paimon table
+- A dedicated writer jar (`paimon-incremental-writer`) built inside the
+  `clickhouse/integration-test-with-hms` Docker image
 - A ClickHouse table created by `ENGINE = PaimonLocal(...)`
 - Incremental reads with Keeper state
 
@@ -12,24 +13,17 @@ This test validates Paimon incremental read with:
 
 ### Writer project
 
-- `paimon-incremental-data/`
+- Source: `ci/docker/integration/clickhouse_with_hms_catalog/paimon-incremental-data/`
 - Main class: `org.apache.paimon.rest.PaimonIncrementalWriter`
-- Jar path expected by test:
-  - `/root/paimon-incremental-data/target/paimon-incremental-writer-1.1.1.jar`
+- Jar path inside the Docker image: `/opt/paimon/paimon-incremental-writer.jar`
 
-### Writer jar packaging
+### How it works
 
-This test repository keeps the writer jar as split chunks in:
-
-- `paimon-incremental-data/chunk_00`
-- `paimon-incremental-data/chunk_01`
-- `paimon-incremental-data/chunk_02`
-
-At runtime, `test.py` copies the directory into the test container and assembles:
-
-- `cat chunk_* > target/paimon-incremental-writer-1.1.1.jar`
-
-If you rebuild the writer jar locally, re-split it into `chunk_*` before commit.
+The writer jar is built from source during the Docker image build
+(`clickhouse/integration-test-with-hms`) via a multi-stage Dockerfile.
+At test time, a sidecar container running the same image shares a Docker
+named volume with the ClickHouse node. The test invokes the writer via
+`docker exec` into the sidecar container.
 
 ### Assertions covered
 
@@ -40,3 +34,4 @@ If you rebuild the writer jar locally, re-split it into `chunk_*` before commit.
 4. Next read without new snapshot returns `0`
 5. `paimon_target_snapshot_id = 2` is deterministic and returns `10` repeatedly
 6. With `max_consume_snapshots = 2`, after warm-up consumption and then 3 commits (10 rows per snapshot), reads are capped per query: `20`, then `10`, then `0`
+7. Refreshable MV pipeline: Paimon (incremental read) -> MV (APPEND) -> MergeTree accumulates rows correctly

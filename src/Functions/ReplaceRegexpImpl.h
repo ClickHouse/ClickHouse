@@ -2,10 +2,10 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
 #include <Functions/Regexps.h>
 #include <Functions/ReplaceStringImpl.h>
-#include <IO/WriteHelpers.h>
 #include <base/types.h>
 
 namespace DB
@@ -71,9 +71,17 @@ struct ReplaceRegexpImpl
 
     /// Decomposes the replacement string into a sequence of substitutions and literals.
     /// E.g. "abc\1de\2fg\1\2" --> inst("abc"), inst(1), inst("de"), inst(2), inst("fg"), inst(1), inst(2)
-    using Instructions = std::vector<Instruction>;
+    using Instructions = VectorWithMemoryTracking<Instruction>;
 
     static constexpr int max_captures = 10;
+
+    static re2::RE2::Options createRegexpOptions()
+    {
+        re2::RE2::Options regexp_options;
+        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        regexp_options.set_dot_nl(true);
+        return regexp_options;
+    }
 
     /// The replacement string references must not contain non-existing capturing groups.
     static void checkSubstitutions(std::string_view replacement, int num_captures)
@@ -239,8 +247,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())
@@ -289,14 +296,13 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == needle_offsets.size());
+        chassert(haystack_offsets.size() == needle_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -339,7 +345,7 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == replacement_offsets.size());
+        chassert(haystack_offsets.size() == replacement_offsets.size());
 
         if (needle.empty())
         {
@@ -352,8 +358,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())
@@ -390,15 +395,14 @@ struct ReplaceRegexpImpl
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        assert(haystack_offsets.size() == needle_offsets.size());
-        assert(needle_offsets.size() == replacement_offsets.size());
+        chassert(haystack_offsets.size() == needle_offsets.size());
+        chassert(needle_offsets.size() == replacement_offsets.size());
 
         ColumnString::Offset res_offset = 0;
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -459,8 +463,7 @@ struct ReplaceRegexpImpl
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
 
-        re2::RE2::Options regexp_options;
-        regexp_options.set_log_errors(false); /// don't write error messages to stderr
+        auto regexp_options = createRegexpOptions();
 
         re2::RE2 searcher(needle, regexp_options);
         if (!searcher.ok())

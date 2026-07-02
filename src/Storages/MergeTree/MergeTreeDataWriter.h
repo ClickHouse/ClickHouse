@@ -5,7 +5,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 
@@ -102,7 +101,8 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        bool merge_is_needed);
+        bool merge_is_needed,
+        ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -111,7 +111,8 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        size_t block_num);
+        size_t block_num,
+        ContextPtr context);
 
     static Block mergeBlock(
         Block && block,
@@ -137,6 +138,7 @@ private:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
+        MergeTreeIndices indices,
         bool merge_is_needed);
 
     MergeTreeData & data;

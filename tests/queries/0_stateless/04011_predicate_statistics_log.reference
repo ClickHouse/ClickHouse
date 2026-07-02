@@ -1,0 +1,16 @@
+--- q1 equality selectivity ~10% ---
+1	1	1	0.1
+--- q2 100% selectivity ---
+1
+--- q3 0% selectivity ---
+1	1
+--- q4 multi-column logged ---
+1
+--- q5 disabled ---
+1
+--- q6 conjunction total_selectivity ---
+1	1
+--- selectivity bounds ---
+1	1	1	1
+--- passed <= input ---
+1
