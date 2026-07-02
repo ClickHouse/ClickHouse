@@ -345,18 +345,20 @@ static SplitFilterResult splitFilterStep(const FilterStep & filter_step, const s
             if (outputs[i] == &node)
             {
                 new_required_inputs.erase(new_required_inputs.begin() + i);
+
+                /// The main branch removes the filter column, but `ActionsDAG::split` keeps it at
+                /// the same output position in the lazy branch (its outputs are built 1:1 from the
+                /// original outputs), as a pass-through fed by a same-named input the main branch no
+                /// longer provides - so applying the lazy DAG later would throw
+                /// NOT_FOUND_COLUMN_IN_BLOCK. `removeDanglingNodes` handles this for every lazy step
+                /// except the last, so drop that exact output slot here (by position, not by name,
+                /// to avoid touching an unrelated same-named output) and prune the orphaned input.
+                auto & lazy_outputs = split_result.second.getOutputs();
+                lazy_outputs.erase(lazy_outputs.begin() + i);
+                split_result.second.removeUnusedActions();
                 break;
             }
         }
-
-        /// The main branch removes the filter column, but `ActionsDAG::split` keeps it as a
-        /// pass-through output of the lazy branch, fed by a same-named input the main branch no
-        /// longer provides - so applying the lazy DAG later throws NOT_FOUND_COLUMN_IN_BLOCK.
-        /// `removeDanglingNodes` cleans this up for every lazy step except the last, so drop the
-        /// removed filter column from the lazy branch here to keep both branches consistent.
-        auto & lazy_outputs = split_result.second.getOutputs();
-        std::erase_if(lazy_outputs, [&](const ActionsDAG::Node * output) { return output->result_name == name; });
-        split_result.second.removeUnusedActions();
     }
 
     FilterDAGInfo filter_dag_info;
