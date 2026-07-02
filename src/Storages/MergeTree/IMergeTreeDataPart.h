@@ -53,6 +53,7 @@ class MarkCache;
 class UncompressedCache;
 class MergeTreeTransaction;
 class PackedFilesReader;
+struct IMergeTreeIndex;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -128,6 +129,12 @@ public:
 
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+
+    /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
+    /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
+    /// .idx/.idx2, keeps a mixed-layout index from looking absent and losing its packed side
+    /// streams. Returns false on storages without a packed archive.
+    bool isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -452,6 +459,13 @@ public:
     UInt64 getExistingBytesOnDisk() const;
 
     size_t getFileSizeOrZero(const String & file_name) const;
+
+    /// Size of a stream's file (data or marks), resolving its on-disk name (original or hashed)
+    /// from checksums; a stream with no checksums entry falls back to the storage (which serves
+    /// e.g. members of skp_idx.packed). Callers get a size without knowing the on-disk name or
+    /// whether the stream is standalone or bundled in an archive.
+    size_t getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const;
+
     auto getFilesChecksums() const { return checksums.files; }
 
     /// Moves a part to detached/ directory and adds prefix to its name
@@ -641,6 +655,11 @@ public:
         const String & name,
         const String & extension,
         const IDataPartStorage & storage_);
+
+    /// Resolve a stream's on-disk name (original or hashed) against this part: checksums first
+    /// (no I/O), then the storage, which also resolves streams with no checksums entry (e.g. a
+    /// substream bundled in skp_idx.packed). Mirrors getFileSizeOrZeroResolved.
+    std::optional<String> getStreamNameOrHashResolved(const String & name, const String & extension) const;
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,

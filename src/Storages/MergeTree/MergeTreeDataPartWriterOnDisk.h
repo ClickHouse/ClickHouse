@@ -131,7 +131,7 @@ protected:
 
     /// Optional packed archive shared by all skip-index substreams that stayed under the
     /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
-    /// files on data_part_storage by the SizeAdaptiveSpoolBuffer wrapper and are not part of
+    /// files on data_part_storage by the size-adaptive packing wrapper and are not part of
     /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
     /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
     std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
