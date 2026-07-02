@@ -174,22 +174,21 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        /// Set when the constants queried for this column (an equality or `IN` set) exceed
-        /// `bloom_filter_max_set_size`. Such a set is still hashed - the exact dictionary filter reads
-        /// no extra data per value and can use it - but the probabilistic bloom filter must stay
-        /// disabled for the column, because probing it would read one filter block per value for
-        /// little benefit. This keeps the pre-dictionary-filter behavior for row groups that have no
-        /// usable dictionary page and would otherwise fall back to the bloom filter (see hash_many and
-        /// initializePrefetches).
-        bool bloom_filter_set_too_large = false;
         const KeyCondition * column_index_condition = nullptr;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
 
-        /// If use_bloom_filter, these are the values that we need to find in bloom filter. Empty when
-        /// bloom_filter_set_too_large (the hashes are then used only by the dictionary filter).
+        /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
+        /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
+        /// left out - such a set is still hashed for the exact dictionary filter (which reads no extra
+        /// data per value), but probing the probabilistic bloom filter for it would read one filter
+        /// block per value for little benefit. So this is empty exactly when the only query constants
+        /// for the column come from such over-cap sets, in which case the bloom filter stays disabled
+        /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
+        /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
+        /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;

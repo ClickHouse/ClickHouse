@@ -562,14 +562,14 @@ void Reader::prepareBloomFilterCondition()
 
             PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
             column_info.use_bloom_filter = true;
-            if (exceeds_bloom_filter_cap)
-                /// Hashes are still needed for exact dictionary pruning (they are handed to the
-                /// dictionary filter via the query-condition RPN, not via `bloom_filter_hashes`), but
-                /// the probabilistic bloom filter must not read a block per value on row groups that
-                /// fall back to it - so disable it for this column and do not register the hashes for
-                /// bloom-filter prefetching.
-                column_info.bloom_filter_set_too_large = true;
-            else
+            if (!exceeds_bloom_filter_cap)
+                /// Register the hashes for bloom-filter prefetching. For an over-cap set we skip this:
+                /// the hashes are still returned (and reach the exact dictionary filter via the
+                /// query-condition RPN, which reads no extra data per value), but the probabilistic
+                /// bloom filter must not read a block per value on row groups that fall back to it.
+                /// `initializePrefetches` keeps the bloom filter enabled for the column as long as some
+                /// other atom registered hashes here, and `BloomFilterLookup::findAnyHash` treats the
+                /// unregistered over-cap hashes as possibly present.
                 column_info.bloom_filter_hashes.insert(column_info.bloom_filter_hashes.end(), hashes->begin(), hashes->end());
             any_column_uses_bf = true;
             return hashes;
@@ -621,14 +621,16 @@ void Reader::initializePrefetches()
             /// is disabled. So we must re-check the setting here, otherwise a row group that is not
             /// dictionary-filter eligible but has a bloom filter would use it despite the user
             /// disabling `input_format_parquet_bloom_filter_push_down`.
-            /// `bloom_filter_set_too_large` means the query constants for this column exceed
-            /// `bloom_filter_max_set_size` and were hashed only for the exact dictionary filter; a
-            /// bloom filter over that many values would read a block per value for little benefit, so
-            /// we keep it disabled on row groups (like this one) that fall back to it.
+            /// `bloom_filter_hashes` is empty when the only query constants for this column come from
+            /// `IN` sets larger than `bloom_filter_max_set_size`, which were hashed only for the exact
+            /// dictionary filter; a bloom filter over that many values would read a block per value for
+            /// little benefit, so we keep it disabled on row groups (like this one) that fall back to
+            /// it. If some smaller atom did register hashes, we still enable it for those - the
+            /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
             if (!column.use_dictionary_filter &&
                 options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
-                !primitive_columns[column_idx].bloom_filter_set_too_large &&
+                !primitive_columns[column_idx].bloom_filter_hashes.empty() &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
                 /// Have to guess the header size upper bound.
@@ -951,9 +953,13 @@ bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes
     {
         size_t block_idx = ((h >> 32) * num_blocks) >> 32;
         auto it = std::partition_point(column.bloom_filter_blocks.begin(), column.bloom_filter_blocks.end(), [&](const BloomFilterBlock & block) { return block.block_idx < block_idx; });
-        /// All hashes must've been preregistered in bloom_filter_hashes, and their blocks prefetched.
+        /// This value's block was not prefetched. That happens for values from an `IN` set larger than
+        /// `bloom_filter_max_set_size`: such sets are hashed only for the exact dictionary filter and
+        /// deliberately kept out of `bloom_filter_hashes` (see prepareBloomFilterCondition), so probing
+        /// them here would read one filter block per value for little benefit. A bloom filter can only
+        /// ever rule a value out, so a value we did not probe must be treated as possibly present.
         if (it == column.bloom_filter_blocks.end() || it->block_idx != block_idx)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected hash in bloom filter lookup");
+            return true;
 
         auto data = prefetcher.getRangeData(it->prefetch);
 
