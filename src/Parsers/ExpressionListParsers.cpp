@@ -185,7 +185,7 @@ static bool modifyAST(ASTPtr ast, SubqueryFunctionType type)
         else
             function->name = "in";
 
-        if (type == SubqueryFunctionType::ANY
+        if ((type == SubqueryFunctionType::ANY && function_equals)
             || (type == SubqueryFunctionType::ALL && function_not_equals))
         {
             return true;
