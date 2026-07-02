@@ -149,6 +149,7 @@ add_headers_and_sources(dbms Storages/ObjectStorage/Azure)
 add_headers_and_sources(dbms Storages/ObjectStorage/S3)
 add_headers_and_sources(dbms Storages/ObjectStorage/HDFS)
 add_headers_and_sources(dbms Storages/ObjectStorage/Local)
+add_headers_and_sources(dbms Storages/ObjectStorage/Web)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Common)
 add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/Iceberg)
@@ -395,10 +396,16 @@ ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/xterm.min.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/addon-fit.min.js;\
 ${CMAKE_SOURCE_DIR}/programs/server/js/addon-web-links.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/viz-standalone.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/marked.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/katex.min.js;\
+${CMAKE_SOURCE_DIR}/programs/server/js/katex.min.css;\
 ${CMAKE_SOURCE_DIR}/programs/server/binary.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/merges.html;\
 ${CMAKE_SOURCE_DIR}/programs/server/jemalloc.html;\
-${CMAKE_SOURCE_DIR}/programs/server/schema.html")
+${CMAKE_SOURCE_DIR}/programs/server/schema.html;\
+${CMAKE_SOURCE_DIR}/programs/server/processors_profile.html;\
+${CMAKE_SOURCE_DIR}/programs/server/docs.html")
 
 set_source_files_properties(Server/IndexRequestHandler.cpp PROPERTIES OBJECT_DEPENDS
     "${CMAKE_SOURCE_DIR}/programs/server/index.html")
@@ -918,7 +925,10 @@ if (ENABLE_TESTS)
         dbms
         clickhouse_common_zookeeper_base
         clickhouse_common_config
-        clickhouse_common_zookeeper)
+        clickhouse_common_zookeeper
+        # `ConnectionParameters` (exercised by a gtest) pulls in `readpassphrase` for the
+        # interactive password prompt, so the unit test executable must link it too.
+        readpassphrase)
 
     if (TARGET ch_contrib::krb5)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::krb5)
