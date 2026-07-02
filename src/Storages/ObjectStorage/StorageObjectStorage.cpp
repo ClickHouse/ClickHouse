@@ -357,7 +357,7 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(configuration->format, context, format_settings);
 }
 
 bool StorageObjectStorage::supportsPrewhere() const
@@ -556,6 +556,14 @@ void StorageObjectStorage::read(
         supports_tuple_elements,
         local_context,
         PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+
+    if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, local_context, format_settings))
+    {
+        const auto & columns_in_data_file = file_columns.empty()
+            ? storage_snapshot->metadata->getColumns().getAllPhysical()
+            : file_columns;
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(local_context)));
+    }
 
 
     if (query_info.prewhere_info || query_info.row_level_filter)

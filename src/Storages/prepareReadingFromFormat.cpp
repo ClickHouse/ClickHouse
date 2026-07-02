@@ -1,6 +1,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Core/CaseAwareBlockNameMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -262,6 +263,18 @@ Names filterTupleColumnsToRead(NamesAndTypesList & requested_columns)
     ///  supports_tuple_elements also support empty list of columns.)
 }
 
+void setupColumnMappingForInputFields(ReadFromFormatInfo & info, const NamesAndTypesList & input_columns, const FormatSettings & format_settings)
+{
+    CaseAwareBlockNameMap column_indexes_by_names(format_settings.input_format_column_matching_case_sensitivity);
+    column_indexes_by_names.initFromBlock(info.format_header);
+
+    auto mapping = std::make_shared<ColumnMapping>();
+    const auto input_column_names = input_columns.getNames();
+    mapping->setupByHeaderWithInputFields(input_column_names, column_indexes_by_names, input_column_names, format_settings);
+    mapping->is_set = true;
+    info.column_mapping_for_input_format = std::move(mapping);
+}
+
 ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
     chassert(prewhere_info || row_level_filter);
@@ -295,6 +308,21 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
 
     new_info.requested_virtual_columns = info.requested_virtual_columns;
+    if (info.column_mapping_for_input_format)
+    {
+        auto mapping = std::make_shared<ColumnMapping>();
+        CaseAwareBlockNameMap column_indexes_by_names(FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE);
+        column_indexes_by_names.initFromBlock(new_info.format_header);
+        FormatSettings format_settings;
+        format_settings.input_format_column_matching_case_sensitivity = FormatSettings::InputFormatColumnMatchingCaseSensitivity::MATCH_CASE;
+        mapping->setupByHeaderWithInputFields(
+            info.column_mapping_for_input_format->names_of_columns,
+            column_indexes_by_names,
+            info.column_mapping_for_input_format->names_of_columns,
+            format_settings);
+        mapping->is_set = true;
+        new_info.column_mapping_for_input_format = std::move(mapping);
+    }
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
 

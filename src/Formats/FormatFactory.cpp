@@ -1092,6 +1092,22 @@ void FormatFactory::registerSubsetOfColumnsSupportChecker(const String & name, S
     target = std::move(subset_of_columns_support_checker);
 }
 
+void FormatFactory::markFormatSupportsSubsetOfColumnsByPosition(const String & name)
+{
+    auto & target = getOrCreateCreators(name).subset_of_columns_by_position_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns by position", name);
+    target = [](const FormatSettings &){ return true; };
+}
+
+void FormatFactory::registerSubsetOfColumnsByPositionSupportChecker(const String & name, SubsetOfColumnsByPositionSupportChecker subset_of_columns_by_position_support_checker)
+{
+    auto & target = getOrCreateCreators(name).subset_of_columns_by_position_support_checker;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} is already marked as supporting subset of columns by position", name);
+    target = std::move(subset_of_columns_by_position_support_checker);
+}
+
 void FormatFactory::markOutputFormatPrefersLargeBlocks(const String & name)
 {
     auto & target = getOrCreateCreators(name).prefers_large_blocks;
@@ -1123,6 +1139,19 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
     const auto & target = getCreators(name);
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
+}
+
+bool FormatFactory::checkIfFormatSupportsSubsetOfColumnsByPosition(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const auto & target = getCreators(name);
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    return target.subset_of_columns_by_position_support_checker && target.subset_of_columns_by_position_support_checker(format_settings);
+}
+
+bool FormatFactory::checkIfFormatSupportsReadingSubsetOfColumns(const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    return checkIfFormatSupportsSubsetOfColumns(name, context, format_settings_)
+        || checkIfFormatSupportsSubsetOfColumnsByPosition(name, context, format_settings_);
 }
 
 void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)

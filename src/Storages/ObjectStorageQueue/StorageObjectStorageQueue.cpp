@@ -540,7 +540,7 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
 {
-    return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context_, format_settings);
+    return FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(configuration->format, context_, format_settings);
 }
 
 class ReadFromObjectStorageQueue : public SourceStepWithFilter
@@ -632,7 +632,22 @@ void StorageObjectStorageQueue::read(
 
     auto this_ptr = std::static_pointer_cast<StorageObjectStorageQueue>(shared_from_this());
 
-    auto read_from_format_info = prepareReadingFromFormat(column_names, storage_snapshot, local_context, supportsSubsetOfColumns(local_context));
+    auto read_from_format_info = prepareReadingFromFormat(
+        column_names,
+        storage_snapshot,
+        local_context,
+        supportsSubsetOfColumns(local_context),
+        /*supports_tuple_elements*/ false,
+        PrepareReadingFromFormatHiveParams {file_columns,
+            hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
+    );
+    if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, local_context, format_settings))
+    {
+        const auto & columns_in_data_file = file_columns.empty()
+            ? storage_snapshot->metadata->getColumns().getAllPhysical()
+            : file_columns;
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(local_context)));
+    }
 
     auto reading = std::make_unique<ReadFromObjectStorageQueue>(
         column_names,
@@ -906,6 +921,13 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
             PrepareReadingFromFormatHiveParams {file_columns,
                 hive_partition_columns_to_read_from_file_path.getNameToTypeMap()}
         );
+        if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(configuration->format, queue_context, format_settings))
+        {
+            const auto & columns_in_data_file = file_columns.empty()
+                ? storage_snapshot->metadata->getColumns().getAllPhysical()
+                : file_columns;
+            setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(queue_context)));
+        }
 
         Pipes pipes;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;

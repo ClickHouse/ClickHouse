@@ -1192,7 +1192,8 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
 
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
 {
-    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
+    return format_name != "Distributed"
+        && FormatFactory::instance().checkIfFormatSupportsReadingSubsetOfColumns(format_name, context, format_settings);
 }
 
 bool StorageFile::supportsPrewhere() const
@@ -1444,6 +1445,7 @@ StorageFileSource::StorageFileSource(
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
     , block_for_format(info.format_header)
+    , column_mapping_for_input_format(info.column_mapping_for_input_format)
     , serialization_hints(info.serialization_hints)
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
     , max_block_size(max_block_size_)
@@ -1764,6 +1766,8 @@ Chunk StorageFileSource::generate()
             }
 
             input_format->setSerializationHints(serialization_hints);
+            if (column_mapping_for_input_format)
+                input_format->setColumnMapping(column_mapping_for_input_format);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -1994,6 +1998,15 @@ void StorageFile::read(
         supportsSubsetOfColumns(context),
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
+
+    if (FormatFactory::instance().checkIfFormatSupportsSubsetOfColumnsByPosition(format_name, context, format_settings))
+    {
+        auto columns_in_data_file = file_columns.empty()
+            ? storage_snapshot->metadata->getColumns().getAllPhysical()
+            : file_columns;
+        columns_in_data_file = columns_in_data_file.eraseNames(hive_partition_columns_to_read_from_file_path.getNameSet());
+        setupColumnMappingForInputFields(read_from_format_info, columns_in_data_file, format_settings.value_or(getFormatSettings(context)));
+    }
 
     if (query_info.prewhere_info)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
