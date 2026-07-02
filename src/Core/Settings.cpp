@@ -8227,9 +8227,11 @@ Run all tasks of a distributed query plan locally. Useful for testing and debugg
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
 Default number of buckets for distributed shuffle-hash-join.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
 Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
@@ -8248,6 +8250,7 @@ Possible values:
 )", EXPERIMENTAL) \
     DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
@@ -8263,9 +8266,11 @@ Experimental dictionary source for integration with YTsaurus.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+Applies to the rule-based distributed planner. The cost-based optimizer chooses the aggregation strategy by estimated cost and ignores this setting.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_cascades_optimizer, false, R"(
-Enable Cascades cost-based optimizer
+Enable the Cascades cost-based optimizer for distributed query plans.
+Takes effect only together with `make_distributed_plan = 1`: the setting alone does not change single-node query planning.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.

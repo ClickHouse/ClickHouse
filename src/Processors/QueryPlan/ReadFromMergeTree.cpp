@@ -3376,6 +3376,11 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
+    /// Filters deferred until after FINAL merging: losing them would apply the filter
+    /// before deduplication and return rows a newer version should have replaced.
+    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
+    cloned_step->index_read_tasks = index_read_tasks;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
