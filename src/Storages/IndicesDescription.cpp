@@ -128,7 +128,27 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+
+        if (result.type == TEXT_INDEX_NAME)
+        {
+            /// Replace ALIAS column references in the text index preprocessor value
+            /// the same way we do for the index expression itself in initExpressionInfo.
+            using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+            ReplaceAliasToExprVisitor::Data alias_data{columns};
+            for (auto & child : result.arguments->children)
+            {
+                const auto * func = child->as<ASTFunction>();
+                if (func && func->name == "equals" && func->arguments && func->arguments->children.size() == 2)
+                {
+                    const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+                    if (key && key->name() == "preprocessor")
+                        ReplaceAliasToExprVisitor{alias_data}.visit(func->arguments->children[1]);
+                }
+            }
+        }
+    }
 
     return result;
 }
