@@ -1073,6 +1073,11 @@ bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
     if (!skip_unavailable_shards)
         return false;
 
+    /// Never silence `LOGICAL_ERROR` as a shard skip, in any mode: it denotes a programming error
+    /// rather than an expected shard failure, so hiding it would mask real bugs (same as for INSERTs).
+    if (exception_code == ErrorCodes::LOGICAL_ERROR)
+        return false;
+
     switch (skip_unavailable_shards_mode)
     {
         case SkipUnavailableShardsMode::UNAVAILABLE:
