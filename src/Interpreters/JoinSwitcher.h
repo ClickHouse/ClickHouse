@@ -81,6 +81,10 @@ public:
         return join->hasDelayedBlocks();
     }
 
+    /// May switch from HashJoin to MergeJoin (join-on-disk) at runtime, so it cannot
+    /// promise the left stream order the planner would rely on.
+    bool preservesLeftBlockOrder() const override { return false; }
+
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }

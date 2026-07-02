@@ -155,9 +155,12 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             auto kind = table_join.kind();
             auto strictness = table_join.strictness();
             /// Grace hash join scatters rows into buckets by hash, destroying the input order.
-            /// We must not propagate read-in-order through joins that reorder rows.
+            /// PartialMergeJoin re-scans left key ranges once per right block, so equal left-key
+            /// values stop being contiguous. We must not propagate read-in-order through joins
+            /// that reorder rows, otherwise a sorted-DISTINCT/aggregation would get a stream that
+            /// violates its precondition (wrong results in release, LOGICAL_ERROR in debug).
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks())
+                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
