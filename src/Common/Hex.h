@@ -30,6 +30,14 @@ void encodeHexStringUpper(uint8_t * dst, const uint8_t * src, size_t size);
 void encodeHexStringLower(uint8_t * dst, const uint8_t * src, size_t size);
 void decodeHexString(uint8_t * dst, const uint8_t * src, size_t size);
 
+/// Batch-decode multiple hex strings with a single arch dispatch.
+void decodeHexStrings(
+    uint8_t * dst,
+    const uint8_t * src,
+    const UInt64 * src_offsets,
+    UInt64 * dst_offsets,
+    size_t row_count);
+
 /// Encode 16 bytes stored in little-endian order to 32 hex chars (used for CityHash128).
 void encodeHex16LEUpper(uint8_t * dst, const uint8_t * src);
 void encodeHex16LELower(uint8_t * dst, const uint8_t * src);
