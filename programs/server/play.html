@@ -5847,6 +5847,14 @@ function tryOpenCompletions() {
 /// Capture-phase key handling so it runs before the textarea's own `onkeydown` (which would
 /// otherwise treat Tab as "insert spaces").
 query_area.addEventListener('keydown', (e) => {
+    /// This handler runs in the capture phase and calls `stopImmediatePropagation` for the keys it
+    /// consumes (Tab, Enter, ArrowUp/ArrowDown, ArrowRight, Escape). At the event target, a
+    /// capture-phase listener fires before the bubble-phase one and its `stopImmediatePropagation`
+    /// prevents the bubble-phase `onReturnToEditor` (bound below) from firing at all. So record the
+    /// editor interaction here too: pressing a key to open, navigate, or dismiss completions is a
+    /// return to the editor, and without this a late error response for an in-flight query would
+    /// repaint a stale syntax-error highlight (see `editorInteractionGen`).
+    ++editorInteractionGen;
     if (!completionCandidates.length) {
         /// Completions are closed: Tab at the end of a word manually opens them if a
         /// continuation is possible; otherwise let the default Tab (indentation) happen.
