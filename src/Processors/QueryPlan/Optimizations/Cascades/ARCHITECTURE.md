@@ -24,8 +24,9 @@ bottom-up dynamic programming like the `dpsize` join ordering algorithm. The opt
 starts from the root goal (deliver results to the coordinator at `{1 node}`) and
 recursively decomposes it into subgoals (e.g., "produce this join result at `{4 nodes,
 shuffled by custkey}`"). Results are cached in the **memo** so each (group, properties)
-pair is computed at most once. Branch-and-bound pruning skips subtrees that can't beat
-the current best, avoiding exhaustive exploration.
+pair is computed at most once. The framework also supports branch-and-bound pruning of
+subtrees that cannot beat the current best; here it is currently disabled and the search
+is bounded by a fail-closed task budget instead (see the search section below).
 
 **Without Cascades**: ClickHouse's existing distributed query execution (via the
 `Distributed` table engine or parallel replicas) uses fixed strategies — typically gather
@@ -66,6 +67,11 @@ The Cascades optimizer is **only active** when both `enable_cascades_optimizer =
 `make_distributed_plan = 1` are set. Without these settings, the existing pipeline
 runs as before.
 
+The feature fails closed: a plan that received exchange steps but cannot be converted to
+distributed stages is rejected with a clear error instead of silently running the
+exchanges as no-ops locally, and a search that does not finish within the task budget
+rejects the query instead of building a plan from a partial memo.
+
 ## Key Concepts
 
 ### The Memo
@@ -85,9 +91,8 @@ Group #5 (customer ⋈ orders, ~5.3M rows):
     Join(orders, customer)  [swapped by JoinCommutativity rule]
   Physical:
     Shuffle HashJoin by custkey  at {4 nodes}    cost: 2.93B
-    Shuffle HashJoin by custkey  at {2 nodes}    cost: 5.57B
+    Broadcast HashJoin           at {4 nodes}    cost: 6.2B
     Local HashJoin               at {1 node}     cost: 10.8B
-    Broadcast HashJoin           at {4 nodes}    cost: (pruned)
 ```
 
 The optimizer explores alternatives by applying rules that generate new expressions in
@@ -133,8 +138,11 @@ These are the network data transfer operators that Cascades adds to the plan:
 | `ReplicatedRead` | Each node reads the full table from shared storage (S3) | Small dimension tables — avoids network exchange overhead |
 
 `ReplicatedRead` is a key optimization for shared-storage deployments. Instead of reading
-a small table on one node and broadcasting it via `BroadcastExchange`, every node reads
-it directly from S3. For a 25-row nation table, this eliminates network overhead entirely.
+a small table on one node and broadcasting it via `BroadcastExchange`, every node repeats
+the same read. For a 25-row nation table, this eliminates network overhead entirely.
+It assumes every worker sees the same complete table (shared storage); the rule does not
+yet validate this per storage — a known limitation of the experimental version. There is
+no size gate either: an oversized replicated read simply loses on cost.
 
 ### Enforcers
 
@@ -143,10 +151,24 @@ requires `{1 node}` but the cheapest child produces `{4 nodes}`, the `Distributi
 creates a `GatherExchange` that collects data from 4 nodes to 1.
 
 Enforcers are **self-referential**: a `GatherExchange` in Group G has its input pointing
-back to Group G itself, but with different required properties. This is not a cycle —
-the input asks for `{4 nodes}` while the output provides `{1 node}`. The optimizer
-resolves the `{4 nodes}` requirement by finding the cheapest `{4 nodes}` expression
-already in the group (e.g., a `ParallelRead` or a `ShuffleHashJoin`).
+back to Group G itself, but with relaxed required properties (the input asks for
+`{4 nodes}` while the output provides `{1 node}`). Left unchecked this can form a real
+cycle, because a relaxed requirement acts as a wildcard: an empty required sort is
+satisfied by any sorted expression, and empty required distribution columns are satisfied
+by any keyed expression — including the enforcer itself or a sibling enforcer.
+
+Two invariants keep enforcer self-reference acyclic:
+
+- Every enforcer expression carries an **enforcer axis** (`Sorting` or `Distribution`).
+  When resolving a self-referential enforcer input, an enforcer candidate that satisfies a
+  wildcard axis only by over-providing on it is not eligible (a sorted enforcer cannot
+  fill an empty-sort slot; a keyed exchange cannot fill an empty-columns slot). Productive
+  compositions stay eligible: `Sort` feeding a sorted `GatherExchange`, a `GatherExchange`
+  feeding a `Sort` or a `BroadcastExchange`.
+- Plan extraction (`buildBestPlan`) tracks the single-input expressions on the current
+  chain and resolves each input through the same eligibility rule, scanning the group's
+  costed physical expressions as a fallback when the best-implementation cache holds only
+  expressions already on the chain.
 
 ### Two-Phase Aggregation
 
@@ -170,9 +192,10 @@ The optimizer uses a LIFO task stack. For each group, optimization proceeds thro
 four stages:
 
 - **Stage 1 — Explore**: Fire transformation rules (`JoinCommutativity`,
-  `TwoPhaseAggregation`) to generate logically equivalent expressions.
+  `TwoPhaseAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
-  `AggregationImplementation`, `ParallelReadImplementation`, `DefaultImplementation`,
+  `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
+  `ReplicatedReadImplementation`, `SortImplementation`, `DefaultImplementation`,
   `DistributionPassthrough`) to generate physical expressions with concrete properties.
 - **Stage 3 — Enforce**: Apply enforcer rules (`DistributionEnforcer`, `SortingEnforcer`)
   to bridge property gaps. Uses a fixed-point loop for enforcer composition (e.g.,
@@ -182,8 +205,12 @@ four stages:
 
 The root group is optimized for `{1 node}` (the coordinator must return the final result).
 Each child group is optimized for whatever properties its parent requires. The optimizer
-works top-down, recursively optimizing each group, with **branch-and-bound pruning**:
-if a partial plan already exceeds the cost of the best known plan, the subtree is skipped.
+works top-down, recursively optimizing each group. Cost limits are threaded through the
+tasks for future branch-and-bound pruning, but pruning is currently disabled (children
+receive an infinite limit): with partially optimized sibling groups a finite limit is not
+a sound bound and was observed to prune valid plans. The search is instead bounded by the
+task budget, which fails closed: if optimization does not finish within the budget, the
+query is rejected with a clear error rather than built from a partial memo.
 
 **Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`
 
@@ -199,8 +226,9 @@ newly-added physical expressions until no new enforcers are produced. The dedup 
 includes sorting state so that `DistributionEnforcer` fires separately for sorted vs
 unsorted source expressions.
 
-**Pruning** at the top of `OptimizeGroupTask` uses `isExplored() && isOptimizedFor()`
-to prevent re-entry loops from self-referential enforcers.
+**Pruning** at the top of `OptimizeGroupTask` returns early when the group is explored,
+optimized, and enforced for the requested properties and already has a satisfying best
+implementation, preventing re-entry loops from self-referential enforcers.
 
 ### Cost Model
 
@@ -215,6 +243,12 @@ total_cost = work * work_weight + network * network_weight + sequential * sequen
 - `network`: bytes transferred between nodes
 - `sequential`: single-threaded phases (hash table builds, merge cursors)
 
+In addition, every exchange adds a fixed `exchange_fixed_overhead` to `sequential`
+(connection setup and metadata), which keeps tiny-table exchanges from looking free.
+A `BroadcastExchange` charges its network transfer once per receiving node, and a
+partial top-N is charged for scanning its whole input while its sorted gather carries
+up to `limit * node_count` rows.
+
 With a high `sequential_weight`, the optimizer prefers plans that minimize
 single-node bottlenecks (e.g., shuffle over broadcast for large hash tables).
 
@@ -222,6 +256,11 @@ Cost weights are configurable at query time via:
 ```sql
 SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":1000}';
 ```
+
+Weights must be finite and non-negative (zero is allowed to ignore a dimension); an
+invalid config rejects the query instead of silently falling back to defaults, and an
+infinite cost component stays infinite under any weights, so an impossible plan can
+never win by a zero weight.
 
 The cluster size is derived automatically from the `stateless_worker_client.cluster`
 config (same source as `TaskToHostMap`).  A query parameter overrides it for testing:
@@ -243,19 +282,26 @@ Best implementations per group are stored in an
 scan (typically 2-5 entries per bucket).
 
 A Pareto frontier is maintained: when a new implementation is added, dominated entries
-(same or broader properties at higher cost) are removed.
+(same or broader properties at higher cost) are removed. One exception protects plan
+extraction: an enforcer never suppresses or evicts a non-enforcer implementation with
+strictly weaker properties, so the acyclic base alternative stays reachable even when a
+cheaper enforcer covers its requirement.
 
 ### Rules
 
 **Transformation rules** (generate logically equivalent expressions):
 - `JoinCommutativity` — swaps join sides (left ↔ right)
 - `TwoPhaseAggregation` — splits aggregation into partial + merge
+- `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
+  gather, and a coordinator limit
 
 **Implementation rules** (generate physical expressions with properties):
 - `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies
 - `AggregationImplementation` — creates local, shuffle, and partial aggregation strategies
+- `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
+- `SortImplementation` — bounded sort at one node, or per node for the top-N partial
 - `DefaultImplementation` — wraps any step at `{1 node}` as fallback
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
   (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`)
@@ -271,9 +317,13 @@ A Pareto frontier is maintained: when a new implementation is added, dominated e
 ### Statistics
 
 Statistics are derived on-demand during rule application and cached on groups. Each
-group has `estimated_row_count` used for cost estimation. Statistics for leaf groups
-(table scans) come from MergeTree column statistics; join/aggregation statistics are
-derived by `StatisticsDerivation.cpp`.
+group has `estimated_row_count` (plus a proven `max_row_count`, per-column NDVs, and a
+byte width) used for cost estimation. Read groups — including an initial filter directly
+over a read — are prepopulated from index analysis, column statistics, or test hints;
+join and aggregation statistics are derived by `StatisticsDerivation.cpp`. Join estimates
+are clamped to the semantics of the join kind and strictness (an outer join keeps its
+preserved side, semi/anti/any joins cannot exceed it, a paste join is position-wise),
+and the join row width comes from the actual output header.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -289,7 +339,7 @@ derived by `StatisticsDerivation.cpp`.
 | Property model | Aligned+ | Distribution + sorting; column equivalence sets extend basic Cascades |
 | Rule categorization | Aligned | Transformation / implementation / enforcer separation |
 | Cost model | Aligned | 3-D (work, network, sequential) with configurable weights |
-| Branch-and-bound | Aligned | Cost limits propagated through tasks |
+| Branch-and-bound | Partial | Cost limits threaded through tasks; pruning currently disabled (unsound with partially optimized siblings), fail-closed task budget bounds the search |
 | Enforcer scheduling | Aligned | `isEnforcedFor` gate + fixed-point composition |
 | Sorting as property | Aligned | Stripped from memo, enforced via composition |
 | `best_implementations` lookup | Aligned | Indexed by distribution shape |
@@ -313,7 +363,9 @@ IDs via `boost::hash_combine`.
 **Statistics dependency**: `estimateReadRowsCount` calls back into pre-Cascades code,
 creating a dependency cycle.
 
-**Task count safety valve**: A hard limit of 100,000 tasks. Classic Cascades relies on
+**Task budget instead of pruning**: A budget of 100,000 tasks bounds the search (a query
+parameter can lower it for tests, never raise it). Exhausting the budget rejects the
+query instead of building a plan from a partial memo. Classic Cascades relies on
 branch-and-bound pruning as the primary bound.
 
 ---
@@ -323,21 +375,28 @@ branch-and-bound pruning as the primary bound.
 ### Performance
 
 1. **Decouple statistics** from pre-Cascades code.
-2. **Convergence detection** instead of hard task count limit.
+2. **Convergence detection and sound branch-and-bound pruning** instead of relying on
+   the fail-closed task budget alone.
+
+### Cost Model
+
+3. **Filter selectivity**: a standalone `FilterStep` (above a join or expression) is
+   currently modeled as selectivity 1; only filters fused into reads are estimated.
+4. **`arrayJoin` fan-out**: an `ExpressionStep` with `arrayJoin` grows the row count,
+   which is not estimated yet.
 
 ### Optimizer Features
 
-3. **Runtime bloom filters in Cascades**: The single biggest gap vs StarRocks. See
-   OPTIMIZATION_ROADMAP.md Section 1.2 for the `LargestRoot` + property approach.
-4. **Join ordering in Cascades**: DPHyp for inner joins in
+5. **Runtime bloom filters in Cascades**: The single biggest gap vs StarRocks.
+6. **Join ordering in Cascades**: DPHyp for inner joins in
    [PR #98798](https://github.com/ClickHouse/ClickHouse/pull/98798); outer/semi/anti
    support needed.
-5. **Window function distribution**: `WindowStep` currently goes through
+7. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.
-6. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+8. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-7. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+9. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
 
 ---
@@ -452,7 +511,8 @@ all 5.3M rows).
 
 ### Implementation rules: join strategies
 
-For **customer ⋈ orders** (Group #5):
+For **customer ⋈ orders** (Group #5, table abbreviated — losing broadcast alternatives
+for both join orders are omitted):
 
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|
