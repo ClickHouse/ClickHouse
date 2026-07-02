@@ -64,6 +64,21 @@ public:
                " V1 : MaybeNullable(StringOrFixedString | IsNothing)], ...) -> UInt64";
     }
 
+    /// The declarative signature above is documentation-only — the `tags_array` matcher is
+    /// narrower than the helper's accepted shapes (`Map` / `FixedString`-element / `Nullable` /
+    /// `LowCardinality` wrappers), which the DSL cannot yet express. The `ColumnsWithTypeAndName`
+    /// override below is authoritative (it runs the helper). Route the types-only path to it too,
+    /// so the base `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the
+    /// approximate signature string as a validator.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
