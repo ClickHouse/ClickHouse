@@ -1,6 +1,9 @@
 #pragma once
 
+#include <array>
 #include <mutex>
+#include <span>
+#include <string_view>
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
@@ -954,10 +957,20 @@ public:
     /// That allows to schedule them for deletion a bit later
     size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
-    /// Delete all directories which names begin with "tmp"
+    /// Root-level temporary directory prefixes used by periodic cleanup.
+    /// Intentionally does not include `delete_tmp_`: active part removal owns those directories.
+    static constexpr std::array<std::string_view, 2> ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP = {"tmp_", "tmp-fetch_"};
+
+    /// Root-level temporary directory prefixes used by startup/drop recovery and by ownership checks.
+    /// Includes `delete_tmp_` because it can be left by interrupted part removal.
+    static constexpr std::array<std::string_view, 3> ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY = {"tmp_", "delete_tmp_", "tmp-fetch_"};
+
+    /// Delete all directories which names begin with one of the valid prefixes.
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
-    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
+    size_t clearOldTemporaryDirectories(
+        size_t custom_directories_lifetime_seconds,
+        std::span<const std::string_view> valid_prefixes = ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP);
+    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes);
 
     size_t clearEmptyParts();
 

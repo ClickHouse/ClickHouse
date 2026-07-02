@@ -3308,8 +3308,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3317,14 +3316,15 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3352,7 +3352,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4166,7 +4166,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -5224,11 +5224,105 @@ void MergeTreeData::changeSettings(
                     for (const auto & disk : old_storage_policy->getDisks())
                         all_diff_disk_names.erase(disk->getName());
 
+                    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+                    auto validate_format_version = [&](const DiskPtr & disk)
+                    {
+                        if (!disk->existsFileOrDirectory(format_version_path))
+                            return;
+
+                        if (!disk->existsFile(format_version_path))
+                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+                        if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
+                        {
+                            UInt32 current_format_version{0};
+                            readIntText(current_format_version, *buf);
+                            if (!buf->eof())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+                            if (current_format_version != format_version.toUnderType())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                                "Version file on {} contains version {} expected version is {}.",
+                                                fullPath(disk, format_version_path), current_format_version, format_version.toUnderType());
+
+                            return;
+                        }
+
+                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+                    };
+
+                    auto has_parseable_detached_parts = [&](const DiskPtr & disk)
+                    {
+                        const auto detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+                        if (disk->isDirectoryEmpty(detached_path))
+                            return false;
+
+                        for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+                        {
+                            if (DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version).valid_name)
+                                return true;
+                        }
+
+                        return false;
+                    };
+
+                    auto contains_table_data_on_new_disk = [&](const DiskPtr & disk)
+                    {
+                        if (!disk->existsDirectory(relative_data_path))
+                            return false;
+
+                        /// A newly added disk may have only explicitly safe entries:
+                        /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
+                        /// Anything else would become owned by the table path after the policy change.
+                        validate_format_version(disk);
+
+                        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+                        {
+                            const auto name = it->name();
+
+                            if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+                                continue;
+
+                            const auto entry_path = fs::path(relative_data_path) / name;
+                            bool is_temporary_directory = false;
+                            for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
+                            {
+                                if (std::string_view(name).starts_with(prefix) && disk->existsDirectory(entry_path))
+                                {
+                                    is_temporary_directory = true;
+                                    break;
+                                }
+                            }
+
+                            if (is_temporary_directory)
+                                continue;
+
+                            if (name == DETACHED_DIR_NAME)
+                            {
+                                if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                                    return true;
+
+                                if (has_parseable_detached_parts(disk))
+                                    return true;
+
+                                continue;
+                            }
+
+                            return true;
+                        }
+
+                        return false;
+                    };
+
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+
+                        if (contains_table_data_on_new_disk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)

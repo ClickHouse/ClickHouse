@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAttachThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
@@ -196,7 +197,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
-    storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    storage.clearOldTemporaryDirectories(0, MergeTreeData::ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
     storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
