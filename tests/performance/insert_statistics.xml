@@ -19,18 +19,35 @@
         ENGINE = MergeTree ORDER BY c1;
     </create_query>
 
+    <create_query>
+        CREATE TABLE t_countmin_stats_src(c1 UInt64, c2 LowCardinality(String), c3 LowCardinality(String), c4 LowCardinality(String), c5 LowCardinality(String))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats(c1 UInt64 STATISTICS(minmax), c2 LowCardinality(String) STATISTICS(countmin), c3 LowCardinality(String) STATISTICS(countmin), c4 LowCardinality(String) STATISTICS(countmin), c5 LowCardinality(String) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1;
+    </create_query>
+
     <fill_query>INSERT INTO t_minmax_stats_src SELECT rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand(), rand() FROM numbers(1000000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_minmax_stats</fill_query>
 
     <fill_query>INSERT INTO t_uniq_stats_src SELECT rand(), rand() % 10, rand() % 100, rand() % 1000, rand() % 100000 FROM numbers(1000000)</fill_query>
     <fill_query>SYSTEM STOP MERGES t_uniq_stats</fill_query>
 
+    <fill_query>INSERT INTO t_countmin_stats_src SELECT rand(), rand() % 10, rand() % 100, rand() % 1000, rand() % 100000 FROM numbers(1000000)</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats</fill_query>
+
     <query>INSERT INTO t_minmax_stats SELECT * FROM t_minmax_stats_src</query>
     <query>INSERT INTO t_uniq_stats SELECT * FROM t_uniq_stats_src</query>
+    <query>INSERT INTO t_countmin_stats SELECT * FROM t_countmin_stats_src</query>
 
     <drop_query>DROP TABLE IF EXISTS t_minmax_stats</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_minmax_stats_src</drop_query>
 
     <drop_query>DROP TABLE IF EXISTS t_uniq_stats</drop_query>
     <drop_query>DROP TABLE IF EXISTS t_uniq_stats_src</drop_query>
+
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_src</drop_query>
 </test>

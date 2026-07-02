@@ -4,9 +4,12 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -18,6 +21,8 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
+
+#include "config.h"
 
 using namespace DB;
 
@@ -242,6 +247,97 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
 }
 
 }
+
+#if USE_DATASKETCHES
+
+TEST(Statistics, CountMinLowCardinalityBuildMatchesFullColumn)
+{
+    auto check_estimate = [](const ColumnStatisticsPtr & lhs, const ColumnStatisticsPtr & rhs, const Field & value)
+    {
+        auto lhs_estimate = lhs->estimateEqual(value);
+        auto rhs_estimate = rhs->estimateEqual(value);
+        ASSERT_TRUE(lhs_estimate.has_value());
+        ASSERT_TRUE(rhs_estimate.has_value());
+        EXPECT_DOUBLE_EQ(*lhs_estimate, *rhs_estimate) << "Value: " << value.dump();
+    };
+
+    {
+        auto nested_type = std::make_shared<DataTypeInt32>();
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(nested_type);
+        MutableColumnPtr full_column = nested_type->createColumn();
+        MutableColumnPtr low_cardinality_column = low_cardinality_type->createColumn();
+
+        for (Int32 value : {1, 42, 7, 42, 42, 7, 1, 100, 42})
+        {
+            full_column->insert(value);
+            low_cardinality_column->insert(value);
+        }
+
+        auto full_stats = createTestStats({StatisticsType::CountMinSketch}, nested_type);
+        full_stats->build(std::move(full_column));
+        auto low_cardinality_stats = createTestStats({StatisticsType::CountMinSketch}, low_cardinality_type);
+        low_cardinality_stats->build(std::move(low_cardinality_column));
+
+        check_estimate(low_cardinality_stats, full_stats, Int32(42));
+        check_estimate(low_cardinality_stats, full_stats, Int32(7));
+        check_estimate(low_cardinality_stats, full_stats, Int32(5));
+    }
+
+    {
+        auto nested_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(nested_type);
+        MutableColumnPtr full_column = nested_type->createColumn();
+        MutableColumnPtr low_cardinality_column = low_cardinality_type->createColumn();
+
+        for (const Field & value : {Field(String("apple")), Field(Null()), Field(String("banana")), Field(String("apple")),
+                                    Field(String("")), Field(String("banana")), Field(Null()), Field(String(""))})
+        {
+            full_column->insert(value);
+            low_cardinality_column->insert(value);
+        }
+
+        auto full_stats = createTestStats({StatisticsType::CountMinSketch}, nested_type);
+        full_stats->build(std::move(full_column));
+        auto low_cardinality_stats = createTestStats({StatisticsType::CountMinSketch}, low_cardinality_type);
+        low_cardinality_stats->build(std::move(low_cardinality_column));
+
+        check_estimate(low_cardinality_stats, full_stats, String("apple"));
+        check_estimate(low_cardinality_stats, full_stats, String("banana"));
+        check_estimate(low_cardinality_stats, full_stats, String(""));
+        check_estimate(low_cardinality_stats, full_stats, String("missing"));
+    }
+
+    {
+        auto nested_type = std::make_shared<DataTypeInt32>();
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(nested_type);
+        MutableColumnPtr low_cardinality_column = low_cardinality_type->createColumn();
+
+        for (Int32 value = 0; value < 200; ++value)
+            low_cardinality_column->insert(value);
+        for (Int32 value : {42, 42, 7, 42, 7, 199})
+            low_cardinality_column->insert(value);
+
+        ColumnPtr low_cardinality_slice = low_cardinality_column->cut(200, 6);
+        const auto & low_cardinality_slice_ref = assert_cast<const ColumnLowCardinality &>(*low_cardinality_slice);
+        ASSERT_GT(low_cardinality_slice_ref.getDictionary().size(), low_cardinality_slice_ref.size());
+
+        MutableColumnPtr full_column = nested_type->createColumn();
+        for (Int32 value : {42, 42, 7, 42, 7, 199})
+            full_column->insert(value);
+
+        auto full_stats = createTestStats({StatisticsType::CountMinSketch}, nested_type);
+        full_stats->build(std::move(full_column));
+        auto low_cardinality_stats = createTestStats({StatisticsType::CountMinSketch}, low_cardinality_type);
+        low_cardinality_stats->build(low_cardinality_slice);
+
+        check_estimate(low_cardinality_stats, full_stats, Int32(42));
+        check_estimate(low_cardinality_stats, full_stats, Int32(7));
+        check_estimate(low_cardinality_stats, full_stats, Int32(199));
+        check_estimate(low_cardinality_stats, full_stats, Int32(5));
+    }
+}
+
+#endif
 
 TEST(Statistics, NullableEstimatorWithBasic)
 {
