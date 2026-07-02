@@ -1224,6 +1224,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -2739,6 +2740,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2754,7 +2760,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;
