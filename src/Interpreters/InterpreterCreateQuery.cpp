@@ -66,6 +66,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -599,7 +600,11 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     for (const auto & ast : columns_ast.children)
     {
-        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
+
+        /// Normalize DEFAULT expressions written inside Tuple data types by pulling them up to the
+        /// column level, so the stored type carries no DEFAULTs (https://github.com/ClickHouse/ClickHouse/issues/2797).
+        pullUpTupleElementDefaults(col_decl);
 
         if (col_decl.getCollation() && !context_->getSettingsRef()[Setting::compatibility_ignore_collation_in_create_table])
         {

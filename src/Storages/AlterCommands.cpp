@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
@@ -153,7 +154,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::ADD_COLUMN;
 
-        const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        /// Pull up DEFAULT expressions written inside Tuple data types to the column level, the same
+        /// normalization the CREATE TABLE path applies. Without this, `ALTER TABLE t ADD COLUMN
+        /// c Tuple(a UInt8 DEFAULT 1)` would be rejected when the data type is built below (the embedded
+        /// DEFAULT makes DataTypeTuple::create throw), instead of being stored as a column-level
+        /// `DEFAULT tuple(1)`. The clone owned by `command.ast` is normalized in place so the extracted
+        /// type, the extracted default, and the stored AST all agree.
+        auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
+        pullUpTupleElementDefaults(ast_col_decl);
 
         command.column_name = ast_col_decl.name;
         if (ast_col_decl.getType())
@@ -210,7 +218,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_COLUMN;
 
-        const auto & ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+        /// Pull up DEFAULT expressions written inside Tuple data types to the column level, the same
+        /// normalization the CREATE TABLE path applies, so that `ALTER TABLE t MODIFY COLUMN
+        /// c Tuple(a UInt8 DEFAULT 1)` is accepted and stored as a column-level `DEFAULT tuple(1)` instead
+        /// of being rejected when the data type is built below. The clone owned by `command.ast` is
+        /// normalized in place so the extracted type, the extracted default, and the stored AST all agree.
+        auto & ast_col_decl = command.ast->as<ASTAlterCommand &>().col_decl->as<ASTColumnDeclaration &>();
+        pullUpTupleElementDefaults(ast_col_decl);
         command.column_name = ast_col_decl.name;
         command.to_remove = removePropertyFromString(command_ast->remove_property);
 

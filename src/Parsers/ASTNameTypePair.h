@@ -15,6 +15,10 @@ public:
     String name;
     /// type
     ASTPtr type;
+    /// Optional DEFAULT expression, e.g. `Tuple(s String DEFAULT 'Hello')`.
+    /// This only exists at the syntax level: it is pulled up to the column level in
+    /// InterpreterCreateQuery, and an attempt to build an actual data type while it is set throws.
+    ASTPtr default_expression;
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "NameTypePair" + (delim + name); }
