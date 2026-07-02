@@ -69,7 +69,7 @@ namespace ErrorCodes
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
     DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
-    DECLARE(Bool, use_real_disk_size, false, "Enables accounting for real cache size, by aligning file size with filesystem block size", 0) \
+    DECLARE(Bool, use_real_disk_size, false, "Account cached file sizes in filesystem block-aligned units (an approximation of the physical on-disk size, not the exact allocated size) instead of written bytes, so FilesystemCacheSize and the eviction-size metrics reflect on-disk block occupancy", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
