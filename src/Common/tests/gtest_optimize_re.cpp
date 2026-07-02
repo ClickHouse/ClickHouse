@@ -78,4 +78,9 @@ TEST(OptimizeRE, analyze)
     test_f("\\P{N}abc", "abc");      /// braced negated Unicode property `\P{...}`
     test_f("\\Qa(b)c\\E", "");       /// `\Q...\E` body is literal; "abc" must not be required
     test_f("\\Qa(b)c\\Exyz", "xyz"); /// extraction resumes after the closing `\E`
+    /// A NUL byte (`\0`) in the pattern is an ordinary literal (re2 matches it), not a terminator;
+    /// the analyzer must not stop at it, otherwise the strstr pre-filter wrongly drops every row.
+    test_f(std::string("a\0b", 3), std::string("a\0b", 3), {}, true, false, true); /// literal NUL kept in the required substring
+    test_f(std::string("\0*abc", 5), "abc", {}, false, false, false);             /// `\0*` is optional; "abc" stays the required substring
+    test_f(std::string("\0*@(.*)$", 8), "", {}, false, true, false);              /// the analysis must not stop at the leading NUL
 }

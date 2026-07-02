@@ -1310,16 +1310,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             auto input_it = name_to_nodes.find(column.name);
 
-            if (input_it == name_to_nodes.end() || input_it->second.empty())
+            if (input_it == name_to_nodes.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in\n{}",
                     column.name,
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
 
+            /// The child step may return more same-named columns than the DAG has inputs for, when an
+            /// unreferenced duplicate input was pruned from the DAG while the child still produces it (e.g. a
+            /// decorrelated correlated subquery over a source that projects the same identifier twice). Keep
+            /// the last remaining node when the deque is exhausted; duplicate references are dropped right below.
+            const auto * input_node = input_it->second.front();
+            if (input_it->second.size() > 1)
+                input_it->second.pop_front();
 
-            used_expressions.emplace_back(input_it->second.front(), expression_actions);
-            input_it->second.pop_front();
+            used_expressions.emplace_back(input_node, expression_actions);
         }
     }
 
