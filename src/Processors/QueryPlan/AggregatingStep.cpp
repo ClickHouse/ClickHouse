@@ -194,13 +194,12 @@ void AggregatingStep::applyLimitPushdown(
     };
 
     /// Pattern 2 (no ORDER BY) is only correct if evicted keys are erased from
-    /// the hash table; an external-aggregation spill would flush partial states
-    /// and reset the heap, letting a spilled-then-evicted key surface an
-    /// incomplete group in the unsorted LIMIT.  The heap already bounds the
-    /// table to ~1.5x the limit, so spilling is unnecessary - disable it for
-    /// this step to keep the optimization while removing the hazard.
-    if (requires_pruning)
-        params.max_bytes_before_external_group_by = 0;
+    /// the hash table, and external aggregation must then be disabled (a spill
+    /// would flush partial states the heap could later re-admit as incomplete
+    /// groups).  Whether the heap can actually run is only known once the
+    /// aggregation method is chosen, so that decision — disable spilling, or
+    /// fall back to normal aggregation with the configured spill threshold
+    /// intact — is made in the `Aggregator` constructor, not here.
 }
 
 const SortDescription & AggregatingStep::getSortDescription() const

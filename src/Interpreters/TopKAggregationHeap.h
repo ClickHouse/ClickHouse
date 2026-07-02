@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <base/defines.h>
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
@@ -18,51 +19,41 @@ namespace DB
 /** A bounded heap tracking the top-K best keys by the query's `ORDER BY`.
   * Supports single-column and composite (`ColumnTuple`) keys; the worst kept
   * key (evicted next) sits at the front of `heap_indices`.
+  *
+  * Sizing model:
+  *   * `capacity` — the query's `LIMIT N`; the heap never keeps fewer keys.
+  *   * `next_trim_size` — trimming runs when the heap grows past this.  It
+  *     starts at 1.5x capacity so evictions amortize, and is bumped past a
+  *     boundary tie-set whenever the tie guard blocks eviction (see below).
+  *   * `tie_overflow_limit` (`capacity + 2^20`) — keys that compare equal to
+  *     the boundary can never be evicted (destroying such a group and later
+  *     re-admitting its rows would surface an incomplete aggregate), so a
+  *     tie-set can grow the heap without bound: distinct keys tie through NaN
+  *     payloads, and in prefix mode through every full key sharing the
+  *     boundary prefix.  Past this limit `tie_overflow` is raised and the
+  *     caller decides whether freezing is safe (`shouldFreeze`).
+  *   * `freeze_observation_threshold` — rows to observe before declaring a
+  *     full heap that never skipped or evicted anything pure overhead.
   */
 struct TopKAggregationHeap
 {
     MutableColumnPtr heap_column;
 
-    std::vector<int> directions;
-
-    std::vector<int> nulls_directions;
-
     bool is_composite = false;
 
+    /// The heap ranks by a strict prefix of the GROUP BY key (Pattern 1 with a
+    /// prefix ORDER BY).  Distinct full keys sharing the boundary prefix tie.
     bool is_prefix_mode = false;
 
     bool frozen = false;
-    UInt64 observed_rows = 0;
-    UInt64 skipped_rows = 0;
-    UInt64 evicted_keys = 0;
 
-    /// Set when the boundary tie-set (keys that compare equal to the boundary and
-    /// therefore cannot be evicted) has grown the heap past `tie_overflow_limit`.
-    /// Distinct keys can tie under the heap's order (NaN payloads, or in prefix
-    /// mode every full key sharing the boundary prefix), so the tie guard can
-    /// otherwise grow the heap without bound.  The caller freezes the heap when
-    /// it is safe to do so (see `Aggregator::executeImpl`).
-    bool tie_overflow = false;
-
-    static constexpr UInt64 freeze_observation_threshold = 256 * 1024;
-
-    bool shouldFreeze() const
-    {
-        return !frozen
-            && heap_column
-            && observed_rows >= freeze_observation_threshold
-            && skipped_rows == 0
-            && evicted_keys == 0
-            && heap_indices.size() >= capacity;
-    }
-
-    void freeze()
-    {
-        frozen = true;
-        heap_column = nullptr;
-        heap_indices = {};
-        skip_bitmap = {};
-    }
+    /// Arena slots of evicted groups' aggregate states, reusable for later
+    /// inserts (all states share one size and alignment).  Without reuse, a
+    /// stream that keeps admitting and evicting keys grows the arena by one
+    /// state per distinct key seen even though the hash table stays bounded.
+    /// The slots stay valid for the lifetime of the owning
+    /// `AggregatedDataVariants` (its arenas are only appended to, never freed).
+    std::vector<AggregateDataPtr> free_states;
 
     TopKAggregationHeap() = default;
     TopKAggregationHeap(const TopKAggregationHeap &) = delete;
@@ -100,8 +91,51 @@ struct TopKAggregationHeap
 
     size_t size() const { return heap_indices.size(); }
 
+    void recordRows(UInt64 observed, UInt64 skipped)
+    {
+        observed_rows += observed;
+        skipped_rows += skipped;
+    }
+
+    /** Whether to freeze now (see `freeze`).  Two independent reasons:
+      *   * the heap is pure overhead: at capacity for many rows without ever
+      *     skipping a row or evicting a key (low-cardinality input), or
+      *   * a boundary tie-set overgrew it (`tie_overflow`).  Freezing keeps
+      *     every remaining group with a complete state, which is always safe
+      *     when a sort follows the aggregation (Pattern 1: the downstream
+      *     `LIMIT` discards any evicted-rank key).  Under `requires_pruning`
+      *     (Pattern 2, no downstream sort) it is only safe if nothing was ever
+      *     evicted or skipped: a returning key would otherwise surface an
+      *     incomplete group in the unsorted `LIMIT`.
+      */
+    bool shouldFreeze(bool requires_pruning) const
+    {
+        if (frozen || !heap_column)
+            return false;
+
+        const bool never_rejected = skipped_rows == 0 && evicted_keys == 0;
+
+        if (observed_rows >= freeze_observation_threshold
+            && never_rejected
+            && heap_indices.size() >= capacity)
+            return true;
+
+        return tie_overflow && (!requires_pruning || never_rejected);
+    }
+
+    void freeze()
+    {
+        frozen = true;
+        heap_column = nullptr;
+        heap_indices = {};
+        skip_bitmap = {};
+        trim_filter = {};
+        trim_old_to_new = {};
+    }
+
     bool shouldSkip(const ColumnRawPtrs & source_columns, size_t source_row) const
     {
+        chassert(!frozen);
         chassert(!heap_indices.empty());
         const size_t boundary = heap_indices.front();
         if (is_composite)
@@ -109,7 +143,9 @@ struct TopKAggregationHeap
         return sourceAboveHeap(*source_columns[0], source_row, boundary);
     }
 
-    bool shouldSkip(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
+    /// Fast path taking a raw typed pointer to the source column data; falls
+    /// back to the virtual `compareAt` path when no typed comparator applies.
+    bool shouldSkipTyped(const void * source_typed_data, const ColumnRawPtrs & source_columns, size_t source_row) const
     {
         if (should_skip_numeric_fn && source_typed_data)
         {
@@ -121,6 +157,7 @@ struct TopKAggregationHeap
 
     const UInt8 * fillSkipBitmap(const void * source_typed_data, size_t begin, size_t end)
     {
+        chassert(!frozen);
         if (!fill_skip_bitmap_fn || !source_typed_data)
             return nullptr;
         chassert(!heap_indices.empty());
@@ -135,6 +172,7 @@ struct TopKAggregationHeap
         if (is_composite)
         {
             auto & tuple = assert_cast<ColumnTuple &>(*heap_column);
+            chassert(source_columns.size() == tuple.tupleSize());
             new_idx = tuple.size();
             for (size_t i = 0; i < source_columns.size(); ++i)
                 tuple.getColumn(i).insertFrom(*source_columns[i], source_row);
@@ -146,12 +184,16 @@ struct TopKAggregationHeap
             heap_column->insertFrom(*source_columns[0], source_row);
         }
         heap_indices.push_back(new_idx);
+        /// Note: deferring heapification during the fill phase (append + one
+        /// `make_heap` at capacity) measured ~20% slower than incremental
+        /// `push_heap` on random keys — a random insert sinks near the leaves,
+        /// so `push_heap` is amortized O(1) and the deferral only adds branches.
         std::push_heap(heap_indices.begin(), heap_indices.end(), HeapComparator{this});
     }
 
     bool needsTrim() const
     {
-        return heap_indices.size() > compaction_threshold;
+        return heap_indices.size() > next_trim_size;
     }
 
     template <typename EvictCallback>
@@ -171,7 +213,9 @@ struct TopKAggregationHeap
             if (!cmp(candidate, new_front) && !cmp(new_front, candidate))
             {
                 std::push_heap(heap_indices.begin(), heap_indices.end(), cmp);
-                compaction_threshold = std::max(compaction_threshold, heap_indices.size() + capacity / 2 + 1);
+                /// Step over the tie-set so the next trim is not immediately
+                /// blocked by the same ties.
+                next_trim_size = std::max(next_trim_size, heap_indices.size() + capacity / 2 + 1);
                 if (heap_indices.size() > tie_overflow_limit)
                     tie_overflow = true;
                 break;
@@ -187,37 +231,50 @@ struct TopKAggregationHeap
         if (col_size <= heap_indices.size())
             return evicted_count;
 
-        IColumn::Filter filter(col_size, 0);
+        trim_filter.clear();
+        trim_filter.resize_fill(col_size, 0);
         for (size_t idx : heap_indices)
-            filter[idx] = 1;
+            trim_filter[idx] = 1;
 
-        std::vector<size_t> old_to_new(col_size);
+        trim_old_to_new.resize(col_size);
         size_t new_idx = 0;
         for (size_t i = 0; i < col_size; ++i)
         {
-            if (filter[i])
-                old_to_new[i] = new_idx++;
+            if (trim_filter[i])
+                trim_old_to_new[i] = new_idx++;
         }
 
-        heap_column->filter(filter);
+        heap_column->filter(trim_filter);
 
         for (auto & idx : heap_indices)
-            idx = old_to_new[idx];
+            idx = trim_old_to_new[idx];
 
         return evicted_count;
     }
 
 private:
     static constexpr size_t max_preallocated_rows = 1ULL << 20;
+    static constexpr UInt64 freeze_observation_threshold = 256 * 1024;
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+
+    UInt64 observed_rows = 0;
+    UInt64 skipped_rows = 0;
+    UInt64 evicted_keys = 0;
+
+    /// Set when the boundary tie-set has grown the heap past
+    /// `tie_overflow_limit`; consulted by `shouldFreeze`.
+    bool tie_overflow = false;
 
     void setCapacity(size_t cap)
     {
         capacity = cap;
         const size_t half = capacity / 2;
-        compaction_threshold = capacity > std::numeric_limits<size_t>::max() - half
+        next_trim_size = capacity > std::numeric_limits<size_t>::max() - half
             ? std::numeric_limits<size_t>::max()
             : capacity + half;
-        chassert(compaction_threshold >= capacity);
+        chassert(next_trim_size >= capacity);
 
         /// The heap may exceed `capacity` by at most `max_preallocated_rows` of
         /// boundary-tied keys before `tie_overflow` is raised; this caps the
@@ -229,7 +286,10 @@ private:
 
     size_t reserveHint() const
     {
-        const size_t hint = compaction_threshold >= max_preallocated_rows ? max_preallocated_rows : compaction_threshold + 1;
+        /// Note: intentionally capped, so a `capacity` above 2^20 under-reserves
+        /// and refills through reallocation; the plan-level limit cap keeps
+        /// real capacities far below that.
+        const size_t hint = next_trim_size >= max_preallocated_rows ? max_preallocated_rows : next_trim_size + 1;
         chassert(hint <= max_preallocated_rows);
         return hint;
     }
@@ -349,6 +409,10 @@ private:
 
     std::vector<UInt8> skip_bitmap;
 
+    /// Scratch for `trimAndCompact`, kept across trims to avoid per-trim allocations.
+    IColumn::Filter trim_filter;
+    std::vector<size_t> trim_old_to_new;
+
     /// `source_data` is reinterpreted from the hash key type (always unsigned) to
     /// the actual column type — safe because they share size and bit layout.
     template <typename ActualKeyType>
@@ -415,9 +479,13 @@ private:
         }
     }
 
+    /// Indices into `heap_column`, max-heap ordered by `HeapComparator`.
+    /// Note: `size_t` elements measured no slower than `UInt32` at realistic
+    /// capacities (the array fits L1 either way).
     std::vector<size_t> heap_indices;
     size_t capacity = 0;
-    size_t compaction_threshold = 0;
+    /// Trim when the heap grows past this; adaptive, see the struct comment.
+    size_t next_trim_size = 0;
     size_t tie_overflow_limit = 0;  /// heap size past which `tie_overflow` is raised
 };
 
