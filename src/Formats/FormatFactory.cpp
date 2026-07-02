@@ -25,6 +25,8 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <IO/UTFConvertingReadBuffer.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -542,6 +544,13 @@ InputFormatPtr FormatFactory::getInputImpl(
     // Add ParallelReadBuffer and decompression if needed.
 
     auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
+    if (shouldDetectUTFBOM(name))
+    {
+        if (owned_buf)
+            owned_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(owned_buf));
+        else
+            owned_buf = std::make_unique<UTFConvertingReadBuffer>(_buf);
+    }
     auto & buf = owned_buf ? *owned_buf : _buf;
 
     // Decide whether to use ParallelParsingInputFormat.
@@ -618,6 +627,9 @@ InputFormatPtr FormatFactory::getInputImpl(
     {
         format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
     }
+
+    if (shouldDetectUTFBOM(name))
+        format->setNeedUTFBOMDetection(true);
 
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
@@ -842,6 +854,66 @@ String FormatFactory::getContentType(const String & name, const std::optional<Fo
     return getCreators(name).content_type(settings);
 }
 
+class UTFConvertingSchemaReader : public ISchemaReader
+{
+public:
+    UTFConvertingSchemaReader(std::unique_ptr<UTFConvertingReadBuffer> owned_buf_, SchemaReaderPtr schema_reader_)
+        : ISchemaReader(*owned_buf_)
+        , owned_buf(std::move(owned_buf_))
+        , schema_reader(schema_reader_)
+    {
+    }
+
+    NamesAndTypesList readSchema() override
+    {
+        return schema_reader->readSchema();
+    }
+
+    std::optional<size_t> readNumberOrRows() override
+    {
+        return schema_reader->readNumberOrRows();
+    }
+
+    bool hasStrictOrderOfColumns() const override
+    {
+        return schema_reader->hasStrictOrderOfColumns();
+    }
+
+    bool needContext() const override
+    {
+        return schema_reader->needContext();
+    }
+
+    void setContext(const ContextPtr & context_) override
+    {
+        schema_reader->setContext(context_);
+    }
+
+    void setMaxRowsAndBytesToRead(size_t max_rows, size_t max_bytes) override
+    {
+        schema_reader->setMaxRowsAndBytesToRead(max_rows, max_bytes);
+    }
+
+    size_t getNumRowsRead() const override
+    {
+        return schema_reader->getNumRowsRead();
+    }
+
+    void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override
+    {
+        schema_reader->transformTypesIfNeeded(type, new_type);
+    }
+
+    void transformTypesFromDifferentFilesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override
+    {
+        schema_reader->transformTypesFromDifferentFilesIfNeeded(type, new_type);
+    }
+
+private:
+    std::unique_ptr<UTFConvertingReadBuffer> owned_buf;
+    SchemaReaderPtr schema_reader;
+};
+
 SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
@@ -853,6 +925,16 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    if (shouldDetectUTFBOM(name))
+    {
+        auto owned_buf = std::make_unique<UTFConvertingReadBuffer>(buf);
+        auto schema_reader = schema_reader_creator(*owned_buf, format_settings);
+        if (schema_reader->needContext())
+            schema_reader->setContext(context);
+        return std::make_shared<UTFConvertingSchemaReader>(std::move(owned_buf), schema_reader);
+    }
+
     auto schema_reader = schema_reader_creator(buf, format_settings);
     if (schema_reader->needContext())
         schema_reader->setContext(context);
@@ -1157,6 +1239,13 @@ String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, const
 
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return additional_info_getter(format_settings);
+}
+
+bool FormatFactory::shouldDetectUTFBOM(const String & format_name) const
+{
+    String format_lower = boost::to_lower_copy(format_name);
+    return format_lower.starts_with("csv") || format_lower.starts_with("tsv") || format_lower.starts_with("tabseparated")
+        || format_lower.starts_with("customseparated") || format_lower.starts_with("json") || format_lower.starts_with("ndjson");
 }
 
 bool FormatFactory::isInputFormat(const String & name) const

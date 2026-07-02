@@ -82,6 +82,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
 
+
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace ProfileEvents
@@ -667,7 +668,8 @@ namespace
                     return {nullptr, cached_columns, format};
             }
 
-            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
+            auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+            return {std::move(buffer), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -709,7 +711,8 @@ namespace
             chassert(current_index > 0 && current_index <= paths.size());
             auto path = paths[current_index - 1];
             auto file_stat = getFileStat(path, false, -1, "File");
-            return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+            auto buffer = createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
+            return buffer;
         }
 
     private:
@@ -959,20 +962,25 @@ namespace
 
         std::unique_ptr<ReadBuffer> recreateLastReadBuffer() override
         {
+            std::unique_ptr<ReadBuffer> buffer;
             if (archive_info.isSingleFileRead())
             {
                 chassert(current_archive_index > 0 && current_archive_index <= archive_info.paths_to_archives.size());
                 const auto & archive = archive_info.paths_to_archives[current_archive_index - 1];
                 auto archive_reader = createArchiveReader(archive);
-                return archive_reader->readFile(archive_info.path_in_archive, false);
+                buffer = archive_reader->readFile(archive_info.path_in_archive, false);
+            }
+            else
+            {
+                chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
+                const auto & archive = archive_info.paths_to_archives[current_archive_index];
+                auto archive_reader = createArchiveReader(archive);
+                chassert(last_read_buffer);
+                file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
+                buffer = archive_reader->readFile(std::move(file_enumerator));
             }
 
-            chassert(current_archive_index >= 0 && current_archive_index < archive_info.paths_to_archives.size());
-            const auto & archive = archive_info.paths_to_archives[current_archive_index];
-            auto archive_reader = createArchiveReader(archive);
-            chassert(last_read_buffer);
-            file_enumerator = archive_reader->currentFile(std::move(last_read_buffer));
-            return archive_reader->readFile(std::move(file_enumerator));
+            return buffer;
         }
 
     private:

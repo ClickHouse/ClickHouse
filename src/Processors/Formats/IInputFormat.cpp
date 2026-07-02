@@ -1,8 +1,11 @@
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
+#include <IO/UTFConvertingReadBuffer.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <IO/VarInt.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -56,7 +59,16 @@ void IInputFormat::resetParser()
 
 void IInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    in = &in_;
+    if (need_utf_bom_detection && !typeid_cast<PeekableReadBuffer *>(&in_) && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
+    {
+        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
+        in = utf_buf.get();
+        addBuffer(std::move(utf_buf));
+    }
+    else
+    {
+        in = &in_;
+    }
 }
 
 Chunk IInputFormat::getChunkForCount(size_t rows)

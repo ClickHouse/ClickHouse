@@ -2,6 +2,7 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowInputFormat.h>
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <IO/UTFConvertingReadBuffer.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
@@ -107,7 +108,16 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
+    if (need_utf_bom_detection)
+    {
+        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
+        buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
+        addBuffer(std::move(utf_buf));
+    }
+    else
+    {
+        buf = std::make_unique<PeekableReadBuffer>(in_);
+    }
     RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 

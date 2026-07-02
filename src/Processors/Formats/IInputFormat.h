@@ -82,8 +82,12 @@ protected:
     /// from the socket, and if not all data is read then the connection can't be reused for later
     /// HTTP requests (keepalive).
     ReadBuffer * in [[maybe_unused]] = nullptr;
+    bool need_utf_bom_detection = false;
 
 public:
+    void setNeedUTFBOMDetection(bool value) { need_utf_bom_detection = value; }
+    bool getNeedUTFBOMDetection() const { return need_utf_bom_detection; }
+
     /// ReadBuffer can be nullptr for random-access formats.
     IInputFormat(SharedHeader header, ReadBuffer * in_);
 

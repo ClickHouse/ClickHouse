@@ -4,6 +4,7 @@
 #include <Formats/EscapingRuleUtils.h>
 #include <IO/PeekableReadBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UTFConvertingReadBuffer.h>
 
 namespace DB
 {
@@ -61,7 +62,16 @@ void JSONRowInputFormat::readSuffix()
 
 void JSONRowInputFormat::setReadBuffer(DB::ReadBuffer & in_)
 {
-    peekable_buf = std::make_unique<PeekableReadBuffer>(in_);
+    if (need_utf_bom_detection)
+    {
+        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
+        peekable_buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
+        addBuffer(std::move(utf_buf));
+    }
+    else
+    {
+        peekable_buf = std::make_unique<PeekableReadBuffer>(in_);
+    }
     JSONEachRowRowInputFormat::setReadBuffer(*peekable_buf);
 }
 
