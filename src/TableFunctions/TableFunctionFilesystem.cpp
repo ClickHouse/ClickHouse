@@ -66,21 +66,9 @@ The `FILE` source access type is required.
 )",
             .examples
             {
-                {"List all files under user_files", R"(
-```sql
-SELECT name, size FROM filesystem()
-```
-)", ""},
-                {"List files with a relative path", R"(
-```sql
-SELECT name, size FROM filesystem('my_data')
-```
-)", ""},
-                {"List files with an absolute path", R"(
-```sql
-SELECT * FROM filesystem('/var/lib/clickhouse/user_files')
-```
-)", ""},
+                {"List all files under user_files", "SELECT name, size FROM filesystem()", ""},
+                {"List files with a relative path", "SELECT name, size FROM filesystem('my_data')", ""},
+                {"List files with an absolute path", "SELECT * FROM filesystem('/var/lib/clickhouse/user_files')", ""},
             },
             .category = FunctionDocumentation::Category::TableFunction
         }, {}, TableFunctionFactory::Case::Insensitive);

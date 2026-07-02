@@ -208,6 +208,15 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
+/// Virtual columns that can only be materialized after the read buffer is opened (e.g. HTTP response
+/// headers exposed as `_headers` for web reads). They are not known during object listing, so they must
+/// not participate in the path/file pre-listing predicate split, where the listing-time block can only
+/// materialize `_path`/`_file`/hive columns/`_idx`.
+static bool isReaderOnlyVirtualColumn(const String & name)
+{
+    return name == "_headers";
+}
+
 std::string_view findHivePartitioningInPath(const String & path)
 {
     auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
@@ -287,19 +296,27 @@ static void addPathAndFileToVirtualColumns(
     const String & path,
     size_t idx,
     const FormatSettings & format_settings,
-    bool parse_hive_columns)
+    bool parse_hive_columns,
+    const String * file_name = nullptr)
 {
     if (block.has("_path"))
         columns[block.getPositionByName("_path")]->insert(path);
 
     if (block.has("_file"))
     {
-        auto slash = path.find_last_of('/');
         String file;
-        if (slash != std::string::npos)
-            file = path.substr(slash + 1);
+        if (file_name)
+        {
+            file = *file_name;
+        }
         else
-            file = path;
+        {
+            auto pos = path.find_last_of('/');
+            if (pos != std::string::npos)
+                file = path.substr(pos + 1);
+            else
+                file = path;
+        }
 
         columns[block.getPositionByName("_file")]->insert(file);
     }
@@ -334,7 +351,8 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -353,13 +371,18 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings)
+    const std::optional<FormatSettings> & format_settings,
+    const std::vector<String> * file_names)
 {
+    if (file_names && file_names->size() != paths.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of paths and file names do not match: {} != {}", paths.size(), file_names->size());
+
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path"
+            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -385,7 +408,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
             paths[i],
             /* idx */i,
             hive_format_settings,
-            parse_hive_columns);
+            parse_hive_columns,
+            file_names ? &(*file_names)[i] : nullptr);
     }
     block.setColumns(std::move(columns));
 
