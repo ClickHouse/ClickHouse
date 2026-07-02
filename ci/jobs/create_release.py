@@ -485,19 +485,35 @@ class ReleaseInfo:
                         dry_run=dry_run,
                         verbose=True,
                     )
+                    # Rerun-safe (mirrors the changelog PR path): a previous
+                    # attempt may have already pushed this branch and opened the
+                    # PR. Force-push the freshly rebuilt branch, and only open the
+                    # PR if one does not already exist for it.
                     Shell.check(
-                        f"{GIT_PREFIX} push --set-upstream origin {branch_upd}",
+                        f"{GIT_PREFIX} push --force --set-upstream origin {branch_upd}",
                         strict=True,
                         dry_run=dry_run,
                         verbose=True,
                     )
-                    Shell.check(
-                        f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
-                        f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}",
-                        strict=True,
-                        dry_run=dry_run,
-                        verbose=True,
+                    existing_bump_pr = (
+                        "" if dry_run
+                        else GH.get_pr_url_by_branch(
+                            branch=branch_upd, repo=GITHUB_REPOSITORY
+                        )
                     )
+                    if existing_bump_pr:
+                        print(
+                            f"Version bump PR already exists [{existing_bump_pr}]"
+                            " - skipping create"
+                        )
+                    else:
+                        Shell.check(
+                            f"gh pr create --repo {GITHUB_REPOSITORY} --title 'Update version after release' "
+                            f"--head {branch_upd} --base master --body \"{body}\" --assignee {actor}",
+                            strict=True,
+                            dry_run=dry_run,
+                            verbose=True,
+                        )
                     if dry_run:
                         Shell.check(
                             f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
