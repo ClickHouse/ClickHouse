@@ -1,0 +1,18 @@
+-- without SHOW COLUMNS: denied (existing column)
+ACCESS_DENIED
+-- without SHOW COLUMNS: denied for a non-existing table (no existence oracle)
+ACCESS_DENIED
+-- without SHOW COLUMNS: denied for a non-existing database (no existence oracle)
+ACCESS_DENIED
+-- without SHOW COLUMNS: localhost overload denied (existing column)
+ACCESS_DENIED
+-- without SHOW COLUMNS: localhost overload denied for a non-existing table (no existence oracle)
+ACCESS_DENIED
+-- with SHOW COLUMNS: existing column
+1
+-- with SHOW COLUMNS: non-existing column
+0
+-- with SHOW COLUMNS: localhost overload existing column
+1
+-- with SHOW COLUMNS: localhost overload non-existing column
+0
