@@ -1,6 +1,7 @@
 #include <Processors/Sources/RecursiveCTESource.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageMemory.h>
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -14,18 +15,41 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Set.h>
 
+#include <QueryPipeline/SizeLimits.h>
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
-#include <Analyzer/UnionNode.h>
+#include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+
+#include <DataTypes/DataTypeTuple.h>
+
+#include <Common/assert_cast.h>
+
+#include <optional>
+#include <set>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsUInt64 max_recursive_cte_evaluation_depth;
+    extern const SettingsUInt64 recursive_cte_max_in_filter_cardinality;
+    extern const SettingsUInt64 max_rows_in_set;
+    extern const SettingsUInt64 max_bytes_in_set;
+    extern const SettingsBool transform_null_in;
+    extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace ErrorCodes
@@ -33,6 +57,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -62,6 +87,405 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
     }
 
     return result;
+}
+
+/// Equi-join key between the recursive CTE working table and a real table,
+/// tagged with the `QueryNode` whose join tree contains the join. The filter
+/// will be injected into that `QueryNode`'s `WHERE` clause.
+struct CTEJoinKey
+{
+    QueryNode * containing_query_node;
+    String cte_column_name;
+    DataTypePtr cte_column_type;
+    ColumnNode * real_column_node;
+};
+
+bool isCTETableNode(const IQueryTreeNode * node, const std::vector<TableNode *> & recursive_table_nodes)
+{
+    for (const auto * table_node : recursive_table_nodes)
+        if (node == table_node)
+            return true;
+    return false;
+}
+
+/// Extract equi-join key pairs from an `ON` join expression.
+/// Handles single `equals` and `AND`-combined conditions.
+void extractEquiJoinKeys(
+    const QueryTreeNodePtr & expression,
+    const std::vector<TableNode *> & recursive_table_nodes,
+    QueryNode & containing_query_node,
+    std::vector<CTEJoinKey> & result)
+{
+    const auto * function_node = expression->as<FunctionNode>();
+    if (!function_node)
+        return;
+
+    if (function_node->getFunctionName() == "and")
+    {
+        for (const auto & arg : function_node->getArguments().getNodes())
+            extractEquiJoinKeys(arg, recursive_table_nodes, containing_query_node, result);
+        return;
+    }
+
+    if (function_node->getFunctionName() != "equals")
+        return;
+
+    const auto & args = function_node->getArguments().getNodes();
+    if (args.size() != 2)
+        return;
+
+    auto * left_column = args[0]->as<ColumnNode>();
+    auto * right_column = args[1]->as<ColumnNode>();
+    if (!left_column || !right_column)
+        return;
+
+    auto left_source = left_column->getColumnSourceOrNull();
+    auto right_source = right_column->getColumnSourceOrNull();
+    if (!left_source || !right_source)
+        return;
+
+    bool left_is_cte = isCTETableNode(left_source.get(), recursive_table_nodes);
+    bool right_is_cte = isCTETableNode(right_source.get(), recursive_table_nodes);
+
+    /// Both columns from the same side (both CTE or both real) — skip.
+    if (left_is_cte == right_is_cte)
+        return;
+
+    auto * cte_column = left_is_cte ? left_column : right_column;
+    auto * real_column = left_is_cte ? right_column : left_column;
+    const auto & real_source = left_is_cte ? right_source : left_source;
+
+    /// Real side must be a physical table — filter pushdown only makes sense
+    /// against a storage's primary key.
+    if (!real_source->as<TableNode>())
+        return;
+
+    result.push_back({&containing_query_node, cte_column->getColumnName(), cte_column->getColumnType(), real_column});
+}
+
+/// Walk the join tree of a single `QueryNode` to collect equi-join keys.
+///
+/// The collected predicate is later injected into the `QueryNode`'s `WHERE`,
+/// which applies after every join. That is semantics-preserving only when the
+/// matched inner join is not nested on the nullable side of an outer join: a
+/// `LEFT`/`RIGHT`/`FULL` join produces null-extended rows for unmatched outer
+/// rows, and `real_column IN (...)` at `WHERE`-level would evaluate to NULL
+/// (i.e. false) for those rows and silently drop them. To stay correct, the
+/// walk tracks whether the current subtree sits on a nullable side and skips
+/// inner joins reached through such a path.
+void collectCTEJoinKeysInQuery(
+    QueryNode & query_node,
+    const std::vector<TableNode *> & recursive_table_nodes,
+    std::vector<CTEJoinKey> & result)
+{
+    struct StackEntry
+    {
+        IQueryTreeNode * node;
+        bool in_nullable_position;
+    };
+
+    std::vector<StackEntry> nodes_to_visit;
+    nodes_to_visit.push_back({query_node.getJoinTree().get(), false});
+
+    while (!nodes_to_visit.empty())
+    {
+        auto entry = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto * join_node = entry.node->as<JoinNode>();
+        if (!join_node)
+            continue;
+
+        const auto kind = join_node->getKind();
+
+        /// Only `ON` equi-joins are handled. `JOIN ... USING (c)` is intentionally
+        /// skipped: `USING` forces the recursive working-table column and the real
+        /// table's join column to share the name `c`, and a recursive CTE whose
+        /// working column collides with a joined table's column name currently
+        /// evaluates to an empty result in ClickHouse regardless of this
+        /// optimization (the recursion produces no rows, not even the anchor). The
+        /// optimization is therefore scoped to `ON`/comma equi-joins, which is what
+        /// the changelog and tests claim.
+        if (kind == JoinKind::Inner
+            && join_node->hasJoinExpression()
+            && join_node->isOnJoinExpression()
+            && !entry.in_nullable_position)
+        {
+            extractEquiJoinKeys(join_node->getJoinExpression(), recursive_table_nodes, query_node, result);
+        }
+
+        const bool left_nullable = entry.in_nullable_position || kind == JoinKind::Right || kind == JoinKind::Full;
+        const bool right_nullable = entry.in_nullable_position || kind == JoinKind::Left || kind == JoinKind::Full;
+
+        nodes_to_visit.push_back({join_node->getLeftTableExpression().get(), left_nullable});
+        nodes_to_visit.push_back({join_node->getRightTableExpression().get(), right_nullable});
+    }
+}
+
+/// Collect all CTE join keys in the recursive query. When the recursive query
+/// is a `UnionNode`, every branch is inspected independently so that filters
+/// can later be injected into each branch's `WHERE` in isolation.
+std::vector<CTEJoinKey> collectCTEJoinKeys(
+    IQueryTreeNode & recursive_query,
+    const std::vector<TableNode *> & recursive_table_nodes)
+{
+    std::vector<CTEJoinKey> result;
+
+    if (auto * query_node = recursive_query.as<QueryNode>())
+    {
+        collectCTEJoinKeysInQuery(*query_node, recursive_table_nodes, result);
+    }
+    else if (auto * union_node = recursive_query.as<UnionNode>())
+    {
+        for (auto & subquery : union_node->getQueries().getNodes())
+        {
+            if (auto * sub_query_node = subquery->as<QueryNode>())
+                collectCTEJoinKeysInQuery(*sub_query_node, recursive_table_nodes, result);
+        }
+    }
+
+    return result;
+}
+
+/// Read deduplicated values of a column from a `StorageMemory`-backed temporary
+/// table. Returns nullopt — so the caller skips filter injection for the step
+/// and falls back to a plain scan — when the generated set would be too large
+/// to build safely:
+///  - the number of distinct values exceeds `max_cardinality`, or
+///  - the accumulated byte size of the distinct values exceeds `max_bytes`
+///    (the effective `max_bytes_in_set`; `0` means unlimited).
+///
+/// The byte budget bounds the work *while the values are being collected*, so a
+/// frontier of wide keys under a tight `max_bytes_in_set` fails closed before
+/// the full set is materialized here and re-materialized as the RHS tuple — the
+/// unoptimized recursive scan never builds either, so it must not pay for them.
+/// The check is conservative: it measures the unconverted key bytes, an upper
+/// bound on the set the planner builds after converting to the storage column
+/// type, so it can only skip the optimization earlier, never inject an oversized
+/// set (the exact post-conversion check in `generatedInSetIsSafeToInject` still
+/// runs for everything that passes here).
+std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
+    const StoragePtr & storage,
+    const String & column_name,
+    const ContextPtr & context,
+    size_t max_cardinality,
+    size_t max_bytes)
+{
+    auto * memory_storage = typeid_cast<StorageMemory *>(storage.get());
+    if (!memory_storage)
+        return std::vector<Field>{};
+
+    auto metadata = memory_storage->getInMemoryMetadataPtr(context, false);
+    auto snapshot = memory_storage->getStorageSnapshot(metadata, context);
+    const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*snapshot->data);
+
+    if (!snapshot_data.blocks)
+        return std::vector<Field>{};
+
+    std::set<Field> unique_values;
+    size_t accumulated_bytes = 0;
+
+    for (const auto & block : *snapshot_data.blocks)
+    {
+        if (!block.has(column_name))
+            continue;
+
+        const auto & column = block.getByName(column_name).column;
+        for (size_t i = 0; i < column->size(); ++i)
+        {
+            Field value;
+            column->get(i, value);
+            if (unique_values.insert(std::move(value)).second)
+            {
+                accumulated_bytes += column->byteSizeAt(i);
+                if (max_bytes != 0 && accumulated_bytes > max_bytes)
+                    return std::nullopt;
+            }
+
+            if (unique_values.size() > max_cardinality)
+                return std::nullopt;
+        }
+    }
+
+    return std::vector<Field>(unique_values.begin(), unique_values.end());
+}
+
+/// Build the RHS tuple constant for the generated `IN`.
+///
+/// The tuple elements are typed using the CTE column's type (the type the
+/// values were originally produced with), not the real column's type. This
+/// matches the semantics of `JOIN ... ON real_col = cte_col`: the join is
+/// resolved over a common comparison type, and values that are valid under
+/// the join but not representable in the storage column's type (e.g.
+/// `Int64(-1)` against a `UInt8` column, or `NULL` against a non-nullable
+/// column) are correctly evaluated as no-match rather than triggering a
+/// conversion exception while the filter is being built.
+std::shared_ptr<ConstantNode> buildInRhsConstantNode(const DataTypePtr & cte_column_type, const std::vector<Field> & values)
+{
+    Tuple tuple_values;
+    tuple_values.reserve(values.size());
+    DataTypes tuple_element_types;
+    tuple_element_types.reserve(values.size());
+
+    for (const auto & value : values)
+    {
+        tuple_values.push_back(value);
+        tuple_element_types.push_back(cte_column_type);
+    }
+
+    return std::make_shared<ConstantNode>(
+        Field(std::move(tuple_values)),
+        std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
+}
+
+/// Build a resolved query-tree expression equivalent to `real_column IN (rhs...)`.
+QueryTreeNodePtr buildInFilterNode(
+    ColumnNode & real_column,
+    std::shared_ptr<ConstantNode> rhs_node,
+    const ContextPtr & context)
+{
+    auto in_function_node = std::make_shared<FunctionNode>("in");
+    in_function_node->markAsOperator();
+    in_function_node->getArguments().getNodes() = {real_column.clone(), std::move(rhs_node)};
+    resolveOrdinaryFunctionNodeByName(*in_function_node, "in", context);
+
+    return in_function_node;
+}
+
+/// Returns true if the planner can safely build and inject the set for
+/// `real_column IN (rhs...)`: the conversion `CollectSets` will apply does not
+/// throw, and the resulting set stays within the user's configured set-size
+/// limits (`max_rows_in_set` / `max_bytes_in_set`). When it returns false the
+/// caller skips injection for this step and the physical table is scanned
+/// without the generated predicate, exactly as if the optimization were
+/// disabled.
+///
+/// The injected predicate is only an optimization, so it must never change the
+/// observable behaviour of the recursive query. There are three ways it could,
+/// and all are guarded here by failing closed:
+///
+///  - Size limits. The planner lowers the injected `IN` through
+///    `FutureSetFromTuple`, which enforces these limits via
+///    `PreparedSets::getSizeLimitsForSet`: under `set_overflow_mode = 'throw'`
+///    an oversized set raises `SET_SIZE_LIMIT_EXCEEDED`, and under `'break'` it
+///    is silently truncated. Either outcome diverges from the unoptimized scan
+///    (fail, or return incomplete results).
+///
+///  - Conversion failure. `CollectSets` converts the RHS constant to the `IN`
+///    left-hand side's type — the joined real column's type, not the CTE column
+///    type the tuple elements carry — via `getSetElementsForConstantValue`, and
+///    that conversion can itself throw. For example a recursive `String` key
+///    joined against an `Enum` column with `validate_enum_literals_in_operators
+///    = 1` raises `UNKNOWN_ELEMENT_OF_ENUM` for a frontier value that the
+///    original `enum_col = cte_string` comparison would simply treat as a
+///    no-match. The conversion must therefore be attempted here unconditionally
+///    (not only when size limits are set) and any exception from it treated as
+///    "do not inject".
+///
+///  - Memory. Materializing the set can raise `MEMORY_LIMIT_EXCEEDED` under a
+///    tight `max_memory_usage` even when the row/byte set limits are unlimited
+///    (the default). The unoptimized scan never builds this set, so the probe is
+///    always built here (through the same memory tracker) and any such failure is
+///    treated as "do not inject" — see the guarded build below.
+///
+/// The set is measured exactly the way the planner would build it: the same
+/// conversion of the same constant, then a `Set` built the way
+/// `FutureSetFromTuple` builds it. The conversion changes both the row count
+/// (non-representable values are dropped as no-match) and the per-row byte size
+/// (e.g. a `UInt8` CTE key joined against a `UInt64` storage key), so measuring
+/// after conversion is what makes the size decision exact.
+bool generatedInSetIsSafeToInject(
+    const DataTypePtr & real_column_type,
+    const std::shared_ptr<ConstantNode> & rhs_node,
+    const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    const size_t max_rows = settings[Setting::max_rows_in_set];
+    const size_t max_bytes = settings[Setting::max_bytes_in_set];
+
+    ColumnsWithTypeAndName set_columns;
+    try
+    {
+        set_columns = getSetElementsForConstantValue(
+            real_column_type,
+            rhs_node->getValue(),
+            rhs_node->getResultType(),
+            GetSetElementParams{
+                .transform_null_in = settings[Setting::transform_null_in],
+                .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
+            });
+    }
+    catch (...)
+    {
+        /// The planner's own conversion in `CollectSets` would throw the same
+        /// way, failing the whole recursive query. Fail closed: skip injection
+        /// and let the step fall back to a plain scan.
+        return false;
+    }
+
+    /// The probe set is built below even when both set-size limits are unlimited
+    /// (`0`, the default). Measuring it against the limits is then unnecessary,
+    /// but building it is still required to fail closed: the planner later
+    /// materializes the real `IN` set through `FutureSetFromTuple`, and that build
+    /// can raise `MEMORY_LIMIT_EXCEEDED` under a tight `max_memory_usage` even
+    /// with unlimited row/byte set limits. The probe below allocates through the
+    /// same memory tracker, so if the real set would not fit, the probe build hits
+    /// the limit here and we skip injection (plain scan) instead of turning a
+    /// query the unoptimized scan would have run into an exception.
+    ColumnsWithTypeAndName header = set_columns;
+    for (auto & elem : header)
+        elem.column = elem.column->cloneEmpty();
+
+    Columns columns;
+    columns.reserve(set_columns.size());
+    for (const auto & elem : set_columns)
+        columns.push_back(elem.column);
+
+    /// Build the set the way `FutureSetFromTuple` would, then compare its
+    /// measured size against the user's limits using the same `>` boundary the
+    /// `throw` path uses, so the decision is exact for both overflow modes.
+    ///
+    /// The probe is built with unlimited `SizeLimits` so its full size can be
+    /// measured exactly, but building it must itself fail closed. The frontier
+    /// holds up to `recursive_cte_max_in_filter_cardinality` values, so with
+    /// large `String` keys and a tight `max_memory_usage` materializing the
+    /// hash table can hit `MEMORY_LIMIT_EXCEEDED` — the memory tracker fires
+    /// during the build, before the comparison below. The unoptimized scan
+    /// never builds this set, so such a failure must skip injection (plain
+    /// scan), not fail the recursive query — exactly like the conversion guard
+    /// above.
+    try
+    {
+        Set set(SizeLimits{}, 0, settings[Setting::transform_null_in]);
+        set.setHeader(header);
+        set.insertFromColumns(columns);
+        set.finishInsert();
+
+        if (max_rows != 0 && set.getTotalRowCount() > max_rows)
+            return false;
+        if (max_bytes != 0 && set.getTotalByteCount() > max_bytes)
+            return false;
+    }
+    catch (...) // Ok: building the probe set hit a limit (e.g. memory); skip injection and fall back to a plain scan instead of failing the recursive query.
+    {
+        return false;
+    }
+    return true;
+}
+
+/// Conjoin a list of predicate nodes into a single `and(...)` expression.
+QueryTreeNodePtr conjoinPredicates(std::vector<QueryTreeNodePtr> predicates, const ContextPtr & context)
+{
+    if (predicates.empty())
+        return nullptr;
+    if (predicates.size() == 1)
+        return std::move(predicates.front());
+
+    auto and_function_node = std::make_shared<FunctionNode>("and");
+    and_function_node->markAsOperator();
+    and_function_node->getArguments().getNodes() = std::move(predicates);
+    resolveOrdinaryFunctionNodeByName(*and_function_node, "and", context);
+    return and_function_node;
 }
 
 }
@@ -101,8 +525,95 @@ public:
             recursive_query = std::move(working_union_query);
         }
 
+        /// Disable parallel replicas in every `QueryNode`/`UnionNode` of the recursive query.
+        /// When parallel replicas is enabled, the planner rewrites JOINs to GLOBAL JOIN and
+        /// materializes the right-side subquery into a cached external table keyed by tree
+        /// hash. Across recursive steps the tree structure is identical (only the working
+        /// table's data changes), so the cache key collides and stale data is reused —
+        /// producing wrong results. The planner reads this setting from each node's
+        /// `mutable_context` (see `Planner::buildPlannerContext`), not from the outer
+        /// interpreter context, so overriding only the interpreter context is not enough.
+        /// We rewrite the contexts once at construction time and preserve sharing: nodes
+        /// that originally pointed to the same context will share the same copy afterwards.
+        std::map<Context *, ContextMutablePtr> context_copies;
+        auto rewrite_context = [&context_copies](ContextMutablePtr & ctx)
+        {
+            if (auto it = context_copies.find(ctx.get()); it != context_copies.end())
+            {
+                ctx = it->second;
+                return;
+            }
+
+            /// `allow_experimental_parallel_reading_from_replicas = 2` is the
+            /// forcing mode, documented as "enabled, throw an exception in case
+            /// of failure". Recursive steps cannot use parallel replicas (the
+            /// stale GLOBAL JOIN cache described above would return wrong
+            /// results), so the request cannot be honoured. Silently
+            /// downgrading to a plain run would break that force-or-throw
+            /// contract, so fail closed with a clear error rather than pretend
+            /// it succeeded.
+            ///
+            /// The throw is gated on parallel replicas actually being usable for
+            /// this context, so it fires under the same condition as the forced
+            /// mode rejections in the planner (e.g. FINAL / JOIN / IN-subquery in
+            /// `Planner::buildPlanForQueryNode`): only when parallel replicas
+            /// would actually be engaged. A bare `... = 2` with the default
+            /// `max_parallel_replicas = 1` is a no-op everywhere else, so it must
+            /// stay a no-op here too and just be disabled below (as mode `1`,
+            /// best-effort, always is).
+            ///
+            /// Every parallel-replica algorithm is covered, not just the
+            /// task-based one: custom-key (`canUseParallelReplicasCustomKey`) and
+            /// sampling/offset (`canUseOffsetParallelReplicas`) modes are not
+            /// gated by `canUseTaskBasedParallelReplicas`, so checking only the
+            /// latter would let a forced custom-key/sampling run be silently
+            /// downgraded here, breaking the force-or-throw contract. The disable
+            /// below (setting the mode to `0`) does turn off all of them, since
+            /// every `canUse*` predicate requires the setting to be `> 0`.
+            if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
+                && (ctx->canUseTaskBasedParallelReplicas()
+                    || ctx->canUseParallelReplicasCustomKey()
+                    || ctx->canUseOffsetParallelReplicas()))
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Parallel replicas (allow_experimental_parallel_reading_from_replicas = 2) are not supported for the "
+                    "recursive part of a recursive CTE. Set it to 0 or 1 to run the query.");
+
+            auto new_ctx = Context::createCopy(ctx);
+            new_ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
+            context_copies.emplace(ctx.get(), new_ctx);
+            ctx = std::move(new_ctx);
+        };
+
+        std::vector<IQueryTreeNode *> nodes_to_visit;
+        nodes_to_visit.push_back(recursive_query.get());
+        while (!nodes_to_visit.empty())
+        {
+            auto * node = nodes_to_visit.back();
+            nodes_to_visit.pop_back();
+
+            if (auto * qn = node->as<QueryNode>())
+                rewrite_context(qn->getMutableContext());
+            else if (auto * un = node->as<UnionNode>())
+                rewrite_context(un->getMutableContext());
+
+            for (auto & child : node->getChildren())
+                if (child)
+                    nodes_to_visit.push_back(child.get());
+        }
+
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
+
+        /// The seed (non-recursive) query keeps its original context, which was
+        /// not rewritten above and therefore still permits parallel replicas.
+        /// The seed runs once, never references the working table, and does not
+        /// reuse a cached GLOBAL JOIN, so the cache-collision hazard that forces
+        /// us to disable parallel replicas for recursive steps does not apply to
+        /// it. Running it with this context (instead of the recursive one) keeps
+        /// the parallel-replicas disable scoped to recursive iterations only.
+        non_recursive_query_context = non_recursive_query->as<QueryNode>() ? non_recursive_query->as<QueryNode &>().getMutableContext() :
+            non_recursive_query->as<UnionNode &>().getMutableContext();
 
         const auto & recursive_query_projection_columns = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getProjectionColumns() :
             recursive_query->as<UnionNode &>().computeProjectionColumns();
@@ -122,6 +633,24 @@ public:
             nullptr /*query*/,
             true /*create_for_global_subquery*/);
         intermediate_temporary_table_storage = intermediate_temporary_table_holder->getTable();
+
+        /// Collect equi-join keys between the CTE table and physical tables.
+        /// Filters built from working-table values will be ANDed into each
+        /// containing `QueryNode`'s WHERE during the recursive step.
+        cte_join_keys = collectCTEJoinKeys(*recursive_query, recursive_table_nodes);
+        for (const auto & key : cte_join_keys)
+        {
+            /// Snapshot `WHERE`, `HAVING`, and `QUALIFY` together. The planner
+            /// mutates all three in place when building the pipeline: it can
+            /// merge `QUALIFY` into `HAVING` (no window functions) and `HAVING`
+            /// into `WHERE` (no aggregation), clearing the source clause in
+            /// each case (see `Planner::buildPlanForQueryNode`). Restoring only
+            /// `WHERE` between steps would drop those merged predicates on
+            /// step 3+, because on step 2 they get moved into the WHERE we
+            /// then overwrite with the snapshot.
+            auto * qn = key.containing_query_node;
+            original_clauses.emplace(qn, OriginalClauses{qn->getWhere(), qn->getHaving(), qn->getQualify()});
+        }
     }
 
     Chunk generate()
@@ -166,6 +695,143 @@ public:
     }
 
 private:
+    /// Inject `WHERE original_where AND col IN (values)` into each affected
+    /// `QueryNode` before executing a recursive step. Each step rebuilds the
+    /// filter from the pristine original WHERE saved at construction time, so
+    /// nothing accumulates across steps.
+    ///
+    /// Returns true on success, false if for some key the join-key cardinality
+    /// exceeded the configured cap, the generated `IN` set would exceed the
+    /// user's `max_rows_in_set` / `max_bytes_in_set` limits (or fail to
+    /// materialize under `max_memory_usage`), or the generated `IN` predicate
+    /// could not be resolved for the join-key type — in any of those cases the
+    /// recursive step runs without any CTE-derived filter (the caller restores
+    /// original clauses).
+    bool injectFiltersIntoRecursiveQuery()
+    {
+        if (cte_join_keys.empty())
+            return false;
+
+        /// Group join keys by their containing `QueryNode`. A `QueryNode` may
+        /// have multiple joins against the CTE — their predicates are combined
+        /// with `AND`.
+        std::map<QueryNode *, std::vector<QueryTreeNodePtr>> predicates_by_query;
+
+        for (const auto & key : cte_join_keys)
+        {
+            /// The injected `IN` set is lowered by the planner using the
+            /// settings of the `QueryNode` that contains the join, not the
+            /// outer recursive context. For a recursive CTE with more than two
+            /// branches the recursive part is a synthetic `UnionNode` whose
+            /// context can differ from an individual branch's (e.g. a branch
+            /// carrying `SETTINGS max_rows_in_set = 1`, or disabling the
+            /// optimization via `recursive_cte_max_in_filter_cardinality = 0`).
+            /// So the cardinality cap, the set-limit guard, and the filter
+            /// construction must all use the containing query's own context to
+            /// match what the planner will later see for that branch.
+            const auto containing_query_context = key.containing_query_node->getContext();
+
+            const auto & containing_settings = containing_query_context->getSettingsRef();
+            const UInt64 max_in_filter_cardinality = containing_settings[Setting::recursive_cte_max_in_filter_cardinality];
+            const UInt64 max_bytes_in_set = containing_settings[Setting::max_bytes_in_set];
+
+            /// The optimization is disabled for this branch — skip its filter.
+            /// Other branches keep theirs: each generated predicate is
+            /// independently semantics-preserving.
+            if (max_in_filter_cardinality == 0)
+                continue;
+
+            /// Reading the frontier values and materializing the RHS tuple must
+            /// themselves fail closed. A tight `max_memory_usage` can make either
+            /// step raise `MEMORY_LIMIT_EXCEEDED` (the memory tracker fires on the
+            /// allocations); the unoptimized recursive scan never builds these, so
+            /// such a failure must skip injection and fall back to a plain scan,
+            /// not fail the whole recursive query — exactly like the probe-set
+            /// build inside `generatedInSetIsSafeToInject`. The cheaper limit
+            /// breaches (cardinality / byte budget) are reported as nullopt rather
+            /// than thrown.
+            std::optional<std::vector<Field>> values;
+            std::shared_ptr<ConstantNode> rhs_node;
+            try
+            {
+                values = readColumnValuesFromMemoryStorage(
+                    working_temporary_table_storage, key.cte_column_name, recursive_query_context,
+                    max_in_filter_cardinality, max_bytes_in_set);
+
+                if (!values.has_value())
+                    return false;
+
+                if (values->empty())
+                    continue;
+
+                rhs_node = buildInRhsConstantNode(key.cte_column_type, *values);
+            }
+            catch (...) // Ok: building the generated IN values hit a limit (e.g. memory); skip injection and fall back to a plain scan instead of failing the recursive query.
+            {
+                return false;
+            }
+
+            /// Fail closed if the planner could not build the generated `IN`
+            /// set without changing the query's behaviour: the set could exceed
+            /// the user's `max_rows_in_set` / `max_bytes_in_set` limits (throwing
+            /// `SET_SIZE_LIMIT_EXCEEDED` or silently truncating), or the
+            /// conversion to the storage column type could throw (e.g.
+            /// `UNKNOWN_ELEMENT_OF_ENUM`). Neither can happen on the unoptimized
+            /// scan path, so in both cases we skip injection for this step.
+            if (!generatedInSetIsSafeToInject(key.real_column_node->getColumnType(), rhs_node, containing_query_context))
+                return false;
+
+            /// Building the predicate resolves the `in` function's return type,
+            /// which can itself throw for a join key whose type is valid for
+            /// `JOIN` but rejected by `IN` — e.g. a `Dynamic` key allowed by
+            /// `allow_dynamic_type_in_join_keys` that `FunctionIn::getReturnTypeImpl`
+            /// refuses. The unoptimized scan never builds this predicate, so a
+            /// resolution failure must skip injection and fall back to a plain
+            /// scan rather than fail the recursive query — exactly like the
+            /// conversion and set-build guards above.
+            QueryTreeNodePtr in_filter;
+            try
+            {
+                in_filter = buildInFilterNode(*key.real_column_node, std::move(rhs_node), containing_query_context);
+            }
+            catch (...) // Ok: resolving the generated IN predicate failed (e.g. a type illegal for IN); skip injection and fall back to a plain scan instead of failing the recursive query.
+            {
+                return false;
+            }
+
+            predicates_by_query[key.containing_query_node].push_back(std::move(in_filter));
+        }
+
+        bool injected_any = false;
+        for (auto & [query_node, predicates] : predicates_by_query)
+        {
+            if (predicates.empty())
+                continue;
+
+            auto cte_filter = conjoinPredicates(std::move(predicates), recursive_query_context);
+
+            const auto & original_where = original_clauses.at(query_node).where;
+            if (original_where)
+                query_node->getWhere() = conjoinPredicates({original_where, std::move(cte_filter)}, recursive_query_context);
+            else
+                query_node->getWhere() = std::move(cte_filter);
+
+            injected_any = true;
+        }
+
+        return injected_any;
+    }
+
+    void restoreOriginalClauses()
+    {
+        for (auto & [query_node, original] : original_clauses)
+        {
+            query_node->getWhere() = original.where;
+            query_node->getHaving() = original.having;
+            query_node->getQualify() = original.qualify;
+        }
+    }
+
     void buildStepExecutor()
     {
         const auto & recursive_subquery_settings = recursive_query_context->getSettingsRef();
@@ -187,41 +853,65 @@ private:
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
-        auto pipeline_builder = interpreter->buildQueryPipeline();
+        /// `recursive_step` was already incremented above, so the seed query is
+        /// step 1 and recursive iterations are step >1. Run the seed with its
+        /// own context (parallel replicas enabled) and the recursive steps with
+        /// the rewritten context (parallel replicas disabled).
+        const auto & interpreter_context = recursive_step > 1 ? recursive_query_context : non_recursive_query_context;
 
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+        /// recursive_step was already incremented above — `>1` means we are
+        /// executing the recursive query (the seed query is step `1`).
+        if (recursive_step > 1)
+            injectFiltersIntoRecursiveQuery();
+
+        try
         {
-            return std::make_shared<MaterializingTransform>(in_header);
-        });
+            auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, interpreter_context, select_query_options);
+            auto pipeline_builder = interpreter->buildQueryPipeline();
 
-        auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
-            pipeline_builder.getHeader().getColumnsWithTypeAndName(),
-            header->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            interpreter->getContext());
-        auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
-        pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
+            {
+                return std::make_shared<MaterializingTransform>(in_header);
+            });
+
+            auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
+                pipeline_builder.getHeader().getColumnsWithTypeAndName(),
+                header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Position,
+                interpreter->getContext());
+            auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
+            pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
+            {
+                return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
+            });
+
+            /// TODO: Support squashing transform
+
+            const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
+            auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
+                {},
+                metadata_snapshot,
+                recursive_query_context,
+                false /*async_insert*/);
+
+            pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
+
+            pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+            pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
+            pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
+
+            executor.emplace(pipeline);
+        }
+        catch (...)
         {
-            return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
-        });
+            restoreOriginalClauses();
+            throw;
+        }
 
-        /// TODO: Support squashing transform
-
-        const auto metadata_snapshot = intermediate_temporary_table_storage->getInMemoryMetadataPtr(recursive_query_context, false);
-        auto intermediate_temporary_table_storage_sink = intermediate_temporary_table_storage->write(
-            {},
-            metadata_snapshot,
-            recursive_query_context,
-            false /*async_insert*/);
-
-        pipeline_builder.addChain(Chain(std::move(intermediate_temporary_table_storage_sink)));
-
-        pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
-        pipeline.setProgressCallback(recursive_query_context->getProgressCallback());
-        pipeline.setProcessListElement(recursive_query_context->getProcessListElement());
-
-        executor.emplace(pipeline);
+        /// The pipeline was built and captured the (filter-injected) state of
+        /// the query tree. The tree itself is reused across steps, so restore
+        /// the original clauses now to leave it pristine for the next step.
+        restoreOriginalClauses();
     }
 
     void truncateTemporaryTable(StoragePtr & temporary_table)
@@ -242,6 +932,7 @@ private:
     QueryTreeNodePtr non_recursive_query;
     QueryTreeNodePtr recursive_query;
     ContextMutablePtr recursive_query_context;
+    ContextMutablePtr non_recursive_query_context;
 
     TemporaryTableHolderPtr working_temporary_table_holder;
     StoragePtr working_temporary_table_storage;
@@ -251,6 +942,21 @@ private:
 
     QueryPipeline pipeline;
     std::optional<PullingAsyncPipelineExecutor> executor;
+
+    std::vector<CTEJoinKey> cte_join_keys;
+    /// Pristine `WHERE`, `HAVING`, and `QUALIFY` clauses captured at
+    /// construction time, one entry per affected `QueryNode`. The recursive
+    /// step rebuilds `WHERE = original_where AND in(...)` from these, then
+    /// restores all three after the pipeline has been built — the planner
+    /// folds `QUALIFY` into `HAVING` and `HAVING` into `WHERE` in place, and
+    /// not restoring `HAVING`/`QUALIFY` would lose those clauses on step 3+.
+    struct OriginalClauses
+    {
+        QueryTreeNodePtr where;
+        QueryTreeNodePtr having;
+        QueryTreeNodePtr qualify;
+    };
+    std::map<QueryNode *, OriginalClauses> original_clauses;
 
     size_t recursive_step = 0;
     size_t read_rows_during_recursive_step = 0;

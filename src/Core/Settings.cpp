@@ -4882,6 +4882,13 @@ Maximum parser backtracking (how many times it tries different alternatives in t
     DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
 Maximum limit on recursive CTE evaluation depth
 )", 0) \
+    DECLARE(UInt64, recursive_cte_max_in_filter_cardinality, 10000, R"(
+During recursive CTE evaluation, join keys from the working table are injected into the recursive step's `WHERE` clause as an `IN (...)` predicate against the joined physical table, so that the MergeTree primary key index can be used. This setting caps the number of distinct values included in that generated predicate.
+
+If the working table contains more distinct join key values than this limit at some recursive step, the optimization is skipped for that step and the physical table is scanned without the generated predicate.
+
+Setting this to `0` disables the optimization entirely.
+)", 0) \
     DECLARE(UInt64, recursive_cte_max_steps_in_type_inference, 10, R"(
 Maximum number of iterations for inferring column types in recursive CTEs. Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive and recursive sides of the UNION ALL until convergence. Set to 0 to disable type widening and use the types from the non-recursive part only.
 )", 0) \
