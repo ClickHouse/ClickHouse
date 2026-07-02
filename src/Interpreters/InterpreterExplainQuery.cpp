@@ -341,13 +341,15 @@ struct QueryASTSettings
 {
     bool graph = false;
     bool optimize = false;
+    bool json = false;
 
     constexpr static char name[] = "AST";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"graph", graph},
-        {"optimize", optimize}
+        {"optimize", optimize},
+        {"json", json}
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -676,6 +678,8 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             if (settings.graph)
                 dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
+            else if (settings.json)
+                ast.getExplainedQuery()->writeJSON(buf, 0);
             else
                 dumpAST(*ast.getExplainedQuery(), buf);
             break;

@@ -27,7 +27,8 @@ public:
         writeCString("\"type\": \"", buf);
         writeString(type, buf);
         writeCString("\"", buf);
-        has_fields = false; // Reset for new object
+        /// "type" itself counts as a written field, so the next field is preceded by a comma.
+        has_fields = true;
     }
 
     void endObject()
@@ -106,6 +107,14 @@ public:
 
     size_t getIndent() const { return indent; }
 
+    /// Write a JSON string value (with the surrounding quotes and proper escaping).
+    void writeStringValue(const String & value)
+    {
+        writeChar('"', buf);
+        writeEscapedJSONString(value);
+        writeChar('"', buf);
+    }
+
 private:
     WriteBuffer & buf;
     size_t indent;
@@ -172,22 +181,25 @@ private:
             writeCString("[]", buf);
             return;
         }
-        writeCString("\"children\":", buf);
         writeCString("[\n", buf);
         indent++;
 
         for (size_t i = 0; i < children.size(); ++i)
         {
-            writeIndent();
             if (children[i])
+            {
+                /// The child writes its own leading indentation in startObject.
                 children[i]->writeJSON(buf, indent);
+            }
             else
+            {
+                writeIndent();
                 writeCString("null", buf);
+            }
 
-            if (i < children.size() - 1)
-                writeCString(",\n", buf);
-            else
-                writeChar('\n', buf);
+            if (i + 1 < children.size())
+                writeChar(',', buf);
+            writeChar('\n', buf);
         }
 
         indent--;

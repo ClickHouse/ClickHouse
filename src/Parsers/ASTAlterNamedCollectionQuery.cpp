@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <IO/Operators.h>
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/JSONObjectBuilder.h>
@@ -73,37 +74,16 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
             "changes",
             [&]()
             {
-                WriteBufferFromOwnString obj_buf;
-
-                size_t outer_indent = builder.getIndent();
-                buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
                 writeChar('{', buf);
-                writeChar('\n', buf);
-                String inner_indent = String((outer_indent + 1) * 2, ' ');
-
                 for (size_t i = 0; i < changes.size(); ++i)
                 {
-                    obj_buf.write(inner_indent.c_str(), inner_indent.size());
-                    obj_buf.write('"');
-                    obj_buf.write(changes[i].name.c_str(), changes[i].name.size());
-                    obj_buf.write("\": ", 2);
-
-                    obj_buf.write('"');
-                    String val_as_str = changes[i].value.dump();
-                    obj_buf.write(val_as_str.c_str(), val_as_str.size());
-                    obj_buf.write('"');
-
-                    if (i < changes.size() - 1)
-                        obj_buf.write(",\n", 1);
-                    else
-                        obj_buf.write('\n');
+                    if (i != 0)
+                        writeChar(',', buf);
+                    builder.writeStringValue(changes[i].name);
+                    writeCString(": ", buf);
+                    builder.writeStringValue(changes[i].value.dump());
                 }
-
-                // Close object with proper indent
-                obj_buf.write(String((builder.getIndent()) * 2, ' ').c_str(), builder.getIndent() * 2);
-                obj_buf.write('}');
-
-                buf.write(obj_buf.str().c_str(), obj_buf.str().size());
+                writeChar('}', buf);
             });
     }
 
@@ -113,36 +93,23 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
             "overridability",
             [&]()
             {
-                WriteBufferFromOwnString obj_buf;
-
-                size_t outer_indent = builder.getIndent();
-                buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
-                writeChar('{', buf);
-                writeChar('\n', buf);
-                String inner_indent = String((outer_indent + 1) * 2, ' ');
-
-                size_t count = 0;
+                /// `overridability` is an unordered_map; sort by key so the output is deterministic.
+                std::vector<std::string> keys;
+                keys.reserve(overridability.size());
                 for (const auto & [key, value] : overridability)
+                    keys.push_back(key);
+                std::sort(keys.begin(), keys.end());
+
+                writeChar('{', buf);
+                for (size_t i = 0; i < keys.size(); ++i)
                 {
-                    obj_buf.write(inner_indent.c_str(), inner_indent.size());
-                    obj_buf.write('"');
-                    obj_buf.write(key.c_str(), key.size());
-                    obj_buf.write("\": ", 2);
-                    String val_as_str = value ? "true" : "false";
-                    obj_buf.write(val_as_str.c_str(), val_as_str.size());
-
-                    if (count < overridability.size() - 1)
-                        obj_buf.write(",\n", 1);
-                    else
-                        obj_buf.write('\n');
-                    ++count;
+                    if (i != 0)
+                        writeChar(',', buf);
+                    builder.writeStringValue(keys[i]);
+                    writeCString(": ", buf);
+                    writeCString(overridability.at(keys[i]) ? "true" : "false", buf);
                 }
-
-                // Close object with proper indent
-                obj_buf.write(String((builder.getIndent()) * 2, ' ').c_str(), builder.getIndent() * 2);
-                obj_buf.write('}');
-
-                buf.write(obj_buf.str().c_str(), obj_buf.str().size());
+                writeChar('}', buf);
             });
     }
 

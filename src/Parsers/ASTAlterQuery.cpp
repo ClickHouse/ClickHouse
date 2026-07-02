@@ -721,7 +721,7 @@ void ASTAlterCommand::writeJSON(WriteBuffer & buf, size_t indent) const
     JSONObjectBuilder builder(buf, indent);
     builder.startObject(String(getID(' ')));
 
-    builder.writeField("type", static_cast<int>(type));
+    builder.writeField("command_type", getTypeString());
     builder.writeField("col_decl", col_decl, col_decl != nullptr);
     builder.writeField("column", column, column != nullptr);
     builder.writeField("order_by", order_by, order_by != nullptr);
@@ -784,6 +784,8 @@ void ASTAlterCommand::writeJSON(WriteBuffer & buf, size_t indent) const
 
     String move_destination_type_str = convert_to_mv_dest_str();
     builder.writeField("move_destination_type", move_destination_type_str, !move_destination_type_str.empty());
+
+    builder.endObject();
 }
 
 
@@ -1015,27 +1017,11 @@ void ASTAlterQuery::writeJSON(WriteBuffer & buf, size_t indent) const
     builder.writeField("database", database, database != nullptr);
     builder.writeField("table", table, table != nullptr);
 
-    // Command list using writeField with custom array writing
     if (command_list && !command_list->children.empty())
-    {
-        WriteBufferFromOwnString obj_buf;
+        builder.writeField("commands", command_list->children);
 
-        size_t outer_indent = builder.getIndent();
-        buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
-        writeChar('[', buf);
-        writeChar('\n', buf);
-        String inner_indent = String((outer_indent + 1) * 2, ' ');
-        for (size_t i = 0; i < command_list->children.size(); ++i)
-        {
-            buf.write(inner_indent.c_str(), inner_indent.size());
-            command_list->children[i]->writeJSON(buf, outer_indent + 1);
-            if (i + 1 < command_list->children.size())
-                writeChar(',', buf);
-            writeChar('\n', buf);
-        }
-        buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
-        writeChar(']', buf);
-    }
     builder.writeField("on_cluster", cluster, !cluster.empty());
+
+    builder.endObject();
 }
 }

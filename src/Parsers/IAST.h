@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using IdentifierNameSet = std::set<String>;
@@ -470,10 +471,12 @@ public:
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
-    // dummy implementation for testing purposes
+    /// Serialize this AST node to JSON (used by `EXPLAIN AST json = 1`).
+    /// It is implemented incrementally, node type by node type; the base
+    /// implementation reports that the node type is not yet supported.
     virtual void writeJSON(WriteBuffer &, size_t) const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "writeJSON is not implemented for {}", getID());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "writeJSON is not implemented for {}", getID());
     }
 
 protected:
