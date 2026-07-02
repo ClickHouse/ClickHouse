@@ -1152,6 +1152,24 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             evaluateScalarSubqueryIfNeeded(in_first_argument, subquery_scope);
         }
 
+        /// If the IN set source is the same node as a FROM table expression (an identifier on the
+        /// right of IN resolved to a table expression that also appears in a join tree), use an
+        /// independent copy. Planning the table expression mutates it in place (constant-true WHERE
+        /// removal, QUALIFY/HAVING rewrites in Planner::buildPlanForQueryNode), which would change
+        /// the node behind the set's PreparedSets key (its tree hash) and break the set lookup.
+        if (in_second_argument->getNodeType() == QueryTreeNodeType::QUERY
+            || in_second_argument->getNodeType() == QueryTreeNodeType::UNION)
+        {
+            for (const auto * scope_to_check = &scope; scope_to_check != nullptr; scope_to_check = scope_to_check->parent_scope)
+            {
+                if (scope_to_check->registered_table_expression_nodes.contains(in_second_argument))
+                {
+                    in_second_argument = in_second_argument->clone();
+                    break;
+                }
+            }
+        }
+
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
 
