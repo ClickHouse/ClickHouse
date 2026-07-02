@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool extremes;
     extern const SettingsBool force_aggregation_in_order;
@@ -171,6 +172,9 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool query_plan_enable_optimizations;
+    extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
 }
 
 namespace ServerSetting
@@ -694,7 +698,103 @@ SortDescription getSortDescriptionFromNames(const Names & names)
     return order_descr;
 }
 
+/// `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N` over a *partial*
+/// aggregation: apply the top-K heap (`enable_group_by_top_k_optimization`).
+///
+/// A plan built for stage `WithMergeableState` (a distributed shard, a
+/// parallel-replicas follower, or the initiator's local replica plan) contains
+/// no SortingStep/LimitStep — those run on the initiator after the merge — so
+/// `tryOptimizeGroupByLimitPushdown` cannot match it.  Derive the same
+/// parameters from the analyzed query instead.  Each node plans the query text
+/// locally, so nothing is pushed across the wire.
+///
+/// Only Pattern 1 (with ORDER BY) is applied here.  Its rank is a pure function
+/// of the key, which makes shard-local pruning sound: a key pruned locally has
+/// at least N better-ranked keys locally, hence at least N globally, so the
+/// initiator's final sort+limit discards it; conversely a key in the global
+/// top-N is never evicted on any node, so its merged state is complete.
+/// Pattern 2 (no ORDER BY) must stay final-only: without an ordered final
+/// selection the initiator could return a group whose partial state lost rows
+/// to local pruning.
+static void applyTopKPushdownToPartialAggregation(
+    AggregatingStep & aggregating_step,
+    const QueryNode & query_node,
+    PlannerExpressionsAnalysisResult & expression_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const Settings & settings)
+{
+    if (!settings[Setting::enable_group_by_top_k_optimization] || !settings[Setting::query_plan_enable_optimizations])
+        return;
+
+    /// The distributed planner splits aggregation itself; see the matching gate
+    /// in `tryOptimizeGroupByLimitPushdown`.
+    if (settings[Setting::make_distributed_plan])
+        return;
+
+    /// Pruning undercounts `rows_before_limit_at_least` in exact mode.
+    if (settings[Setting::exact_rows_before_limit])
+        return;
+
+    /// `partial_sorting_limit` is `limit + offset` and is already zero for
+    /// DISTINCT, LIMIT WITH TIES, LIMIT BY, ARRAY JOIN and fractional or
+    /// negative values (see `QueryAnalysisResult`).
+    const UInt64 limit = query_analysis_result.partial_sorting_limit;
+    if (limit == 0)
+        return;
+    if (settings[Setting::query_plan_max_limit_for_top_k_optimization] != 0
+        && limit > settings[Setting::query_plan_max_limit_for_top_k_optimization])
+        return;
+
+    /// These consume all groups on the initiator, so local pruning would change
+    /// their input: HAVING / QUALIFY filter ranked groups back in, window
+    /// functions and TOTALS/ROLLUP/CUBE aggregate across all of them.
+    if (expression_analysis_result.hasHaving() || expression_analysis_result.hasWindow() || expression_analysis_result.hasQualify())
+        return;
+    if (query_node.isGroupByWithTotals() || query_analysis_result.aggregation_with_rollup_or_cube_or_grouping_sets)
+        return;
+    if (query_node.hasInterpolate())
+        return;
+
+    const auto & params = aggregating_step.getParams();
+    if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
+        return;
+
+    /// ORDER BY must be a leading prefix of the GROUP BY keys, by action name.
+    /// Both name sets come from the same `PlannerContext`, so a name match means
+    /// the same expression; anything else (a function of a key, a projection
+    /// alias reusing the name) produces a different action name and is rejected.
+    const auto & sort_description = query_analysis_result.sort_description;
+    if (sort_description.empty() || sort_description.size() > params.keys.size())
+        return;
+
+    std::vector<int> directions;
+    std::vector<int> nulls_directions;
+    directions.reserve(sort_description.size());
+    nulls_directions.reserve(sort_description.size());
+
+    for (size_t i = 0; i < sort_description.size(); ++i)
+    {
+        if (sort_description[i].column_name != params.keys[i])
+            return;
+        /// The heap compares with `IColumn::compareAt`, which ignores collation;
+        /// WITH FILL inserts rows after the sort.
+        if (sort_description[i].collator || sort_description[i].with_fill)
+            return;
+
+        directions.push_back(sort_description[i].direction);
+        nulls_directions.push_back(sort_description[i].nulls_direction);
+    }
+
+    aggregating_step.applyLimitPushdown(
+        limit,
+        std::move(directions),
+        std::move(nulls_directions),
+        sort_description.size(),
+        /*requires_pruning=*/ false);
+}
+
 void addAggregationStep(QueryPlan & query_plan,
+    const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
@@ -750,6 +850,13 @@ void addAggregationStep(QueryPlan & query_plan,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         settings[Setting::force_aggregation_in_order],
         settings[Setting::enable_sharding_aggregator]);
+
+    /// Final aggregation is handled by `tryOptimizeGroupByLimitPushdown` on the
+    /// finished plan; a partial aggregation never gets the plan shape that
+    /// optimization matches, so the top-K parameters are derived here instead.
+    if (!query_analysis_result.aggregate_final)
+        applyTopKPushdownToPartialAggregation(*aggregating_step, query_node, expression_analysis_result, query_analysis_result, settings);
+
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -2376,7 +2483,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_info);
+            addAggregationStep(query_plan, query_node, expression_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage

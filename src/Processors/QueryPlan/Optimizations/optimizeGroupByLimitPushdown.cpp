@@ -77,12 +77,15 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 ///   runtime for methods that cannot erase evicted keys.
 ///
 /// Note on partial aggregation: this optimizer only ever sees a local, final
-/// aggregation.  Remote sub-plans (classic distributed and parallel replicas,
-/// including under `serialize_query_plan`) are serialized without being run
-/// through these optimizations, embedded local plans are hidden behind source
-/// steps the traversal does not descend into, and a coordinator merges partial
-/// states with a `MergingAggregatedStep` (not an `AggregatingStep`).  Plans
-/// built for `make_distributed_plan` are skipped explicitly below.
+/// aggregation.  A plan built for stage `WithMergeableState` (a distributed
+/// shard or a parallel-replicas follower planning the query text locally) has
+/// no LimitStep/SortingStep to match — for that case the same parameters are
+/// derived from the analyzed query by `applyTopKPushdownToPartialAggregation`
+/// in `Planner.cpp` (Pattern 1 only; its key-deterministic rank makes local
+/// pruning sound under the initiator's final sort+limit).  The coordinator
+/// merges partial states with a `MergingAggregatedStep`, which this optimizer
+/// does not match.  Plans built for `make_distributed_plan` are skipped
+/// explicitly below and in the Planner hook.
 size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
