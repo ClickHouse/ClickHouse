@@ -271,7 +271,7 @@ public:
         /// Sort a copy: `insertResultInto` must not mutate the aggregate state, because window
         /// aggregation over a growing frame reuses the same state (and its heap invariant) across
         /// the rows of the frame after each result is written.
-        std::vector<Entry> sorted(entries.begin(), entries.end());
+        VectorWithMemoryTracking<Entry> sorted(entries.begin(), entries.end());
         if constexpr (isMin)
             std::sort(sorted.begin(), sorted.end(), [](const Entry & a, const Entry & b) { return valLess(a.val, b.val); });
         else
