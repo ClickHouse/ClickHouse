@@ -894,6 +894,11 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += FloatingPoints_Name(qq.subtype());
             ret += ", ";
             ret += std::to_string(qq.dimension());
+            if (qq.has_stride())
+            {
+                ret += ", ";
+                ret += std::to_string(qq.stride());
+            }
             ret += ")";
         }
         break;
