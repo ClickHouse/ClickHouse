@@ -49,6 +49,11 @@ public:
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// Fail closed for BACKUP DATABASE / BACKUP TABLE if a configured table has no nested ReplacingMergeTree yet,
+    /// instead of silently omitting it from the backup (the base implementation only enumerates nested tables).
+    std::vector<std::pair<ASTPtr, StoragePtr>>
+    getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
+
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;

@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -532,6 +533,38 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
 {
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+}
+
+
+std::vector<std::pair<ASTPtr, StoragePtr>>
+DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
+{
+    /// Fail closed instead of silently producing a partial backup. The base implementation enumerates tables
+    /// through `getTablesIterator`, which (in the nested context) only sees the already-created nested
+    /// ReplacingMergeTree tables. A table that this database is configured to replicate but whose nested table
+    /// has not been created yet - its initial snapshot from PostgreSQL is still in progress or failed, e.g. the
+    /// PostgreSQL table has no primary key and no replica identity index - would therefore be omitted from the
+    /// backup without any error. Refuse the whole backup in that case, mirroring the fail-closed check in
+    /// `StorageMaterializedPostgreSQL::backupData`, which the database backup path bypasses because it backs up
+    /// the nested tables directly rather than the `StorageMaterializedPostgreSQL` wrappers.
+    {
+        std::lock_guard lock(tables_mutex);
+        for (const auto & [table_name, storage] : materialized_tables)
+        {
+            if (filter && !filter(table_name))
+                continue;
+
+            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not "
+                    "have finished its initial synchronization from PostgreSQL yet). Failing closed instead of "
+                    "producing a partial database backup that silently omits this table.",
+                    storage->getStorageID().getNameForLogs());
+        }
+    }
+
+    return DatabaseAtomic::getTablesForBackup(filter, local_context);
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
