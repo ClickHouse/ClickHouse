@@ -31,6 +31,7 @@ struct MergeTreeMutationStatus
     String id = "";
     String command = "";
     time_t create_time = 0;
+    String author = "";
     std::map<String, Int64> block_numbers{};
 
     /// Parts that are currently being mutated.

@@ -21,6 +21,7 @@ struct MergeTreeMutationEntry
     DiskPtr disk;
     String path_prefix;
     String file_name;
+    String author;
     bool is_temp = false;
 
     /// This flag is set periodically in a background thread.
@@ -43,8 +44,8 @@ struct MergeTreeMutationEntry
     CSN csn = Tx::UnknownCSN;
 
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, const String & author_,
+                           UInt64 tmp_number, const TransactionID & tid_, const WriteSettings & settings);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

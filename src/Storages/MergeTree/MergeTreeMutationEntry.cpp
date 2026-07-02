@@ -47,13 +47,14 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
                     file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
-                                               const TransactionID & tid_, const WriteSettings & settings)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, const String & author_,
+                                               UInt64 tmp_number, const TransactionID & tid_, const WriteSettings & settings)
     : create_time(time(nullptr))
     , commands(std::make_shared<MutationCommands>(std::move(commands_)))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
+    , author(author_)
     , is_temp(true)
     , tid(tid_)
 {
@@ -61,7 +62,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskP
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
-            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n"
+            << "author: " << escape << author << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
@@ -132,7 +134,11 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     create_time = makeDateTime(DateLUT::serverTimezoneInstance(),
         create_time_dt.year(), create_time_dt.month(), create_time_dt.day(),
         create_time_dt.hour(), create_time_dt.minute(), create_time_dt.second());
-
+    if (checkString("author: ", *buf))
+    {
+        readEscapedStringUntilEOL(author, *buf);
+        assertChar('\n', *buf);
+    }
     *buf >> "commands: ";
     commands->readText(*buf, false);
     *buf >> "\n";

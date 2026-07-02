@@ -682,7 +682,17 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    String author;
+    {
+        const auto & client_info = query_context->getClientInfo();
+        author = !client_info.initial_user.empty()
+            ? client_info.initial_user
+            : client_info.current_user;
+        if (author.size() > 256)
+            author.resize(256);
+    }
+
+    MergeTreeMutationEntry entry(commands, disk, relative_data_path, author, insert_increment.get(), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1130,6 +1140,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.file_name,
                 command.ast_text,
                 entry.create_time,
+                entry.author,
                 block_numbers_map,
                 parts_in_progress_names,
                 parts_to_do_names,
