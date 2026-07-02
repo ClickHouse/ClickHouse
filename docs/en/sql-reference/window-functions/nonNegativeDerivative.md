@@ -27,9 +27,9 @@ This is useful for monotonically increasing metrics, such as counters, where a d
 ```sql
 nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
-WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group])
 ```
 
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).

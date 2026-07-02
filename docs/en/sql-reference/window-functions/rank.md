@@ -17,7 +17,7 @@ The [dense_rank](./dense_rank.md) function provides the same behaviour but witho
 ```sql
 rank ()
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
-        [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
 ```

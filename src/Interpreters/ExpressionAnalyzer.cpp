@@ -729,15 +729,6 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.full_sort_description.insert(desc.full_sort_description.end(),
         desc.order_by.begin(), desc.order_by.end());
 
-    if (definition.frame_type != WindowFrame::FrameType::ROWS
-        && definition.frame_type != WindowFrame::FrameType::RANGE)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Window frame '{}' is not implemented (while processing '{}')",
-            definition.frame_type,
-            ast->formatForErrorMessage());
-    }
-
     const auto * window_function = aggregate_function ? dynamic_cast<const IWindowFunction *>(aggregate_function.get()) : nullptr;
     desc.frame.is_default = definition.frame_is_default;
     if (desc.frame.is_default && window_function)
@@ -772,6 +763,9 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
     }
+
+    // Reject impossible frames (e.g. a start that comes after the end).
+    desc.checkValid();
 }
 
 void ExpressionAnalyzer::makeWindowDescriptions(ActionsDAG & actions)

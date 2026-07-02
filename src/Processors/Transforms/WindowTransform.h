@@ -99,6 +99,16 @@ public:
     void advanceFrameEndUnbounded();
     void advanceFrameEnd();
     void advanceFrameEndRangeOffset();
+    void advanceFrameStartGroupsOffset();
+    void advanceFrameEndGroupsOffset();
+
+    // Returns the exclusive end of the peer group containing `start` -- the first row of the next
+    // peer group, or `partition_end` if the group is the last one in the partition.
+    RowNumber findPeerGroupEnd(const RowNumber & start, bool & need_more_data) const;
+
+    // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
+    // `target_group`-th peer group (1-based) or the partition end.
+    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -272,6 +282,12 @@ public:
     UInt64 current_row_number = 1;
     UInt64 peer_group_start_row_number = 1;
     UInt64 peer_group_number = 1;
+
+    // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
+    // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
+    // with the frame boundaries when a new partition starts.
+    UInt64 frame_start_group_number = 1;
+    UInt64 frame_end_group_number = 1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
