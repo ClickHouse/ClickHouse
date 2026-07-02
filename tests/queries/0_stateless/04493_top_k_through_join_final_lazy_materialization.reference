@@ -1,0 +1,35 @@
+min_left_final	a	x
+left_final_on	48	v48
+left_final_on	45	v45
+left_final_on	42	v42
+left_final_on	39	v39
+left_final_on	36	v36
+left_final_off	48	v48
+left_final_off	45	v45
+left_final_off	42	v42
+left_final_off	39	v39
+left_final_off	36	v36
+right_final_on	48	v48
+right_final_on	45	v45
+right_final_on	42	v42
+right_final_on	39	v39
+right_final_on	36	v36
+right_final_off	48	v48
+right_final_off	45	v45
+right_final_off	42	v42
+right_final_off	39	v39
+right_final_off	36	v36
+left_final_multi_on	48	v48	k1
+left_final_multi_on	45	v45	k1
+left_final_multi_on	42	v42	k1
+left_final_multi_on	39	v39	k1
+left_final_multi_on	36	v36	k1
+left_final_multi_on	33	v33	k1
+left_final_multi_on	30	v30	k1
+left_final_multi_off	48	v48	k1
+left_final_multi_off	45	v45	k1
+left_final_multi_off	42	v42	k1
+left_final_multi_off	39	v39	k1
+left_final_multi_off	36	v36	k1
+left_final_multi_off	33	v33	k1
+left_final_multi_off	30	v30	k1
