@@ -45,11 +45,25 @@ def has_new_integration_tests(changed_files):
 
 
 def has_new_unit_tests(changed_files):
+    # Share the unit-test bugfix validator's exact predicate so this gate's "unit tests
+    # added" shortcut fires ONLY when that (blocking) validator would actually run a
+    # suite. A broader check (any path under src/**/tests/**) would let a non-runnable
+    # file — wrong extension, no `<Component>` dir, or a `.cpp` with no gtest macro —
+    # satisfy the bugfix gate while the validator skips with "nothing to validate", so
+    # the bug would never be reproduced. Imported lazily to avoid pulling the validator's
+    # build-time deps at hook module load.
+    from ci.jobs.unit_tests_bugfix_validation_job import (
+        _UNIT_TEST_FILE_RE,
+        derive_test_suites,
+    )
+
+    matched = []
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        if file.startswith("src") and "/tests/" in file and Path(file).is_file():
-            return True
-    return False
+        if _UNIT_TEST_FILE_RE.match(file) and Path(file).is_file():
+            matched.append(file)
+    # Require an actual runnable gtest suite, exactly as the validator does.
+    return bool(derive_test_suites(matched))
 
 
 def has_new_integration_test_docker_images(changed_files):
@@ -131,6 +145,33 @@ def any_bugfix_validation_passed():
     return bool(passed)
 
 
+def unit_bugfix_validation_refuted():
+    """Return True iff the unit-test Bugfix Validation job definitively FAILED to
+    reproduce — status FAIL, i.e. the added/changed test PASSES on the merge-base
+    "before" binary, so it does not catch the bug the fix addresses.
+
+    OK/XFAIL (reproduced, or skipped because there was nothing to validate) do NOT count,
+    and crucially neither does ERROR: an inconclusive run — the before-binary could not be
+    compiled (the test references PR-introduced code), or it crashed before any test ran,
+    or submodules were missing — means "we couldn't determine", which must not block
+    merge. The job is `allow_failure=True`; this is the only outcome that blocks.
+    """
+    info = Info()
+    try:
+        workflow_result = Result.from_fs(info.workflow_name)
+    except Exception as e:
+        # Defensive: result file not on disk yet / unreadable. Fail open (don't block) —
+        # consistent with treating uncertainty as non-blocking for the unit case.
+        print(f"WARNING: failed to read workflow result for [{info.workflow_name}]: {e}")
+        return False
+    for sub in workflow_result.results:
+        if sub.name == JobNames.BUGFIX_VALIDATE_UT:
+            print(f"Unit-test Bugfix Validation job status: {sub.status}")
+            return sub.status == Result.Status.FAIL
+    print("WARNING: no unit-test Bugfix Validation job found in workflow result")
+    return False
+
+
 def check():
     # read actual PR body from GH API - fallback to workflow context if failed
     title, body, labels = GH.get_pr_title_body_labels()
@@ -183,13 +224,25 @@ def check():
         )
         return False
 
-    # Unit-only PR. Unit tests can't be auto-validated by re-running
-    # master HEAD (they live in compiled C++ and the validation
-    # framework can't selectively run them against the master binary),
-    # so the per-arch Bugfix Validation machinery doesn't apply. Adding
-    # new unit tests is accepted as proof on its own.
+    # Unit-only PR. The unit-test Bugfix Validation job builds a merge-base "before"
+    # binary and runs the touched gtest suite against it. Block ONLY if that job
+    # definitively refuted the test (status FAIL: it passes on the merge-base too, so it
+    # doesn't catch the bug). A reproduction (OK/XFAIL) passes, and an inconclusive run
+    # (ERROR — before-binary couldn't compile or crashed) does NOT block: "we couldn't
+    # determine" is not grounds to block merge. (The job is allow_failure, so its raw
+    # status never hard-blocks; this hook is the merge gate.)
     if has_unit:
-        print("New unit tests added (no functional/integration tests) - pass")
+        if unit_bugfix_validation_refuted():
+            print(
+                "Unit-test Bugfix Validation FAILED to reproduce: the added test passes "
+                "on the merge-base 'before' binary too, so it does not catch the bug. "
+                "See the 'Bugfix validation (unit tests)' job."
+            )
+            return False
+        print(
+            "New unit tests added and the unit Bugfix Validation did not refute them "
+            "(reproduced, inconclusive, or skipped) - pass"
+        )
         return True
 
     # Integration-test Docker image change only (no new FT/IT/unit
