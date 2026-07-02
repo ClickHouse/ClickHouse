@@ -169,6 +169,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword range_keyword(Keyword::RANGE);
     ParserKeyword layout_keyword(Keyword::LAYOUT);
     ParserKeyword settings_keyword(Keyword::SETTINGS);
+    ParserKeyword lazy_load_keyword(Keyword::LAZY_LOAD);
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserFunctionWithKeyValueArguments key_value_pairs_p;
@@ -177,6 +178,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDictionaryRange range_p;
     ParserDictionaryLayout layout_p;
     ParserDictionarySettings settings_p;
+    ParserLiteral literal_p;
 
     ASTPtr primary_key;
     ASTPtr ast_source;
@@ -184,6 +186,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ast_layout;
     ASTPtr ast_range;
     ASTPtr ast_settings;
+    std::optional<bool> lazy_load;
 
     /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos, expected))
@@ -274,6 +277,27 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
+        if (!lazy_load.has_value() && lazy_load_keyword.ignore(pos, expected))
+        {
+            if (!open.ignore(pos, expected))
+                return false;
+
+            ASTPtr ast_lazy_load;
+            if (!literal_p.parse(pos, ast_lazy_load, expected))
+                return false;
+
+            const auto & literal = ast_lazy_load->as<const ASTLiteral &>();
+            if (literal.value.getType() != Field::Types::UInt64)
+                return false;
+
+            lazy_load = literal.value.safeGet<UInt64>() != 0;
+
+            if (!close.ignore(pos, expected))
+                return false;
+
+            continue;
+        }
+
         break;
     }
 
@@ -296,6 +320,8 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (ast_settings)
         query->set(query->dict_settings, ast_settings);
+
+    query->lazy_load = lazy_load;
 
     return true;
 }
