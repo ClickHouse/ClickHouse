@@ -156,13 +156,17 @@ private:
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
+            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
+            /// different inserts may use different codecs - in particular after a server upgrade that
+            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
+            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
             if (limited_by_file_size)
             {
                 limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
-                compressed.emplace(*limited);
+                compressed.emplace(*limited, /* allow_different_codecs = */ true);
             }
             else
-                compressed.emplace(*plain);
+                compressed.emplace(*plain, /* allow_different_codecs = */ true);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;

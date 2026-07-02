@@ -2,6 +2,9 @@
 -- ^^ Prevent the data sizes from varying with random parameters.
 
 -- This test validates the storage size of the text index without and with posting list compression.
+-- The text index files are compressed with the server's default codec (`getDefaultCodec`, currently
+-- `ZSTD(3)`), which is not controlled by a column codec or the `default_compression_codec` setting, so
+-- the expected `secondary_indices_compressed_bytes` below reflect that default.
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;

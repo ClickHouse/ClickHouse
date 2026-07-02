@@ -119,7 +119,7 @@ SELECT encodeURLComponent('');
 SELECT encodeURLFormComponent('');
 SELECT encodeXMLComponent('');
 SELECT entropy('');
-SELECT estimateCompressionRatio('');
+SELECT estimateCompressionRatio('LZ4')(''); -- pin the codec so the ratio does not depend on the server's default compression codec
 SELECT extractKeyValuePairs('');
 SELECT extractKeyValuePairsWithEscaping('');
 SELECT extractTextFromHTML('');

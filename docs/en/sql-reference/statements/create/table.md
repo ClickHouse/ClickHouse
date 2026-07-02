@@ -342,7 +342,7 @@ Defines storage time for values. Can be specified only for MergeTree-family tabl
 
 ## Column Compression Codecs {#column_compression_codec}
 
-By default, ClickHouse applies `lz4` compression in the self-managed version, and `zstd` in ClickHouse Cloud. 
+By default, ClickHouse applies `ZSTD(3)` compression in the self-managed version, and `zstd` in ClickHouse Cloud. For the `MergeTree` family the default is size-aware: parts smaller than 100 MB use the faster `LZ4` and larger parts use `ZSTD(3)`, so freshly inserted data starts as `LZ4` and the bigger parts produced by background merges switch to `ZSTD(3)`.
 
 For `MergeTree`-engine family you can change the default compression method in the [compression](/operations/server-configuration-parameters/settings#compression) section of a server configuration.
 
@@ -379,7 +379,8 @@ You can't decompress ClickHouse database files with external utilities like `lz4
 Compression is supported for the following table engines:
 
 - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) family. Supports column compression codecs and selecting the default compression method by [compression](/operations/server-configuration-parameters/settings#compression) settings.
-- [Log](../../../engines/table-engines/log-family/index.md) family. Uses the `lz4` compression method by default and supports column compression codecs.
+- [Log](../../../engines/table-engines/log-family/index.md) family — the `Log` and `TinyLog` engines use the default `ZSTD(3)` compression method and support column compression codecs.
+- [StripeLog](../../../engines/table-engines/log-family/index.md) writes all columns into a single shared data stream compressed with the default `ZSTD(3)` method, so per-column compression codecs are not applied to it.
 - [Set](../../../engines/table-engines/special/set.md). Only supported the default compression.
 - [Join](../../../engines/table-engines/special/join.md). Only supported the default compression.
 
@@ -393,7 +394,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 #### LZ4 {#lz4}
 
-`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
+`LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4). Applies LZ4 fast compression.
 
 #### LZ4HC {#lz4hc}
 
@@ -401,7 +402,7 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 #### ZSTD {#zstd}
 
-`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1.
+`ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default level: 1. `ZSTD(3)` is the codec applied by default to columns that do not specify a codec explicitly (for `MergeTree` parts this applies once a part grows past 100 MB; smaller parts use `LZ4`).
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 

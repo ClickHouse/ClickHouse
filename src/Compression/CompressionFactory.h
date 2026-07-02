@@ -43,7 +43,7 @@ public:
 
     static CompressionCodecFactory & instance();
 
-    /// Return default codec (currently LZ4)
+    /// Return default codec (currently ZSTD(3))
     CompressionCodecPtr getDefaultCodec() const;
 
     /// Validate codecs AST specified by user and parses codecs description (substitute default parameters)

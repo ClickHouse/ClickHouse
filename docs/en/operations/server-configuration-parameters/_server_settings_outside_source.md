@@ -189,7 +189,7 @@ You can configure multiple `<case>` sections.
 - If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
 
 :::note
-If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` for parts smaller than 100 MB and `ZSTD(3)` for larger parts.
 :::
 
 **Example**
@@ -200,7 +200,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```

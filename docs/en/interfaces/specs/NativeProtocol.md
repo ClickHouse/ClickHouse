@@ -928,8 +928,8 @@ These settings travel per-query in the [Query packet's settings list](#setting).
 
 | Setting                          | Default  | Unit   | Description |
 |----------------------------------|----------|--------|-------------|
-| `network_compression_method`     | `"LZ4"`  | string | Compression codec used when the Query packet's `compression` flag is set. Values: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
-| `network_zstd_compression_level` | 1        | 1–15   | ZSTD level when `network_compression_method == "ZSTD"`. |
+| `network_compression_method`     | `"ZSTD"` | string | Compression codec used when the Query packet's `compression` flag is set. Values: `"LZ4"`, `"LZ4HC"`, `"ZSTD"`, `"NONE"`. |
+| `network_zstd_compression_level` | 3        | 1–15   | ZSTD level when `network_compression_method == "ZSTD"`. |
 
 The `compression` flag in the [Query packet](#query) (field 6) toggles compression on and off; these settings select which codec is used when it is on.
 

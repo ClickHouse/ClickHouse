@@ -1637,21 +1637,25 @@
      If not specified they will be stored locally. -->
     <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
 
-    <!-- Uncomment if you want data to be compressed 30-100% better.
+    <!-- By default the codec is chosen by part size: LZ4 for parts smaller than 100 MB and ZSTD(3) for
+         larger parts. Uncomment if you want to compress large parts even better than the ZSTD(3) default.
          Don't do that if you just started using ClickHouse.
          Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
     <!--
     <compression>
-        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, lz4 will be used. - ->
+        <!- - Set of variants. Checked in order. Last matching case wins. If nothing matches, the size-aware
+             built-in default is used: LZ4 for parts smaller than 100 MB and ZSTD(3) for larger parts. - ->
         <case>
 
             <!- - Conditions. All must be satisfied. Some conditions may be omitted. - ->
             <min_part_size>10000000000</min_part_size>        <!- - Min part size in bytes. - ->
             <min_part_size_ratio>0.01</min_part_size_ratio>   <!- - Min size of part relative to whole table size. - ->
 
-            <!- - What compression method to use. - ->
+            <!- - What compression method to use. Use a level above the ZSTD(3) default so this case
+                 actually improves compression for large parts. - ->
             <method>zstd</method>
+            <level>10</level>
         </case>
     </compression>
     -->

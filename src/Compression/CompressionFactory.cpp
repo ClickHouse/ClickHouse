@@ -254,7 +254,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGCD(*this);
     registerCodecALP(*this);
 
-    default_codec = get("LZ4", {});
+    default_codec = get("ZSTD", 3);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
