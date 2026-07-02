@@ -242,6 +242,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_dimensions_outside_sorting_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
@@ -764,7 +765,7 @@ MergeTreeData::MergeTreeData(
     setProperties(metadata_, metadata_, !sanity_checks);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(*settings, metadata_);
+    merging_params.check(*settings, metadata_, sanity_checks);
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
@@ -1585,7 +1586,70 @@ static void checkTupleElementAggregationConstraints(const StorageInMemoryMetadat
     }
 }
 
-void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
+/// In AggregatingMergeTree, background merges collapse all rows that share the same value of the
+/// sorting key into a single row, combining the aggregate states. A column that is neither part of
+/// the sorting key nor an aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`)
+/// is a *dimension*: after a merge it keeps an arbitrary value of one of the collapsed rows, silently
+/// producing wrong results for queries that `GROUP BY` or filter on it. This is almost always a mistake
+/// (see https://github.com/ClickHouse/ClickHouse/issues/751), so we reject such a schema at table
+/// creation unless the `allow_dimensions_outside_sorting_key` setting is enabled.
+static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metadata)
+{
+    /// Columns whose value survives a merge unchanged: those that determine the merge group (the
+    /// sorting key) and those that are constant within a part (the partition key). We use the required
+    /// columns of both expressions, which over-approximates the set of safe columns and therefore
+    /// never produces a false positive (at the cost of occasionally missing a genuine mistake).
+    NameSet covered_columns;
+    if (metadata.isSortingKeyDefined())
+        for (const auto & name : metadata.getSortingKey().expression->getRequiredColumns())
+            covered_columns.insert(name);
+    if (metadata.isPartitionKeyDefined())
+        for (const auto & name : metadata.getPartitionKey().expression->getRequiredColumns())
+            covered_columns.insert(name);
+
+    /// A `MATERIALIZED` column is computed from an expression, not supplied as raw data, so it is not
+    /// the off-key dimension from issue #751. When its expression depends only on covered columns (e.g.
+    /// `d MATERIALIZED toString(key)`), its value is constant within a merge group and therefore safe.
+    /// Treating all materialized columns as covered keeps the over-approximation free of false positives
+    /// (at the cost of not catching a materialized column derived from an off-key column, which is the
+    /// same accepted trade-off as above).
+    for (const auto & column : metadata.getColumns().getMaterialized())
+        covered_columns.insert(column.name);
+
+    auto is_measure = [](const NameAndTypePair & column)
+    {
+        return WhichDataType(column.type).isAggregateFunction()
+            || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
+    };
+
+    const auto physical_columns = metadata.getColumns().getAllPhysical();
+
+    /// Only act when the table actually performs aggregation, i.e. it has at least one aggregate-state
+    /// column. A table without any measures is not the scenario from issue #751 (it is not aggregating
+    /// anything) and is left alone.
+    if (std::none_of(physical_columns.begin(), physical_columns.end(), is_measure))
+        return;
+
+    Names offending_columns;
+    for (const auto & column : physical_columns)
+        if (!covered_columns.contains(column.name) && !is_measure(column))
+            offending_columns.push_back(column.name);
+
+    if (offending_columns.empty())
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Column(s) {} of the AggregatingMergeTree table are neither part of the sorting key nor aggregate "
+        "measures (AggregateFunction or SimpleAggregateFunction). During background merges, rows with the "
+        "same value of the sorting key are collapsed into one, so these columns keep an arbitrary value, "
+        "which silently produces wrong results for queries that GROUP BY or filter on them. Add them to the "
+        "sorting key (ORDER BY), or set 'allow_dimensions_outside_sorting_key = 1' if this is intentional "
+        "(for example, when the columns are functionally dependent on the sorting key).",
+        boost::algorithm::join(offending_columns, ", "));
+}
+
+void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
@@ -1776,6 +1840,14 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(metadata);
+
+    /// Reject AggregatingMergeTree schemas where a non-key, non-measure column would be silently
+    /// collapsed during merges. Only on table creation, so existing tables keep loading. When
+    /// `allow_tuple_element_aggregation` is enabled, Tuple sub-columns are aggregated independently and a
+    /// plain column can be a measure, so the column-level check does not apply.
+    if (mode == MergingParams::Aggregating && sanity_checks && !allow_tuple_element_aggregation
+        && !settings[MergeTreeSetting::allow_dimensions_outside_sorting_key])
+        checkDimensionsAreInSortingKey(metadata);
 
     /// TODO Checks for Graphite mode.
 }
