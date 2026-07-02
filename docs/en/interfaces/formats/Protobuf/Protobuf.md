@@ -87,7 +87,7 @@ SELECT * FROM string_or_string
 Name of the column that indicates presence must be the same as the name of oneof.
 Nested messages are supported (see  [basic-examples](#basic-examples)). Empty messages are supported as well.
 Allowed types are Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Enum, Enum8 or Enum16.
-Enum (as well as Enum8 or Enum16) must contain all oneof' tags that are actually used plus 0 to indicate absence, string representations does not matter.
+Enum (as well as Enum8 or Enum16) must contain 0 to indicate absence and the tag of every oneof case that has a matching column in the target table, string representations does not matter.
 
 The setting [`input_format_protobuf_oneof_presence`](/operations/settings/settings-formats.md#input_format_protobuf_oneof_presence) is disabled by default
 
