@@ -664,6 +664,8 @@ private:
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);
 
+    Coordination::Error listRecursiveFallback(const std::string & path, Strings & res, uint32_t children_nodes_limit);
+
     bool sampleForOpenTelemetryTracing() const
     {
         /// Avoiding using random number generation and std::bernoulli_distribution because it's too slow.
