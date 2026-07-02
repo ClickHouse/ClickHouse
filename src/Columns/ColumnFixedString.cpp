@@ -576,30 +576,21 @@ std::span<char> ColumnFixedString::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(chars.data() + start), count * n};
 }
 
-ALWAYS_INLINE char * ColumnFixedString::serializeValueIntoMemoryAsComparable(size_t row, char * memory) const
+void ColumnFixedString::serializeAsComparable(size_t row, String & out) const
 {
-    memcpy(memory, &chars[row * n], n);
-    return memory + n;
+    out.append(reinterpret_cast<const char *>(&chars[row * n]), n);
 }
 
-void ColumnFixedString::batchSerializeComparableIntoMemory(
-    PaddedPODArray<char *> & memories) const
+void ColumnFixedString::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
 {
-    const size_t num_rows = memories.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
-}
-
-void ColumnFixedString::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
-{
-    size_t rows = size();
-    if (sizes.empty())
-        sizes.resize_fill(rows);
-    else if (sizes.size() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
-
-    for (auto & sz : sizes)
-        sz += n;
+    for (size_t r = 0; r < num_rows; ++r)
+    {
+        const size_t src = permutation ? (*permutation)[r] : r;
+        out[r].append(reinterpret_cast<const char *>(&chars[src * n]), n);
+    }
 }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string_view>
+#include <vector>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -363,26 +364,19 @@ public:
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    /// Serialize n-th element into memory in a byte-comparable format.
+    /// Append byte-comparable encoding of row n to `out`.
     /// memcmp on the output preserves the same ordering as compareAt.
-    /// Returns pointer past the last written byte.
-    virtual char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const;
+    virtual void serializeAsComparable(size_t n, String & out) const;
 
-    /// Batch serialize all rows in column-outer fashion.
-    /// memories[i] is advanced past the last written byte for row i.
-    /// Only one virtual dispatch per column; inner loop is tight.
-    /// Default implementation calls serializeValueIntoMemoryAsComparable in a loop.
-    virtual void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const;
-
-    /// Accumulate per-row comparable serialized sizes into `sizes`.
-    /// sizes[i] += encoded_size_of_row(i). Used to pre-allocate a
-    /// contiguous buffer before column-outer serialization.
-    /// For fixed-width types, adds a constant per row.
-    /// For variable-width types (String), computes exact per-row overhead.
-    virtual void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const;
-
-    /// Whether this column type supports comparable serialization.
-    virtual bool supportsComparableSerialization() const { return false; }
+    /// Batch serialize rows in column-outer fashion: one virtual dispatch per
+    /// column, tight row loop inside. `out[r]` gets the encoding of row `src`
+    /// where `src = permutation ? (*permutation)[r] : r`.
+    /// Default implementation calls serializeAsComparable in a loop.
+    using Permutation = IColumnPermutation;
+    virtual void batchSerializeAsComparable(
+        size_t num_rows,
+        std::vector<String> & out,
+        const Permutation * permutation) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
@@ -459,7 +453,6 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.

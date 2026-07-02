@@ -358,10 +358,8 @@ public:
     /// Replace elements that match the filter with zeroes. If inverted replaces not matched elements.
     void applyZeroMap(const IColumn::Filter & filt, bool inverted = false);
 
-    char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const override;
-    void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const override;
-    void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const override;
-    bool supportsComparableSerialization() const override;
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, std::vector<String> & out, const IColumn::Permutation * permutation) const override;
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

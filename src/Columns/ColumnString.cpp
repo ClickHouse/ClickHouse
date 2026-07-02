@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 
+#include <cstring>
 #include <Columns/Collator.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
@@ -378,57 +379,6 @@ void ColumnString::skipSerializedInArena(ReadBuffer & in) const
     size_t string_size = 0;
     readBinaryLittleEndian<size_t>(string_size, in);
     in.ignore(string_size);
-}
-
-/// Byte-comparable encoding: 0x00 inside string → [0x00, 0x01]; terminated with [0x00, 0x00].
-ALWAYS_INLINE char * ColumnString::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
-{
-    size_t string_size = sizeAt(n);
-    auto offset = offsetAt(n);
-
-    for (size_t i = 0; i < string_size; ++i)
-    {
-        UInt8 byte = chars[offset + i];
-        *memory++ = static_cast<char>(byte);
-        if (byte == 0)
-            *memory++ = 1;
-    }
-
-    *memory++ = 0;
-    *memory++ = 0;
-    return memory;
-}
-
-void ColumnString::batchSerializeComparableIntoMemory(
-    PaddedPODArray<char *> & memories) const
-{
-    const size_t num_rows = memories.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
-}
-
-void ColumnString::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
-{
-    if (empty())
-        return;
-
-    size_t rows = size();
-    if (sizes.empty())
-        sizes.resize_fill(rows);
-    else if (sizes.size() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
-
-    /// NUL-escape encoding: each byte is 1 byte, except 0x00 which becomes 2 bytes.
-    /// Terminator is 2 bytes (0x00 0x00).
-    for (size_t row = 0; row < rows; ++row)
-    {
-        size_t string_size = sizeAt(row);
-        auto offset = offsetAt(row);
-        size_t encoded_size = string_size + 2;
-        for (size_t i = 0; i < string_size; ++i)
-            encoded_size += (chars[offset + i] == 0);
-        sizes[row] += encoded_size;
-    }
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
@@ -933,6 +883,51 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     }
 
     return column_sizes;
+}
+
+/// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
+/// Uses memchr+append fast path: no-NUL strings are copied in one append call.
+void ColumnString::serializeAsComparable(size_t n, String & out) const
+{
+    const size_t string_size = sizeAt(n);
+    const auto string_offset = offsetAt(n);
+    const char * src = reinterpret_cast<const char *>(&chars[string_offset]);
+    const char * const end = src + string_size;
+
+    out.reserve(out.size() + string_size + 2);
+
+    const char * p = static_cast<const char *>(std::memchr(src, '\0', string_size));
+    if (p == nullptr)
+    {
+        out.append(src, string_size);
+    }
+    else
+    {
+        const char * cursor = src;
+        do
+        {
+            out.append(cursor, p - cursor);
+            out.append("\0\x01", 2);
+            cursor = p + 1;
+            p = static_cast<const char *>(std::memchr(cursor, '\0', end - cursor));
+        }
+        while (p != nullptr);
+        out.append(cursor, end - cursor);
+    }
+
+    out.append("\0\x00", 2);
+}
+
+void ColumnString::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
+{
+    for (size_t r = 0; r < num_rows; ++r)
+    {
+        const size_t src = permutation ? (*permutation)[r] : r;
+        serializeAsComparable(src, out[r]);
+    }
 }
 
 }
