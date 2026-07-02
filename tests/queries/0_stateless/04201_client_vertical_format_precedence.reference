@@ -1,0 +1,12 @@
+--- local: --vertical --output-format CSV ---
+"A","B"
+--- client: --vertical --output-format CSV ---
+"A","B"
+--- local: --vertical --format JSONEachRow ---
+{"a":"A","b":"B"}
+--- client: --vertical --format JSONEachRow ---
+{"a":"A","b":"B"}
+--- local: --vertical --output-format CSV --format JSONEachRow ---
+"A","B"
+--- client: --vertical --output-format CSV --format JSONEachRow ---
+"A","B"
