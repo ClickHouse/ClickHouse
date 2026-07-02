@@ -3658,6 +3658,17 @@ document.addEventListener('mousemove', () => {
     }
 }, { passive: true });
 
+/// Close the database panel and remove every row. Detaching the rows also drops any in-flight
+/// `loadTables` load through its `isConnected` check, so a late response cannot repopulate a
+/// panel that is no longer shown.
+function closeDatabases() {
+    delete databases_toggle.dataset['opened'];
+    menu_elem.style.cursor = 'e-resize';
+    menu_elem.classList.remove('databases-opened');
+    let databases_elem = document.getElementById('databases');
+    while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
+}
+
 function toggleDatabases() {
     if (!databases_toggle.dataset['opened']) {
         loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(ok => {
@@ -3668,11 +3679,7 @@ function toggleDatabases() {
             }
         });
     } else {
-        delete databases_toggle.dataset['opened'];
-        menu_elem.style.cursor = 'e-resize';
-        menu_elem.classList.remove('databases-opened');
-        let databases_elem = document.getElementById('databases');
-        while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
+        closeDatabases();
     }
 }
 
@@ -5370,6 +5377,12 @@ function resetConnectionScopedState() {
     completionWords = [];
     closeCompletions();
     opened_databases.clear();
+    /// A panel that is already open keeps showing the previous connection's databases, and every
+    /// row handler closes over the url/user/password captured when the list was loaded, so
+    /// clicking a row (or its refresh button) would keep querying the previous server. Close the
+    /// panel so it is rebuilt against the new connection on the next open; this also detaches the
+    /// rows, dropping any in-flight table load through its `isConnected` check.
+    if (databases_toggle.dataset['opened']) closeDatabases();
 }
 
 [url_elem, user_elem, password_elem].forEach(el => el.addEventListener('input', resetConnectionScopedState));
