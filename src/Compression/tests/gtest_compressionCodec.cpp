@@ -1536,13 +1536,13 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
 }
 
 /// Expects getCompressionCodecForFile to reject the block with the given error code.
-static void expectRejectedBlock(ReadBuffer & in, int expected_code)
+static void expectRejectedBlock(ReadBuffer & in, int expected_code, bool skip_to_next_block = true)
 {
     UInt32 size_compressed = 0;
     UInt32 size_decompressed = 0;
     try
     {
-        getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true);
+        getCompressionCodecForFile(in, size_compressed, size_decompressed, skip_to_next_block);
         FAIL() << "Expected exception with code " << expected_code;
     }
     catch (const Exception & e)
@@ -1563,6 +1563,20 @@ TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
 
     ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
     expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
+{
+    /// Pin that the size checks run regardless of the flag.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA, /*skip_to_next_block=*/false);
 }
 
 TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
