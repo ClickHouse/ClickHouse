@@ -187,8 +187,13 @@ namespace
     }
 
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
-    void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
-                                  DiskPtr & out_disk, String & out_path)
+    void getDiskAndPathFromConfig(
+        const String & encrypted_disk_name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const DisksMap & map,
+        DiskPtr & out_disk,
+        String & out_path)
     {
         String disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
@@ -205,6 +210,49 @@ namespace
         out_path = config.getString(config_prefix + ".path", "");
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
+
+        /// The path must be relative to the wrapped disk's root. An absolute path would escape the delegate:
+        /// `DiskLocal` joins paths with `fs::path(delegate_root) / out_path`, and `fs::path::operator/` discards
+        /// the left-hand side when the right-hand side is absolute, so the files would land outside the delegate.
+        /// This also makes the duplicate-path check below unreliable, because two encrypted disks over different
+        /// delegates would compare as distinct while operating on the same underlying files (losing parts after
+        /// a restart). Rejecting absolute paths keeps the delegate's root a prefix of the effective path.
+        if (!out_path.empty() && (out_path.front() == '/'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
+                quoteString(out_path));
+
+        /// `DiskLocal` resolves the wrapped path on the filesystem, so traversal (`..`), current-directory (`.`)
+        /// and repeated-separator components are collapsed when files are accessed. Two encrypted disks whose
+        /// effective paths only differ by such components (e.g. `a/../b/` and `b/`) therefore address the same
+        /// directory. Normalize the effective path so the duplicate-path check below detects these aliases, and
+        /// reject paths that escape the delegate's root via `..` for the same reason absolute paths are rejected.
+        const fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
+        const fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
+            relative_to_root.empty() || *relative_to_root.begin() == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path '{}' must stay within the wrapped disk's root '{}'.",
+                quoteString(out_path),
+                quoteString(out_disk->getPath()));
+
+        const String disk_absolute_path = effective_path.string();
+        for (const auto & [name, disk] : map)
+        {
+            /// The map contains this disk itself while applying settings on configuration reload.
+            if (name == encrypted_disk_name)
+                continue;
+
+            auto * encrypted_disk = typeid_cast<DiskEncrypted *>(disk.get());
+            if (encrypted_disk && fs::path(encrypted_disk->getPath()).lexically_normal() == effective_path)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Disk path '{}' is conflicted with other encrypted disk '{}'",
+                    quoteString(disk_absolute_path),
+                    encrypted_disk->getName());
+        }
     }
 
     /// Parses the settings of an encrypted disk from the configuration.
@@ -250,7 +298,7 @@ namespace
 
             DiskPtr wrapped_disk;
             String disk_path;
-            getDiskAndPathFromConfig(config, config_prefix, disk_map, wrapped_disk, disk_path);
+            getDiskAndPathFromConfig(disk_name, config, config_prefix, disk_map, wrapped_disk, disk_path);
             res->wrapped_disk = wrapped_disk;
             res->disk_path = disk_path;
 

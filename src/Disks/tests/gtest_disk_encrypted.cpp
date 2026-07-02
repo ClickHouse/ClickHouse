@@ -56,6 +56,26 @@ protected:
         return encrypted_disk;
     }
 
+    static void configureEncryptedDisk(
+        Poco::Util::XMLConfiguration & config,
+        const String & prefix,
+        const String & wrapped_disk,
+        const std::optional<String> & path)
+    {
+        config.setString(prefix + ".key", "1234567890123456");
+        config.setString(prefix + ".disk", wrapped_disk);
+        if (path)
+            config.setString(prefix + ".path", *path);
+    }
+
+    static std::shared_ptr<DiskEncrypted> makeConfiguredEncryptedDisk(
+        const String & name,
+        const Poco::Util::XMLConfiguration & config,
+        const DisksMap & disks)
+    {
+        return std::make_shared<DiskEncrypted>(name, config, name, disks);
+    }
+
     String getFileNames()
     {
         Strings file_names;
@@ -481,4 +501,139 @@ TEST_F(DiskEncryptedTest, DoubleEncrypted)
     auto double_encrypted_disk = makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
 
     testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameDelegateAndExplicitPath)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameDelegateAndDefaultPath)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", std::nullopt);
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", std::nullopt);
+
+    DisksMap disks{{"local_disk", local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePath)
+{
+    auto nested_local_disk = std::make_shared<DiskLocal>("nested_local_disk", getDirectory() + "data/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "nested_local_disk", "encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"nested_local_disk", nested_local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsAbsolutePath)
+{
+    /// An absolute `path` would escape the wrapped disk: `DiskLocal` joins paths with `fs::path(root) / path`,
+    /// and `fs::path::operator/` discards the root when the right-hand side is absolute. Two encrypted disks over
+    /// different delegates but the same absolute path would then operate on the same underlying files while the
+    /// duplicate-path check (comparing `root + path` strings) sees them as distinct. Such a path must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsSameAbsolutePathOverDifferentDelegates)
+{
+    /// Regression for the data-loss scenario: with an absolute `path` both encrypted disks would resolve to the
+    /// same `/data/encrypted/` directory regardless of their delegates. The absolute path must be rejected, so the
+    /// second disk never reaches a state where it can clobber the first one's parts after a restart.
+    auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "/data/encrypted/");
+    configureEncryptedDisk(*config, "encrypted2", "other_local_disk", "/data/encrypted/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"other_local_disk", other_local_disk}};
+    EXPECT_THROW(disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks)), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsTraversalAliasOfSamePath)
+{
+    /// Regression for the duplicate-path bypass via relative components: `a/../b/` and `b/` over the same delegate
+    /// resolve to the same `<root>/b/` directory once `DiskLocal` accesses the filesystem, even though their raw
+    /// concatenated strings differ. The effective paths are normalized before comparison, so the second disk must
+    /// be rejected to prevent it from clobbering the first one's parts after a restart.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "a/../b/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "b/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted2", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationRejectsPathEscapingDelegateRoot)
+{
+    /// A relative `path` that escapes the delegate's root via `..` lands outside the wrapped disk, just like an
+    /// absolute path, which both breaks isolation and defeats the duplicate-path check. It must be rejected.
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "../escape/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    EXPECT_THROW(makeConfiguredEncryptedDisk("encrypted1", *config, disks), DB::Exception);
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationAllowsDifferentPathsOrDelegates)
+{
+    auto other_local_disk = std::make_shared<DiskLocal>("other_local_disk", getDirectory() + "other/");
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "other_data/");
+    configureEncryptedDisk(*config, "encrypted3", "other_local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}, {"other_local_disk", other_local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+    EXPECT_NO_THROW(disks.emplace("encrypted2", makeConfiguredEncryptedDisk("encrypted2", *config, disks)));
+    EXPECT_NO_THROW(disks.emplace("encrypted3", makeConfiguredEncryptedDisk("encrypted3", *config, disks)));
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationReloadDoesNotConflictWithItself)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    auto configured_encrypted_disk = makeConfiguredEncryptedDisk("encrypted1", *config, disks);
+    disks.emplace("encrypted1", configured_encrypted_disk);
+
+    EXPECT_NO_THROW(configured_encrypted_disk->applyNewSettings(*config, nullptr, "encrypted1", disks));
+}
+
+TEST_F(DiskEncryptedTest, ConfigurationReloadRejectsConflict)
+{
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
+    configureEncryptedDisk(*config, "encrypted1", "local_disk", "data/");
+    configureEncryptedDisk(*config, "encrypted2", "local_disk", "other_data/");
+
+    DisksMap disks{{"local_disk", local_disk}};
+    disks.emplace("encrypted1", makeConfiguredEncryptedDisk("encrypted1", *config, disks));
+    auto configured_encrypted_disk = makeConfiguredEncryptedDisk("encrypted2", *config, disks);
+    disks.emplace("encrypted2", configured_encrypted_disk);
+
+    config->setString("encrypted2.path", "data/");
+    EXPECT_THROW(configured_encrypted_disk->applyNewSettings(*config, nullptr, "encrypted2", disks), DB::Exception);
 }
