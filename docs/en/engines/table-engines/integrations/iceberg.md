@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides a read-only integration with existing Apache Iceberg
-  tables in Amazon S3, Azure, HDFS and locally stored tables.'
+description: 'This engine provides a read-only data integration with existing Apache Iceberg
+  tables in Amazon S3, Azure, HDFS and locally stored tables, plus experimental metadata-maintenance writes.'
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
@@ -16,7 +16,7 @@ The Iceberg Table Engine is available but may have limitations. ClickHouse wasn'
 For optimal compatibility, we suggest using the Iceberg Table Function while we continue to improve support for the Iceberg Table Engine.
 :::
 
-This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
+This engine provides a read-only *data* integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables: ClickHouse does not insert, update, or delete rows. The one exception is the experimental metadata-maintenance operation [`OPTIMIZE TABLE ... MANIFEST`](#manifest-compaction), which rewrites only the Iceberg metadata (manifest) layer and never changes the underlying data.
 
 ## Create table {#create-table}
 
@@ -124,6 +124,23 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 ## Time travel {#time-travel}
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
+
+## Manifest file compaction {#manifest-compaction}
+
+Over time, frequent writes to an Iceberg table can accumulate a large number of small manifest files in the current snapshot's manifest list. A long manifest list slows down query planning, because every manifest file has to be read to discover the data files. ClickHouse can compact these manifest files into fewer, larger ones using the `OPTIMIZE TABLE ... MANIFEST` statement:
+
+```sql
+OPTIMIZE TABLE example_table MANIFEST SETTINGS allow_experimental_iceberg_compaction = 1;
+```
+
+This produces a new snapshot (a `replace` operation) that references the same data files through a consolidated set of manifest files. No data files are rewritten and no rows are added, deleted, or deduplicated — only the manifest layer is rearranged. This is the only operation through which the `Iceberg` engine writes to a table; data access otherwise remains read-only.
+
+### Requirements and behavior {#manifest-compaction-behavior}
+
+- The feature is experimental and gated behind the `allow_experimental_iceberg_compaction` setting. The statement throws an exception if the setting is not enabled.
+- Compaction is only attempted when the number of manifest files in the current snapshot's manifest list exceeds the threshold given by the `iceberg_manifest_min_count_to_compact` setting (default `30`). If the current count is less than or equal to the threshold, compaction is skipped and no new snapshot is created. Set the threshold lower to compact more eagerly.
+- `OPTIMIZE TABLE ... MANIFEST` is supported only for Iceberg tables. Running it against any other table engine throws an exception.
+- `OPTIMIZE TABLE ... MANIFEST` currently supports Iceberg format-version 1 and 2 tables. Running it against a format-version 3 table throws an exception, because the v3 row-lineage `first_row_id` metadata is not yet round-tripped through the manifest rewrite.
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
