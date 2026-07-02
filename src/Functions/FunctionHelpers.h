@@ -212,6 +212,7 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args);
 
 void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
 }

@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -15,6 +16,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
@@ -62,6 +64,7 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -71,6 +74,9 @@ public:
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
+    ColumnPtr executeLowCardinality(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     ColumnPtr perform(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -1922,13 +1928,42 @@ template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
 {
+    if (index.getType() != Field::Types::String)
+        return false;
+
+    if (const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data))
+    {
+        const auto & requested_key = index.safeGet<String>();
+        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
+        matched_idxs.reserve(offsets.size());
+
+        if (!dictionary_index)
+        {
+            matched_idxs.resize_fill(offsets.size());
+            return true;
+        }
+
+        struct MatcherLowCardinalityStringConst
+        {
+            const ColumnLowCardinality & data;
+            UInt64 dictionary_index;
+
+            bool match(size_t row_data, size_t /* row_index */) const
+            {
+                return data.getIndexAt(row_data) == dictionary_index;
+            }
+        };
+
+        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
+        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+        return true;
+    }
+
     return castColumnString(
         &data,
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
-            if (index.getType() != Field::Types::String)
-                return false;
             MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
@@ -2113,7 +2148,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 {
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
-        auto value_type = map_type->getValueType();
+        auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
@@ -2127,7 +2162,8 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
-    if (!isNativeInteger(arguments[1]))
+    auto index_type = removeNullable(removeLowCardinality(arguments[1]));
+    if (!isNativeInteger(index_type))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2136,14 +2172,69 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = array_type->getNestedType();
+    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeLowCardinality(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (arguments.size() != 2 || !isColumnConst(*arguments[1].column))
+        return nullptr;
+
+    if (getNullPresense(arguments).has_nullable)
+        return nullptr;
+
+    Field index = (*arguments[1].column)[0];
+    if ((index.getType() == Field::Types::UInt64 && index.safeGet<UInt64>() == 0)
+        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() == 0))
+        return nullptr;
+
+    /// Only optimize arrayElement here. arrayElementOrNull would need to build the null map
+    /// for out-of-bounds rows, which is a separate path from the measured materialization hot spot.
+    if constexpr (!is_null_mode)
+    {
+        if (const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
+        {
+            const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&col_array->getData());
+            const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
+            if (low_cardinality_data
+                && isStringOrFixedString(removeLowCardinality(array_type.getNestedType()))
+                && (index.getType() == Field::Types::UInt64 || index.getType() == Field::Types::Int64))
+                return LowCardinalityExecutionHelpers::LowCardinalityArrayView{
+                    .elements = *low_cardinality_data,
+                    .offsets = col_array->getOffsets(),
+                    .rows = input_rows_count,
+                }.arrayElementConst(index, *result_type);
+        }
+    }
+
+    const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+    if (!col_map)
+        return nullptr;
+
+    const auto & map_column = *col_map;
+    if (!typeid_cast<const ColumnLowCardinality *>(&map_column.getNestedData().getColumn(0)))
+        return nullptr;
+
+    if (index.getType() != Field::Types::String)
+        return nullptr;
+
+    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
 }
 
 template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (auto result = executeLowCardinality(arguments, result_type, input_rows_count))
+        return result;
+
+    auto arguments_without_low_cardinality = arguments;
+    if (convertLowCardinalityColumnsToFull(arguments_without_low_cardinality))
+        return executeImpl(arguments_without_low_cardinality, result_type, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
