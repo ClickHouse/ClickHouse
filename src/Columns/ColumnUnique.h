@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include <Columns/IColumnUnique.h>
 #include <Columns/ReverseIndex.h>
 
@@ -19,6 +21,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <base/range.h>
+#include <base/scope_guard.h>
 #include <base/unaligned.h>
 
 
@@ -123,7 +126,15 @@ public:
 
     void forEachSubcolumn(IColumn::ColumnCallback callback) const override
     {
-        callback(column_holder);
+        /// When `is_nullable`, `column_holder` is intentionally shared with
+        /// `nested_column_nullable` (see `createNullMask`), so its `use_count` is
+        /// normally `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub->use_count() == 1)` fire on an invariant that `ColumnUnique`
+        /// maintains by design. `ColumnUnique` is the sole writer of `column_holder`;
+        /// the shared reference held by `nested_column_nullable` is read-only and
+        /// managed through `updateNullMask`.
+        if (!is_nullable)
+            callback(column_holder);
     }
 
     void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
@@ -136,17 +147,37 @@ public:
 
     void forEachSubcolumnRecursively(IColumn::RecursiveColumnCallback callback) const override
     {
-        callback(*column_holder);
+        /// Mirror the guard in `forEachSubcolumn`: when `is_nullable`, `column_holder`
+        /// is shared with `nested_column_nullable` by design (see `createNullMask`), so
+        /// its `use_count` is `>= 2`. Exposing it here would make `IColumn::mutate`'s deep
+        /// `chassert(sub.use_count() == 1)` walk fire on an invariant `ColumnUnique`
+        /// maintains internally.
+        if (!is_nullable)
+            callback(*column_holder);
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
     void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
+        /// When `is_nullable`, `nested_column_nullable` keeps a second reference to
+        /// `column_holder` (see `createNullMask`), so `column_holder->use_count() >= 2`.
+        /// Drop that internal reference before exposing `column_holder` for mutation so the
+        /// `assumeMutableRef` ownership check passes; re-create `nested_column_nullable`
+        /// after the in-place mutations are done. `nested_null_mask` is left untouched and
+        /// will be re-wrapped together with the (now-possibly-mutated) `column_holder`.
+        if (is_nullable)
+            nested_column_nullable = nullptr;
+
+        /// Restore the invariant even if `callback` or recursive descent throws,
+        /// so the column does not stay in an inconsistent state.
+        SCOPE_EXIT({
+            reverse_index.setColumn(getRawColumnPtr());
+            if (is_nullable)
+                nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        });
+
         callback(*column_holder);
         column_holder->forEachMutableSubcolumnRecursively(callback);
-        reverse_index.setColumn(getRawColumnPtr());
-        if (is_nullable)
-            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
     bool structureEquals(const IColumn & rhs) const override
@@ -222,7 +253,12 @@ private:
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    ColumnType * getRawColumnPtr() { return assert_cast<ColumnType *>(column_holder.get()); }
+    /// `column_holder` is intentionally shared with `nested_column_nullable` for `is_nullable`
+    /// dictionaries (see `createNullMask`), so its `use_count` is normally `>= 2`. The
+    /// non-const overload of `chameleon_ptr::get` would route through `assumeMutableRef`
+    /// and trip `chassert(use_count() == 1)`. Bypass via the const overload + `const_cast`
+    /// — `ColumnUnique` keeps strong ownership of `column_holder` and is the sole writer.
+    ColumnType * getRawColumnPtr() { return const_cast<ColumnType *>(std::as_const(*this).getRawColumnPtr()); }
     const ColumnType * getRawColumnPtr() const { return assert_cast<const ColumnType *>(column_holder.get()); }
 
     template <typename IndexType>
@@ -269,10 +305,14 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// Read fixed-size info before `createNullMask`, which shares `column_holder`
+    /// via `nested_column_nullable` and would trip the `use_count() == 1` assertion
+    /// on the next non-const `column_holder->` access.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -285,10 +325,12 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Holder column for ColumnUnique can't be nullable.");
 
     reverse_index.setColumn(getRawColumnPtr());
-    createNullMask();
 
+    /// See the matching note above: read fixed-size info before `createNullMask`.
     if (column_holder->valuesHaveFixedSize())
         size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
+
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -319,8 +361,16 @@ void ColumnUnique<ColumnType>::updateNullMask()
 
         size_t size = getRawColumnPtr()->size();
 
-        if (nested_null_mask->size() != size)
-            assert_cast<ColumnUInt8 &>(*nested_null_mask).getData().resize_fill(size);
+        /// `nested_null_mask` is intentionally shared with `nested_column_nullable`
+        /// (see `createNullMask`), so its `use_count` is normally `>= 2`. Access via
+        /// the const overload to bypass the `use_count() == 1` assertion in
+        /// `assumeMutableRef`. `ColumnUnique` is the sole writer.
+        const auto & const_null_mask = std::as_const(*this).nested_null_mask;
+        if (const_null_mask->size() != size)
+        {
+            auto & null_mask_data = const_cast<ColumnUInt8 &>(assert_cast<const ColumnUInt8 &>(*const_null_mask)).getData();
+            null_mask_data.resize_fill(size);
+        }
     }
 }
 
@@ -383,7 +433,11 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         }
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// `column_holder` is shared with `nested_column_nullable` after `createNullMask`
+    /// (for nullable dictionaries), so the non-const `WrappedPtr::operator->` would
+    /// trip `assumeMutableRef`'s `chassert(use_count() == 1)`. `cloneEmpty` is a
+    /// `const` method, so use the const overload via `std::as_const`.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     single_value_column->insert(x);
     auto single_value_data = single_value_column->getDataAt(0);
 
@@ -401,7 +455,8 @@ bool ColumnUnique<ColumnType>::tryUniqueInsert(const Field & x, size_t & index)
         return true;
     }
 
-    auto single_value_column = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto single_value_column = std::as_const(column_holder)->cloneEmpty();
     if (!single_value_column->tryInsert(x))
         return false;
 
@@ -817,7 +872,8 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t length,
     size_t max_dictionary_size)
 {
-    auto overflowed_keys = column_holder->cloneEmpty();
+    /// See `uniqueInsert` for why `column_holder` is read via the `const` overload.
+    auto overflowed_keys = std::as_const(column_holder)->cloneEmpty();
     auto * overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid keys type for ColumnUnique.");

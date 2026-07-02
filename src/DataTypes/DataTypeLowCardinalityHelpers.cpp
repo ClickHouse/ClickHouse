@@ -259,7 +259,9 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
             {
                 auto & element = columns[i];
                 auto element_no_lc = recursiveLowCardinalityTypeConversion(element, from_elements.at(i), to_elements.at(i));
-                if (element.get() != element_no_lc.get())
+                /// Only compare pointer identity here: go through the const `get` so a shared
+                /// tuple element is not treated as mutable (`assumeMutableRef`) just for a read.
+                if (std::as_const(element).get() != element_no_lc.get())
                 {
                     element = element_no_lc;
                     has_converted = true;

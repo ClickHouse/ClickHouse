@@ -52,12 +52,21 @@ public:
       */
     static Ptr create(const ColumnPtr & nested_column, const ColumnPtr & offsets_column)
     {
-        return ColumnArray::create(nested_column->assumeMutable(), offsets_column->assumeMutable());
+        /// Per the doc comment above, the underlying columns may be shared. `assumeMutable` here
+        /// would `chassert(use_count() == 1)` and abort, while `IColumn::mutate` would deep-clone
+        /// and break callers like `recursiveRemoveLowCardinality` that rely on offsets aliasing the
+        /// original `ColumnArray`. Bypass the assertion via `const_cast` + `getPtr` — equivalent to
+        /// the old `assumeMutable` fast path. The result is returned as `Ptr` (immutable), and any
+        /// mutation must go through `IColumn::mutate`, which deep-clones shared sub-columns at the
+        /// proper time.
+        return ColumnArray::create(
+            const_cast<IColumn *>(nested_column.get())->getPtr(),
+            const_cast<IColumn *>(offsets_column.get())->getPtr());
     }
 
     static Ptr create(const ColumnPtr & nested_column)
     {
-        return ColumnArray::create(nested_column->assumeMutable());
+        return ColumnArray::create(const_cast<IColumn *>(nested_column.get())->getPtr());
     }
 
     template <typename ... Args>
@@ -206,7 +215,15 @@ public:
         return false;
     }
 
-    void finalize() override { data->finalize(); }
+    void finalize() override
+    {
+        /// `data` can be shared by a row-input format serializer that retains a `ColumnPtr` to it
+        /// between rows of the same chunk; the format then calls `finalize()` on the owning column
+        /// while the borrowed reference is still alive. Go through the const dereference so that
+        /// `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
+        const auto & data_ref = data;
+        const_cast<IColumn &>(*data_ref).finalize();
+    }
     bool isFinalized() const override { return data->isFinalized(); }
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }

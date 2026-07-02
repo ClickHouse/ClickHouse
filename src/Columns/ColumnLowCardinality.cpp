@@ -1,5 +1,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
+#include <utility>
+
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
@@ -205,7 +207,10 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
 
-    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    /// Use the const overload on `*this` to compare dictionary addresses without going through
+    /// the non-const `WrappedPtr::operator*` -> `assumeMutableRef` path, which would trip
+    /// `chassert(use_count() == 1)` when the dictionary is shared (e.g. with a global dictionary).
+    if (&low_cardinality_src->getDictionary() == &std::as_const(*this).getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
         idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
@@ -347,7 +352,9 @@ void ColumnLowCardinality::updateHashFast(SipHash & hash) const
 
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
-    auto unique_ptr = dictionary.getColumnUniquePtr();
+    /// Hold as `ColumnPtr` (immutable) to avoid triggering the `use_count == 1` assertion
+    /// on the non-const `WrappedPtr::operator->` — the dictionary still shares the column with us.
+    ColumnPtr unique_ptr = dictionary.getColumnUniquePtr();
     if (size == 0)
         unique_ptr = unique_ptr->cloneEmpty();
 
@@ -712,18 +719,26 @@ void ColumnLowCardinality::applyNegatedNullMap(const NullMap & map, size_t offse
             "Null map of size {} at offset {} does not match {} of size {}",
             map.size(), offset, getName(), size());
 
-    idx.setIndexesWhereMaskZero(map, getDictionary().getNullValueIndex(), offset);
+    /// Only the null value index is read from the dictionary here; the actual mutation happens on `idx`.
+    /// Use the const overload of `getDictionary` so the non-const `WrappedPtr` accessor does not go through
+    /// `assumeMutableRef` and trip `chassert(use_count() == 1)` when the dictionary is shared.
+    idx.setIndexesWhereMaskZero(map, std::as_const(*this).getDictionary().getNullValueIndex(), offset);
 }
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    checkColumn(*column_unique);
+    /// `column_unique` may be shared with the source column when called from
+    /// `create(const ColumnPtr &, const ColumnPtr &, bool)`, so the non-const
+    /// `WrappedPtr::operator*` would go through `assumeMutableRef` and trip
+    /// `chassert(use_count() == 1)`. Use the const overload — `checkColumn`
+    /// only needs read access for type verification.
+    checkColumn(*std::as_const(column_unique));
 }
 ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
-    checkColumn(*column_unique);
+    checkColumn(*std::as_const(column_unique));
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
@@ -736,13 +751,21 @@ void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique
 
 void ColumnLowCardinality::Dictionary::compact(MutableColumnPtr & indexes)
 {
-    column_unique = compact(getColumnUnique(), indexes);
+    /// `column_unique` is by definition shared here (we only compact in place when `shared` is true),
+    /// so the non-const `getColumnUnique()` would trip the `use_count() == 1` assertion in `assumeMutableRef`.
+    /// Borrow it as `const`: the compact helper only reads from it and we replace `column_unique` with a
+    /// freshly-built compact dictionary below.
+    const auto & const_unique_ptr = column_unique;
+    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
+    column_unique = compact(const_unique, indexes);
     shared = false;
 }
 
 void ColumnLowCardinality::Dictionary::compactToNullable(MutableColumnPtr & indexes)
 {
-    column_unique = compactToNullable(getColumnUnique(), indexes);
+    const auto & const_unique_ptr = column_unique;
+    const auto & const_unique = static_cast<const IColumnUnique &>(*const_unique_ptr);
+    column_unique = compactToNullable(const_unique, indexes);
     shared = false;
 }
 

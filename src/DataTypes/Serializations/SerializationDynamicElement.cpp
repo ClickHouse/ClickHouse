@@ -205,15 +205,15 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
         auto result_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(variant_type);
         MutableColumnPtr variant_column = nested_subcolumn.empty() || is_null_map_subcolumn ? result_column->assumeMutable() : result_type->createColumn();
         variant_column->reserve(variant_column->size() + limit);
-        MutableColumnPtr non_nullable_variant_column = variant_column->assumeMutable();
+        IColumn * non_nullable_variant_column = variant_column.get();
         NullMap * null_map = nullptr;
         bool is_low_cardinality_nullable = isColumnLowCardinalityNullable(*variant_column);
-        /// Resulting subolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
+        /// Resulting subcolumn can be Nullable, but value is serialized in shared variant as non-Nullable.
         /// Extract non-nullable column and remember the null map to fill it during deserialization.
         if (isColumnNullable(*variant_column))
         {
             auto & nullable_variant_column = assert_cast<ColumnNullable &>(*variant_column);
-            non_nullable_variant_column = nullable_variant_column.getNestedColumnPtr()->assumeMutable();
+            non_nullable_variant_column = &nullable_variant_column.getNestedColumn();
             null_map = &nullable_variant_column.getNullMapData();
         }
         else if (is_null_map_subcolumn)

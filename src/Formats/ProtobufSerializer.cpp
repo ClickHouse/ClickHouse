@@ -74,6 +74,27 @@ namespace
     using FieldTypeId = google::protobuf::FieldDescriptor::Type;
     using OneofDescriptor = google::protobuf::OneofDescriptor;
 
+    /// Returns a mutable reference to a column that is borrowed from the caller.
+    /// Used in `ProtobufSerializer` where columns are passed for mutation during deserialization,
+    /// but the caller retains a reference for lifetime management, so `use_count > 1`.
+    /// The caller guarantees mutability by contract.
+    ///
+    /// We do not assert on `use_count` here: legitimate ownership in `ProtobufSerializer`
+    /// includes the caller's storage, the message-level `mutable_columns` cache, and
+    /// each leaf field serializer's stored `ColumnPtr` for the same column, which can
+    /// add up to more than two owners even on the happy path.
+    ///
+    /// Mutability is instead validated at the read-mode entry point in
+    /// `ProtobufSerializerMessage::setColumns(const MutableColumnPtr *)`: that overload
+    /// chasserts that each input column has `use_count() == 1`, which is the contract
+    /// of `MutableColumnPtr` (move-only, unique-ownership). Internal sharing past that
+    /// point is bounded by `ProtobufSerializer` itself and is safe to mutate through
+    /// this helper.
+    IColumn & borrowColumnRef(const ColumnPtr & col)
+    {
+        return const_cast<IColumn &>(*col);
+    }
+
 
     /// Compares column's name with protobuf field's name.
     /// This comparison is case-insensitive and ignores the difference between '.' and '_'
@@ -227,6 +248,12 @@ namespace
             column = columns[0]->getPtr();
         }
 
+        /// Returns a mutable reference to the column for deserialization.
+        /// The column is borrowed from the caller who guarantees mutability,
+        /// but it is stored as `ColumnPtr` (shared with the caller), so we cannot use `assumeMutableRef`.
+        /// Routed through `borrowColumnRef` so all single-value field serializers share the same helper.
+        IColumn & columnRef() const { return borrowColumnRef(column); }
+
         template <typename NumberType>
         void writeInt(NumberType value)
         {
@@ -373,7 +400,7 @@ namespace
         void readRow(size_t row_num) override
         {
             NumberType value = read_function();
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -382,7 +409,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertValue(getDefaultNumber());
@@ -629,7 +656,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             typename ColumnType::Chars & data = column_string.getChars();
             const size_t old_data_size = data.size();
@@ -685,7 +712,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_string = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_string = assert_cast<ColumnType &>(columnRef());
             const size_t old_size = column_string.size();
             if (row_num < old_size)
                 return;
@@ -1176,7 +1203,7 @@ namespace
         void readRow(size_t row_num) override
         {
             DecimalType decimal = read_function();
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 column_decimal.getElement(row_num) = decimal;
             else
@@ -1185,7 +1212,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_decimal = assert_cast<ColumnType &>(column->assumeMutableRef());
+            auto & column_decimal = assert_cast<ColumnType &>(columnRef());
             if (row_num < column_decimal.size())
                 return;
             column_decimal.insertValue(getDefaultDecimal());
@@ -1747,7 +1774,7 @@ namespace
         void readRow(size_t row_num) override
         {
             UUID value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1756,7 +1783,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<UUID> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1823,7 +1850,7 @@ namespace
         void readRow(size_t row_num) override
         {
             IPv6 value = read_function();
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 column_vector.getElement(row_num) = value;
             else
@@ -1832,7 +1859,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(column->assumeMutableRef());
+            auto & column_vector = assert_cast<ColumnVector<IPv6> &>(columnRef());
             if (row_num < column_vector.size())
                 return;
             column_vector.insertDefault();
@@ -1907,7 +1934,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             Arena & arena = column_af.createOrGetArena();
             AggregateDataPtr data = nullptr;
             readStr(text_buffer);
@@ -1924,7 +1951,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_af = assert_cast<ColumnAggregateFunction &>(column->assumeMutableRef());
+            auto & column_af = assert_cast<ColumnAggregateFunction &>(columnRef());
             if (row_num < column_af.size())
                 return;
 
@@ -1992,7 +2019,7 @@ namespace
             {
                 if (i == presence_column_idx)
                 {
-                    presence_column = columns[presence_column_idx]->assumeMutable();
+                    presence_column = borrowColumnRef(columns[presence_column_idx]).getPtr();
                 }
                 else
                 {
@@ -2092,9 +2119,13 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
-            auto & nested_column = column_nullable.getNestedColumn();
-            auto & null_map = column_nullable.getNullMapData();
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
+            /// The nested column and null-map column are stored inside `ColumnNullable` as `WrappedPtr`s,
+            /// and the leaf serializer holds its own `ColumnPtr` to the nested column, so `use_count > 1`.
+            /// Bypass the `assumeMutableRef` assertion by borrowing through the column pointers directly.
+            auto & nested_column = borrowColumnRef(column_nullable.getNestedColumnPtr());
+            auto & null_map_column = assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr()));
+            auto & null_map = null_map_column.getData();
             size_t old_size = null_map.size();
 
             nested_serializer->readRow(row_num);
@@ -2122,19 +2153,23 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.insertDefault();
+            /// `ColumnNullable::insertDefault` goes through `getNestedColumn()` non-const, which dereferences
+            /// the nested `WrappedPtr` and triggers the `use_count == 1` assertion; the nested serializer
+            /// holds an additional `ColumnPtr` to the same column, so we borrow through pointers instead.
+            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
+            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(true);
         }
 
         void insertNestedDefaults(size_t row_num)
         {
-            auto & column_nullable = assert_cast<ColumnNullable &>(column->assumeMutableRef());
+            auto & column_nullable = assert_cast<ColumnNullable &>(borrowColumnRef(column));
             if (row_num < column_nullable.size())
                 return;
-            column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(false);
+            borrowColumnRef(column_nullable.getNestedColumnPtr()).insertDefault();
+            assert_cast<ColumnUInt8 &>(borrowColumnRef(column_nullable.getNullMapColumnPtr())).getData().push_back(false);
         }
 
         void resetState() override
@@ -2233,7 +2268,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
 
             if (!read_value_column_set)
             {
@@ -2261,7 +2296,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_lc = assert_cast<ColumnLowCardinality &>(column->assumeMutableRef());
+            auto & column_lc = assert_cast<ColumnLowCardinality &>(borrowColumnRef(column));
             if (row_num < column_lc.size())
                 return;
 
@@ -2334,7 +2369,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             auto & offsets = column_array.getOffsets();
             size_t old_size = offsets.size();
             if (row_num + 1 < old_size)
@@ -2357,7 +2392,7 @@ namespace
             catch (...)
             {
                 if (data_column->size() > old_data_size)
-                    data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                    const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
                 if (offsets.size() > old_size)
                     column_array.getOffsetsColumn().popBack(offsets.size() - old_size);
                 throw;
@@ -2366,7 +2401,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_array = assert_cast<ColumnArray &>(column->assumeMutableRef());
+            auto & column_array = assert_cast<ColumnArray &>(borrowColumnRef(column));
             if (row_num < column_array.size())
                 return;
             column_array.insertDefault();
@@ -2437,7 +2472,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
 
             size_t old_size = column_tuple.size();
             if (row_num >= old_size)
@@ -2462,7 +2497,7 @@ namespace
 
         void insertDefaults(size_t row_num) override
         {
-            auto & column_tuple = assert_cast<ColumnTuple &>(column->assumeMutableRef());
+            auto & column_tuple = assert_cast<ColumnTuple &>(borrowColumnRef(column));
             size_t old_size = column_tuple.size();
 
             if (row_num > old_size)
@@ -2477,9 +2512,9 @@ namespace
             {
                 for (size_t i : collections::range(tuple_size))
                 {
-                    auto element_column = column_tuple.getColumnPtr(i)->assumeMutable();
-                    if (element_column->size() > old_size)
-                        element_column->popBack(element_column->size() - old_size);
+                    auto & element_column = borrowColumnRef(column_tuple.getColumnPtr(i));
+                    if (element_column.size() > old_size)
+                        element_column.popBack(element_column.size() - old_size);
                 }
                 throw;
             }
@@ -2584,7 +2619,7 @@ namespace
             {
                 mutable_columns.resize(num_columns_);
                 for (size_t i : collections::range(num_columns_))
-                    mutable_columns[i] = columns_[i]->assumeMutable();
+                    mutable_columns[i] = borrowColumnRef(columns_[i]).getPtr();
 
                 std::vector<UInt8> column_is_missing;
                 column_is_missing.resize(num_columns_, true);
@@ -2598,6 +2633,19 @@ namespace
 
         void setColumns(const MutableColumnPtr * columns_, size_t num_columns_) override
         {
+            /// This is the read-mode entry point. `MutableColumnPtr` is move-only and represents
+            /// unique ownership, so the caller's mutability claim is equivalent to `use_count() == 1`
+            /// at this exact moment (before we add any references of our own via `getPtr()`).
+            ///
+            /// Validating here gives us a debug ownership check for the entire read path without
+            /// false-positives from `ProtobufSerializer`-internal sharing (the message-level
+            /// `mutable_columns` cache and each leaf field serializer's stored `ColumnPtr`), which
+            /// only accrue after this point.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+            for (size_t i : collections::range(num_columns_))
+                chassert(columns_[i]->use_count() == 1);
+#endif
+
             Columns cols;
             cols.reserve(num_columns_);
             for (size_t i : collections::range(num_columns_))
@@ -3109,12 +3157,12 @@ namespace
                 if (row_num < old_size)
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().back() = data_size;
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().back() = data_size;
                 }
                 else
                 {
                     for (auto & offset_column : offset_columns)
-                        assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                        assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
                 }
             }
             catch (...)
@@ -3122,12 +3170,12 @@ namespace
                 for (auto & data_column : data_columns)
                 {
                     if (data_column->size() > old_data_size)
-                        data_column->assumeMutableRef().popBack(data_column->size() - old_data_size);
+                        const_cast<IColumn &>(*data_column).popBack(data_column->size() - old_data_size);
                 }
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }
@@ -3143,14 +3191,14 @@ namespace
             {
                 size_t data_size = data_columns[0]->size();
                 for (auto & offset_column : offset_columns)
-                    assert_cast<ColumnArray::ColumnOffsets &>(offset_column->assumeMutableRef()).getData().push_back(data_size);
+                    assert_cast<ColumnArray::ColumnOffsets &>(const_cast<IColumn &>(*offset_column)).getData().push_back(data_size);
             }
             catch (...)
             {
                 for (auto & offset_column : offset_columns)
                 {
                     if (offset_column->size() > old_size)
-                        offset_column->assumeMutableRef().popBack(offset_column->size() - old_size);
+                        const_cast<IColumn &>(*offset_column).popBack(offset_column->size() - old_size);
                 }
                 throw;
             }

@@ -83,8 +83,13 @@ ColumnObject::ColumnObject(
     dynamic_paths_ptrs.reserve(dynamic_paths_.size());
     for (auto & [path, column] : dynamic_paths_)
     {
+        /// Capture the raw pointer from the `MutableColumnPtr` before moving it. Going through
+        /// `it->second.get()` after the move would call `WrappedPtr::get` (non-const), which
+        /// asserts `use_count() == 1`; that breaks when this constructor is reached via
+        /// `create(const ColumnPtr &, ...)` while the caller still holds shared references.
+        auto * raw_ptr = column.get();
         auto it = dynamic_paths.emplace(path, std::move(column)).first;
-        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
+        dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(raw_ptr);
         sorted_dynamic_paths.insert(it->first);
     }
 }
@@ -143,20 +148,31 @@ ColumnObject::Ptr ColumnObject::create(
     size_t max_dynamic_types_,
     const ColumnObject::StatisticsPtr & statistics_)
 {
+    /// Per the doc comment on the header overload, the underlying columns may be shared with
+    /// the caller. `assumeMutable` here would `chassert(use_count() == 1)` and abort, while
+    /// `IColumn::mutate` would deep-clone. Bypass the assertion via `const_cast` + `getPtr`
+    /// — equivalent to the old `assumeMutable` fast path. The result is returned as `Ptr`
+    /// (immutable), and any subsequent mutation must go through `IColumn::mutate`, which
+    /// deep-clones shared sub-columns at the proper time.
+    auto borrow_as_mutable = [](const ColumnPtr & col) -> MutableColumnPtr
+    {
+        return const_cast<IColumn *>(col.get())->getPtr();
+    };
+
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
     for (const auto & [path, column] : typed_paths_)
-        mutable_typed_paths[path] = typed_paths_.at(path)->assumeMutable();
+        mutable_typed_paths[path] = borrow_as_mutable(column);
 
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_dynamic_paths;
     mutable_dynamic_paths.reserve(dynamic_paths_.size());
     for (const auto & [path, column] : dynamic_paths_)
-        mutable_dynamic_paths[path] = dynamic_paths_.at(path)->assumeMutable();
+        mutable_dynamic_paths[path] = borrow_as_mutable(column);
 
     return ColumnObject::create(
         std::move(mutable_typed_paths),
         std::move(mutable_dynamic_paths),
-        shared_data_->assumeMutable(),
+        borrow_as_mutable(shared_data_),
         max_dynamic_paths_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
@@ -461,7 +477,10 @@ void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<std::pair<Stri
 
     for (const auto & [path, column] : paths)
     {
-        auto it = dynamic_paths.emplace(path, column).first;
+        /// `column` may still be held by the caller (`use_count > 1`), so detach
+        /// via `IColumn::mutate` before storing to satisfy the COW ownership
+        /// invariant on the `WrappedPtr` in `dynamic_paths`.
+        auto it = dynamic_paths.emplace(path, IColumn::mutate(column)).first;
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(it->second.get());
         sorted_dynamic_paths.insert(it->first);
     }
@@ -1265,7 +1284,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
 
 void ColumnObject::filter(const Filter & filt)
 {
-    for (const auto & [path, column] : typed_paths)
+    for (auto & [path, column] : typed_paths)
         column->assumeMutable()->filter(filt);
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
@@ -2276,16 +2295,23 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         return;
 
     /// First, check if all dynamic paths have correct sizes, just in case.
-    size_t expected_size = shared_data->size();
-    for (const auto & [path, column] : dynamic_paths)
+    /// `shared_data->size()` and `column->size()` go through `WrappedPtr::operator->` —
+    /// access through the `const` view so the non-const path's `assumeMutableRef`
+    /// `chassert(use_count() == 1)` does not fire for entries referenced from a substream cache.
+    size_t expected_size = std::as_const(shared_data)->size();
+    for (const auto & [path, column] : std::as_const(dynamic_paths))
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
 
     /// Second, iterate over paths in shared data and check if we have any path that is also present in dynamic paths.
-    const auto & shared_data_offsets = getSharedDataOffsets();
-    const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
+    /// Use the `const` overloads (via `std::as_const`) so that the read-only inspection below does not go through
+    /// `WrappedPtr::operator*`/`operator->` of the non-const path, which calls `assumeMutableRef` and
+    /// `chassert(use_count() == 1)`. `shared_data` may be referenced from a substream cache after
+    /// `deserializeBinaryBulkWithMultipleStreams` and have `use_count() > 1` at this point.
+    const auto & shared_data_offsets = std::as_const(*this).getSharedDataOffsets();
+    const auto [shared_data_paths, shared_data_values] = std::as_const(*this).getSharedDataPathsAndValues();
     /// Remember the first row with duplicates if any. We will start repair from this row.
     std::optional<size_t> first_row_with_duplicates = std::nullopt;
     size_t size = shared_data_offsets.size();
@@ -2314,10 +2340,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
 
     /// During repair we create new shared data without duplicated dynamic paths
     /// update corresponding dynamic paths with values from shared data.
-    auto new_shared_data = shared_data->cloneResized(*first_row_with_duplicates);
+    /// Use the `const` view of `shared_data` for `cloneResized` so the call does not go through
+    /// `WrappedPtr::operator->` -> `assumeMutableRef` when `shared_data` is referenced from a substream cache.
+    auto new_shared_data = std::as_const(shared_data)->cloneResized(*first_row_with_duplicates);
     const auto [new_shared_data_paths, new_shared_data_values, new_shared_data_offsets] = getSharedDataPathsValuesAndOffsets(*new_shared_data);
     new_shared_data_offsets->reserve(size);
     PathToColumnMap new_dynamic_paths;
+    /// `dynamic_paths` entries may be referenced from a substream cache (`use_count() > 1`)
+    /// after `deserializeBinaryBulkWithMultipleStreams`. Read them through the `const` view
+    /// so that `WrappedPtr::operator->` does not go through `assumeMutableRef` with
+    /// `chassert(use_count() == 1)`.
+    const auto & const_dynamic_paths = std::as_const(dynamic_paths);
     for (size_t i = *first_row_with_duplicates; i < size; ++i)
     {
         size_t shared_data_start = shared_data_offsets[i - 1];
@@ -2325,8 +2358,8 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
             auto path = shared_data_paths->getDataAt(j);
-            auto it = dynamic_paths.find(path);
-            if (it == dynamic_paths.end())
+            auto it = const_dynamic_paths.find(path);
+            if (it == const_dynamic_paths.end())
             {
                 new_shared_data_paths->insertFrom(*shared_data_paths, j);
                 new_shared_data_values->insertFrom(*shared_data_values, j);
@@ -2370,7 +2403,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
         for (auto & [path, column] : new_dynamic_paths)
         {
             if (column->size() == i)
-                column->insertFrom(*dynamic_paths.at(path), i);
+                column->insertFrom(*const_dynamic_paths.at(path), i);
         }
     }
 

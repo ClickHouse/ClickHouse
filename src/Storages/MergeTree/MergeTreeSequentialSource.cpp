@@ -251,8 +251,10 @@ try
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
-            /// Use `IColumn::mutate` instead of `assumeMutableRef` so the column is cloned
-            /// when it is shared. Mutating a shared column in place is a copy-on-write violation.
+            /// `convertToFullColumnIfSparse` on a non-sparse column returns `getPtr()`, which shares
+            /// the same column. We then need unique ownership to mutate the offset data below, so
+            /// route through `IColumn::mutate`, which clones when shared and is a no-op otherwise.
+            /// Hold the mutable pointer locally so the `assert_cast` below can produce a non-const reference.
             auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
             auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())

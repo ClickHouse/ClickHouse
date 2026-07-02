@@ -136,7 +136,13 @@ void CombinedPatchBuilder::build()
     }
 
     for (size_t i = 0; i < all_patch_blocks.size(); ++i)
-        versions[i] = &getColumnUInt64Data(all_patch_blocks[i], PartDataVersionColumn::name);
+    {
+        /// `versions` holds const pointers, so call the const overload of `getColumnUInt64Data`.
+        /// The non-const overload uses `assumeMutableRef` which trips
+        /// `chassert(use_count() == 1)` when patch blocks are shared between concurrent applies.
+        const Block & const_patch_block = all_patch_blocks[i];
+        versions[i] = &getColumnUInt64Data(const_patch_block, PartDataVersionColumn::name);
+    }
 
     enum class RowOp
     {
@@ -391,7 +397,14 @@ void applyPatchesToBlockRaw(
             };
 
             if (canApplyPatchInplace(*result_column.column))
-                result_column.column->assumeMutableRef().updateInplaceFrom(patch);
+            {
+                /// `assumeMutableRef` `chassert(use_count() == 1)` would fire when the column
+                /// is shared (e.g., the same `ColumnPtr` is held by a substream cache).
+                /// `IColumn::mutate` clones when shared, so the in-place update is safe.
+                auto mutable_column = IColumn::mutate(std::move(result_column.column));
+                mutable_column->updateInplaceFrom(patch);
+                result_column.column = std::move(mutable_column);
+            }
             else
                 result_column.column = result_column.column->updateFrom(patch);
         }
@@ -423,7 +436,14 @@ void applyPatchesToBlockCombined(
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
 
         if (canApplyPatchInplace(*result_column.column))
-            result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
+        {
+            /// `assumeMutableRef` `chassert(use_count() == 1)` would fire when the column
+            /// is shared (e.g., the same `ColumnPtr` is held by a substream cache).
+            /// `IColumn::mutate` clones when shared, so the in-place update is safe.
+            auto mutable_column = IColumn::mutate(std::move(result_column.column));
+            mutable_column->updateInplaceFrom(multi_patch);
+            result_column.column = std::move(mutable_column);
+        }
         else
             result_column.column = result_column.column->updateFrom(multi_patch);
     }

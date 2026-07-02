@@ -47,7 +47,15 @@ public:
     using Base = COWHelper<IColumnHelper<ColumnMap>, ColumnMap>;
 
     static Ptr create(const ColumnPtr & keys, const ColumnPtr & values, const ColumnPtr & offsets, const StatisticsPtr & statistics_ = {});
-    static Ptr create(const ColumnPtr & column, const StatisticsPtr & statistics_ = {}) { return ColumnMap::create(column->assumeMutable(), statistics_); }
+    static Ptr create(const ColumnPtr & column, const StatisticsPtr & statistics_ = {})
+    {
+        /// Per the doc comment above, callers may keep their own immutable reference — the
+        /// underlying column may be shared. `assumeMutable` would `chassert(use_count() == 1)`
+        /// and abort. Bypass the assertion via `const_cast` + `getPtr` — equivalent to the old
+        /// `assumeMutable` fast path. The result is returned as `Ptr` (immutable), and any
+        /// mutation must go through `IColumn::mutate`, which deep-clones shared sub-columns.
+        return ColumnMap::create(const_cast<IColumn *>(column.get())->getPtr(), statistics_);
+    }
     static Ptr create(ColumnPtr && arg, const StatisticsPtr & statistics_ = {}) { return create(arg, statistics_); }
 
     static MutablePtr create(MutableColumnPtr && nested_, const StatisticsPtr & statistics_ = {}) { return Base::create(std::move(nested_), statistics_); }
@@ -126,7 +134,15 @@ public:
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
-    void finalize() override { nested->finalize(); }
+    void finalize() override
+    {
+        /// `nested` can be shared by a row-input format serializer that retains a `ColumnPtr` to it
+        /// between rows of the same chunk; the format then calls `finalize()` on the owning column
+        /// while the borrowed reference is still alive. Go through the const dereference so that
+        /// `WrappedPtr` does not trigger its `use_count() == 1` assertion in this safe case.
+        const auto & nested_ref = nested;
+        const_cast<IColumn &>(*nested_ref).finalize();
+    }
     bool isFinalized() const override { return nested->isFinalized(); }
 
     const ColumnArray & getNestedColumn() const;
