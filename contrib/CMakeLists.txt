@@ -263,6 +263,7 @@ add_contrib (bech32)
 
 add_contrib (libcotp-cmake libcotp)
 
+add_contrib (sql-console-cmake sql-console)
 add_contrib (clickstack-cmake clickstack)
 
 add_contrib (librseq-cmake librseq)

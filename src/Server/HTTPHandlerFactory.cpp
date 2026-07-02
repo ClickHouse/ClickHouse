@@ -434,6 +434,21 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     factory.addPathToHints("/clickstack");
     factory.addHandler(clickstack_handler);
 
+    auto sql_console_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<SQLConsoleUIRequestHandler>>(server);
+    /// Match "/ui" exactly or "/ui" followed by a path/query/fragment boundary, so that sibling
+    /// routes like "/uix" are not hijacked by the SQL Console SPA fallback.
+    sql_console_handler->addFilter([](const auto & request)
+    {
+        const auto & uri = request.getURI();
+        return uri == "/ui"
+            || startsWith(uri, "/ui/")
+            || startsWith(uri, "/ui?")
+            || startsWith(uri, "/ui#");
+    });
+    sql_console_handler->allowGetAndHeadRequest();
+    factory.addPathToHints("/ui");
+    factory.addHandler(sql_console_handler);
+
 #if USE_SSL
     if (server.config().has("acme"))
     {
