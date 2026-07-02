@@ -96,6 +96,12 @@ class LakeTableGenerator:
         return None
 
     @staticmethod
+    def _rand_comment() -> str:
+        from .datagenerator import SOME_STRINGS
+
+        return random.choice(SOME_STRINGS).replace("'", "\\'")
+
+    @staticmethod
     def _refresh_table_model(spark: SparkSession, table: SparkTable):
         schema = spark.table(table.get_table_full_path()).schema
         new_columns = {}
@@ -103,10 +109,7 @@ class LakeTableGenerator:
             generated = (
                 "delta.generationExpression" in field.metadata
                 or "delta.identity.start" in field.metadata
-                or (
-                    field.name in table.columns
-                    and table.columns[field.name].generated
-                )
+                or (field.name in table.columns and table.columns[field.name].generated)
             )
             new_columns[field.name] = SparkColumn(
                 field.name, field.dataType, field.nullable, generated
@@ -175,11 +178,7 @@ class LakeTableGenerator:
             # Alter column comment
             flat_cols = list(table.flat_columns().keys())
             if flat_cols:
-                col = random.choice(flat_cols)
-                from .datagenerator import SOME_STRINGS
-
-                comment = random.choice(SOME_STRINGS).replace("'", "\\'")
-                return f"ALTER TABLE {tpath} ALTER COLUMN {col} COMMENT '{comment}';"
+                return f"ALTER TABLE {tpath} ALTER COLUMN {random.choice(flat_cols)} COMMENT '{self._rand_comment()}';"
         elif next_operation <= 775 and self.get_format() != "paimon":
             # Alter column SET/DROP NOT NULL (not supported by Paimon)
             cols = list(table.columns.keys())
@@ -255,9 +254,30 @@ class LakeTableGenerator:
         )
         first = True
 
-        ddl = f"CREATE TABLE IF NOT EXISTS {catalog_name}.test.{table_name} ("
+        # Spark V2 catalogs (Iceberg, Delta) support CREATE OR REPLACE TABLE: it
+        # atomically replaces the table's schema and data while keeping its
+        # history, and may swap the declared schema or data file format under
+        # the same name - good fuzz coverage for readers reconciling a table
+        # that changed shape mid-flight. Paimon's Spark catalog does not
+        # implement REPLACE, so keep IF NOT EXISTS there. Restricted to
+        # non-deterministic tables since, unlike IF NOT EXISTS, it is not a
+        # no-op when the table already exists - it wipes and recreates it.
+        use_or_replace = (
+            not deterministic
+            and self.get_format() in ("iceberg", "delta")
+            and random.randint(1, 4) == 1
+        )
+        create_clause = (
+            "CREATE OR REPLACE TABLE"
+            if use_or_replace
+            else "CREATE TABLE IF NOT EXISTS"
+        )
+        ddl = f"{create_clause} {catalog_name}.test.{table_name} ("
         columns_def = []
         columns_spark = {}
+        # Delta IDENTITY columns cannot be partition columns (generated
+        # expression columns can be); collect them to exclude below.
+        identity_cols: set[str] = set()
         self.type_mapper.reset()
 
         # Add a random column with a complex type to increase variety, but only for non-deterministic tables to avoid issues with schema inference in tests
@@ -289,8 +309,16 @@ class LakeTableGenerator:
                 next_ch_type, False, ClickHouseMapping.Spark
             )
             generated = self.add_generated_col(columns_spark, spark_type)
+            if "IDENTITY" in generated:
+                identity_cols.add(val["name"])
+            # Optional column COMMENT (metadata only; supported by both formats)
+            col_comment = (
+                f" COMMENT '{self._rand_comment()}'"
+                if random.randint(1, 4) == 1
+                else ""
+            )
             columns_def.append(
-                f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}"
+                f"{val['name']} {str_type}{'' if nullable else ' NOT NULL'}{generated}{col_comment}"
             )
             columns_spark[val["name"]] = SparkColumn(
                 val["name"], spark_type, nullable, len(generated) > 0
@@ -314,16 +342,46 @@ class LakeTableGenerator:
             next_catalog,
         )
 
-        # Add Partition by, can't partition by all columns
-        if random.randint(1, 5) == 1:
-            partition_clauses = self.add_partition_clauses(res)
-            random.shuffle(partition_clauses)
-            random_subset = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            ddl += f" PARTITIONED BY ({','.join(random_subset)})"
+        # Delta liquid clustering: CLUSTER BY is mutually exclusive with
+        # PARTITIONED BY and is Delta-only. It takes up to 4 keys, each a
+        # stats-eligible scalar leaf - top-level or a nested struct field by
+        # dotted path (same flattened, backtick-quoted form the Iceberg
+        # transforms use). Excludes container leaves (Array/Map/Struct) and any
+        # column produced by a generated expression.
+        clustered = False
+        if self.get_format() == "delta" and random.randint(1, 5) == 1:
+            cluster_cols = [
+                path
+                for path, dtype in res.flat_columns().items()
+                if not isinstance(dtype, (sp.ArrayType, sp.MapType, sp.StructType))
+                and not columns_spark[path.split(".", 1)[0]].generated
+            ]
+            if cluster_cols:
+                random.shuffle(cluster_cols)
+                chosen = cluster_cols[: random.randint(1, min(4, len(cluster_cols)))]
+                ddl += f" CLUSTER BY ({','.join(chosen)})"
+                clustered = True
+
+        # Add Partition by, can't partition by all columns. Identity columns
+        # cannot be Delta partition columns; other formats have none, so the
+        # filter is a no-op there.
+        if not clustered and random.randint(1, 5) == 1:
+            partition_clauses = [
+                c for c in self.add_partition_clauses(res) if c not in identity_cols
+            ]
+            if partition_clauses:
+                random.shuffle(partition_clauses)
+                random_subset = random.sample(
+                    partition_clauses,
+                    k=random.randint(1, min(3, len(partition_clauses))),
+                )
+                ddl += f" PARTITIONED BY ({','.join(random_subset)})"
 
         # ddl += self.set_table_location(next_location) no location needed yet
+
+        # Optional table COMMENT (metadata only; supported by Iceberg and Delta)
+        if random.randint(1, 3) == 1:
+            ddl += f" COMMENT '{self._rand_comment()}'"
 
         properties = self.set_basic_properties()
         # Add table properties
@@ -444,6 +502,9 @@ class IcebergTableGenerator(LakeTableGenerator):
                 res.append(f"hour({k})")
             res.append(f"bucket({random.randint(0, 1000)}, {k})")
             res.append(f"truncate({random.randint(0, 1000)}, {k})")
+            # void() always yields null partition values (the transform Iceberg
+            # uses to retire a partition field); valid in the Spark SQL spec.
+            res.append(f"void({k})")
         return res
 
     def add_generated_col(
@@ -697,9 +758,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             "write.merge.mode": lambda: random.choice(
                 ["copy-on-write", "merge-on-read"]
             ),
-            "write.metadata.compression-codec": lambda: random.choice(
-                ["gzip", "none"]
-            ),
+            "write.metadata.compression-codec": lambda: random.choice(["gzip", "none"]),
             "write.spark.fanout.enabled": true_false_lambda,
             "write.wap.enabled": true_false_lambda,
             "read.manifest.cache.enabled": true_false_lambda,
@@ -1339,6 +1398,11 @@ class PaimonTableGenerator(LakeTableGenerator):
             del properties["bucket-key"]
         elif "bucket" in properties and "bucket-key" not in properties:
             properties["bucket-key"] = random.choice(flat_cols)
+        # full-compaction.delta-commits is only valid for fixed-bucket tables. Paimon rejects it
+        # for unaware bucket (append-only without a 'bucket') and dynamic bucket (primary key
+        # without a fixed 'bucket') alike, so require a fixed bucket here.
+        if "full-compaction.delta-commits" in properties and "bucket" not in properties:
+            del properties["full-compaction.delta-commits"]
         for min_key, max_key in (
             ("snapshot.num-retained.min", "snapshot.num-retained.max"),
             ("compaction.min.file-num", "compaction.max.file-num"),

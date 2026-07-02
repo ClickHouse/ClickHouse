@@ -1,0 +1,244 @@
+import multiprocessing
+import os
+import pty
+import select
+import shlex
+import time
+
+TIMEOUT_SECONDS = 30
+
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# committed-query cases only see the fresh ":)" prompt once the query has executed server-side,
+# which can take longer than the inter-keystroke drain on slow (sanitizer) builds.
+FINAL_WAIT_SECONDS = 20
+
+DEBUG_LOG = os.path.join(
+    os.environ["CLICKHOUSE_TMP"],
+    os.path.basename(os.path.abspath(__file__)).strip(".python") + ".debuglog",
+)
+
+# The gray SGR sequence replxx uses for the as-you-type hint (Color::GRAY -> "0;1;30").
+HINT_COLOR = "\x1b[0;1;30m"
+
+
+def read_until(master, debug_log_fd, predicate, timeout):
+    output = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r, _, _ = select.select([master], [], [], 0.3)
+        if not r:
+            if predicate(output):
+                return output
+            continue
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+        if predicate(output):
+            return output
+    return output
+
+
+def drain(master, debug_log_fd, idle):
+    output = ""
+    while True:
+        r, _, _ = select.select([master], [], [], idle)
+        if not r:
+            break
+        try:
+            chunk = os.read(master, 4096)
+        except OSError:
+            break
+        debug_log_fd.write(repr(chunk) + "\n")
+        debug_log_fd.flush()
+        output += chunk.decode(errors="replace")
+    return output
+
+
+def run_case(program, argv, name, keystrokes, check, state=None):
+    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
+    them so replxx repaints), then run `check` over the collected output."""
+    shell_pid, master = pty.fork()
+    if shell_pid == 0:
+        os.environ["TERM"] = "xterm"
+        os.execv(program, argv)
+        return
+
+    debug_log_fd = open(DEBUG_LOG, "a")
+    try:
+        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+
+        output = ""
+        for keys in keystrokes:
+            os.write(master, keys)
+            output += drain(master, debug_log_fd, 0.4)
+
+        # The last expected output may arrive only after the committed query executes and a fresh
+        # prompt is printed, which can outlast the inter-keystroke drain on slow builds. Keep
+        # reading until the check passes instead of giving up after a single drain window.
+        if not check(output):
+            output += read_until(
+                master, debug_log_fd, lambda extra: check(output + extra), FINAL_WAIT_SECONDS
+            )
+
+        ok = check(output)
+        print(f"{name}: {'OK' if ok else 'FAIL'}")
+        state.value = 0 if ok else 1
+    finally:
+        os.close(master)
+        debug_log_fd.close()
+
+
+def run_with_timeout(program, argv, name, keystrokes, check):
+    for attempt in range(5):
+        state = multiprocessing.Value("i", -1)
+        process = multiprocessing.Process(
+            target=run_case,
+            args=(program, argv, name, keystrokes, check),
+            kwargs={"state": state},
+        )
+        process.start()
+        process.join(TIMEOUT_SECONDS + FINAL_WAIT_SECONDS)
+        if process.is_alive():
+            process.terminate()
+        if state.value in (0, 1):
+            return
+        # transient timeout on a loaded machine - retry
+    print(f"{name}: FAIL")
+
+
+def main():
+    program = os.environ["CLICKHOUSE_LOCAL"]
+    base = shlex.split(program)
+    args = base + ["--wait_for_suggestions_to_load"]
+
+    # 1. As-you-type ghost text: typing a unique prefix shows the remaining suffix in the gray
+    #    hint color (here "ive", the suffix of "concatAssumeInjective").
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "ghost_text",
+        [b"SELECT concatAssumeInject"],
+        lambda o: (HINT_COLOR + "ive") in o,
+    )
+
+    # 2. Tab accepts the hint: the full word is inserted.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "tab_accept",
+        [b"SELECT concatAssumeInject", b"\t"],
+        lambda o: "concatAssumeInjective" in o and "\x07" not in o,
+    )
+
+    # 3. Right at the end of the line also accepts the hint.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "right_accept",
+        [b"SELECT concatAssumeInject", b"\x1b[C"],
+        lambda o: "concatAssumeInjective" in o and "\x07" not in o,
+    )
+
+    # 3b. Down steps into the hint list and Tab accepts the selected (first) hint. For the prefix
+    #     "Replicated" the alphabetically-first match is "ReplicatedAggregatingMergeTree".
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "down_navigate",
+        [b"SELECT Replicated", b"\x1b[B", b"\t"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
+    # 3c. In a multi-line query the hints (shown at the end of the last line) are still navigable:
+    #     Down steps into the list and Tab accepts the first one.
+    run_with_timeout(
+        base[0],
+        args + ["--multiline", "--hints", "1"],
+        "multi_line_navigate",
+        [b"SELECT x", b"\r", b"FROM Replicated", b"\x1b[B", b"\t"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
+    # 3d. Enter accepts a chosen hint (after stepping into the list with Down), like Tab/Right.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "enter_accept",
+        [b"SELECT Replicated", b"\x1b[B", b"\r"],
+        lambda o: "ReplicatedAggregatingMergeTree" in o and "\x07" not in o,
+    )
+
+    # 3e. Right does NOT pop the old-style completion list when several matches are shown and none
+    #     is chosen — it just moves the cursor (a no-op at the end), so typing a letter right after
+    #     leaves the prefix untouched ("count" + Right + "X" -> "countX").
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "right_no_list",
+        [b"SELECT count", b"\x1b[C", b"X"],
+        lambda o: "countX" in o,
+    )
+
+    # 3f. Regression: stepping into the hint list with Down and then moving the cursor away and
+    #     back (Left, Right back to the end of the line) makes replxx drop its internal hint
+    #     selection. The wrapper must follow that drop — otherwise its stale selection would make
+    #     Enter (and Right) treat a no-longer-shown hint as chosen and get swallowed by completion
+    #     instead of running the query. After the dance no hint is selected, so Enter must COMMIT
+    #     the query and a fresh ":)" prompt must appear.
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "stale_selection_enter_commits",
+        [b"SELECT count", b"\x1b[B", b"\x1b[D", b"\x1b[C", b"\r"],
+        lambda o: ":)" in o,
+    )
+
+    # 4. --hints 0 disables the ghost text (no gray hint color emitted while typing).
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "0"],
+        "hints_off",
+        [b"SELECT concatAssumeInject"],
+        lambda o: HINT_COLOR not in o,
+    )
+
+    # 5. Priority: an identifier already present in the query is hinted before others.
+    #    "ReplicatedMergeTree" is typed earlier, so for the prefix "Repl" it must be ranked before
+    #    the alphabetically-first "ReplacingMergeTree".
+    #
+    #    Only the *rendered* hints are prefixed with the gray HINT_COLOR; the echoed input is
+    #    syntax-highlighted differently. Anchor the comparison on the colored hint text so the test
+    #    actually proves the ranking: matching the bare word would also find the typed
+    #    "ReplicatedMergeTree" in the input line and pass even if the prioritization were removed.
+    def in_query_first(o):
+        a = o.rfind(HINT_COLOR + "ReplicatedMergeTree")
+        b = o.rfind(HINT_COLOR + "ReplacingMergeTree")
+        return a != -1 and b != -1 and a < b
+
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "in_query_priority",
+        [b"SELECT ReplicatedMergeTree, Repl"],
+        in_query_first,
+    )
+
+    # 6. An identifier that exists only in the current query (an alias not present in the loaded
+    #    suggestion dictionary, i.e. not in system.completions) is still offered as a hint. Here
+    #    "zqxjUniqueAlias" is introduced as an alias and then re-typed up to "zqxjU"; the remaining
+    #    "niqueAlias" must be shown as ghost text even though no dictionary word starts with "zqxj".
+    run_with_timeout(
+        base[0],
+        args + ["--hints", "1"],
+        "in_query_alias_candidate",
+        [b"SELECT 1 AS zqxjUniqueAlias, zqxjU"],
+        lambda o: (HINT_COLOR + "niqueAlias") in o,
+    )
+
+
+if __name__ == "__main__":
+    main()
