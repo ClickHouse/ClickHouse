@@ -681,21 +681,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
             if (shouldIgnoreShardException(packet.exception->code()))
             {
-                /// `log` may be null (e.g. when the executor is created internally by
-                /// `getStructureOfRemoteTable`), so guard the logging like other call sites do.
                 if (log)
                     LOG_ERROR(log,
                         "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
                         connections->dumpAddresses(),
                         packet.exception->displayText());
 
-                /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
-                /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
                 reportShardSkipped();
 
-                /// The shard is skipped: the server has already terminated the query with this
-                /// exception and will not send `EndOfStream`, so mark the executor finished to
-                /// signal end of data and avoid waiting for more packets.
+                /// The server terminated the query with this exception and will not send `EndOfStream`,
+                /// so mark the executor finished to signal end of data.
                 finished = true;
                 return ReadResult(Block{});
             }
@@ -896,16 +891,12 @@ void RemoteQueryExecutor::finish()
 
                 if (shouldIgnoreShardException(packet.exception->code()))
                 {
-                    /// `log` may be null (e.g. when the executor is created internally by
-                    /// `getStructureOfRemoteTable`), so guard the logging like other call sites do.
                     if (log)
                         LOG_ERROR(log,
                             "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
                             connections->dumpAddresses(),
                             packet.exception->displayText());
 
-                    /// Count this skip against `max_skip_unavailable_shards_num` / `max_skip_unavailable_shards_ratio`
-                    /// (throws if the limits are exceeded), so the safety bounds also apply to exception-based skips.
                     reportShardSkipped();
 
                     /// Stop draining: the server terminated the query with this exception.
@@ -1079,20 +1070,20 @@ bool RemoteQueryExecutor::hasThrownException() const
 
 bool RemoteQueryExecutor::shouldIgnoreShardException(int exception_code) const
 {
-    /// Connection-related failures are handled where connections are established, not here as
-    /// server `Exception` packets, so the `unavailable` mode ignores nothing at this point.
     if (!skip_unavailable_shards)
         return false;
 
     switch (skip_unavailable_shards_mode)
     {
         case SkipUnavailableShardsMode::UNAVAILABLE:
+            /// Connection-related failures are skipped while establishing the connection, not here,
+            /// so at this point (a server `Exception` packet) this mode ignores nothing.
             return false;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING:
             return exception_code == ErrorCodes::UNKNOWN_TABLE || exception_code == ErrorCodes::UNKNOWN_DATABASE;
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
-            /// Ignore the exception only if the shard has not returned any data yet.
-            /// Once some data has been returned, an exception means partial results, which must not be silently accepted.
+            /// Ignore only an exception that arrived before the shard returned any data; once some data
+            /// was returned, an exception means partial results and must not be silently accepted.
             return !got_data_from_replica;
     }
 }
