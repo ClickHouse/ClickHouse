@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CORRUPTED_DATA;
+extern const int TOO_LARGE_SIZE_COMPRESSED;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -31,6 +32,13 @@ getCompressionCodecForFile(ReadBuffer & read_buffer, UInt32 & size_compressed, U
     uint8_t method = ICompressionCodec::readMethod(compressed_buffer.data());
     size_compressed = unalignedLoad<UInt32>(&compressed_buffer[1]);
     size_decompressed = unalignedLoad<UInt32>(&compressed_buffer[5]);
+
+    if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_SIZE_COMPRESSED,
+            "Compressed block header reports compressed size {} which is above the {} limit. Most likely corrupted data.",
+            size_compressed,
+            DBMS_MAX_COMPRESSED_SIZE);
 
     if (size_compressed < header_size)
         throw Exception(
