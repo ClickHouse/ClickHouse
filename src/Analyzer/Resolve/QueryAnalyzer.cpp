@@ -58,6 +58,7 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
@@ -4501,9 +4502,58 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     QueryTreeNodes result_table_function_arguments;
 
     auto skip_analysis_arguments_indexes = table_function_ptr->skipAnalysisForArguments(table_function_node, scope_context);
+    auto table_expression_argument_indexes = table_function_ptr->getTableExpressionArgumentIndexes(
+        table_function_node_typed.toAST(),
+        scope_context);
 
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
+
+    /// Resolve the non-query expression arguments of an `eval` table function (and of any `eval`
+    /// nested inside shard-side wrappers such as `loop(eval(...))`) in the initiator scope.
+    /// This is required because the outer scope (e.g. a `WITH` alias list) is not preserved when the
+    /// table function AST is sent to a remote shard, so expression arguments that reference such
+    /// bindings must be substituted with their resolved constants before the query leaves the initiator.
+    std::function<void(QueryTreeNodePtr &)> resolve_nested_eval_expression_arguments;
+    resolve_nested_eval_expression_arguments = [&](QueryTreeNodePtr & nested_node)
+    {
+        auto * nested_function_node = nested_node->as<FunctionNode>();
+        if (!nested_function_node)
+            return;
+
+        const auto & nested_function_name = nested_function_node->getFunctionName();
+        const auto nested_eval_table_function_ptr = TableFunctionFactory::instance().tryGet(nested_function_name, scope_context);
+        if (!nested_eval_table_function_ptr)
+            return;
+
+        auto & nested_arguments = nested_function_node->getArguments().getNodes();
+
+        if (nested_function_name == "eval")
+        {
+            if (!(nested_arguments.size() == 1 && isSubqueryNodeType(nested_arguments[0]->getNodeType())))
+            {
+                for (auto & eval_argument : nested_arguments)
+                {
+                    resolveExpressionNode(
+                        eval_argument,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/,
+                        false /*ignore_alias*/,
+                        false /*allow_niladic_functions*/);
+                }
+            }
+            return;
+        }
+
+        const auto nested_table_expression_argument_indexes
+            = nested_eval_table_function_ptr->getTableExpressionArgumentIndexes(nested_function_node->toAST(), scope_context);
+        for (const auto nested_table_expression_argument_index : nested_table_expression_argument_indexes)
+        {
+            if (nested_table_expression_argument_index < nested_arguments.size())
+                resolve_nested_eval_expression_arguments(nested_arguments[nested_table_expression_argument_index]);
+        }
+    };
 
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
@@ -4542,23 +4592,68 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         if (auto * table_function_argument_function = table_function_argument->as<FunctionNode>())
         {
             const auto & table_function_argument_function_name = table_function_argument_function->getFunctionName();
-            if (TableFunctionFactory::instance().isTableFunctionName(table_function_argument_function_name))
+            const auto nested_table_function_ptr = TableFunctionFactory::instance().tryGet(table_function_argument_function_name, scope_context);
+            auto table_expression_argument_index_it = std::find(
+                table_expression_argument_indexes.begin(),
+                table_expression_argument_indexes.end(),
+                table_function_argument_index);
+            if (table_expression_argument_index_it != table_expression_argument_indexes.end()
+                && nested_table_function_ptr)
             {
                 auto table_function_node_to_resolve_typed = std::make_shared<TableFunctionNode>(table_function_argument_function_name);
                 table_function_node_to_resolve_typed->getArgumentsNode() = table_function_argument_function->getArgumentsNode();
 
-                QueryTreeNodePtr table_function_node_to_resolve = std::move(table_function_node_to_resolve_typed);
-                if (table_function_argument_function_name == "view"
+                QueryTreeNodePtr table_function_node_to_resolve = table_function_node_to_resolve_typed;
+                if (table_function_argument_function_name == "eval")
+                {
+                    auto & eval_arguments = table_function_node_to_resolve->as<TableFunctionNode &>().getArguments().getNodes();
+                    if (!(eval_arguments.size() == 1 && isSubqueryNodeType(eval_arguments[0]->getNodeType())))
+                    {
+                        for (auto & eval_argument : eval_arguments)
+                        {
+                            resolveExpressionNode(
+                                eval_argument,
+                                scope,
+                                false /*allow_lambda_expression*/,
+                                false /*allow_table_expression*/,
+                                false /*ignore_alias*/,
+                                false /*allow_niladic_functions*/);
+                        }
+                    }
+
+                    /// The `eval` table function generates a subquery from its argument.
+                    /// The generated query may reference tables not available on the initiator,
+                    /// but expression arguments must still be resolved in the initiator scope
+                    /// before the query is sent to the remote server.
+                    skip_analysis_arguments_indexes.push_back(table_function_argument_index);
+                }
+                else if (hasShardSideResolvedTableFunctionArguments(table_function_node_to_resolve_typed->toAST(), scope_context)
                     || (table_function_argument_function_name == "merge"
                         && (table_function_name == "remote" || table_function_name == "remoteSecure"
                             || table_function_name == "cluster" || table_function_name == "clusterAllReplicas")))
                 {
-                    /// The `view` table function contains a subquery that may reference tables
+                    /// Some table functions contain subqueries that may reference tables
                     /// not available on the initiator.
                     /// The `merge` table function inside remote/cluster should not be resolved
                     /// on the initiator, because it pattern-matches tables that may only exist
                     /// on the remote server.
                     /// For example: SELECT count() FROM remote('host', merge(currentDatabase(), '^test'))
+                    ///
+                    /// Even though the wrapper itself is deferred to the shard, an `eval` nested inside it
+                    /// (e.g. `loop(eval(q))`) may still have non-query expression arguments that reference
+                    /// initiator-only bindings such as `WITH` aliases. Resolve them here before deferring,
+                    /// otherwise the shard receives the wrapper without the outer scope and raises
+                    /// `UNKNOWN_IDENTIFIER`.
+                    const auto wrapper_table_expression_argument_indexes
+                        = nested_table_function_ptr->getTableExpressionArgumentIndexes(
+                            table_function_node_to_resolve_typed->toAST(), scope_context);
+                    auto & wrapper_arguments = table_function_node_to_resolve_typed->getArguments().getNodes();
+                    for (const auto wrapper_table_expression_argument_index : wrapper_table_expression_argument_indexes)
+                    {
+                        if (wrapper_table_expression_argument_index < wrapper_arguments.size())
+                            resolve_nested_eval_expression_arguments(wrapper_arguments[wrapper_table_expression_argument_index]);
+                    }
+
                     skip_analysis_arguments_indexes.push_back(table_function_argument_index);
                 }
                 else

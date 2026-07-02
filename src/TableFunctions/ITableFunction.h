@@ -18,6 +18,9 @@ namespace DB
 {
 
 class Context;
+class ASTSelectWithUnionQuery;
+
+bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_ast, ContextPtr context);
 
 /** Interface for table functions.
   *
@@ -57,6 +60,23 @@ public:
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
       */
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+
+    /// Return indexes of arguments that are interpreted as table expressions.
+    virtual VectorWithMemoryTracking<size_t> getTableExpressionArgumentIndexes(
+        const ASTPtr & /*ast_function*/,
+        ContextPtr /*context*/) const
+    {
+        return {};
+    }
+
+    /// Return a query represented by a table function when it can be used directly in distributed rewrites.
+    virtual const ASTSelectWithUnionQuery * getSelectQueryForDistributedRewrite() const { return nullptr; }
+
+    /// Returns true if table function query arguments can reference tables that only exist on the shard.
+    virtual bool hasShardSideResolvedQueryArguments() const { return false; }
+
+    /// Returns true if this table function can be parsed on the initiator to check distributed rewrites.
+    virtual bool supportsInitiatorSideDistributedRewrite() const { return true; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 

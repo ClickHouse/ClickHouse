@@ -1,0 +1,422 @@
+#include <Analyzer/TableFunctionNode.h>
+#include <Columns/ColumnsCommon.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Storages/StorageView.h>
+#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/registerTableFunctions.h>
+#include <Common/typeid_cast.h>
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsSetOperationMode union_default_mode;
+}
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace
+{
+
+class TableFunctionEval : public ITableFunction
+{
+public:
+    static constexpr auto name = "eval";
+
+    std::string getName() const override { return name; }
+
+private:
+    StoragePtr executeImpl(
+        const ASTPtr & ast_function,
+        ContextPtr context,
+        const std::string & table_name,
+        ColumnsDescription cached_columns,
+        bool is_insert_query) const override;
+
+    const char * getStorageEngineName() const override { return "View"; }
+
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+
+    bool supportsInitiatorSideDistributedRewrite() const override { return false; }
+    bool hasShardSideResolvedQueryArguments() const override { return true; }
+
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
+    ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
+
+    ASTCreateQuery create;
+};
+
+VectorWithMemoryTracking<size_t> TableFunctionEval::skipAnalysisForArguments(
+    const QueryTreeNodePtr & query_node_table_function,
+    ContextPtr) const
+{
+    const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
+    const auto & arguments = table_function_node.getArguments().getNodes();
+
+    if (arguments.size() == 1)
+    {
+        const auto argument_type = arguments[0]->getNodeType();
+        if (argument_type == QueryTreeNodeType::QUERY || argument_type == QueryTreeNodeType::UNION)
+            return {0};
+    }
+
+    return {};
+}
+
+bool isStringFamily(const DataTypePtr & type)
+{
+    if (isString(type))
+        return true;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return isString(nullable_type->getNestedType());
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        const auto & dictionary_type = low_cardinality_type->getDictionaryType();
+        if (isString(dictionary_type))
+            return true;
+
+        if (const auto * nullable_dictionary_type = typeid_cast<const DataTypeNullable *>(dictionary_type.get()))
+            return isString(nullable_dictionary_type->getNestedType());
+    }
+
+    return false;
+}
+
+String extractQueryTextFromField(const Field & field, const DataTypePtr & type, const char * source)
+{
+    if (!isStringFamily(type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Table function `eval` requires {} to return a value of type `String`, `Nullable(String)`, "
+            "`LowCardinality(String)`, or `LowCardinality(Nullable(String))`, got {}",
+            source,
+            type->getName());
+
+    if (field.isNull())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` query text cannot be `NULL`");
+
+    if (field.getType() != Field::Types::String)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Table function `eval` requires {} to return a string value, got {}",
+            source,
+            field.getTypeName());
+
+    return field.safeGet<String>();
+}
+
+/// `eval(SELECT ...)` and `view(SELECT ...)` produce an `ASTFunction` whose argument is a bare
+/// `ASTSelectWithUnionQuery` (not wrapped in an `ASTSubquery`). When such a construct is nested inside
+/// a scalar expression — e.g. `eval(if(cond, eval(SELECT ...), ...))` — evaluating the surrounding
+/// expression as a constant calls `IAST::getColumnName` on the bare query node, which has no column
+/// name and raises a `LOGICAL_ERROR`. Detect these unwrapped query nodes and reject them up front
+/// with a clear message instead. A properly wrapped scalar subquery (`ASTSubquery`) is a valid part of
+/// a constant expression and is left alone.
+bool argumentContainsUnwrappedQuery(const ASTPtr & ast)
+{
+    if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+        return true;
+
+    if (ast->as<ASTSubquery>())
+        return false;
+
+    for (const auto & child : ast->children)
+        if (argumentContainsUnwrappedQuery(child))
+            return true;
+
+    return false;
+}
+
+String evaluateConstantQueryText(const ASTPtr & argument, ContextPtr context)
+{
+    if (argumentContainsUnwrappedQuery(argument))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Table function `eval` argument is not a constant expression");
+
+    /// The old analyzer's constant-expression path cannot evaluate some valid constants, for example lambdas in higher-order functions.
+    auto evaluation_context = Context::createCopy(context);
+    evaluation_context->setSetting("allow_experimental_analyzer", true);
+
+    const auto & [field, type] = evaluateConstantExpression(argument, evaluation_context);
+    return extractQueryTextFromField(field, type, "constant expression");
+}
+
+ASTPtr getSubqueryArgument(const ASTPtr & argument)
+{
+    if (argument->as<ASTSelectWithUnionQuery>())
+        return argument;
+
+    if (const auto * subquery = argument->as<ASTSubquery>())
+    {
+        if (!subquery->children.empty() && subquery->children[0]->as<ASTSelectWithUnionQuery>())
+            return subquery->children[0];
+    }
+
+    return nullptr;
+}
+
+String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
+{
+    auto query_for_sample_block = query->clone();
+
+    SharedHeader sample_block;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_sample_block, context);
+    else
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_sample_block, context);
+
+    if (sample_block->columns() != 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table function `eval` input subquery must return exactly one column, got {} columns",
+            sample_block->columns());
+
+    const auto & result_type = sample_block->getByPosition(0).type;
+    if (!isStringFamily(result_type))
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Table function `eval` input subquery must return a value of type `String`, `Nullable(String)`, "
+            "`LowCardinality(String)`, or `LowCardinality(Nullable(String))`, got {}",
+            result_type->getName());
+
+    BlockIO io;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        io = InterpreterSelectQueryAnalyzer(query, context, SelectQueryOptions{}).execute();
+    else
+        io = InterpreterSelectWithUnionQuery(query, context, SelectQueryOptions{}).execute();
+
+    if (!io.pipeline.pulling())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` input subquery must return data");
+
+    PullingPipelineExecutor executor(io.pipeline);
+
+    Block block;
+    while (block.rows() == 0 && executor.pull(block))
+    {
+    }
+
+    if (block.rows() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` input subquery must return exactly one row, got 0 rows");
+
+    if (block.rows() != 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Table function `eval` input subquery must return exactly one row, got more than one row");
+
+    Block next_block;
+    while (next_block.rows() == 0 && executor.pull(next_block))
+    {
+    }
+
+    if (next_block.rows() != 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Table function `eval` input subquery must return exactly one row, got more than one row");
+
+    block = materializeBlock(block);
+    return extractQueryTextFromField((*block.getByPosition(0).column)[0], block.getByPosition(0).type, "input subquery");
+}
+
+bool containsArgumentIndex(const VectorWithMemoryTracking<size_t> & argument_indexes, size_t argument_index)
+{
+    for (const auto index : argument_indexes)
+    {
+        if (index == argument_index)
+            return true;
+    }
+
+    return false;
+}
+
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast, ContextPtr context);
+
+void checkNoNestedEval(const ASTPtr & ast, ContextPtr context)
+{
+    if (const auto * table_expression = ast->as<ASTTableExpression>(); table_expression && table_expression->table_function)
+    {
+        checkNoNestedEvalTableFunction(table_expression->table_function, context);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        checkNoNestedEval(child, context);
+}
+
+void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    const auto * function = table_function_ast->as<ASTFunction>();
+    if (!function)
+        return;
+
+    if (function->name == TableFunctionEval::name)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested table function `eval` is not supported");
+
+    if (!function->arguments)
+        return;
+
+    const auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+    auto table_expression_argument_indexes = table_function
+        ? table_function->getTableExpressionArgumentIndexes(table_function_ast, context)
+        : VectorWithMemoryTracking<size_t>{};
+
+    for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
+    {
+        const auto & argument = function->arguments->children[argument_index];
+        if (containsArgumentIndex(table_expression_argument_indexes, argument_index))
+            checkNoNestedEvalTableFunction(argument, context);
+        else
+            checkNoNestedEval(argument, context);
+    }
+}
+
+ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
+{
+    const auto & parsing_settings = context->getSettingsRef();
+    ParserQuery parser(query_text.data() + query_text.size(), /* allow_settings_after_format_in_insert = */ false);
+    ASTPtr query = parseQuery(
+        parser,
+        query_text.data(),
+        query_text.data() + query_text.size(),
+        "query generated by table function `eval`",
+        parsing_settings[Setting::max_query_size],
+        parsing_settings[Setting::max_parser_depth],
+        parsing_settings[Setting::max_parser_backtracks]);
+
+    if (!query->as<ASTSelectWithUnionQuery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` can only execute `SELECT` queries");
+
+    const auto & select_query = query->as<ASTSelectWithUnionQuery &>();
+    if (select_query.out_file || select_query.format_ast || select_query.compression || select_query.compression_level)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table function `eval` generated query cannot contain output options such as `INTO OUTFILE`, `FORMAT`, "
+            "or output compression options");
+
+    auto settings_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, settings_context);
+    const auto & settings = settings_context->getSettingsRef();
+
+    {
+        SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+        SelectIntersectExceptQueryVisitor{data}.visit(query);
+    }
+
+    {
+        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
+    }
+
+    checkNoNestedEval(query, context);
+    return query;
+}
+
+ContextMutablePtr getContextWithGeneratedQuerySettings(ContextPtr context, const ASTPtr & query)
+{
+    auto query_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, query_context);
+    return query_context;
+}
+
+}
+
+void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::allow_experimental_eval_table_function])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table function `eval` is disabled. Enable setting `allow_experimental_eval_table_function` to use it");
+
+    const auto * function = ast_function->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.size() != 1)
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Table function `eval` requires exactly one argument: a constant expression or a `SELECT` query");
+
+    const auto & argument = function->arguments->children[0];
+    String query_text;
+
+    if (ASTPtr subquery = getSubqueryArgument(argument))
+        query_text = evaluateSubqueryQueryText(subquery, context);
+    else
+        query_text = evaluateConstantQueryText(argument, context);
+
+    create.set(create.select, parseGeneratedQuery(query_text, context));
+}
+
+ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    chassert(create.select);
+    chassert(create.children.size() == 1);
+    chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
+
+    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
+    auto query_for_schema = create.children[0]->clone();
+
+    SharedHeader sample_block;
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_schema, query_context);
+    else
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_schema, query_context);
+
+    return ColumnsDescription(sample_block->getNamesAndTypesList());
+}
+
+StoragePtr TableFunctionEval::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/,
+    bool is_insert_query) const
+{
+    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
+    auto columns = getActualTableStructure(query_context, is_insert_query);
+    auto storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "", false, query_context);
+    storage->startup();
+    return storage;
+}
+
+void registerTableFunctionEval(TableFunctionFactory & factory)
+{
+    factory.registerFunction<TableFunctionEval>(
+        {
+            .description = R"(Evaluates a constant expression or a `SELECT` query to a query string, then executes it as a single `SELECT` query.)",
+            .category = FunctionDocumentation::Category::TableFunction,
+        },
+        {.allow_readonly = true});
+}
+
+}

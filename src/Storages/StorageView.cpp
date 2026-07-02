@@ -127,7 +127,8 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
-    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
+    auto inner_query_context = view->getInnerQueryContext();
+    auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(inner_query_context ? inner_query_context : context);
     Settings view_settings = view_context->getSettingsCopy();
 
     if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
@@ -159,8 +160,10 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    bool is_parameterized_view_,
+    ContextPtr inner_query_context_)
     : StorageWithCommonVirtualColumns(table_id_)
+    , inner_query_context(std::move(inner_query_context_))
 {
     StorageInMemoryMetadata storage_metadata;
     if (!is_parameterized_view_)
@@ -337,9 +340,18 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    /// Build the view's execution context first and select the analyzer mode from it, not from the
+    /// outer query's context. For ordinary views these settings are the same, but the `eval` table
+    /// function builds the inner view from a generated query that may carry its own
+    /// `SETTINGS enable_analyzer = ...`. The generated query's structure is inferred in
+    /// `TableFunctionEval::getActualTableStructure` using exactly this inner context, so execution
+    /// must use the same analyzer mode. Otherwise the inferred structure and the executed query can
+    /// disagree (for example, scalar subquery column names differ between the two analyzers), which
+    /// leads to a converting-actions failure or an analyzer that does not support the generated query.
+    auto view_context = getViewContext(context, storage_snapshot, this);
+
+    if (view_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
             current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
@@ -347,7 +359,6 @@ void StorageView::readImpl(
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
@@ -453,6 +464,8 @@ void StorageView::replaceWithSubquery(ASTSelectQuery & outer_query, ASTPtr view_
             auto table_function_name = table_expression->table_function->as<ASTFunction>()->name;
             if (table_function_name == "view" || table_function_name == "viewIfPermitted")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__view");
+            else if (table_function_name == "eval")
+                table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__eval");
             else if (table_function_name == "merge")
                 table_expression->database_and_table_name = make_intrusive<ASTTableIdentifier>("__merge");
             else if (parameterized_view)

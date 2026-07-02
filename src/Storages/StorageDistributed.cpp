@@ -85,7 +85,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 
-#include <TableFunctions/TableFunctionView.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -940,8 +940,9 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
         if (table_expression_modifiers)
             table_function_node->setTableExpressionModifiers(*table_expression_modifiers);
 
-        /// Subquery in table function `view` may reference tables that don't exist on the initiator.
-        if (table_function_node->getTableFunctionName() == "view")
+        const auto table_function = TableFunctionFactory::instance().tryGet(table_function_node->getTableFunctionName(), query_context);
+
+        if (hasShardSideResolvedTableFunctionArguments(remote_table_function, query_context))
         {
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
             auto column_names_and_types = distributed_storage_snapshot->getColumns(get_column_options);
@@ -954,7 +955,8 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
             auto storage = std::make_shared<StorageDummy>(fake_storage_id, ColumnsDescription{column_names_and_types});
 
-            table_function_node->resolve({}, std::move(storage), query_context, /*unresolved_arguments_indexes_=*/{ 0 });
+            auto skip_analysis_arguments_indexes = table_function->skipAnalysisForArguments(table_function_node, query_context);
+            table_function_node->resolve({}, std::move(storage), query_context, std::move(skip_analysis_arguments_indexes));
         }
         else
         {
@@ -1145,11 +1147,23 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
 
     if (src_distributed.remote_table_function_ptr)
     {
-        const TableFunctionPtr src_table_function =
-            TableFunctionFactory::instance().get(src_distributed.remote_table_function_ptr, local_context);
-        if (const TableFunctionView * view_function = typeid_cast<const TableFunctionView *>(src_table_function.get()))
+        const ASTSelectWithUnionQuery * select_query = nullptr;
+
+        const auto * table_function_ast = src_distributed.remote_table_function_ptr->as<const ASTFunction>();
+        TableFunctionPtr src_table_function;
+        if (table_function_ast)
+            src_table_function = TableFunctionFactory::instance().tryGet(table_function_ast->name, local_context);
+
+        if (src_table_function && src_table_function->supportsInitiatorSideDistributedRewrite()
+            && !hasShardSideResolvedTableFunctionArguments(src_distributed.remote_table_function_ptr, local_context))
         {
-            new_query->setOrReplace(new_query->select, view_function->getSelectQuery().clone());
+            src_table_function->parseArguments(src_distributed.remote_table_function_ptr, local_context);
+            select_query = src_table_function->getSelectQueryForDistributedRewrite();
+        }
+
+        if (select_query)
+        {
+            new_query->setOrReplace(new_query->select, select_query->clone());
         }
         else
         {

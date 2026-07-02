@@ -1,3 +1,4 @@
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
@@ -26,6 +27,78 @@ extern const SettingsBool allow_experimental_analyzer;
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+
+/// Recursively replace short identifiers referring to `WITH` literal aliases with the corresponding literals.
+/// This is used for the `eval` table function argument: it is evaluated as a constant expression while the
+/// table function is resolved, which happens before the query normalizer (the usual place where alias
+/// substitution occurs) runs. Subqueries are skipped, because they are separate queries with their own
+/// alias scope and are handled by the select-query traversal.
+void substituteWithLiterals(ASTPtr & ast, const std::map<String, ASTPtr> & literals)
+{
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && isASTLambdaFunction(*function))
+    {
+        const auto & lambda_arguments = function->arguments->children;
+        const auto * lambda_argument_tuple = lambda_arguments.at(0)->as<ASTFunction>();
+        chassert(lambda_argument_tuple);
+
+        NameSet lambda_argument_names;
+        for (const auto & lambda_argument : lambda_argument_tuple->arguments->children)
+            if (auto name = tryGetIdentifierName(lambda_argument))
+                lambda_argument_names.insert(*name);
+
+        auto scoped_literals = literals;
+        for (const auto & name : lambda_argument_names)
+            scoped_literals.erase(name);
+
+        substituteWithLiterals(function->arguments->children.at(1), scoped_literals);
+        return;
+    }
+
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->isShort())
+    {
+        auto literal_it = literals.find(identifier->shortName());
+        if (literal_it != literals.end())
+        {
+            auto old_alias = ast->tryGetAlias();
+            ast = literal_it->second->clone();
+            /// Reset the alias coming from the `WITH` element, keeping the original alias of the identifier (if any).
+            ast->setAlias(old_alias);
+            return;
+        }
+    }
+
+    for (auto & child : ast->children)
+        substituteWithLiterals(child, literals);
+}
+
+/// Recursively find `eval` table-function occurrences inside a table expression and substitute `WITH`
+/// literal aliases into their arguments. Only the table-function position is handled here, so a scalar
+/// SQL UDF with the same name in an ordinary expression context is left untouched - its arguments are
+/// resolved later by `QueryNormalizer`, which honours `prefer_column_name_to_alias`. Subqueries are
+/// skipped: they form a separate alias scope handled by the select-query traversal.
+void substituteWithLiteralsInEvalTableFunction(ASTPtr & ast, const std::map<String, ASTPtr> & literals)
+{
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
+        return;
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "eval" && function->arguments)
+    {
+        for (auto & argument : function->arguments->children)
+            substituteWithLiterals(argument, literals);
+        return;
+    }
+
+    for (auto & child : ast->children)
+        substituteWithLiteralsInEvalTableFunction(child, literals);
+}
+
 }
 
 ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
@@ -111,6 +184,14 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             }
         }
     }
+
+    /// Substitute `WITH` literal aliases into the `eval` table-function argument expression.
+    /// `eval`'s argument is evaluated as a constant expression before the query normalizer runs,
+    /// so the normalizer's alias substitution would otherwise be missed (e.g. `WITH 'SELECT 1' AS q
+    /// SELECT * FROM eval(q)`). This is restricted to the table-function position, so a scalar SQL UDF
+    /// named `eval` used in an expression context is not rewritten and still honours `prefer_column_name_to_alias`.
+    if (table.table_function)
+        substituteWithLiteralsInEvalTableFunction(table.table_function, data.literals);
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
