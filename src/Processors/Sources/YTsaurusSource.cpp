@@ -48,6 +48,9 @@ Chunk YTsaurusTableSourceStaticTable::generate()
     {
         FormatSettings format_settings{.skip_unknown_fields = source_options.settings[YTsaurusSetting::skip_unknown_columns]};
         format_settings.json.read_map_as_array_of_tuples = true;
+        /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+        /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+        format_settings.json.read_datetime64_number_as_raw_value = true;
         read_buffer = client->readTable(cypress_path, rows_range);
 
         json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
@@ -80,6 +83,9 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     }
 
     format_settings.json.read_map_as_array_of_tuples = true;
+    /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+    /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+    format_settings.json.read_datetime64_number_as_raw_value = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
 }
