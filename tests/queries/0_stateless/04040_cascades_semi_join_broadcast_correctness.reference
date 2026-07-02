@@ -4,7 +4,7 @@ Expression ((Project names + Projection))
     GatherExchange
       Aggregating
         Expression ((Before GROUP BY + WHERE))
-          JoinLogical (Broadcast HashJoin  swapped)
+          JoinLogical (Broadcast HashJoin )
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ParallelRead default.test_orders)
             Expression (Create result for always true EXISTS expression)
@@ -64,31 +64,23 @@ Expression ((Project names + Projection))
 980
 -- RIGHT JOIN (RIGHT ALL, not commutable, broadcast blocked)
 Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Shuffle HashJoin )
-            Expression (Change column names to column identifiers)
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.test_orders)
-            Expression (Change column names to column identifiers)
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.test_lineitem)
+  Aggregating
+    Expression (Before GROUP BY)
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_orders)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_lineitem)
 20
 20
 -- FULL JOIN (FULL ALL, not commutable, broadcast blocked)
 Expression ((Project names + Projection))
-  MergingAggregated
-    GatherExchange
-      Aggregating
-        Expression (Before GROUP BY)
-          JoinLogical (Shuffle HashJoin )
-            Expression (Change column names to column identifiers)
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.test_orders)
-            Expression (Change column names to column identifiers)
-              ShuffleExchange
-                ReadFromMergeTree (ParallelRead default.test_lineitem)
+  Aggregating
+    Expression (Before GROUP BY)
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_orders)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_lineitem)
 1000
 1000

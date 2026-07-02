@@ -30,6 +30,15 @@ SET param__internal_cascades_cluster_node_count = 4;
 -- Low sequential_weight so broadcast's higher per-node sequential cost doesn't
 -- dominate.  With a tiny filter table, broadcast is clearly cheaper on network.
 SET param__internal_cascades_cost_config = '{"sequential_weight":1}';
+-- Pin the statistics: without hints the row widths come from storage column sizes, which differ
+-- between storage engines (MergeTree vs shared storage), and near-tie alternatives (the swapped vs
+-- unswapped broadcast) flip between environments.
+-- The orders side is hinted large so that a broadcast of the 20-row side, if a guard ever wrongly
+-- allowed it, would win on cost decisively and show up in the plan.
+SET param__internal_join_table_stat_hints = '{
+    "test_orders":   { "cardinality": 1000000, "avg_row_bytes": 16, "distinct_keys": { "o_orderkey": 1000000 } },
+    "test_lineitem": { "cardinality": 20,      "avg_row_bytes": 12, "distinct_keys": { "l_orderkey": 20 } }
+}';
 
 DROP TABLE IF EXISTS test_orders;
 DROP TABLE IF EXISTS test_lineitem;

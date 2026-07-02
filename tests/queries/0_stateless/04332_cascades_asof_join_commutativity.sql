@@ -36,5 +36,24 @@ SELECT '-- 3. RightAny (any_join_distinct_right_table_keys) must not be swapped 
 SELECT count() FROM t_asof_small AS l ANY INNER JOIN t_asof_big AS r ON l.k = r.k
 SETTINGS any_join_distinct_right_table_keys = 1;
 
+-- A plain INNER ALL join is commutable even when `USING` casts a mismatched key type to the
+-- supertype: `swapInputs` remaps the cast to the new side. The swap wins here (20-row build side
+-- instead of 50000), so the plan must contain a `swapped` join and the result must stay correct.
+SELECT '-- 4. USING join with mismatched key types is swapped and stays correct';
+DROP TABLE IF EXISTS t_tc_small;
+CREATE TABLE t_tc_small (k UInt32) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO t_tc_small SELECT number % 10 FROM numbers(20);
+-- The outer query runs without Cascades (it reads from the `viewExplain` table function, which the
+-- optimizer cannot clone); the inner EXPLAIN re-enables it explicitly.
+SELECT sum(explain LIKE '%swapped%') FROM (
+    EXPLAIN PLAN keep_logical_steps = 1
+    SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k)
+    SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
+) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k);
+SELECT count() FROM t_tc_small INNER JOIN t_asof_big USING (k)
+SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
+
+DROP TABLE t_tc_small;
 DROP TABLE t_asof_small;
 DROP TABLE t_asof_big;
