@@ -1,5 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
+#include <string_view>
+#include <unordered_set>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
@@ -25,6 +27,21 @@ namespace
 bool isEnumType(const String & type_name_upper)
 {
     return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
+}
+
+/// Integer type names (and MySQL aliases) that accept the MySQL display-width modifier `(N)` and the
+/// SIGNED/UNSIGNED suffix. Matched by exact (uppercased) name: a loose substring test on "INT" also
+/// matched unrelated names like `quantileInterpolatedWeighted`, silently eating their first `(...)`
+/// group as a display width and breaking the parse round-trip.
+bool isIntegerTypeName(const String & type_name_upper)
+{
+    static const std::unordered_set<std::string_view> integer_type_names
+    {
+        "INT8", "INT16", "INT32", "INT64", "INT128", "INT256",
+        "UINT8", "UINT16", "UINT32", "UINT64", "UINT128", "UINT256",
+        "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "INT1",
+    };
+    return integer_type_names.contains(type_name_upper);
 }
 
 /// Parse enum values directly into the vector without creating ASTLiteral nodes.
@@ -283,7 +300,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ParserKeyword(Keyword::PRECISION).ignore(pos))
             type_name_suffix = toStringView(Keyword::PRECISION);
     }
-    else if (type_name_upper.contains("INT"))
+    else if (isIntegerTypeName(type_name_upper))
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
         if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))

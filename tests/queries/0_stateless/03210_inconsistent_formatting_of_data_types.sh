@@ -23,3 +23,8 @@ $CLICKHOUSE_FORMAT --oneline --query "ALTER TABLE t ADD COLUMN x Array((1), UInt
 $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t1 (a multiply((NULL), Int8)) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
 $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t2 (a multiply([NULL], Int8)) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
 $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t3 (a Nullable(multiply((NULL), Int8))) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
+
+# A function-like name in type position whose uppercase contains "INT" (e.g.
+# quantileInterpolatedWeighted) must not be mistaken for a MySQL integer type and
+# have its leading (N) group eaten as a display width (which broke the round-trip).
+$CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t (a quantileInterpolatedWeighted(0.8)(a, 1)) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
