@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -729,6 +730,16 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) co
     return true;
 }
 
+static bool isFunctionDeterministic(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
+{
+    if (auto function_base = function_node.getFunctionBase())
+        return function_base->isDeterministic();
+
+    /// AST-based tree does not carry a resolved function, look it up by name.
+    auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
+    return function_resolver && function_resolver->isDeterministic();
+}
+
 bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
     if (node.isFunction())
@@ -738,6 +749,11 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (function_name == "arrayJoin")
+            return true;
+
+        /// Under FINAL, a non-deterministic condition (e.g. one containing `rand`) can give different
+        /// verdicts to row versions of one dedup group and change which row survives the merge.
+        if (where_optimizer_context.is_final && !isFunctionDeterministic(function_node, where_optimizer_context.context))
             return true;
 
         /// Disallow GLOBAL IN conditions from being moved to PREWHERE.

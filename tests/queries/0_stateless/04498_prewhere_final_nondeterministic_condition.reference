@@ -1,0 +1,7 @@
+= deterministic sorting-key condition is moved =
+    Prewhere info
+      Prewhere filter
+      Prewhere filter column: greater(k, 100) (removed)
+= non-deterministic condition is not moved =
+0
+0
