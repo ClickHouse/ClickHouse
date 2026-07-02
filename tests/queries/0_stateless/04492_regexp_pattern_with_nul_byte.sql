@@ -22,3 +22,10 @@ SELECT hex(extract('za\0bz', '(a\0b)'));
 -- the optimizer pass actually runs on the function.
 SELECT extract(materialize('x\0first y\0second'), '^.*\0([a-z]+).*$')
 SETTINGS enable_analyzer = 1, optimize_rewrite_regexp_functions = 1;
+
+-- A real NUL byte as a character-class range endpoint makes a descending range `[a-\0]`, which RE2
+-- rejects at compile time. The regexp-JIT class parser must not mistake the NUL for the end of the
+-- pattern and silently accept the class - even with compilation forced it must fall back to RE2 and
+-- raise the same error, not turn the RE2 compile failure into a successful match.
+SELECT match('-', '[a-\0]')
+SETTINGS compile_regular_expressions = 1, min_count_to_compile_regular_expression = 0; -- { serverError CANNOT_COMPILE_REGEXP }
