@@ -17,6 +17,8 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -182,10 +184,38 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            auto convert_func = makeASTFunction("_CAST",
-                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
-                make_intrusive<ASTLiteral>(required_column.type->getName()));
-
+            ASTPtr convert_func;
+            if (recursiveRemoveLowCardinality(required_column.type)->canBeInsideNullable())
+            {
+                /// _CAST(ifNull(_CAST(col, 'LowCardinality(Nullable(String))'), _CAST('', 'LowCardinality(String)')), 'LowCardinality(String)')
+                /// ifNull already resolves to the non-nullable target here (its default arg is
+                /// non-nullable), so the inner result is LowCardinality(String); the outer cast
+                /// pins the type explicitly and keeps this branch symmetric with the else branch.
+                auto nullable_target_type_name = makeNullableOrLowCardinalityNullable(required_column.type)->getName();
+                auto cast_col = makeASTFunction("_CAST",
+                    make_intrusive<ASTIdentifier>(required_column.name),
+                    make_intrusive<ASTLiteral>(nullable_target_type_name));
+                auto cast_default = makeASTFunction("_CAST",
+                    default_value,
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+                auto filled = makeASTFunction("ifNull", std::move(cast_col), std::move(cast_default));
+                convert_func = makeASTFunction("_CAST",
+                    std::move(filled),
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+            }
+            else
+            {
+                /// if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T'))
+                /// Default stays target-side (no source round-trip). Value branch runs only on
+                /// non-NULL rows: this conversion path evaluates short-circuit funcs lazily.
+                auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
+                auto cast_default = makeASTFunction("_CAST", default_value,
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+                auto cast_value = makeASTFunction("_CAST",
+                    makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)),
+                    make_intrusive<ASTLiteral>(required_column.type->getName()));
+                convert_func = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
+            }
             conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
         }
