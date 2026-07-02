@@ -810,7 +810,25 @@ void RemoteQueryExecutor::finish()
         /// never becomes true. On Linux the async startup path always sends the query before this
         /// point, so only the synchronous (non-Linux) send path is affected.
         if (!sent_query)
+        {
             finished = true;
+        }
+        else if (was_cancelled && !finished && connections)
+        {
+            /// The query was already cancelled (e.g. concurrently from the pipeline) but its
+            /// connections may still hold undelivered packets - the server keeps sending the data,
+            /// `ProfileInfo` and `EndOfStream` that were produced before it observed the cancel.
+            /// We do not drain them here after cancellation, because the read side may already be
+            /// torn down and reading from it could throw or crash (see #95466). But such connections
+            /// must not be returned to the connection pool in this out-of-sync state - otherwise the
+            /// next user of the connection would read a stale packet during establishment, failing
+            /// with "Unexpected packet from server (expected TablesStatusResponse, got ProfileInfo)"
+            /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
+            /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
+            /// `finished` later becomes true through another path.
+            connections->disconnect();
+            finished = true;
+        }
         return;
     }
 

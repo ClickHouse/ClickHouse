@@ -204,16 +204,16 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 REGISTER_FUNCTION(Modulo)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the remainder of the division of two values a by b.
+Calculates the remainder of the division of two values a by b.
 
-    The result type is an integer if both inputs are integers. If one of the
-    inputs is a floating-point number, the result type is Float64.
+The result type is an integer if both inputs are integers. If one of the
+inputs is a floating-point number, the result type is Float64.
 
-    The remainder is computed like in C++. Truncated division is used for
-    negative numbers.
+The remainder is computed like in C++. Truncated division is used for
+negative numbers.
 
-    An exception is thrown when dividing by zero or when dividing a minimal
-    negative number by minus one.
+An exception is thrown when dividing by zero or when dividing a minimal
+negative number by minus one.
     )";
     FunctionDocumentation::Syntax syntax = "modulo(a, b)";
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};
