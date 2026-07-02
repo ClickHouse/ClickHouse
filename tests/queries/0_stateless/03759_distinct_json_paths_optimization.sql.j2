@@ -1,5 +1,6 @@
--- Tags: long, no-azure-blob-storage, no-msan
+-- Tags: long, no-azure-blob-storage, no-msan, no-flaky-check
 -- no-azure-blob-storage: too slow
+-- no-flaky-check: can exceed the flaky-check time budget under random debug-build settings; this PR only changed the table SETTINGS line
 -- Random settings limits: index_granularity=(1000, None); index_granularity_bytes=(1000000, None)
 
 SET enable_analyzer=1;
@@ -10,7 +11,7 @@ SET enable_analyzer=1;
 
     CREATE TABLE test (json JSON(a0 String, a1 String, max_dynamic_paths=8))
     ENGINE = MergeTree ORDER BY ()
-    SETTINGS index_granularity=4, min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
+    SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=4, min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
 
     INSERT INTO test
     SELECT
@@ -39,7 +40,7 @@ SET enable_analyzer=1;
 
     CREATE TABLE test (json JSON(a0 String, a1 String, max_dynamic_paths=8))
     ENGINE = MergeTree ORDER BY ()
-    SETTINGS min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
+    SETTINGS optimize_row_order_if_no_order_by = 0, min_rows_for_wide_part=1, min_bytes_for_wide_part = {{ min_bytes }}, dynamic_serialization_version='v3', object_serialization_version='v3', object_shared_data_serialization_version='{{ shared_data_serialization }}', object_shared_data_serialization_version_for_zero_level_parts='{{ shared_data_serialization }}';
 
     INSERT INTO test
     SELECT

@@ -7,7 +7,7 @@
         )
         ENGINE = MergeTree
         ORDER BY ()
-        SETTINGS index_granularity = 5;
+        SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity = 5;
     </create_query>
 
     <create_query>
@@ -18,7 +18,7 @@
         )
         ENGINE = MergeTree
         ORDER BY ()
-        SETTINGS index_granularity = 5;
+        SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity = 5;
     </create_query>
 
     <fill_query>

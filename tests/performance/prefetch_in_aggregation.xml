@@ -16,7 +16,7 @@
     </substitution>
   </substitutions>
 
-  <create_query>create table t_str_key_{size}(a String, b FixedString(25)) engine=MergeTree order by tuple()</create_query>
+  <create_query>create table t_str_key_{size}(a String, b FixedString(25)) engine=MergeTree order by tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
   <fill_query>insert into t_str_key_{size} select toString(number) as s, toFixedString(s, 25) from numbers_mt({size})</fill_query>
 
   <query>select a from t_str_key_{size} group by a format Null</query>

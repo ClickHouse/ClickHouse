@@ -21,6 +21,11 @@ from threading import Thread
 import clickhouse_driver
 from scipy import stats
 
+# strip_setting_from_query lives in a sibling module so it can be unit-tested
+# (perf.py executes its whole body on import). See
+# ci/tests/test_strip_setting_from_query.py.
+from perf_create_query_utils import strip_setting_from_query
+
 logging.basicConfig(
     format="%(asctime)s: %(levelname)s: %(module)s: %(message)s", level="WARNING"
 )
@@ -624,10 +629,72 @@ if not args.use_existing_tables:
             )
             sys.exit(1)
 
+    # Settings allowed to be silently stripped from a CREATE TABLE on an
+    # older baseline server that does not yet know them. Keep this list
+    # intentionally short: every entry is a setting that the PR introduces
+    # and that the baseline server is expected to default to a value
+    # compatible with the perf comparison. Adding an entry here is a
+    # deliberate decision; misspelled or unrelated settings should still
+    # fail fast.
+    #
+    # Each entry maps the setting name to the set of lowercased values that
+    # are equivalent to the baseline server's default for it. The setting is
+    # only stripped when the fixture pins it to one of those values, so that
+    # both sides of the A/B comparison build the same table. An enabled value
+    # (e.g. `optimize_row_order_if_no_order_by = 1`) is NOT strippable: the
+    # baseline would build an unoptimized table while the PR side uses the
+    # optimized layout, so it is re-raised as UNKNOWN_SETTING to fail fast
+    # instead of silently comparing incomparable tables.
+    strippable_unknown_settings = {
+        "optimize_row_order_if_no_order_by": {"0", "false"},
+    }
+
     def do_create(connection, index, queries):
         for q in queries:
-            connection.execute(q)
-            print(f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}")
+            current_query = q
+            while True:
+                try:
+                    connection.execute(current_query)
+                    print(
+                        f"create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(current_query)}"
+                    )
+                    break
+                except clickhouse_driver.errors.ServerException as e:
+                    # If a CREATE TABLE uses a MergeTree setting that the
+                    # server does not know (e.g. a newly added setting
+                    # present only in the PR build) AND that setting is on
+                    # the explicit allowlist, strip the setting and retry.
+                    # The server falls back to its own default, which
+                    # matches the intent on the old side of an A/B perf
+                    # comparison.
+                    #
+                    # Scope this to `CREATE TABLE` only and to the
+                    # allowlist so that misspelled settings or unknown
+                    # settings on `fill_query` / other statements still
+                    # surface as failures instead of silently producing
+                    # different datasets on the two sides.
+                    if (
+                        e.code == 115  # UNKNOWN_SETTING
+                        and first_keyword(current_query) == "CREATE"
+                    ):
+                        m = re.search(r"Unknown setting '([^']+)'", e.message)
+                        if m:
+                            unknown_setting = m.group(1)
+                            if unknown_setting in strippable_unknown_settings:
+                                new_query = strip_setting_from_query(
+                                    current_query,
+                                    unknown_setting,
+                                    strippable_unknown_settings[unknown_setting],
+                                )
+                                if new_query != current_query:
+                                    print(
+                                        f"warning\t{index}\tstripped unknown setting "
+                                        f"'{unknown_setting}' from create query",
+                                        file=sys.stderr,
+                                    )
+                                    current_query = new_query
+                                    continue
+                    raise
 
     threads = [
         SafeThread(target=do_create, args=(connection, index, create_queries))

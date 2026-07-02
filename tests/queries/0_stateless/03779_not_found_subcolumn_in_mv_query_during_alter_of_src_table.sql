@@ -11,14 +11,14 @@ CREATE TABLE src
     dummy UInt8
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 CREATE TABLE dst
 (
     id String
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 CREATE MATERIALIZED VIEW mv
 TO dst

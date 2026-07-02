@@ -12,7 +12,7 @@
     <create_query>
         CREATE TABLE sort_nearly_sorted (
             key UInt64
-        ) ENGINE = MergeTree ORDER BY tuple()
+        ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <!-- ~5% of rows get a random perturbation -->

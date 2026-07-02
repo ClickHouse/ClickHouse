@@ -3,12 +3,12 @@
         <parallel_view_processing>1</parallel_view_processing>
     </settings>
 
-    <create_query>create table main_table (number UInt64) engine = MergeTree order by tuple()</create_query>
+    <create_query>create table main_table (number UInt64) engine = MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0</create_query>
 
-    <create_query>create table mt_1 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_2 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_3 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
-    <create_query>create table mt_4 (n UInt64, s String) engine = MergeTree order by tuple()</create_query>
+    <create_query>create table mt_1 (n UInt64, s String) engine = MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>create table mt_2 (n UInt64, s String) engine = MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>create table mt_3 (n UInt64, s String) engine = MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>create table mt_4 (n UInt64, s String) engine = MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0</create_query>
 
     <create_query>create materialized view mv_1 to mt_1 as
         select number as n, toString(number) as s from main_table where number % 13 != 0</create_query>

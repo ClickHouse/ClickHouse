@@ -4,7 +4,7 @@ SET use_uncompressed_cache = 0;
 
 SELECT '====array====';
 DROP TABLE IF EXISTS t_arr;
-CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_arr (a Array(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
 
 SYSTEM CLEAR MARK CACHE;
@@ -18,7 +18,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'Query
 
 SELECT '====tuple====';
 DROP TABLE IF EXISTS t_tup;
-CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
+CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_tup VALUES (('foo', 1)) (('bar', 2)) (('baz', 42));
 
 SYSTEM CLEAR MARK CACHE;
@@ -35,7 +35,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'Query
 
 SELECT '====nullable====';
 DROP TABLE IF EXISTS t_nul;
-CREATE TABLE t_nul (n Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_nul (n Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0;
 INSERT INTO t_nul VALUES (1) (NULL) (2) (NULL);
 
 SYSTEM CLEAR MARK CACHE;
@@ -49,7 +49,7 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (type = 'Query
 
 SELECT '====map====';
 DROP TABLE IF EXISTS t_map;
-CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
+CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));
 
 --- will read 4 files: keys.bin, keys.mrk2, size0.bin, size0.mrk2

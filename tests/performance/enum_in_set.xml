@@ -7,7 +7,7 @@
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS index_granularity = 8192
+    SETTINGS index_granularity = 8192, optimize_row_order_if_no_order_by = 0
     </create_query>
     <fill_query>INSERT INTO iso_3166_1_alpha_2 SELECT (rand(number) % 256) - 128 FROM numbers(200000000)</fill_query>
     <fill_query>OPTIMIZE TABLE iso_3166_1_alpha_2 FINAL</fill_query>

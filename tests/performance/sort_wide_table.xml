@@ -17,7 +17,7 @@
             p05 UInt64, p06 UInt64, p07 UInt64, p08 UInt64,
             p09 UInt64, p10 UInt64, p11 UInt64, p12 UInt64,
             p13 UInt64, p14 UInt64, p15 UInt64, p16 UInt64
-        ) ENGINE = MergeTree ORDER BY tuple()
+        ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>
@@ -42,7 +42,7 @@
             p41 UInt64, p42 UInt64, p43 UInt64, p44 UInt64, p45 UInt64, p46 UInt64, p47 UInt64, p48 UInt64,
             p49 UInt64, p50 UInt64, p51 UInt64, p52 UInt64, p53 UInt64, p54 UInt64, p55 UInt64, p56 UInt64,
             p57 UInt64, p58 UInt64, p59 UInt64, p60 UInt64, p61 UInt64, p62 UInt64, p63 UInt64, p64 UInt64
-        ) ENGINE = MergeTree ORDER BY tuple()
+        ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
 
     <fill_query>

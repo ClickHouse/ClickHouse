@@ -16,14 +16,14 @@
         </substitution>
     </substitutions>
 
-    <create_query>CREATE TABLE large_int (a Int32, b Int32, c Int32, d Int32, e Int32, f Int32, g Int32, h Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE large_str (a Int32, b Int32, c Int32, s1 String, s2 String, s3 String, s4 String, s5 String) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small1 (a Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small2 (b Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small3 (c Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small1_dup (a Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small2_dup (b Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE small3_dup (c Int32) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE large_int (a Int32, b Int32, c Int32, d Int32, e Int32, f Int32, g Int32, h Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE large_str (a Int32, b Int32, c Int32, s1 String, s2 String, s3 String, s4 String, s5 String) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small1 (a Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small2 (b Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small3 (c Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small1_dup (a Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small2_dup (b Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE small3_dup (c Int32) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO large_int SELECT number % 10000, number % 12500, number % 11000, number * 2, number * 3, number * 4, number * 5, number * 6 FROM numbers(100000000) ORDER BY rand()</fill_query>
     <fill_query>INSERT INTO large_str SELECT number % 10000, number % 12500, number % 11000, toString(number), toString(number * 2), toString(number * 3), toString(number * 4), toString(number * 5) FROM numbers(100000000) ORDER BY rand()</fill_query>

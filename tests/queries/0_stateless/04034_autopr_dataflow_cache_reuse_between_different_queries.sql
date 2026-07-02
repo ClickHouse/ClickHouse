@@ -1,11 +1,12 @@
--- Tags: no-sanitizers
+-- Tags: no-sanitizers, no-flaky-check
 -- no-sanitizers: too slow
+-- no-flaky-check: can exceed the flaky-check time budget under random debug-build settings; this PR only changed the table SETTINGS line
 
 -- Verify that statistics are reused between queries with identical "distributed to replicas" sub-plans.
 
 DROP TABLE IF EXISTS t;
 
-CREATE TABLE t(WatchID UInt64, ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
+CREATE TABLE t(WatchID UInt64, ClientIP UInt32, ResolutionWidth UInt16) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0, index_granularity=128;
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
