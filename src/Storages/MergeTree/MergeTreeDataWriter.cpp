@@ -879,8 +879,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+
     SerializationInfoByName infos(columns, settings);
-    EstimatesBuilder estimates_builder(columns, settings);
+    /// Columns whose default counts are provided by the explicit statistics built above are not
+    /// sampled: the builder takes their exact counts from the statistics and samples only the rest.
+    EstimatesBuilder estimates_builder(columns, settings, statistics.getEstimates());
     estimates_builder.add(block);
     estimates_builder.chooseKinds(infos);
 

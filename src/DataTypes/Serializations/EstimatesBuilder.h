@@ -22,12 +22,13 @@ class SerializationInfoByName;
   * default values) that are used to choose the serialization kind of a column (currently sparse, in the
   * future also `LowCardinality`).
   *
-  * The counts are carried by the shared `Estimate` type (see `Storages/Statistics/Statistics.h`), the same
+  * The counts are carried by the shared `Estimate` type (see `Storages/Statistics/Estimate.h`), the same
   * type produced by the explicit column statistics. A builder is created on every insert, merge and
-  * mutation, independently of the `materialize_statistics_*` settings and of the merge type. It samples the
-  * default counts from the data and can be reconciled with the exact counts from the explicit statistics
-  * (`mergeEstimates`); the resulting estimates are then used to choose the kinds and are written into
-  * `serialization.json`.
+  * mutation, independently of the `materialize_statistics_*` settings and of the merge type. It samples
+  * the default counts from the data — only for the columns whose counts the explicit statistics do not
+  * already provide (the constructor takes them) — and can be reconciled with the exact counts from the
+  * statistics afterwards (`mergeEstimates`); the resulting estimates are then used to choose the kinds
+  * and are written into `serialization.json`.
   *
   * The estimates are stored flat: every column and subcolumn is a separate entry keyed by its subcolumn
   * path (`t`, `t.a`, `t.a.b`). The builder only tracks columns that can use sparse serialization (the same
@@ -36,7 +37,10 @@ class SerializationInfoByName;
 class EstimatesBuilder
 {
 public:
-    EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings);
+    /// A column whose default count is already provided by `external_estimates` (the explicit column
+    /// statistics built alongside, see `MergeTreeDataWriter`) is not sampled: its counts are taken
+    /// from the statistics as-is and `add` skips it.
+    EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings, const Estimates & external_estimates = {});
 
     /// Sample estimates from the (tracked) columns of a block.
     void add(const Block & block);

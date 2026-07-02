@@ -458,4 +458,40 @@ TEST(EstimatesBuilder, MergeEstimatesPrefersExternalDefaults)
     EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 990u);
 }
 
+/// A column whose default count is provided by the explicit statistics (passed to the constructor)
+/// is not sampled at all: its counts are taken from the statistics, the rest are sampled.
+TEST(EstimatesBuilder, ExternalStatisticsColumnsAreNotSampled)
+{
+    auto uint_type = std::make_shared<DataTypeUInt64>();
+    NamesAndTypesList columns{{"c", uint_type}, {"d", uint_type}};
+
+    /// Both columns are dense in the block, so sampling would choose Default for both.
+    auto col_c = ColumnUInt64::create();
+    auto col_d = ColumnUInt64::create();
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        col_c->insertValue(i + 1);
+        col_d->insertValue(i + 1);
+    }
+
+    Block block;
+    block.insert({std::move(col_c), uint_type, "c"});
+    block.insert({std::move(col_d), uint_type, "d"});
+
+    /// The explicit statistic of `c` says it is almost all-default; it must be taken as-is.
+    Estimates external;
+    external.emplace("c", makeEstimate(1000, 990));
+
+    SerializationInfoByName infos(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings(), external);
+    builder.add(block);
+    builder.chooseKinds(infos);
+
+    EXPECT_EQ(infos.getKindStack("c"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+    EXPECT_EQ(infos.getKindStack("d"), (ISerialization::KindStack{ISerialization::Kind::DEFAULT}));
+    EXPECT_EQ(builder.getEstimates().at("c").rows_count, 1000u);
+    EXPECT_EQ(builder.getEstimates().at("c").num_defaults.value_or(0), 990u);
+    EXPECT_EQ(builder.getEstimates().at("d").rows_count, 1000u);
+}
+
 }

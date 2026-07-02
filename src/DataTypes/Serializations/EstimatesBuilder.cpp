@@ -28,7 +28,7 @@ void addDefaultCount(Estimate & estimate, UInt64 delta)
 
 }
 
-EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings_)
+EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings_, const Estimates & external_estimates)
     : settings(settings_)
 {
     if (settings.isAlwaysDefault())
@@ -36,7 +36,24 @@ EstimatesBuilder::EstimatesBuilder(const NamesAndTypesList & columns, const Seri
 
     for (const auto & column : columns)
     {
-        if (settings.canUseSparseSerialization(*column.type))
+        if (!settings.canUseSparseSerialization(*column.type))
+            continue;
+
+        /// A column whose default count is provided by the explicit statistics does not need to be
+        /// sampled: store the exact counts and leave it out of the sampling roots. Tuples are always
+        /// sampled — their elements are counted independently, and only top-level columns have
+        /// statistics (`basic` statistics cannot be created for tuples anyway).
+        auto it = external_estimates.find(column.name);
+        if (it != external_estimates.end() && it->second.num_defaults.has_value()
+            && !typeid_cast<const DataTypeTuple *>(column.type.get()))
+        {
+            auto node = std::make_shared<Node>();
+            node->type = column.type;
+            node->estimate.rows_count = it->second.rows_count;
+            node->estimate.num_defaults = it->second.num_defaults;
+            nodes.emplace(column.name, std::move(node));
+        }
+        else
         {
             roots.push_back(column.name);
             addNodes(column.name, column.type);
