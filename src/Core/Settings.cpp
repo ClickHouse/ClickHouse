@@ -8220,7 +8220,7 @@ Write full paths (including s3://) into iceberg metadata files.
 Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan.
+Make distributed query plan. Over a `Distributed` table it sends a serialized per-shard query plan instead of a query text (requires the analyzer).
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.

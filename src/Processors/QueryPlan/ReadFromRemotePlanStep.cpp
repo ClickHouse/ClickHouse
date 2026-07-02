@@ -1,7 +1,11 @@
 #include <Processors/QueryPlan/ReadFromRemotePlanStep.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/LimitStep.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -9,6 +13,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 ReadFromRemotePlanStep::ReadFromRemotePlanStep(
@@ -32,6 +41,9 @@ ReadFromRemotePlanStep::ReadFromRemotePlanStep(
     , storage_limits(std::move(storage_limits_))
     , log(log_)
 {
+    setStepDescription(
+        fmt::format("Cluster: {}, shards: {}", cluster_name, cluster->getShardCount()),
+        remote_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 void ReadFromRemotePlanStep::initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &)

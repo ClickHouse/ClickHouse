@@ -121,8 +121,13 @@ static void finalizeNode(QueryPlan::Node & node, ReadFromRemotePlanStep & placeh
 /// Copy an outer `LimitStep` down into the per-shard plan so each shard emits at most `limit + offset`
 /// rows, while the global (outer) `LimitStep` stays in place — a per-shard `LIMIT n` is not a global
 /// `LIMIT n`. Mirrors the per-branch LIMIT copy that `limitPushDown.cpp` performs for `UNION ALL`.
-static void tryCopyLimitToRemotePlan(LimitStep & limit, ReadFromRemotePlanStep & placeholder)
+static void tryCopyLimitToRemotePlan(
+    LimitStep & limit, ReadFromRemotePlanStep & placeholder, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    /// The user disabled per-shard LIMIT application (parity with the legacy path over Distributed).
+    if (!optimization_settings.distributed_push_down_limit)
+        return;
+
     /// Copy the limit at most once. The bottom-up traversal visits each node once, so this only
     /// guards against a hypothetical re-traversal; absorption is tracked in the placeholder.
     if (placeholder.isLimitCopied())
@@ -130,6 +135,8 @@ static void tryCopyLimitToRemotePlan(LimitStep & limit, ReadFromRemotePlanStep &
 
     /// WITH TIES needs a global sort order to be meaningful: a per-shard tie set is not composable
     /// into the global one, so the limit can only be applied on the initiator.
+    /// Defensive: a real WITH TIES always has a `SortingStep` between the limit and the placeholder,
+    /// so this pattern never matches in practice.
     if (limit.withTies())
         return;
 
@@ -150,7 +157,7 @@ static void tryCopyLimitToRemotePlan(LimitStep & limit, ReadFromRemotePlanStep &
     placeholder.absorbLimitCopy(limit);
 }
 
-void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &)
+void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Pattern: a step whose single child is a `ReadFromRemotePlanStep` placeholder. Depending on the
     /// step type it is either moved into the serialized per-shard plan (Expression/Filter) or copied
@@ -169,7 +176,7 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     /// traversal simply continues, so there is no node swap here.
     if (auto * limit = typeid_cast<LimitStep *>(step))
     {
-        tryCopyLimitToRemotePlan(*limit, *placeholder);
+        tryCopyLimitToRemotePlan(*limit, *placeholder, optimization_settings);
         return;
     }
 

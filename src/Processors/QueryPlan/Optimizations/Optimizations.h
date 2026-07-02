@@ -273,8 +273,9 @@ bool planReadsFromRemote(const QueryPlan::Node & root);
 
 /// Push a serializable `ExpressionStep`/`FilterStep` sitting directly above a `ReadFromRemotePlanStep`
 /// placeholder into the placeholder's inner (per-shard) plan, so the expression/filter executes on the
-/// shards instead of on the initiator. Runs in the same bottom-up traversal as the `tryMakeDistributed*`
-/// rules and before `finalizeReadFromRemotePlan`.
+/// shards instead of on the initiator. A `LimitStep` above the placeholder is copied (not moved) into
+/// the inner plan when `distributed_push_down_limit` allows it. Runs in the same bottom-up traversal
+/// as the `tryMakeDistributed*` rules and before `finalizeReadFromRemotePlan`.
 void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Replace every `ReadFromRemotePlanStep` placeholder with a `ReadFromRemote` step whose shards
