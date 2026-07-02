@@ -708,7 +708,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
             {
                 KEEPER_STORAGE_LOCK_SHARED(lock);
                 {
-                    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+                    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
                     KeeperResponsesForSessions responses_for_sessions
                         = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                     for (auto & response_for_session : responses_for_sessions)
@@ -1878,7 +1878,7 @@ void KeeperStateMachine::processReadRequests(const KeeperRequestsForSessions & r
 {
     /// Pure local request, just process them with storage
     KEEPER_STORAGE_LOCK_SHARED(storage_lock);
-    ProfiledMutexLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
+    ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
 
     auto responses = storage->processLocalRequests(requests, /*check_acl=*/ true);
 

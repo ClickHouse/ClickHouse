@@ -412,7 +412,7 @@ private:
         const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
-        CacheStateGuard::Lock &);
+        CacheStateGuard::Lock &) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool doTryReserve(
         FileSegment & file_segment,
