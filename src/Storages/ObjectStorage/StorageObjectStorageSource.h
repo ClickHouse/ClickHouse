@@ -196,6 +196,7 @@ public:
         ContextPtr context_,
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
+        size_t list_object_parallelism,
         bool throw_on_zero_files_match_,
         bool with_tags,
         std::function<void(FileProgress)> file_progress_callback_ = {});

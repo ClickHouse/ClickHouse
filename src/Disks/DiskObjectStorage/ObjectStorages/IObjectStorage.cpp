@@ -32,6 +32,12 @@ void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
+ObjectStorageListResult IObjectStorage::listObjectsSingleLevel(
+    const std::string &, const std::string &, size_t, bool, const std::string &, const std::string &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjectsSingleLevel() is not supported");
+}
+
 /// Read single object
 SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
     const StoredObject & object,

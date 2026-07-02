@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -10,6 +11,8 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageParallelListingIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ParallelListingGlobPredicate.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -177,6 +180,14 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
 }
+
+/// Upper bound on the effective `s3_list_object_parallelism`. The setting comes straight from the user
+/// and becomes the size (and queue size) of the per-iterator `S3_LIST_POOL` thread pool, so an absurd
+/// value (e.g. set by mistake or a fuzzer) would otherwise try to grab the entire global thread pool for
+/// a single listing — starving the rest of the server — and overflow the buffered-keys bound derived from
+/// it. No real workload needs more than a few dozen parallel listing streams, so we clamp to a generous
+/// cap rather than reject the query, keeping the setting a pure performance knob.
+static constexpr size_t MAX_LIST_OBJECT_PARALLELISM = 1000;
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
 {
@@ -346,6 +357,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 local_context,
                 is_archive ? nullptr : read_keys,
                 query_settings.list_object_keys_size,
+                query_settings.list_object_parallelism,
                 query_settings.throw_on_zero_files_match,
                 with_tags,
                 file_progress_callback);
@@ -1426,6 +1438,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ContextPtr context_,
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
+    size_t list_object_parallelism,
     bool throw_on_zero_files_match_,
     bool with_tags,
     std::function<void(FileProgress)> file_progress_callback_)
@@ -1447,8 +1460,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
-
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())
         {
@@ -1456,6 +1467,53 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         }
 
         recursive = key_with_globs.path == "/**";
+
+        /// Clamp the user-provided parallelism to a sane maximum before it sizes the listing thread pool
+        /// (and the buffered-keys bound below): a huge value must not be able to grab the whole global
+        /// thread pool for a single listing or overflow the bound.
+        const size_t parallelism = std::min(list_object_parallelism, MAX_LIST_OBJECT_PARALLELISM);
+
+        /// List the matching files in parallel by walking the "directory" tree (the common prefixes
+        /// formed by the '/' delimiter), unless disabled or the path uses the recursive wildcard "**"
+        /// (which can match across '/', so it cannot be pruned per directory level and would degrade
+        /// to one request per directory).
+        const bool use_parallel_listing =
+            parallelism > 1
+            && object_storage->supportsDelimitedListing()
+            && key_with_globs.path.find("**") == std::string::npos;
+
+        if (use_parallel_listing)
+        {
+            LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, parallelism);
+
+            /// Capture the object storage by shared_ptr so it outlives the iterator's worker threads.
+            auto list_level = [storage = object_storage, list_object_keys_size, with_tags]
+                (const std::string & prefix, const std::string & delimiter, const std::string & start_after, const std::string & continuation_token)
+            {
+                return storage->listObjectsSingleLevel(prefix, delimiter, list_object_keys_size, with_tags, start_after, continuation_token);
+            };
+
+            /// Make the parallel listing observe query cancellation: it waits on its own condition
+            /// variables, which a `KILL` or a timeout does not notify, so give it a way to throw the
+            /// proper exception instead of hanging (the parallel listing runs synchronously on the
+            /// query's main thread, e.g. inside `getPathSample`).
+            std::function<void()> check_cancellation;
+            if (auto query_status = local_context->getProcessListElementSafe())
+                check_cancellation = [query_status] { query_status->throwIfKilled(); };
+
+            object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
+                key_prefix,
+                parallelism,
+                /* max_buffered_keys */ list_object_keys_size * parallelism * 2,
+                std::move(list_level),
+                makeShouldDescendPredicate(key_with_globs.path),
+                /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
+                std::move(check_cancellation));
+        }
+        else
+        {
+            object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags, std::nullopt);
+        }
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, getContext(), hive_columns))
         {
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());

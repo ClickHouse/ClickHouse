@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"s3_list_object_parallelism", 1, 1, "New setting to list globbed `s3()` paths with several concurrent `ListObjects` requests by walking the common-prefix tree in parallel."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
