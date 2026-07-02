@@ -1317,7 +1317,22 @@ QueryTreeNodePtr QueryTreeBuilder::setSecondArgumentAsParameter(const ASTFunctio
     auto function_node = std::make_shared<FunctionNode>(function->name);
     function_node->setNullsAction(function->getNullsAction());
 
-    function_node->getParameters().getNodes().push_back(buildExpression(function->arguments->children[1], context)); // Separator
+    /// Keep existing parameters (the optional limit)
+    ///  the second argument overrides the delimiter at slot 0
+    auto & parameters = function_node->getParameters().getNodes();
+    if (function->parameters)
+    {
+        const auto & function_parameters_list = function->parameters->as<ASTExpressionList>()->children;
+        for (const auto & parameter : function_parameters_list)
+            parameters.push_back(buildExpression(parameter, context));
+    }
+
+    auto delimiter_node = buildExpression(function->arguments->children[1], context); // Separator
+    if (parameters.empty())
+        parameters.push_back(std::move(delimiter_node));
+    else
+        parameters[0] = std::move(delimiter_node);
+
     function_node->getArguments().getNodes().push_back(buildExpression(first_arg, context)); // Column to concatenate
 
     if (function->isWindowFunction())
