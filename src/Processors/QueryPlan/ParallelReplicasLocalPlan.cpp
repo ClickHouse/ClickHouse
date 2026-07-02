@@ -254,6 +254,10 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         return {std::move(query_plan), false};
     }
 
+    /// Pin the snapshot replica to the initiator-local replica_num BEFORE any announcement
+    /// is sent (either locally from here or from remote replicas over the network).
+    coordinator->setSnapshotReplicaNum(replica_number);
+
     /// For the first reading step, reuse the pre-analyzed result if available.
     ReadFromMergeTree::AnalysisResultPtr analyzed_result_ptr;
     if (analyzed_read_from_merge_tree.get())
@@ -267,8 +271,9 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     {
         auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
-        MergeTreeAllRangesCallback all_ranges_cb = [coordinator](InitialAllRangesAnnouncement announcement)
-        { coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
+        MergeTreeAllRangesCallback all_ranges_cb
+            = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
+        { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
 
         MergeTreeReadTaskCallback read_task_cb = [coordinator](ParallelReadRequest req) -> std::optional<ParallelReadResponse>
         {
