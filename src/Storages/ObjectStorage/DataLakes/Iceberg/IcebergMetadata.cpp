@@ -1328,14 +1328,18 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
     /// everything under the table path (passing table_path here too matches nothing).
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
 
-    /// Delete data and manifest files first but keep the `*.metadata.json` anchor. A DROP retry
+    /// Delete data and manifest files first but keep the metadata anchor. A DROP retry
     /// reconstructs IcebergMetadata from that anchor (DatabaseDataLake copies its location into
     /// iceberg_metadata_file_path), so if a data delete or the catalog commit below throws, the
     /// anchor still exists and the next DROP can reconstruct the table state and finish cleanup.
+    /// The anchor is `*.metadata.json` plus, when iceberg_use_version_hint is on,
+    /// `metadata/version-hint.text`: getLatestOrExplicitMetadataFileAndVersion reads the hint
+    /// first and throws if it is missing, so deleting it early would break reconstruction after a
+    /// restart even though the drop never committed.
     std::vector<String> metadata_files;
     for (const auto & file : files)
     {
-        if (file.ends_with(".metadata.json"))
+        if (file.ends_with(".metadata.json") || file.ends_with("metadata/version-hint.text"))
         {
             metadata_files.push_back(file);
             continue;
@@ -1349,8 +1353,8 @@ void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & com
     commit();
 
     /// Delete the metadata anchor last. The table is already unregistered here, so a failure only
-    /// orphans the small `*.metadata.json` file(s) (the data is already gone) without affecting
-    /// the correctness or completeness of the drop.
+    /// orphans the small metadata file(s) (the data is already gone) without affecting the
+    /// correctness or completeness of the drop.
     for (const auto & file : metadata_files)
     {
         LOG_DEBUG(log, "Deleting Iceberg metadata file on drop: {}", file);

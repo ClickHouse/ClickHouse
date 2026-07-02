@@ -723,15 +723,20 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
 {
-    delete_data_on_drop = query_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+    /// Snapshot the whole query settings, not just iceberg_delete_data_on_drop: the drop-time
+    /// Iceberg init below reads other session-scoped settings from this context (e.g.
+    /// allow_experimental_geo_types_in_iceberg), which the background drop() cannot otherwise see.
+    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
 }
 
 void StorageObjectStorage::drop()
 {
     /// drop() runs in a background pool without the query context, so build a context from the global
-    /// one carrying the iceberg_delete_data_on_drop value captured in checkTableCanBeDropped.
+    /// one carrying the query settings snapshot captured in checkTableCanBeDropped.
     auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
-    drop_context->setSetting("iceberg_delete_data_on_drop", delete_data_on_drop);
+    if (drop_query_settings)
+        drop_context->setSettings(*drop_query_settings);
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
     /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
     /// initialized (no prior read/write), so configuration->drop() would be a no-op and leave
     /// the files behind. Only initialize when we are going to delete data, so a plain DROP keeps

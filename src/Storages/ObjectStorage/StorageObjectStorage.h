@@ -232,9 +232,11 @@ protected:
     bool supports_tuple_elements = false;
     bool is_table_function = false;
 
-    /// Value of iceberg_delete_data_on_drop captured from the query context in
-    /// checkTableCanBeDropped, so the background drop() (which has no query context) can honor it.
-    mutable bool delete_data_on_drop = false;
+    /// Query settings snapshot captured from the query context in checkTableCanBeDropped, so the
+    /// background drop() (which has no query context) can honor session-scoped settings:
+    /// iceberg_delete_data_on_drop and the Iceberg drop-time init settings that
+    /// lazyInitializeIfNeeded reads (e.g. allow_experimental_geo_types_in_iceberg).
+    mutable std::shared_ptr<const Settings> drop_query_settings;
 
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;

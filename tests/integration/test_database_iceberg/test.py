@@ -946,6 +946,67 @@ def test_drop_table_delete_data_catalog_failure_keeps_metadata(started_cluster):
     assert len(list_s3_objects(minio, bucket, prefix=f"{table_name}/")) == 0
 
 
+def test_drop_table_delete_data_keeps_version_hint_on_failure(started_cluster):
+    # The metadata anchor kept until the drop commits must include metadata/version-hint.text
+    # when iceberg_use_version_hint is on: getLatestOrExplicitMetadataFileAndVersion reads the
+    # hint first and throws if it is missing, so a fresh IcebergMetadata::create could not
+    # reconstruct the table on retry if the hint were deleted before the commit. A failpoint
+    # injects a commit-point failure after the data files are deleted; the *.metadata.json anchor
+    # and version-hint.text must both survive so the retried DROP can finish the cleanup.
+    node = started_cluster.instances["node1"]
+    minio = started_cluster.minio_client
+    bucket = "warehouse-rest"
+    catalog = load_catalog_impl(started_cluster)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    test_ref = f"test_drop_delete_data_vh_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_tbl"
+    create_clickhouse_iceberg_table(
+        started_cluster,
+        node,
+        root_namespace,
+        table_name,
+        "(x String)",
+        additional_settings={"iceberg_use_version_hint": 1},
+    )
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('a')",
+        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 1
+    version_hints = [
+        f
+        for f in list_s3_objects(minio, bucket, prefix=f"{table_name}/")
+        if f.endswith("metadata/version-hint.text")
+    ]
+    assert len(version_hints) == 1
+
+    node.query("SYSTEM ENABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    try:
+        error = node.query_and_get_error(
+            f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+            settings={"iceberg_delete_data_on_drop": 1},
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_drop_catalog_remove_fail")
+    assert "FAULT_INJECTED" in error
+    # Both anchor files survive the failed commit: version-hint.text and the *.metadata.json it
+    # resolves to. Without keeping version-hint.text a restart could not reconstruct the table.
+    remaining = list_s3_objects(minio, bucket, prefix=f"{table_name}/")
+    assert len([f for f in remaining if f.endswith("metadata/version-hint.text")]) == 1
+    assert len([f for f in remaining if f.endswith(".metadata.json")]) > 0
+
+    # Retry without the injected failure: reconstruction from the anchor succeeds and removes all.
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}`",
+        settings={"iceberg_delete_data_on_drop": 1},
+    )
+    assert len(catalog.list_tables(root_namespace)) == 0
+    assert len(list_s3_objects(minio, bucket, prefix=f"{table_name}/")) == 0
+
+
 def test_table_with_slash(started_cluster):
     node = started_cluster.instances["node1"]
 
