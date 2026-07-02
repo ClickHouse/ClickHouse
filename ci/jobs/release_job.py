@@ -233,9 +233,14 @@ def main():
                 []
                 if args.dry_run
                 else [
-                    "command -v createrepo_c >/dev/null && command -v reprepro >/dev/null"
-                    " || { echo 'ERROR: createrepo_c and reprepro must be installed"
-                    " for a release' >&2; exit 1; }"
+                    # Verify the *version*, not just presence: an older
+                    # distro reprepro (5.3.x) may be installed while the 5.4+
+                    # source build failed under the trailing `||:`. reprepro
+                    # 5.4+ is required (the 'Limit' distributions field).
+                    "command -v createrepo_c >/dev/null"
+                    " && reprepro --version 2>&1 | grep -qE '5\\.[4-9]'"
+                    " || { echo 'ERROR: createrepo_c and reprepro 5.4+ must be"
+                    " installed for a release' >&2; exit 1; }"
                 ]
             ),
             workdir=REPO_PATH,
