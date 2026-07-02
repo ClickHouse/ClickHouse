@@ -110,9 +110,7 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
-        , argument_can_have_nulls(hasNullable(filter_column_target_type) ||
-            WhichDataType(filter_column_target_type).isDynamic() ||
-            WhichDataType(filter_column_target_type).isVariant())
+        , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type))
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
@@ -150,7 +148,7 @@ public:
         if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
-            single_element_in_set = (*exact_values->getSetElements().front())[0];
+            single_element_column = exact_values->getSetElements().front();
             return;
         }
 
@@ -191,7 +189,7 @@ private:
 
     bool is_full = false;
 
-    std::optional<Field> single_element_in_set;
+    ColumnPtr single_element_column;
 };
 
 class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
@@ -308,8 +306,9 @@ struct IRuntimeFilterLookup : boost::noncopyable
 {
     virtual ~IRuntimeFilterLookup() = default;
 
-    /// Add runtime filter with the specified name
-    virtual void add(const String & name, UniqueRuntimeFilterPtr runtime_filter) = 0;
+    /// Add a runtime filter under the given rendezvous key. `display_name` is the readable structural
+    /// id kept only for logging; the lookup is keyed by `key`.
+    virtual void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) = 0;
 
     /// Replace the runtime filter with the specified name (if it exists, it is overwritten).
     /// Used by HashJoin to install a SharedFixedHashTableRuntimeFilter that supersedes the

@@ -19,5 +19,8 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP PROFILES 'profile_name' [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
+
+`SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest, unlike the bare `SETTINGS` clause which replaces the whole settings list and also removes all inherited (parent) profiles.
