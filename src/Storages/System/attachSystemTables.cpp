@@ -6,6 +6,17 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachSystemTablesImpl.h>
 
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryLogElement.h>
+#include <Interpreters/StorageID.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/StorageView.h>
+#include <Storages/StorageInMemoryMetadata.h>
+
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
@@ -140,6 +151,7 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
+#include <Common/typeid_cast.h>
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -161,9 +173,168 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+constexpr auto USER_QUERY_LOG_TABLE_NAME = "user_query_log";
+
+String getSystemViewCreateQuery(const String & view_name, const String & select_query)
+{
+    return "CREATE VIEW system." + backQuoteIfNeed(view_name) + " SQL SECURITY NONE AS " + select_query;
+}
+
+ASTPtr parseSystemViewCreateQuery(const String & view_name, const String & select_query)
+{
+    auto create_query = getSystemViewCreateQuery(view_name, select_query);
+
+    ParserCreateQuery parser;
+    return parseQuery(
+        parser,
+        create_query.data(),
+        create_query.data() + create_query.size(),
+        "system view definition",
+        0,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+}
+
+[[noreturn]] void throwReservedSystemViewName(const String & view_name)
+{
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Existing table {} is not the expected filtered security-barrier system view. "
+        "This name is reserved; rename or drop the existing table before starting ClickHouse",
+        StorageID(DatabaseCatalog::SYSTEM_DATABASE, view_name).getFullTableName());
+}
+
+void validateExistingSystemView(
+    ContextPtr context,
+    const StoragePtr & storage,
+    const String & view_name,
+    const ASTCreateQuery * expected_create_query,
+    bool security_barrier)
+{
+    const auto * view = typeid_cast<const StorageView *>(storage.get());
+
+    if (!view || view->isSecurityBarrier() != security_barrier)
+        throwReservedSystemViewName(view_name);
+
+    auto metadata = view->getInMemoryMetadataPtr(context, false);
+    if (metadata->sql_security_type != SQLSecurityType::NONE || metadata->definer)
+        throwReservedSystemViewName(view_name);
+
+    if (!metadata->getSelectQuery().inner_query)
+        throwReservedSystemViewName(view_name);
+
+    if (expected_create_query
+        && (!expected_create_query->select
+            || metadata->getSelectQuery().inner_query->formatWithSecretsOneLine() != expected_create_query->select->formatWithSecretsOneLine()))
+        throwReservedSystemViewName(view_name);
+}
+
+void attachSystemView(
+    ContextPtr context,
+    IDatabase & system_database,
+    const String & view_name,
+    const String & select_query,
+    const ColumnsDescription & columns,
+    const String & comment,
+    bool security_barrier)
+{
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    ASTPtr ast = parseSystemViewCreateQuery(view_name, select_query);
+    const auto & ast_create = ast->as<ASTCreateQuery &>();
+
+    StorageID table_id(DatabaseCatalog::SYSTEM_DATABASE, view_name);
+    String path;
+    if (system_database.getUUID() != UUIDHelpers::Nil)
+    {
+        table_id.uuid = UUIDHelpers::generateV4();
+        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid);
+        path = DatabaseCatalog::getStoreDirPath(table_id.uuid);
+    }
+
+    auto view = std::make_shared<StorageView>(
+        table_id,
+        ast_create,
+        columns,
+        comment,
+        /* is_parameterized_view_ */ false,
+        security_barrier,
+        /* is_system_storage_ */ true);
+    system_database.attachTable(context, view_name, view, path);
+}
+
+}
+
+void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
+{
+    chassert(system_database.getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    auto query_log = context->getQueryLog();
+    String select_query;
+    String comment;
+    ASTPtr ast;
+    const ASTCreateQuery * expected_create_query = nullptr;
+
+    if (query_log)
+    {
+        const auto & query_log_table_id = query_log->getTableID();
+        if (query_log_table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE && query_log_table_id.table_name == USER_QUERY_LOG_TABLE_NAME)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `query_log.table` configuration parameter cannot be set to `{}` when `query_log.database` is `{}` "
+                "because `{}.{}` is reserved for the filtered user query log view",
+                USER_QUERY_LOG_TABLE_NAME,
+                DatabaseCatalog::SYSTEM_DATABASE,
+                DatabaseCatalog::SYSTEM_DATABASE,
+                USER_QUERY_LOG_TABLE_NAME);
+
+        select_query = "SELECT * FROM " + query_log_table_id.getFullTableName()
+            + " WHERE if(initial_user != '', initial_user, user) = currentUser()";
+        comment = "A view over `" + query_log_table_id.getFullTableName()
+            + "` that shows queries submitted by the current user.";
+        ast = parseSystemViewCreateQuery(USER_QUERY_LOG_TABLE_NAME, select_query);
+        expected_create_query = &ast->as<ASTCreateQuery &>();
+    }
+
+    if (system_database.isTableExist(USER_QUERY_LOG_TABLE_NAME, context))
+    {
+        validateExistingSystemView(
+            context,
+            system_database.getTable(USER_QUERY_LOG_TABLE_NAME, context),
+            USER_QUERY_LOG_TABLE_NAME,
+            expected_create_query,
+            /* security_barrier */ true);
+        return;
+    }
+
+    if (!query_log)
+        return;
+
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
+
+    attachSystemView(
+        context,
+        system_database,
+        USER_QUERY_LOG_TABLE_NAME,
+        select_query,
+        QueryLogElement::getColumnsDescription(),
+        comment,
+        /* security_barrier */ true);
+}
+
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
+    attachSystemUserQueryLog(context, system_database);
+
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers", "Generates all natural numbers, starting from 0 (to 2^64 - 1, and then again) in sorted order.", false, "number");
     attachNoDescription<StorageSystemNumbers>(context, system_database, "numbers_mt", "Multithreaded version of `system.numbers`. Numbers order is not guaranteed.", true, "number");

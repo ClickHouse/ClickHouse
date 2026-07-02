@@ -50,6 +50,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
@@ -63,6 +65,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -118,6 +121,17 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
+ColumnsDescription getSecurityBarrierColumnsDescription(ColumnsDescription columns)
+{
+    ColumnsDescription result;
+    for (auto column : columns)
+    {
+        column.type = recursiveRemoveLowCardinality(column.type);
+        result.add(std::move(column));
+    }
+    return result;
+}
+
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   *
@@ -159,18 +173,23 @@ StorageView::StorageView(
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_,
     const String & comment,
-    bool is_parameterized_view_)
+    bool is_parameterized_view_,
+    bool security_barrier_,
+    bool is_system_storage_)
     : StorageWithCommonVirtualColumns(table_id_)
+    , security_barrier(security_barrier_)
+    , is_system_storage(is_system_storage_)
 {
     StorageInMemoryMetadata storage_metadata;
+    const auto columns = security_barrier ? getSecurityBarrierColumnsDescription(columns_) : columns_;
     if (!is_parameterized_view_)
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
         if (!query.isParameterizedView())
-            storage_metadata.setColumns(columns_);
+            storage_metadata.setColumns(columns);
     }
     else
-        storage_metadata.setColumns(columns_);
+        storage_metadata.setColumns(columns);
 
     storage_metadata.setComment(comment);
     if (query.sql_security)
@@ -326,6 +345,22 @@ void StorageView::readImpl(
         const size_t /*max_block_size*/,
         const size_t /*num_streams*/)
 {
+    if (security_barrier)
+    {
+        const auto & settings = context->getSettingsRef();
+        if (!settings[Setting::additional_table_filters].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use `additional_table_filters` with security barrier view `{}`",
+                getStorageID().getFullTableName());
+
+        if (!settings[Setting::additional_result_filter].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use `additional_result_filter` with security barrier view `{}`",
+                getStorageID().getFullTableName());
+    }
+
     ASTPtr current_inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
 
     if (query_info.view_query)
@@ -341,7 +376,11 @@ void StorageView::readImpl(
     {
         auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+            current_inner_query,
+            view_context,
+            options,
+            column_names,
+            security_barrier ? nullptr : query_info.filter_actions_dag.get());
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }

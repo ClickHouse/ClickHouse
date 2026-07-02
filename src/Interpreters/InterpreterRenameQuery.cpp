@@ -24,8 +24,18 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+static void throwIfReservedSystemTableNameWhenDetached(std::string_view database_name, std::string_view table_name)
+{
+    if (DatabaseCatalog::isReservedSystemTableNameWhenDetached(database_name, table_name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is reserved for the filtered user query log view",
+            StorageID(String(database_name), String(table_name)).getFullTableName());
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -63,6 +73,9 @@ BlockIO InterpreterRenameQuery::execute()
     {
         descriptions.emplace_back(elem, current_database);
         const auto & description = descriptions.back();
+
+        throwIfReservedSystemTableNameWhenDetached(description.from_database_name, description.from_table_name);
+        throwIfReservedSystemTableNameWhenDetached(description.to_database_name, description.to_table_name);
 
         UniqueTableName from(description.from_database_name, description.from_table_name);
         UniqueTableName to(description.to_database_name, description.to_table_name);

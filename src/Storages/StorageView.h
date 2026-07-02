@@ -19,12 +19,17 @@ public:
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
         const String & comment,
-        bool is_parameterized_view_ = false);
+        bool is_parameterized_view_ = false,
+        bool security_barrier_ = false,
+        bool is_system_storage_ = false);
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
+    bool isSystemStorage() const override { return is_system_storage; }
     bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
+    bool isSecurityBarrier() const { return security_barrier; }
+    bool allowsViewInlining() const { return !security_barrier; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -63,6 +68,8 @@ public:
 
 protected:
     bool is_parameterized_view;
+    bool security_barrier;
+    bool is_system_storage;
 };
 
 }

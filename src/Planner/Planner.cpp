@@ -76,6 +76,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Analyzer/traverseQueryTree.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectMaterializedCTE.h>
@@ -106,6 +107,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
@@ -191,6 +193,29 @@ namespace ErrorCodes
 
 namespace
 {
+
+String getSecurityBarrierViewName(const QueryTreeNodePtr & query_tree)
+{
+    if (!query_tree)
+        return {};
+
+    String view_name;
+    traverseQueryTree(query_tree, Everything{}, [&](const QueryTreeNodePtr & node)
+    {
+        if (!view_name.empty())
+            return;
+
+        const auto * table_node = node->as<TableNode>();
+        if (!table_node)
+            return;
+
+        const auto * view = typeid_cast<const StorageView *>(table_node->getStorage().get());
+        if (view && view->isSecurityBarrier())
+            view_name = table_node->getStorageID().getFullTableName();
+    });
+
+    return view_name;
+}
 
 /** Check that table and table function table expressions from planner context support transactions.
   *
@@ -291,6 +316,18 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     if (!collect_filters)
         return {};
+
+    if (!settings[Setting::additional_result_filter].value.empty())
+    {
+        for (const auto & table_expression : table_nodes)
+        {
+            if (auto security_barrier_view_name = getSecurityBarrierViewName(table_expression); !security_barrier_view_name.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot use `additional_result_filter` with security barrier view `{}`",
+                    security_barrier_view_name);
+        }
+    }
 
     ResultReplacementMap replacement_map;
 
@@ -1785,6 +1822,12 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto additional_result_filter_ast = parseAdditionalResultFilter(settings);
     if (!additional_result_filter_ast)
         return;
+
+    if (auto security_barrier_view_name = getSecurityBarrierViewName(query_node.getJoinTree()); !security_barrier_view_name.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot use `additional_result_filter` with security barrier view `{}`",
+            security_barrier_view_name);
 
     ColumnsDescription fake_column_descriptions;
     NameSet fake_name_set;

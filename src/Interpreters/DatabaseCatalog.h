@@ -110,6 +110,9 @@ public:
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
 
+    /// Returns true if a passed table name is reserved even when it is not currently attached.
+    static bool isReservedSystemTableNameWhenDetached(std::string_view database_name, std::string_view table_name);
+
     static fs::path getMetadataDirPath() { return fs::path("metadata"); }
     static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
     static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }

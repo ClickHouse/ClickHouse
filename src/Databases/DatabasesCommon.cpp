@@ -533,6 +533,12 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
                         database_name, table_id.database_name);
 
+    if (DatabaseCatalog::isReservedSystemTableNameWhenDetached(database_name, table_name) && !table->isSystemStorage())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Table {} is reserved for the filtered user query log view",
+            StorageID(database_name, table_name).getFullTableName());
+
     if (table_id.hasUUID())
     {
         chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);

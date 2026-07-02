@@ -1,0 +1,3 @@
+Null
+A view over `system.custom_query_log` that shows queries submitted by the current user.
+0
