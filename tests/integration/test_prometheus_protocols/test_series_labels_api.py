@@ -261,15 +261,14 @@ def test_metadata_endpoint_records_query_finish():
     never emitted QueryFinish (and kept the query slot occupied until the whole HTTP response had
     been written).
     """
-    get_json_from_api("/api/v1/labels")
-
-    # The /api/v1/labels endpoint runs a generated `SELECT DISTINCT arrayJoin(mapKeys(tags)) AS label_key ...`
-    # query. finishExecutedQuery records the QueryFinish entry only after the HTTP body has been flushed and
-    # the entry then reaches system.query_log asynchronously, so flush the logs and retry to avoid a race.
-    finished = 0
-    for _ in range(30):
+    def count_label_query_finish():
         node.query("SYSTEM FLUSH LOGS")
-        finished = int(
+        # The generated /api/v1/labels query is `SELECT DISTINCT arrayJoin(mapKeys(tags)) AS label_key ...`.
+        # `query NOT LIKE '%query_log%'` excludes this counting query itself, which otherwise matches the
+        # `AS label_key`/`mapKeys` patterns (they appear in its own text) and would inflate the count with a
+        # self-referential QueryFinish entry, letting the assertion below pass even if the real request
+        # stopped emitting QueryFinish.
+        return int(
             node.query(
                 """
                 SELECT count()
@@ -277,13 +276,30 @@ def test_metadata_endpoint_records_query_finish():
                 WHERE type = 'QueryFinish'
                   AND query LIKE '%AS label_key%'
                   AND query LIKE '%mapKeys%'
+                  AND query NOT LIKE '%query_log%'
                 """
             ).strip()
         )
-        if finished >= 1:
+
+    # Other tests in this module also issue /api/v1/labels, so a matching QueryFinish entry may already
+    # be present in system.query_log. Record a baseline and require the count to strictly increase for the
+    # request made below, otherwise the test would still pass on a stale entry even if this specific request
+    # stopped emitting QueryFinish again.
+    baseline = count_label_query_finish()
+
+    get_json_from_api("/api/v1/labels")
+
+    # The /api/v1/labels endpoint runs a generated `SELECT DISTINCT arrayJoin(mapKeys(tags)) AS label_key ...`
+    # query. finishExecutedQuery records the QueryFinish entry only after the HTTP body has been flushed and
+    # the entry then reaches system.query_log asynchronously, so flush the logs and retry to avoid a race.
+    finished = baseline
+    for _ in range(30):
+        finished = count_label_query_finish()
+        if finished > baseline:
             break
         time.sleep(0.5)
 
-    assert (
-        finished >= 1
-    ), f"Expected a QueryFinish entry in system.query_log for the /api/v1/labels query, got {finished}"
+    assert finished > baseline, (
+        f"Expected a new QueryFinish entry in system.query_log for the /api/v1/labels query "
+        f"(baseline {baseline}), got {finished}"
+    )

@@ -105,6 +105,27 @@ def test_series_with_start_end_out_of_range():
     assert data == []
 
 
+def test_series_start_bound_respects_microsecond_scale():
+    """The `start`/`end` comparison literal must be built with the table's real `DateTime64(6)` scale,
+    not a hard-coded millisecond `DateTime64(3)`.
+
+    Every series has its last sample at t = 1030 s exactly, stored with microsecond precision. A `start`
+    400 microseconds *after* that sample must exclude the series (`max_time >= start` is false), while a
+    `start` 400 microseconds *before* it must keep the series. A `DateTime64(3)` literal would round both
+    bounds to 1030.000 s and return the same series in both cases, so this test fails if the implementation
+    ever falls back to millisecond literals for a higher-scale table."""
+    just_after = get_json_from_api("/api/v1/series?start=1030.0004&end=2000")
+    assert (
+        just_after == []
+    ), f"Expected no series for a start 400us after the last sample, got {just_after}"
+
+    just_before = get_json_from_api("/api/v1/series?start=1029.9996&end=2000")
+    metric_names = {entry["__name__"] for entry in just_before if "__name__" in entry}
+    assert "cpu_usage" in metric_names and "memory_usage" in metric_names, (
+        f"Expected both series for a start 400us before the last sample, got {just_before}"
+    )
+
+
 def test_labels_with_start_end_in_range():
     """GET /api/v1/labels with an in-range [start, end] returns the real labels."""
     data = get_json_from_api("/api/v1/labels?start=500&end=2000")
