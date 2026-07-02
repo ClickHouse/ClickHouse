@@ -4,9 +4,11 @@
 WITH
     (SELECT groupBloomFilterState(1000, 0.01)(number) FROM numbers(100)) AS explicit_fpr_bf,
     (SELECT groupBloomFilterState(4096, 5)(number) FROM numbers(100)) AS explicit_size_bf,
+    (SELECT groupBloomFilterState(4096, 5, 0)(number) FROM numbers(100)) AS explicit_size_seed_bf,
     (SELECT groupBloomFilterState(1000, 0.01, 42)(number) FROM numbers(100)) AS explicit_seed_bf,
     (SELECT groupBloomFilterState(number) FROM numbers(100)) AS default_bf,
     (SELECT groupBloomFilterState(number) FROM numbers(10)) AS default_type_bf,
+    (SELECT groupBloomFilterState(10000, 0.025, 0)(number) FROM numbers(10)) AS explicit_default_type_bf,
     (
         SELECT groupBloomFilterMergeState(state)
         FROM
@@ -16,6 +18,24 @@ WITH
             SELECT groupBloomFilterState(toUInt64(number + 100)) AS state FROM numbers(10)
         )
     ) AS merged_default_bf,
+    (
+        SELECT groupBloomFilterMergeState(4096, 5)(state)
+        FROM
+        (
+            SELECT groupBloomFilterState(4096, 5)(toUInt64(number)) AS state FROM numbers(10)
+            UNION ALL
+            SELECT groupBloomFilterState(4096, 5, 0)(toUInt64(number + 100)) AS state FROM numbers(10)
+        )
+    ) AS merged_equivalent_direct_bf,
+    (
+        SELECT groupBloomFilterMergeState(state)
+        FROM
+        (
+            SELECT groupBloomFilterState(toUInt64(number)) AS state FROM numbers(10)
+            UNION ALL
+            SELECT groupBloomFilterState(10000, 0.025, 0)(toUInt64(number + 100)) AS state FROM numbers(10)
+        )
+    ) AS merged_equivalent_default_bf,
     (SELECT groupBloomFilterState(1000, 1)(number) FROM numbers(100)) AS integer_second_param_bf,
     (SELECT groupBloomFilterState(1000, 0.999)(number) FROM numbers(10)) AS high_fpr_bf,
     (SELECT groupBloomFilterState(4096, 20)(number) FROM numbers(100)) AS max_hashes_bf,
@@ -27,7 +47,13 @@ SELECT
     bloomFilterContains(default_bf, toUInt64(42)),
     bloomFilterContains(default_bf, toUInt64(200)),
     toTypeName(default_type_bf) LIKE 'AggregateFunction(groupBloomFilter%',
+    toTypeName(explicit_size_bf) = toTypeName(explicit_size_seed_bf),
+    toTypeName(default_type_bf) = toTypeName(explicit_default_type_bf),
     bloomFilterContains(merged_default_bf, toUInt64(5)),
+    bloomFilterContains(merged_equivalent_direct_bf, toUInt64(5)),
+    bloomFilterContains(merged_equivalent_direct_bf, toUInt64(105)),
+    bloomFilterContains(merged_equivalent_default_bf, toUInt64(5)),
+    bloomFilterContains(merged_equivalent_default_bf, toUInt64(105)),
     bloomFilterContains(integer_second_param_bf, toUInt64(50)),
     toTypeName(high_fpr_bf) LIKE 'AggregateFunction(groupBloomFilter%',
     bloomFilterContains(max_hashes_bf, toUInt64(50)),

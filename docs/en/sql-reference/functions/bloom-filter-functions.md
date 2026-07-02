@@ -29,7 +29,7 @@ bloomFilterContains(bloom_filter, value)
 
 | Argument | Description | Type |
 |----------|-------------|------|
-| `bloom_filter` | Bloom filter state produced by `groupBloomFilterState`. [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or `AggregateFunction(groupBloomFilter(params...), T)` for a parameterized form (e.g. `AggregateFunction(groupBloomFilter(1000), String)`). The parameters must match those used to build the state. | [`AggregateFunction(groupBloomFilter[(parameters...)], T)`](/sql-reference/data-types/aggregatefunction) |
+| `bloom_filter` | Bloom filter state produced by `groupBloomFilterState`. [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or `AggregateFunction(groupBloomFilter(params...), T)` for a parameterized form (e.g. `AggregateFunction(groupBloomFilter(1000), String)`). The parameters must resolve to the same effective Bloom filter configuration as the state. | [`AggregateFunction(groupBloomFilter[(parameters...)], T)`](/sql-reference/data-types/aggregatefunction) |
 | `value` | Value to check for membership. For numeric filters, it may be any compatible numeric type and is converted to the filter value type `T` with an accurate cast. Values that cannot be represented in `T` are treated as definitely absent and return `0`. Incompatible types cause an exception. | `T` or a compatible numeric type |
 
 ### Returned value {#returned-value}

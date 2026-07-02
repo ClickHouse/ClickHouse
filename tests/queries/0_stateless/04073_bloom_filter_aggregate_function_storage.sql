@@ -47,13 +47,18 @@ INSERT INTO bloom_filter_amt
 SELECT 'k', groupBloomFilterState(1000)(number + 50)
 FROM numbers(50);
 
+INSERT INTO bloom_filter_amt
+SELECT 'k', groupBloomFilterState(1000, 0.025, 0)(number + 100)
+FROM numbers(50);
+
 OPTIMIZE TABLE bloom_filter_amt FINAL;
 
--- After merge, filter must contain values from both inserts (0..49 and 50..99)
+-- After merge, filter must contain values from all inserts (0..49, 50..99, and 100..149)
 SELECT
     key,
     bloomFilterContains(groupBloomFilterMergeState(1000)(bf), toUInt64(10)) AS has_10,
     bloomFilterContains(groupBloomFilterMergeState(1000)(bf), toUInt64(75)) AS has_75,
+    bloomFilterContains(groupBloomFilterMergeState(1000)(bf), toUInt64(125)) AS has_125,
     bloomFilterContains(groupBloomFilterMergeState(1000)(bf), toUInt64(200)) AS has_200
 FROM bloom_filter_amt
 GROUP BY key;

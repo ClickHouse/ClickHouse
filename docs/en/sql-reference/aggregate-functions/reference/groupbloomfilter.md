@@ -61,7 +61,7 @@ The maximum allowed filter size is 256 MB.
 - With `-State` combinator: returns the Bloom filter state as [`AggregateFunction(groupBloomFilter, T)`](/sql-reference/data-types/aggregatefunction) for the default form, or as `AggregateFunction(groupBloomFilter(params...), T)` for parameterized forms, for example `AggregateFunction(groupBloomFilter(1000), String)`.
 - Without `-State` combinator: throws an exception. Use `groupBloomFilterState` or `groupBloomFilterMergeState` with `bloomFilterContains` instead.
 
-Parameterized state types must include the same aggregate parameters that are used to build the state. This is important when defining `AggregatingMergeTree` columns explicitly.
+Parameterized state types must resolve to the same effective Bloom filter configuration: `filter_size_bytes`, `num_hashes`, and `seed`. Equivalent parameter forms, such as omitted default `seed`, are compatible when defining `AggregatingMergeTree` columns explicitly.
 
 ```sql
 CREATE TABLE bloom_filter_by_key

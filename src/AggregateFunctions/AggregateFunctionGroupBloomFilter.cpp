@@ -57,6 +57,11 @@ UInt64 convertGroupBloomFilterParameterToUInt64(const Field & parameter, std::st
     }
 }
 
+Array getCanonicalGroupBloomFilterParameters(size_t filter_size_bytes, size_t num_hashes, size_t seed)
+{
+    return {UInt64(filter_size_bytes), UInt64(num_hashes), UInt64(seed)};
+}
+
 /// Base class for Bloom filter aggregate functions
 template <typename Derived>
 class AggregateFunctionGroupBloomFilterBase
@@ -73,9 +78,9 @@ public:
         size_t filter_size_bytes_,
         size_t num_hashes_,
         size_t seed_,
-        const Array & user_parameters)
+        const Array & canonical_parameters)
         : IAggregateFunctionDataHelper<AggregateFunctionGroupBloomFilterData, Derived>(
-            {type}, user_parameters, std::make_shared<DataTypeNumber<UInt64>>())
+            {type}, canonical_parameters, std::make_shared<DataTypeNumber<UInt64>>())
         , filter_size_bytes(filter_size_bytes_)
         , num_hashes(num_hashes_)
         , seed(seed_)
@@ -141,9 +146,9 @@ public:
         size_t filter_size_bytes_,
         size_t num_hashes_,
         size_t seed_,
-        const Array & user_parameters)
+        const Array & canonical_parameters)
         : AggregateFunctionGroupBloomFilterBase<AggregateFunctionGroupBloomFilter<T>>(
-            type, filter_size_bytes_, num_hashes_, seed_, user_parameters)
+            type, filter_size_bytes_, num_hashes_, seed_, canonical_parameters)
     {
     }
 
@@ -165,9 +170,9 @@ public:
         size_t filter_size_bytes_,
         size_t num_hashes_,
         size_t seed_,
-        const Array & user_parameters)
+        const Array & canonical_parameters)
         : AggregateFunctionGroupBloomFilterBase<AggregateFunctionGroupBloomFilterString>(
-            type, filter_size_bytes_, num_hashes_, seed_, user_parameters)
+            type, filter_size_bytes_, num_hashes_, seed_, canonical_parameters)
     {
     }
 
@@ -189,9 +194,9 @@ public:
         size_t filter_size_bytes_,
         size_t num_hashes_,
         size_t seed_,
-        const Array & user_parameters)
+        const Array & canonical_parameters)
         : AggregateFunctionGroupBloomFilterBase<AggregateFunctionGroupBloomFilterDateTime64>(
-            type, filter_size_bytes_, num_hashes_, seed_, user_parameters)
+            type, filter_size_bytes_, num_hashes_, seed_, canonical_parameters)
     {
     }
 
@@ -275,62 +280,63 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
 
     const DataTypePtr & arg_type = argument_types[0];
     WhichDataType which(arg_type);
+    const Array canonical_parameters = getCanonicalGroupBloomFilterParameters(filter_size_bytes, num_hashes, seed);
 
     // Integer types
     if (which.isUInt8())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt8>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt8>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isUInt16())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt16>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt16>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isUInt32())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt32>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt32>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isUInt64())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt64>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt64>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isUInt128())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt128>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt128>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isUInt256())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt256>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt256>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt8())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int8>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int8>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt16())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int16>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int16>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt32())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int32>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int32>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt64())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int64>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int64>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt128())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int128>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int128>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isInt256())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int256>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int256>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // Floating point types
     if (which.isFloat32())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Float32>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Float32>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isFloat64())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Float64>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Float64>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // Date and time types
     if (which.isDate())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt16>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt16>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isDate32())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int32>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int32>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isDateTime())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt32>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UInt32>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isDateTime64())
-        return std::make_shared<AggregateFunctionGroupBloomFilterDateTime64>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilterDateTime64>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // Enum types
     if (which.isEnum8())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int8>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int8>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isEnum16())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<Int16>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<Int16>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // UUID type
     if (which.isUUID())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<UUID>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<UUID>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // IP address types
     if (which.isIPv4())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<IPv4>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<IPv4>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     if (which.isIPv6())
-        return std::make_shared<AggregateFunctionGroupBloomFilter<IPv6>>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilter<IPv6>>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
     // String types
     if (which.isString() || which.isFixedString())
-        return std::make_shared<AggregateFunctionGroupBloomFilterString>(arg_type, filter_size_bytes, num_hashes, seed, parameters);
+        return std::make_shared<AggregateFunctionGroupBloomFilterString>(arg_type, filter_size_bytes, num_hashes, seed, canonical_parameters);
 
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
         "Aggregate function {} does not support type {}",
@@ -391,7 +397,7 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` (default form) or "
         "`AggregateFunction(groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(groupBloomFilter(1000), String)`) "
         "when using the `-State` combinator. "
-        "The parameterized form must repeat the same parameters when defining `AggregatingMergeTree` columns explicitly. "
+        "Parameterized forms must resolve to the same effective `filter_size_bytes`, `num_hashes`, and `seed` when defining `AggregatingMergeTree` columns explicitly. "
         "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
         {"AggregateFunction(groupBloomFilter[(parameters...)], T)"}
     };

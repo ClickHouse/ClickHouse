@@ -332,7 +332,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
-    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
+    return std::make_shared<DataTypeAggregateFunction>(function, argument_types, function->getParameters(), version);
 }
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
