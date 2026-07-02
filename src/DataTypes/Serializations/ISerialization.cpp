@@ -273,16 +273,17 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column->size();
-        /// Use `IColumn::mutate` instead of `assumeMutable`: when `column` is shared (e.g. it was
-        /// placed into the substreams cache by an earlier substream read), appending to it in place
-        /// would mutate data still referenced by another owner. `mutate` clones only when shared and
-        /// is a no-op for the common uniquely-owned case.
-        auto mutable_column = IColumn::mutate(std::move(column));
+        /// If `column` is shared — e.g. it was placed into the substreams cache by an earlier substream
+        /// read — appending to it in place would mutate data still referenced by another owner. Clone it
+        /// when shared via `IColumn::mutate` (a no-op for the common uniquely-owned case). Assigning the
+        /// result back to `column` up front also keeps `column` valid if `deserializeBinaryBulk` throws
+        /// below (e.g. on a memory limit): otherwise `column` would be left moved-from (null), which the
+        /// previous `assumeMutable` path never did.
+        column = IColumn::mutate(std::move(column));
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
-        column = std::move(mutable_column);
+        deserializeBinaryBulk(column->assumeMutableRef(), *stream, rows_offset, limit, avg_value_size_hint);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
         if (settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, *column);
