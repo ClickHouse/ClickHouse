@@ -1495,9 +1495,60 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         if (select_query_options.only_analyze)
         {
             auto projection_columns = query_node ? query_node->getProjectionColumns() : union_node->computeProjectionColumns();
+
+            /// Keep constant projections as ColumnConst so this analyze-only header matches real
+            /// execution (which emits a ColumnConst). Otherwise the header may diverge for an unused
+            /// constant column and break parallel-replicas reading: the coordinator prunes the unused
+            /// plain column while a replica keeps the ColumnConst flowing, so the RemoteSource is built
+            /// with too few columns and the chunk pushed by the replica does not match the output port
+            /// ("Invalid number of columns in chunk pushed to OutputPort").
+            ///
+            /// A projection is constant not only when it is a folded ConstantNode but also when it
+            /// evaluates to a constant column at runtime, even while referencing a source column
+            /// (identity(0) returns its constant argument unchanged; ignore(s) always returns 0). Derive
+            /// each projection header through the same ActionsDAG::updateHeader path real planning uses,
+            /// feeding it a header of the expression's own input columns, and keep the result only when
+            /// it is a ColumnConst. This handles every constant-producing shape uniformly (literal
+            /// constants, constant-by-semantics functions, transparent wrappers, partial-constant
+            /// functions, and higher-order functions over constant arguments) without enumerating them.
+            ///
+            /// A projection may hold an IN operator or a subquery whose prepared set is not registered in
+            /// this only_analyze context yet; collectSets registers it first, exactly as real planning
+            /// does, so buildActionsDAGFromExpressionNode does not raise "No set is registered". The set
+            /// is only registered, not executed, so this stays an analyze-only step.
+            const QueryTreeNodes * projection_nodes = nullptr;
+            if (query_node)
+                projection_nodes = &query_node->getProjection().getNodes();
+
             Block source_header;
-            for (auto & projection_column : projection_columns)
-                source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            for (size_t i = 0; i < projection_columns.size(); ++i)
+            {
+                const auto & projection_column = projection_columns[i];
+                ColumnPtr column;
+                if (projection_nodes && i < projection_nodes->size())
+                {
+                    collectSets((*projection_nodes)[i], *planner_context);
+                    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+                    auto [projection_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+                        (*projection_nodes)[i], {}, planner_context, empty_correlated_columns_set);
+                    /// Correlated projections carry PLACEHOLDER nodes that never fold to a constant.
+                    if (!correlated_subtrees.notEmpty() && projection_dag.getOutputs().size() == 1)
+                    {
+                        Block input_header;
+                        for (const auto * input : projection_dag.getInputs())
+                            input_header.insert(ColumnWithTypeAndName(
+                                input->result_type->createColumn(), input->result_type, input->result_name));
+                        auto evaluated = projection_dag.updateHeader(input_header).safeGetByPosition(0).column;
+                        if (evaluated && isColumnConst(*evaluated))
+                            column = projection_column.type->createColumnConst(0, (*evaluated)[0]);
+                    }
+                }
+
+                if (column)
+                    source_header.insert(ColumnWithTypeAndName(column, projection_column.type, projection_column.name));
+                else
+                    source_header.insert(ColumnWithTypeAndName(projection_column.type, projection_column.name));
+            }
 
             auto read_nothing = std::make_unique<ReadNothingStep>(std::make_shared<const Block>(source_header));
             read_nothing->setStepDescription("Read from NullSource");
