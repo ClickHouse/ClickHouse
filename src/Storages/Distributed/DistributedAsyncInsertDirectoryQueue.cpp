@@ -215,7 +215,7 @@ std::chrono::milliseconds DistributedAsyncInsertDirectoryQueue::calculateSleepTi
 
 void DistributedAsyncInsertDirectoryQueue::updateSleepTime()
 {
-    size_t error_count;
+    size_t error_count = 0;
     {
         std::lock_guard status_lock(status_mutex);
         error_count = status.error_count;
@@ -231,6 +231,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
     std::lock_guard lock{mutex};
 
     bool do_sleep = false;
+    bool had_error = false;
     while (!pending_files.isFinished())
     {
         do_sleep = true;
@@ -246,19 +247,11 @@ void DistributedAsyncInsertDirectoryQueue::run()
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
-
-                const auto now = std::chrono::system_clock::now();
-                if (now - last_decrease_time > decrease_error_count_period)
-                {
-                    std::lock_guard status_lock(status_mutex);
-
-                    status.error_count /= 2;
-                    last_decrease_time = now;
-                }
             }
             catch (...)
             {
                 tryLogCurrentException(getLoggerName().data());
+                had_error = true;
                 do_sleep = true;
             }
         }
@@ -267,6 +260,19 @@ void DistributedAsyncInsertDirectoryQueue::run()
 
         if (do_sleep)
             break;
+    }
+
+    /// Decay error_count on any non-failing run (drain or idle poll) so the backoff relaxes
+    /// after recovery even without traffic; skip on error so it keeps growing during an outage.
+    if (!had_error)
+    {
+        const auto now = std::chrono::system_clock::now();
+        std::lock_guard status_lock(status_mutex);
+        if (now - last_decrease_time > decrease_error_count_period)
+        {
+            status.error_count /= 2;
+            last_decrease_time = now;
+        }
     }
 
     /// Recompute the backoff here, the only place sleep_time is used, so it tracks error_count up and down.
