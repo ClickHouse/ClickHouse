@@ -16,6 +16,19 @@
 namespace DB
 {
 
+/// Returns the number of worker hosts available for distributed plan execution.
+/// Reads from `stateless_worker_client.cluster` config.
+size_t getDistributedWorkerCount(ContextPtr context);
+
+/// Returns the value of `_internal_cascades_cluster_node_count` query parameter,
+/// or 0 if not set. Used by the optimizer to determine cluster size and by the
+/// executor to cap the host list.
+size_t getCascadesClusterNodeCountParam(ContextPtr context);
+
+/// Task budget for the Cascades optimizer, overridable via the
+/// `_internal_cascades_task_limit` query parameter (0 or absent -> default_limit).
+size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit);
+
 /// Network endpoint of a worker, resolved on the initiator from the cluster config (and
 /// server-level defaults). Both ports may differ per node so several workers can share a host.
 struct WorkerAddress

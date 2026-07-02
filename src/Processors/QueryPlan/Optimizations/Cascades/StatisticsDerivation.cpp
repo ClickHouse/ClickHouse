@@ -1,0 +1,474 @@
+#include <Processors/QueryPlan/Optimizations/Cascades/StatisticsDerivation.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/logger_useful.h>
+#include <base/types.h>
+
+namespace DB
+{
+
+namespace Setting
+{
+    extern const SettingsBool allow_statistics_optimize;
+}
+
+void StatisticsDerivation::deriveStatistics(GroupId group_id)
+{
+    auto group = memo.getGroup(group_id);
+
+    /// Statistics already derived for this group
+    if (group->statistics.has_value())
+        return;
+
+    /// Pick the first logical expression to derive statistics from
+    /// (all logical expressions in a group represent the same logical result)
+    if (group->logical_expressions.empty())
+    {
+        LOG_WARNING(log, "Group #{} has no logical expressions", group_id);
+        group->statistics = ExpressionStatistics();
+        return;
+    }
+
+    auto expression = group->logical_expressions.front();
+    const IQueryPlanStep * plan_step = expression->getQueryPlanStep();
+
+    /// Ensure all input groups have statistics first (bottom-up derivation)
+    for (const auto & input : expression->inputs)
+    {
+        auto input_group = memo.getGroup(input.group_id);
+        if (!input_group->statistics.has_value())
+            deriveStatistics(input.group_id);
+    }
+
+    /// Derive statistics based on the step type
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(plan_step))
+    {
+        const auto & left_input = expression->inputs[0];
+        const auto & right_input = expression->inputs[1];
+        auto left_input_group = memo.getGroup(left_input.group_id);
+        auto right_input_group = memo.getGroup(right_input.group_id);
+        group->statistics = deriveJoinStatistics(*join_step, *left_input_group->statistics, *right_input_group->statistics);
+    }
+    else if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(plan_step))
+    {
+        group->statistics = deriveReadStatistics(*read_step);
+    }
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveFilterStatistics(*filter_step, *input_group->statistics);
+    }
+    else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveExpressionStatistics(*expression_step, *input_group->statistics);
+    }
+    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveAggregatingStatistics(*aggregating_step, *input_group->statistics);
+    }
+    else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveSortingStatistics(*sorting_step, *input_group->statistics);
+    }
+    else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
+    {
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = deriveLimitStatistics(*limit_step, *input_group->statistics);
+    }
+    else if (!expression->inputs.empty())
+    {
+        /// By default take statistics from the first input
+        auto input_group = memo.getGroup(expression->inputs[0].group_id);
+        group->statistics = *input_group->statistics;
+    }
+    else
+    {
+        group->statistics = ExpressionStatistics();
+    }
+
+    LOG_TEST(log, "Derived statistics for group #{}:\n{}",
+        group_id, group->statistics->dump());
+}
+
+Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base, Float64 left, Float64 right)
+{
+    /// Paste is position-wise (no keys): one output row per aligned pair.
+    if (kind == JoinKind::Paste)
+        return std::min(left, right);
+    /// Cross/comma product keeps the multiplicative estimate.
+    if (kind == JoinKind::Cross || kind == JoinKind::Comma)
+        return base;
+
+    /// A full join keeps unmatched rows from both sides, so it is at least the larger side regardless
+    /// of strictness. (Checked before the semi/any bounds, which apply only to one preserved side.)
+    if (kind == JoinKind::Full)
+        return std::max({base, left, right});
+
+    const Float64 preserved = (kind == JoinKind::Right) ? right : left;
+
+    /// Semi/anti filter the preserved side, so the output cannot exceed it.
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+        return std::min(base, preserved);
+
+    if (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny || strictness == JoinStrictness::Asof)
+    {
+        /// Outer any/asof keep every preserved-side row (one match each).
+        if (kind == JoinKind::Left || kind == JoinKind::Right)
+            return preserved;
+        /// Inner asof keeps one nearest match per left row, so it is bounded by the left side.
+        if (strictness == JoinStrictness::Asof)
+            return std::min(base, left);
+        /// Inner any dedups to matching keys (measured: 1000 rows of one key ANY-join 1 row -> 1), so
+        /// it cannot exceed either side.
+        return std::min({base, left, right});
+    }
+
+    /// Strictness All/Unspecified: an outer join keeps every preserved-side row, so the output is at
+    /// least the preserved side.
+    if (kind == JoinKind::Left)
+        return std::max(base, left);
+    if (kind == JoinKind::Right)
+        return std::max(base, right);
+    return base;
+}
+
+Float64 clampJoinMaxRowCount(JoinKind kind, JoinStrictness strictness, Float64 product, Float64 left, Float64 right)
+{
+    /// Position-wise: exactly the shorter side.
+    if (kind == JoinKind::Paste)
+        return std::min(left, right);
+    /// A full join can emit every row from both sides when the keys are disjoint.
+    if (kind == JoinKind::Full)
+        return std::max(product, left + right);
+
+    const Float64 preserved = (kind == JoinKind::Right) ? right : left;
+    const bool reduces_to_preserved =
+        strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti
+        || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny
+        || strictness == JoinStrictness::Asof;
+
+    /// Semi/anti/any keep at most one row per preserved-side row (anti can keep the whole preserved
+    /// side even when the other side is empty), so the preserved side is the upper bound.
+    if (reduces_to_preserved && (kind == JoinKind::Left || kind == JoinKind::Right))
+        return preserved;
+
+    /// An outer join with matches can multiply up to the product but never drops below the preserved
+    /// side (unmatched rows are kept).
+    if (kind == JoinKind::Left)
+        return std::max(product, left);
+    if (kind == JoinKind::Right)
+        return std::max(product, right);
+    /// Inner (any strictness), cross, comma: the product is a valid upper bound.
+    return product;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
+    const JoinStepLogical & join_step,
+    const ExpressionStatistics & left_statistics,
+    const ExpressionStatistics & right_statistics)
+{
+    ExpressionStatistics statistics;
+    statistics.min_row_count = 0;
+    statistics.max_row_count = left_statistics.max_row_count * right_statistics.max_row_count;
+
+    statistics.column_statistics.insert(left_statistics.column_statistics.begin(), left_statistics.column_statistics.end());
+    statistics.column_statistics.insert(right_statistics.column_statistics.begin(), right_statistics.column_statistics.end());
+
+    Float64 join_selectivity = 1.0;
+
+    /// Columns already used in a predicate on each join side. A predicate that
+    /// reuses a column is redundant (implied by transitivity from a child join)
+    /// and should not contribute to selectivity.
+    std::unordered_set<String> left_bound_columns;
+    std::unordered_set<String> right_bound_columns;
+
+    for (const auto & predicate_expression : join_step.getJoinOperator().expression)
+    {
+        const auto & predicate = predicate_expression.asBinaryPredicate();
+        auto left_column_actions = get<1>(predicate);
+        auto right_column_actions = get<2>(predicate);
+
+        if (get<0>(predicate) != JoinConditionOperator::Equals || !left_column_actions || !right_column_actions)
+        {
+            /// TODO: add support for non-equality operators
+            LOG_TEST(log, "Skipping predicate '{}'", predicate_expression.dump());
+            continue;
+        }
+
+        if (left_column_actions.fromRight() && right_column_actions.fromLeft())
+            std::swap(left_column_actions, right_column_actions);
+        const auto & left_column = left_column_actions.getColumnName();
+        const auto & right_column = right_column_actions.getColumnName();
+
+        bool left_already_bound = !left_bound_columns.insert(left_column).second;
+        bool right_already_bound = !right_bound_columns.insert(right_column).second;
+
+        auto left_column_statistics = left_statistics.column_statistics.find(left_column);
+        auto right_column_statistics = right_statistics.column_statistics.find(right_column);
+
+        UInt64 left_number_of_distinct_values = 1;
+        UInt64 right_number_of_distinct_values = 1;
+        UInt64 min_number_of_distinct_values = UInt64(std::min(left_statistics.estimated_row_count, right_statistics.estimated_row_count));
+        if (left_column_statistics != left_statistics.column_statistics.end())
+        {
+            left_number_of_distinct_values = left_column_statistics->second.num_distinct_values;
+            min_number_of_distinct_values = std::min(min_number_of_distinct_values, left_number_of_distinct_values);
+        }
+        if (right_column_statistics != right_statistics.column_statistics.end())
+        {
+            right_number_of_distinct_values = right_column_statistics->second.num_distinct_values;
+            min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
+        }
+
+        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities
+        UInt64 max_number_of_distinct_values = std::max(left_number_of_distinct_values, right_number_of_distinct_values);
+        Float64 predicate_selectivity = 1.0 / Float64(max_number_of_distinct_values);
+
+        /// NDV for join predicate columns can decrease if the other column has smaller NDV
+        statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
+        statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
+
+        /// Predicate reuses a column already seen on one side — redundant for selectivity.
+        if (left_already_bound || right_already_bound)
+        {
+            LOG_TEST(log, "Predicate '{} = {}' is redundant (column already bound), skipping for selectivity",
+                left_column, right_column);
+            continue;
+        }
+
+        LOG_TEST(log, "Predicate '{} = {}' selectivity: 1 / {}",
+            left_column, right_column, 1.0 / predicate_selectivity);
+
+        /// Multiply selectivities of predicates assuming they are independent
+        join_selectivity *= predicate_selectivity;
+    }
+
+    statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
+
+    /// Use the join order optimizer's cardinality as a lower bound — it handles
+    /// correlated predicates (e.g. composite FK joins) better than multiplicative independence.
+    if (auto hint = join_step.getResultRowsEstimation())
+    {
+        if (Float64(*hint) > statistics.estimated_row_count)
+        {
+            LOG_TEST(log, "Using join order optimizer hint: {} rows (multiplicative estimate was {})",
+                *hint, statistics.estimated_row_count);
+            statistics.estimated_row_count = Float64(*hint);
+        }
+    }
+
+    /// Constrain the inner-product estimate to the join semantics (outer joins keep the preserved side,
+    /// semi/anti/any bound it). Applied after the join-order hint so a hint cannot exceed a semantic
+    /// upper bound (e.g. a semi join above its preserved-side row count).
+    const auto & join_operator = join_step.getJoinOperator();
+    statistics.estimated_row_count = clampJoinRowCount(join_operator.kind, join_operator.strictness,
+        statistics.estimated_row_count, left_statistics.estimated_row_count, right_statistics.estimated_row_count);
+    statistics.max_row_count = clampJoinMaxRowCount(join_operator.kind, join_operator.strictness,
+        statistics.max_row_count, left_statistics.max_row_count, right_statistics.max_row_count);
+
+    /// Width comes from the actual join output columns; summing both inputs double-counts join keys and
+    /// can include columns the join does not emit.
+    statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*join_step.getOutputHeader());
+
+    for (auto & column_statistics : statistics.column_statistics)
+        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
+            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+
+    if (statistics.estimated_row_count < 0.01)
+    {
+        LOG_TEST(log, "Possibly incorrect estimation result: {}\nleft stats: {}\nright stats: {}\njoin_selectivity: {}",
+            statistics.dump(), left_statistics.dump(), right_statistics.dump(), join_selectivity);
+    }
+
+    return statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMergeTree & read_step)
+{
+    ExpressionStatistics statistics;
+    const auto & table_name = read_step.getStorageID().getTableName();
+
+    statistics.min_row_count = 0;
+    statistics.max_row_count = Float64(read_step.getStorageSnapshot()->storage.totalRows(nullptr).value_or(std::numeric_limits<UInt64>::max()));
+
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result = read_step.getAnalyzedResult();
+    analyzed_result = analyzed_result ? analyzed_result : read_step.selectRangesToRead();
+    if (analyzed_result)
+    {
+        statistics.estimated_row_count = Float64(analyzed_result->selected_rows);
+        statistics.max_row_count = Float64(analyzed_result->selected_rows);
+    }
+    else
+        statistics.estimated_row_count = 1000000;
+
+    if (read_step.getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+    {
+        /// TODO: Move this to IOptimizerStatistics implementation
+        if (auto estimator = read_step.getConditionSelectivityEstimator(read_step.getAllColumnNames()))
+        {
+            auto prewhere_info = read_step.getPrewhereInfo();
+            const ActionsDAG::Node * prewhere_node = prewhere_info
+                ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
+                : nullptr;
+            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
+
+            statistics.estimated_row_count = Float64(relation_profile.rows);
+            statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
+            for (const auto & [column_name, column_stats] : relation_profile.column_stats)
+                statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
+            /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
+            /// tables look nearly free to move over the network.
+            statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
+
+            LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
+            return statistics;
+        }
+    }
+
+    for (const auto & column_name : read_step.getAllColumnNames())
+    {
+        auto column_ndv = statistics_lookup.getNumberOfDistinctValues(table_name, column_name);
+        if (column_ndv)
+            statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
+    }
+
+    auto cardinality_hint = statistics_lookup.getCardinality(table_name);
+    if (cardinality_hint)
+        statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
+
+    statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
+
+    return statistics;
+}
+
+namespace QueryPlanOptimizations
+{
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+}
+
+ExpressionStatistics StatisticsDerivation::deriveFilterStatistics(const FilterStep & filter_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, filter_step.getExpression());
+    return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveExpressionStatistics(const ExpressionStep & expression_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    QueryPlanOptimizations::remapColumnStats(result_statistics.column_statistics, expression_step.getExpression());
+    /// Keep the input row width: most projections pass columns through, and the input width may carry
+    /// storage-derived or hinted byte sizes that a header-based type-default estimate would discard.
+    /// TODO: recompute only for added/dropped columns (needs per-column widths); an arrayJoin also
+    /// grows the row count (preserves_number_of_rows is false), which we do not estimate yet.
+    return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const AggregatingStep & aggregating_step, const ExpressionStatistics & input_statistics)
+{
+    const auto & aggregator_params = aggregating_step.getAggregatorParameters();
+    Float64 max_key_number_of_distinct_values = 1;
+    Float64 max_total_number_of_distinct_values = 1;
+    ExpressionStatistics aggregation_statistics;
+    for (const auto & key : aggregator_params.keys)
+    {
+        /// If stats are present set NDV to 10% of number of rows
+        Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
+
+        auto key_stats = input_statistics.column_statistics.find(key);
+        if (key_stats != input_statistics.column_statistics.end())
+        {
+            key_number_of_distinct_values = Float64(key_stats->second.num_distinct_values);
+            key_number_of_distinct_values = std::min(key_number_of_distinct_values, input_statistics.max_row_count);
+        }
+
+        aggregation_statistics.column_statistics[key].num_distinct_values = UInt64(key_number_of_distinct_values);
+
+        max_key_number_of_distinct_values = std::max(max_key_number_of_distinct_values, key_number_of_distinct_values);
+        max_total_number_of_distinct_values *= key_number_of_distinct_values;
+    }
+
+    aggregation_statistics.min_row_count = 0;
+    /// Estimate cardinality of aggregation as max NDV across individual aggregation keys
+    aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
+    /// Maximum number of rows is the product of all aggregation key NDVs
+    aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
+    /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output header
+    aggregation_statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*aggregating_step.getOutputHeader());
+    return aggregation_statistics;
+}
+
+static void trimStatisticsByLimit(ExpressionStatistics & statistics, UInt64 limit)
+{
+    statistics.estimated_row_count = std::min(statistics.estimated_row_count, Float64(limit));
+    statistics.max_row_count = std::min(statistics.max_row_count, Float64(limit));
+    for (auto & column_statistics : statistics.column_statistics)
+        if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
+            column_statistics.second.num_distinct_values = UInt64(statistics.estimated_row_count);
+}
+
+ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    /// If there is no LIMIT, then sorting does not change statistics
+    if (sorting_step.getLimit())
+    {
+        trimStatisticsByLimit(result_statistics, sorting_step.getLimit());
+    }
+    return result_statistics;
+}
+
+ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics)
+{
+    ExpressionStatistics result_statistics = input_statistics;
+    /// If there is no LIMIT, then limit does not change statistics
+    if (limit_step.getLimit())
+    {
+        trimStatisticsByLimit(result_statistics, limit_step.getLimit());
+    }
+    return result_statistics;
+}
+
+Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step)
+{
+    /// Priority: hint > storage column sizes > header-based estimate
+    auto avg_row_bytes_hint = statistics_lookup.getAvgRowBytes(read_step.getStorageID().getTableName());
+    if (avg_row_bytes_hint)
+        return *avg_row_bytes_hint;
+
+    auto total_rows_opt = read_step.getStorageSnapshot()->storage.totalRows(nullptr);
+    auto column_sizes = read_step.getStorageSnapshot()->storage.getColumnSizes();
+    if (total_rows_opt && *total_rows_opt > 0 && !column_sizes.empty())
+    {
+        Float64 total_bytes = 0;
+        for (const auto & col_name : read_step.getAllColumnNames())
+        {
+            auto it = column_sizes.find(col_name);
+            if (it != column_sizes.end())
+                total_bytes += Float64(it->second.data_uncompressed);
+        }
+        if (total_bytes > 0)
+            return total_bytes / Float64(*total_rows_opt);
+    }
+
+    return estimateRowWidthFromHeader(*read_step.getOutputHeader());
+}
+
+}

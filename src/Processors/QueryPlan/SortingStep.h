@@ -133,6 +133,8 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
+    std::unique_ptr<IQueryPlanStep> clone() const override;
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;

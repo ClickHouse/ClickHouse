@@ -86,6 +86,7 @@ SettingsChanges ExplainPlanOptions::toSettingsChanges() const
     changes.emplace_back("column_structure", int(column_structure));
     changes.emplace_back("pretty", int(pretty));
     changes.emplace_back("compact", int(compact));
+    changes.emplace_back("estimates", int(estimates));
 
     return changes;
 }
@@ -390,6 +391,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
 
 static void explainStep(
     IQueryPlanStep & step,
+    const std::optional<CostEstimationInfo> & cost_estimation,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length)
@@ -411,6 +413,14 @@ static void explainStep(
         description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
+
+    if (options.estimates)
+    {
+        if (cost_estimation.has_value())
+            settings.out << fmt::format(" (rows: ~{:.1f}, cost: {:.1f})", cost_estimation->rows, cost_estimation->cost);
+        else
+            settings.out << " (rows: <unknown>, cost: <unknown>)";
+    }
 
     settings.out.write('\n');
 
@@ -515,7 +525,7 @@ std::string debugExplainStep(IQueryPlanStep & step)
     WriteBufferFromOwnString out;
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
-    explainStep(step, settings, options, 0);
+    explainStep(step, std::nullopt, settings, options, 0);
     return out.str();
 }
 
@@ -650,7 +660,7 @@ void QueryPlan::explainPlan(
             else
                 buildIndentOffset(stack, settings, offset);
 
-            explainStep(*frame.node->step, settings, options, max_description_length);
+            explainStep(*frame.node->step, frame.node->cost_estimation, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
@@ -787,12 +797,28 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 namespace QueryPlanOptimizations
 {
 
+bool canExecuteRemotely(const QueryPlan::Node & node);
+bool planContainsLogicalExchange(const QueryPlan::Node & root);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 }
 
 void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings)
 {
+    if (!QueryPlanOptimizations::canExecuteRemotely(*root))
+    {
+        /// The plan cannot run on a worker (a leaf is neither a MergeTree read nor serializable). If it
+        /// still contains logical exchanges, running it locally would execute them as no-ops and drop
+        /// the merge or redistribution they stand for, giving wrong results, so throw. A plan with no
+        /// exchange runs correctly on one node, so fall back to it.
+        if (QueryPlanOptimizations::planContainsLogicalExchange(*root))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: it contains distributed exchange "
+                "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
+                "if executed locally (producing wrong results)");
+        return;
+    }
+
     SharedHeader result_header = root->step->getOutputHeader();
 
     QueryPlan::Nodes old_nodes = std::move(nodes);
@@ -808,20 +834,6 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
 
-    if (distributed_plan.stages.size() == 1)
-    {
-        /// For now just replace the plan with the first and only fragment, but preserve
-        /// table locks and storage holders accumulated during planning.
-        QueryPlanResourceHolder preserved_resources = std::move(resources);
-        *this = std::move(distributed_plan.stages.begin()->second.query_plan_fragment);
-        /// QueryPlanResourceHolder's move-assignment appends rhs into lhs without dropping existing entries.
-        resources = std::move(preserved_resources);
-
-        QueryPlanOptimizationSettings local_settings = optimization_settings;
-        local_settings.make_distributed_plan = false;
-        QueryPlanOptimizations::optimizeTreeSecondPass(local_settings, *root, nodes, *this);
-    }
-    else
     {
         ExchangeDescription final_result_exchange
         {

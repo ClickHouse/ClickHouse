@@ -1,0 +1,186 @@
+#include <cmath>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
+#include <memory>
+#include <optional>
+#include <utility>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+OptimizationRulePtr createJoinCommutativity();
+OptimizationRulePtr createHashJoinImplementation();
+OptimizationRulePtr createAggregationImplementation();
+OptimizationRulePtr createTwoPhaseAggregationTransformation();
+OptimizationRulePtr createLocalReadImplementation();
+OptimizationRulePtr createParallelReadImplementation();
+OptimizationRulePtr createReplicatedReadImplementation();
+OptimizationRulePtr createSortImplementation();
+OptimizationRulePtr createTwoStageTopN();
+OptimizationRulePtr createDefaultImplementation();
+OptimizationRulePtr createDistributionPassthrough();
+OptimizationRulePtr createDistributionEnforcer();
+OptimizationRulePtr createSortingEnforcer();
+
+OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count, CostConfig cost_config)
+    : cost_estimator(memo)
+    , statistics_derivation(memo, statistics)
+{
+    memo.setClusterNodeCount(cluster_node_count);
+    memo.setCostConfig(cost_config);
+
+    addRule(createJoinCommutativity());
+    addRule(createHashJoinImplementation());
+    addRule(createDefaultImplementation());
+    addRule(createDistributionPassthrough());
+    addRule(createTwoPhaseAggregationTransformation());
+    addRule(createAggregationImplementation());
+    addRule(createLocalReadImplementation());
+    addRule(createParallelReadImplementation());
+    addRule(createReplicatedReadImplementation());
+    addRule(createSortImplementation());
+    addRule(createTwoStageTopN());
+    addEnforcerRule(createDistributionEnforcer());
+    addEnforcerRule(createSortingEnforcer());
+}
+
+void OptimizerContext::addRule(OptimizationRulePtr rule)
+{
+    if (rule->isTransformation())
+        transformation_rules.push_back(std::move(rule));
+    else
+        implementation_rules.push_back(std::move(rule));
+}
+
+void OptimizerContext::addEnforcerRule(OptimizationRulePtr rule)
+{
+    enforcer_rules.push_back(std::move(rule));
+}
+
+std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::Node & node)
+{
+    /// TODO: Currently CommonSubplanReferenceStep is expected to be resolved before Cascades optimizer.
+    /// But it seem that we can resolve it here by just mapping the target Node to a corresponding Group.
+    const auto * subplan_reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get());
+    if (subplan_reference)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
+
+    /// Strip a limit-less SortingStep::Full — pure sorting is a physical property, not a logical
+    /// one.  Return the child's GroupId along with the sorting as required properties, so the
+    /// caller can attach them to the input link of the parent group expression.
+    /// A SortingStep with a limit is a top-N (row-reducing) operator, so it is kept as an
+    /// operator instead; the limit is owned by that operator, never by the sorting property.
+    const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
+    if (sorting_step && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() == 0)
+    {
+        chassert(node.children.size() == 1);
+        auto [child_group_id, _] = addGroup(*node.children.front());
+        ExpressionProperties stripped_props;
+        stripped_props.sorting = sorting_step->getSortDescription();
+        return {child_group_id, stripped_props};
+    }
+
+    std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);
+
+    auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
+    auto group_id = memo.addGroup(group_expression);
+    for (auto * child_node : node.children)
+    {
+        auto [input_group_id, pending_props] = addGroup(*child_node);
+        group_expression->inputs.push_back({input_group_id, pending_props});
+    }
+
+    /// Set statistics on the group (shared by all expressions in the group)
+    auto group = memo.getGroup(group_id);
+    group->statistics = std::move(prepopulated_statistics);
+
+    return {group_id, {}};
+}
+
+void OptimizerContext::pushTask(OptimizationTaskPtr task)
+{
+    tasks.push(std::move(task));
+}
+
+GroupPtr OptimizerContext::getGroup(GroupId group_id)
+{
+    return memo.getGroup(group_id);
+}
+
+void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
+{
+    auto group_id = expression->group_id;
+    auto group = memo.getGroup(group_id);
+    auto cost = cost_estimator.estimateCost(expression);
+    expression->cost = cost;
+    LOG_TEST(log, "group #{} expression '{}' cost {}",
+        group_id, expression->getDescription(), cost.subtree_cost.total(memo.getCostConfig()));
+    group->updateBestImplementation(expression, memo.getCostConfig());
+}
+
+void OptimizerContext::deriveStatistics(GroupId group_id)
+{
+    statistics_derivation.deriveStatistics(group_id);
+}
+
+bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
+{
+    const auto & cost_config = memo.getCostConfig();
+
+    /// Check if all inputs are fully optimized (all stages complete) and have
+    /// a satisfying implementation.  A group can be fully done with no best if
+    /// no rule could produce the required distribution (e.g. ReadFromSystemOne
+    /// at {N nodes}) — treat as pruned.
+    for (const auto & input : expression->inputs)
+    {
+        auto child_group = getGroup(input.group_id);
+        if (!child_group->isFullyDoneFor(input.required_properties))
+            return false;
+        if (!child_group->getBestImplementation(input.required_properties, cost_config).expression)
+        {
+            LOG_TEST(log, "Skipping unsatisfiable expression '{}' in group #{}: "
+                "input group #{} has no implementation for {}",
+                expression->getDescription(), expression->group_id,
+                input.group_id, input.required_properties.dump());
+            return true;  /// Unsatisfiable input — treat as pruned
+        }
+    }
+
+    /// All inputs ready — compute cost directly, bypassing the OptimizeInputsTask chain.
+    deriveStatistics(expression->group_id);
+
+    auto group = getGroup(expression->group_id);
+    auto cost = cost_estimator.estimateCost(expression);
+    Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
+
+    Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
+    if (std::isfinite(current_best) && subtree_weighted >= current_best)
+    {
+        LOG_TEST(log, "Pruned expression '{}' in group #{}: "
+            "cost {} >= current best {}",
+            expression->getDescription(), expression->group_id,
+            subtree_weighted, current_best);
+        return true;
+    }
+
+    expression->cost = cost;
+    LOG_TEST(log, "group #{} expression '{}' cost {}",
+        expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
+    group->updateBestImplementation(expression, cost_config);
+    return true;
+}
+
+}

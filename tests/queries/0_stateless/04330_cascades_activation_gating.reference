@@ -1,0 +1,15 @@
+-- 1. WITH TOTALS with cascades on but make_distributed_plan off: must be a plain single-node query
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+
+0	499500
+-- 2. Plain aggregation, same settings
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+-- 3. With both settings on, WITH TOTALS is rejected (fail-close)

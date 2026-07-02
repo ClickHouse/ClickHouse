@@ -1,4 +1,6 @@
 #include <Common/NaNUtils.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -142,12 +144,26 @@ void UnionStep::describePipeline(FormatSettings & settings) const
 
 void UnionStep::serialize(Serialization & ctx) const
 {
-    (void)ctx;
+    /// Only the planner knows whether this union may be narrowed (SQL UNION) or feeds an
+    /// order-sensitive consumer that forbids it, so the flag must survive the round trip.
+    /// `max_threads` is intentionally not serialized: zero makes `updatePipeline` derive it from the
+    /// executing server's own settings, which is the right source for a per-machine thread cap.
+    UInt8 flags = 0;
+    if (allow_narrowing)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
 }
 
 QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<UnionStep>(ctx.input_headers);
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+}
+
+QueryPlanStepPtr UnionStep::clone() const
+{
+    return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);

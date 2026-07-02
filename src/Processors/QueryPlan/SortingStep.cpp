@@ -722,6 +722,22 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
+QueryPlanStepPtr SortingStep::clone() const
+{
+    if (!partition_by_description.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
+
+    auto cloned = std::make_unique<SortingStep>(
+        input_headers.front(), result_description, limit, sort_settings, is_sorting_for_merge_join);
+    cloned->always_read_till_end = always_read_till_end;
+    cloned->use_buffering = use_buffering;
+    cloned->apply_virtual_row_conversions = apply_virtual_row_conversions;
+    cloned->threshold_tracker = threshold_tracker;
+    cloned->limit_by_columns = limit_by_columns;
+    cloned->limit_by_group_length = limit_by_group_length;
+    return cloned;
+}
+
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {

@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -320,13 +321,16 @@ void optimizeTreeSecondPass(
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
+    /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
+    /// alone (with make_distributed_plan = 0) keeps the normal single-node optimizer.
+    const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
         [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
-            if (make_distributed_plan)
+            if (make_distributed_plan && !optimization_settings.enable_cascades_optimizer)
             {
                 tryMakeDistributedJoin(frame_node, nodes, optimization_settings);
                 tryMakeDistributedAggregation(frame_node, nodes, optimization_settings);
@@ -334,6 +338,16 @@ void optimizeTreeSecondPass(
                 tryMakeDistributedRead(frame_node, nodes, optimization_settings);
             }
         });
+
+    /// Run Cascades optimizer after all push down and join order optimizations.
+    /// Only `convertToDistributed` can execute the exchange steps Cascades produces;
+    /// without `make_distributed_plan` they would build as no-op pipeline steps (e.g.
+    /// partial aggregation states reaching consumers unmerged).
+    if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
+    {
+        CascadesOptimizer cascades_optimizer(query_plan);
+        cascades_optimizer.optimize();
+    }
 
     stack.push_back({.node = &root});
 
@@ -352,7 +366,7 @@ void optimizeTreeSecondPass(
                     if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
 
-                if (optimization_settings.aggregation_in_order)
+                if (optimization_settings.aggregation_in_order && !cascades_active)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
             }
 
@@ -402,10 +416,13 @@ void optimizeTreeSecondPass(
             if (optimization_settings.limit_by_partitions_independently)
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.read_in_order)
+            /// Skip when Cascades is enabled: it treats sorting as a physical property and
+            /// strips SortingStep::Full, which this heuristic would otherwise rewrite to
+            /// FinishSorting first.
+            if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 
-            if (optimization_settings.distinct_in_order)
+            if (optimization_settings.distinct_in_order && !cascades_active)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.limit_by_in_order)

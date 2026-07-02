@@ -1,0 +1,243 @@
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+
+namespace DB
+{
+
+void Group::addLogicalExpression(GroupExpressionPtr group_expression)
+{
+    group_expression->group_id = group_id;
+    logical_expressions.push_back(std::move(group_expression));
+}
+
+bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)
+{
+    group_expression->group_id = group_id;
+
+    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
+    auto & same_fingerprint = physical_expressions_by_fingerprint[group_expression->fingerprint()];
+    for (const auto * existing : same_fingerprint)
+    {
+        if (existing->structurallyEqualTo(*group_expression))
+            return false;
+    }
+
+    same_fingerprint.push_back(group_expression.get());
+    physical_expressions.push_back(std::move(group_expression));
+    return true;
+}
+
+bool Group::isOptimizedFor(const ExpressionProperties & required_properties) const
+{
+    return optimized_properties.contains(required_properties);
+}
+
+void Group::setOptimizedFor(const ExpressionProperties & required_properties)
+{
+    optimized_properties.insert(required_properties);
+}
+
+bool Group::isEnforcedFor(const ExpressionProperties & required_properties) const
+{
+    return enforced_properties.contains(required_properties);
+}
+
+void Group::setEnforcedFor(const ExpressionProperties & required_properties)
+{
+    enforced_properties.insert(required_properties);
+}
+
+bool Group::isFullyDoneFor(const ExpressionProperties & required_properties) const
+{
+    return fully_done_properties.contains(required_properties);
+}
+
+void Group::setFullyDoneFor(const ExpressionProperties & required_properties)
+{
+    fully_done_properties.insert(required_properties);
+}
+
+void Group::updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config)
+{
+    UInt64 key = distributionKey(expression->properties.distribution);
+    auto & bucket = best_implementations[key];
+
+    /// An enforcer "satisfies" a weaker non-enforcer only by over-providing (e.g. a sorted gather
+    /// covers an empty-sort requirement). Dropping the base would leave a self-referential enforcer
+    /// chain with no acyclic alternative, so an enforcer never suppresses or evicts a distinct base.
+    auto enforcer_over_provides_for = [](const GroupExpressionPtr & enforcer_candidate, const GroupExpressionPtr & base_candidate)
+    {
+        return enforcer_candidate->enforcer_axis != EnforcerAxis::None
+            && base_candidate->enforcer_axis == EnforcerAxis::None
+            && !(enforcer_candidate->properties == base_candidate->properties);
+    };
+
+    /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
+    /// Only the matching distribution-shape bucket needs checking — `isSatisfiedBy` requires
+    /// exact match on (node_count, is_replicated).
+    for (auto best_it = bucket.begin(); best_it != bucket.end();)
+    {
+        if (expression->properties.isSatisfiedBy((*best_it)->properties) &&
+            (*best_it)->cost->subtree_cost.total(cost_config) <= expression->cost->subtree_cost.total(cost_config) &&
+            !enforcer_over_provides_for(*best_it, expression))
+        {
+            /// There is already a cheaper implementation that satisfies the same properties
+            return;
+        }
+
+        if ((*best_it)->properties.isSatisfiedBy(expression->properties) &&
+            (*best_it)->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config) &&
+            !enforcer_over_provides_for(expression, *best_it))
+        {
+            best_it = bucket.erase(best_it);
+        }
+        else
+        {
+            ++best_it;
+        }
+    }
+
+    bucket.push_back(std::move(expression));
+}
+
+ExpressionWithCost Group::getBestImplementation(const ExpressionProperties & required_properties, const CostConfig & cost_config) const
+{
+    UInt64 key = distributionKey(required_properties.distribution);
+    auto it = best_implementations.find(key);
+    if (it == best_implementations.end())
+        return {};
+
+    GroupExpressionPtr found_best;
+    for (const auto & expression : it->second)
+    {
+        if (required_properties.isSatisfiedBy(expression->properties) &&
+            (!found_best || found_best->cost->subtree_cost.total(cost_config) > expression->cost->subtree_cost.total(cost_config)))
+        {
+            found_best = expression;
+        }
+    }
+
+    if (!found_best)
+        return {};
+
+    return {found_best, *found_best->cost};
+}
+
+ExpressionWithCost Group::selectInputImplementation(
+    const ExpressionProperties & required_properties,
+    const CostConfig & cost_config,
+    const std::unordered_set<GroupExpression *> & active_path,
+    bool input_is_self_referential) const
+{
+    /// Eligibility for `selectInputImplementation` (see there). The wildcard-axis rejections below
+    /// are what stop a self-referential enforcer from picking itself.
+    auto is_eligible = [&](const GroupExpressionPtr & candidate)
+    {
+        if (!candidate->cost.has_value())
+            return false;
+        if (active_path.contains(candidate.get()))
+            return false;
+        if (!required_properties.isSatisfiedBy(candidate->properties))
+            return false;
+
+        if (input_is_self_referential && candidate->enforcer_axis != EnforcerAxis::None)
+        {
+            /// Empty sort requirement: reject a sorted enforcer (it over-provides on the sort axis).
+            if (required_properties.sorting.empty() && !candidate->properties.sorting.empty())
+                return false;
+            /// Empty distribution-columns requirement: reject a keyed exchange. A sorting enforcer
+            /// carrying keyed columns is still needed to feed a sorted gather, so keep it eligible.
+            if (candidate->enforcer_axis == EnforcerAxis::Distribution
+                && required_properties.distribution.columns.empty()
+                && (!candidate->properties.distribution.columns.empty()
+                    || !candidate->properties.distribution.hash_type_names.empty()))
+                return false;
+        }
+        return true;
+    };
+
+    GroupExpressionPtr found_best;
+    auto consider = [&](const GroupExpressionPtr & candidate)
+    {
+        if (is_eligible(candidate)
+            && (!found_best
+                || found_best->cost->subtree_cost.total(cost_config) > candidate->cost->subtree_cost.total(cost_config)))
+            found_best = candidate;
+    };
+
+    /// Fast path: the best-implementation cache for the matching distribution shape.
+    UInt64 key = distributionKey(required_properties.distribution);
+    if (auto it = best_implementations.find(key); it != best_implementations.end())
+        for (const auto & expression : it->second)
+            consider(expression);
+
+    /// Fallback: a costed acyclic implementation may live only in `physical_expressions` after a
+    /// cheaper over-providing enforcer evicted it from (or kept it out of) the cache.
+    for (const auto & expression : physical_expressions)
+        consider(expression);
+
+    if (!found_best)
+        return {};
+
+    return {found_best, *found_best->cost};
+}
+
+Float64 Group::getBestCostForProperties(const ExpressionProperties & required_properties, const CostConfig & cost_config) const
+{
+    auto best = getBestImplementation(required_properties, cost_config);
+    if (!best.expression)
+        return std::numeric_limits<Float64>::infinity();
+    return best.cost.subtree_cost.total(cost_config);
+}
+
+void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String indent) const
+{
+    if (statistics.has_value())
+    {
+        out << indent << "Statistics: rows: " << statistics->estimated_row_count << "\n";
+    }
+
+    out << indent << "Logical:\n";
+    for (const auto & expression : logical_expressions)
+    {
+        out << indent << indent;
+        expression->dump(out, cost_config);
+        out << "\n";
+    }
+
+    out << indent << "Physical:\n";
+    for (const auto & expression : physical_expressions)
+    {
+        out << indent << indent;
+        expression->dump(out, cost_config);
+        out << "\n";
+    }
+
+    for (const auto & [_, bucket] : best_implementations)
+    {
+        for (const auto & best : bucket)
+        {
+            out << indent << "Best for " << best->properties.dump() << ":\n"
+                << indent << indent
+                << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
+            if (best->cost->cost.sequential > 0)
+                out << ", seq: " << best->cost->cost.sequential
+                    << ", work: " << best->cost->cost.work
+                    << ", net: " << best->cost->cost.network;
+            out << ") : " << best->getDescription() << "\n";
+        }
+    }
+}
+
+String Group::dump(const CostConfig & cost_config) const
+{
+    WriteBufferFromOwnString out;
+    dump(out, cost_config);
+    return out.str();
+}
+
+}

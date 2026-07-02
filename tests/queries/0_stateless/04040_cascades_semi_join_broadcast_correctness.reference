@@ -1,0 +1,94 @@
+-- EXISTS (rewritten to LEFT SEMI)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression ((Before GROUP BY + WHERE))
+          JoinLogical (Broadcast HashJoin  swapped)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Create result for always true EXISTS expression)
+              Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+                ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+20
+20
+-- RIGHT SEMI JOIN (commuted to LEFT SEMI: orders=ParallelRead, lineitem=Broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+20
+20
+-- RIGHT ANY JOIN (RightAny strictness, not commutable)
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      JoinLogical (Local HashJoin )
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_orders)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.test_lineitem)
+20
+20
+-- LEFT SEMI JOIN (lineitem broadcast, no swap needed)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+20
+20
+-- RIGHT ANTI JOIN (commuted to LEFT ANTI: orders=ParallelRead, lineitem=Broadcast)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.test_lineitem)
+980
+980
+-- RIGHT JOIN (RIGHT ALL, not commutable, broadcast blocked)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
+20
+20
+-- FULL JOIN (FULL ALL, not commutable, broadcast blocked)
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_orders)
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.test_lineitem)
+1000
+1000

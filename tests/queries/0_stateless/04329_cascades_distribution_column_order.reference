@@ -1,0 +1,4 @@
+-- 1. Join on (a, b) with subquery grouped by (b, a): all rows must match
+100000	1504998450000
+-- 2. Baseline without Cascades
+100000	1504998450000

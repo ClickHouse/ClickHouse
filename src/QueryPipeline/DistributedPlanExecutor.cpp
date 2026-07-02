@@ -812,6 +812,7 @@ protected:
         auto new_context = Context::createCopy(ctx);
         /// We will execute tasks with local plan fragments. They should not be converted into distributed plan themselves.
         new_context->setSetting("make_distributed_plan", false);
+        new_context->setSetting("enable_cascades_optimizer", false);
         return new_context;
     }
 
@@ -977,7 +978,81 @@ UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_str
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
     fillWorkerAddresses(context_);
+
+    /// Cap the host list to match the node count the optimizer planned for.
+    size_t max_nodes = getCascadesClusterNodeCountParam(context_);
+    if (max_nodes > 0 && max_nodes < worker_addresses.size())
+        worker_addresses.resize(max_nodes);
+
     assignHostsForTasks(distributed_query_plan_);
+}
+
+/// Reads worker hostnames from `stateless_worker_client.cluster` config.
+/// Throws if cluster name is set but the cluster is not found or has no shards.
+/// Returns empty vector if the worker client is not enabled or no host is configured.
+static Strings getDistributedWorkerHostnames(ContextPtr context)
+{
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+        return {};
+
+    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
+    if (cluster_name.empty())
+    {
+        String host = context->getConfigRef().getString("stateless_worker_client.host", "");
+        if (host.empty())
+            return {};
+        return {host};
+    }
+
+    auto cluster = context->tryGetCluster(cluster_name);
+    if (!cluster)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
+
+    auto shard_addresses = cluster->getShardsAddresses();
+    if (shard_addresses.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
+    /// Only a single-shard worker cluster is supported for now.
+    if (shard_addresses.size() > 1)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
+
+    Strings result;
+    for (const auto & replica : shard_addresses[0])
+        result.push_back(replica.host_name);
+    return result;
+}
+
+size_t getCascadesClusterNodeCountParam(ContextPtr context)
+{
+    constexpr auto param_name = "_internal_cascades_cluster_node_count";
+    if (context->getQueryParameters().contains(param_name))
+    {
+        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
+        if (value > 0)
+            return value;
+    }
+    return 0;
+}
+
+size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit)
+{
+    /// The override can only LOWER the budget (it exists so tests can force the fail-closed path).
+    /// It must never raise the limit above the built-in cap: the task budget is the optimizer's
+    /// work guard, so an unbounded override would let a single query spin the optimizer without
+    /// bound. Values above the cap are clamped to it.
+    constexpr auto param_name = "_internal_cascades_task_limit";
+    if (context->getQueryParameters().contains(param_name))
+    {
+        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
+        if (value > 0)
+            return value < default_limit ? value : default_limit;
+    }
+    return default_limit;
+}
+
+size_t getDistributedWorkerCount(ContextPtr context)
+{
+    return getDistributedWorkerHostnames(context).size();
 }
 
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
@@ -1126,7 +1201,7 @@ protected:
         /// Wait for all tasks of the stage to finish
         bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms)
         {
-            LOG_DEBUG(logger, "Waiting for stage {} to finish", stage_name);
+            LOG_TRACE(logger, "Waiting for stage {} to finish", stage_name);
 
             std::shared_future<void> finished;
             {
