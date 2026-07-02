@@ -190,3 +190,4 @@
 04242_file_log_delete_recreate
 04257_file_log_rename_and_recreate
 04401_count_global_in_transfer_limit
+04402_float_parsing_corner_cases

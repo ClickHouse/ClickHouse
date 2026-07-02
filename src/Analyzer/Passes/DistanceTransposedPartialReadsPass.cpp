@@ -45,13 +45,15 @@ public:
             return;
 
         const auto & function_name = function_node->getFunctionName();
-        bool is_distance_function = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed");
+        bool is_distance_function
+            = (function_name == "L2DistanceTransposed" || function_name == "cosineDistanceTransposed"
+               || function_name == "dotProductTransposed");
 
         if (!is_distance_function)
             return;
 
         auto & function_arguments_nodes = function_node->getArguments().getNodes();
-        if (function_arguments_nodes.size() != 3)
+        if (function_arguments_nodes.size() != 3 && function_arguments_nodes.size() != 4)
             return;
 
         auto * qbit_node = function_arguments_nodes[0]->as<ColumnNode>();
@@ -60,6 +62,15 @@ public:
         if (!qbit_node || qbit_node->getColumnName() == "__grouping_set" || !precision_node
             || precision_node->getValue().getType() != Field::Types::UInt64)
             return;
+
+        /// Optional fourth argument: the number of dimensions to read (Matryoshka-style partial-dimension search).
+        const ConstantNode * used_dims_node = nullptr;
+        if (function_arguments_nodes.size() == 4)
+        {
+            used_dims_node = function_arguments_nodes[3]->as<ConstantNode>();
+            if (!used_dims_node || used_dims_node->getValue().getType() != Field::Types::UInt64)
+                return;
+        }
 
         auto column_source = qbit_node->getColumnSource();
         auto * table_node = column_source->as<TableNode>();
@@ -95,25 +106,65 @@ public:
         if (precision == 0 || precision > data_width)
             return;
 
-        std::vector<QueryTreeNodePtr> new_args;
+        const size_t element_size = qbit->getElementSize();
+        const size_t stride = qbit->getStride();
+        const size_t dimension = qbit->getDimension();
+        const bool is_strided = qbit->getNumStrides() > 1;
 
-        /// Create vec.1, vec.2, ..., vec.N components
-        for (size_t i = 1; i <= precision; i++)
+        /// Number of dimensions to read. Defaults to the full dimension when the optional 4th argument is absent.
+        UInt64 used_dims = dimension;
+        if (used_dims_node)
         {
-            NameAndTypePair column{qbit_node->getColumnName() + "." + std::to_string(i), qbit->getNestedTupleElementType()};
-            auto component_expr = std::make_shared<ColumnNode>(column, qbit_node->getColumnSource());
-            new_args.push_back(component_expr);
+            used_dims = used_dims_node->getValue().safeGet<UInt64>();
+            if (used_dims == 0 || used_dims > dimension || used_dims % stride != 0)
+                return;
         }
 
-        /// Add dimension as penultimate argument and reference vector as last argument
-        auto dimension_constant = std::make_shared<ConstantNode>(qbit->getDimension());
+        std::vector<QueryTreeNodePtr> new_args;
 
-        /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
-        /// the nullability on the dimension constant (if former was the case) to preserve the nullability of the result
-        if (precision_node->getResultType()->isNullable() || precision_node->getResultType()->isLowCardinalityNullable())
-            dimension_constant->convertToNullable();
+        auto add_plane = [&](size_t tuple_idx)
+        {
+            /// Tuple element indices are 1-based in the subcolumn syntax.
+            NameAndTypePair column{qbit_node->getColumnName() + "." + std::to_string(tuple_idx + 1), qbit->getNestedTupleElementType()};
+            new_args.push_back(std::make_shared<ColumnNode>(column, qbit_node->getColumnSource()));
+        };
 
-        new_args.push_back(dimension_constant);
+        if (is_strided)
+        {
+            const size_t num_groups = used_dims / stride;
+            /// Group-major order: for each stride group, its first `precision` bit planes (tuple index = group * element_size + bit).
+            for (size_t group = 0; group < num_groups; ++group)
+                for (size_t bit = 0; bit < precision; ++bit)
+                    add_plane(group * element_size + bit);
+        }
+        else
+        {
+            for (size_t bit = 0; bit < precision; ++bit)
+                add_plane(bit);
+        }
+
+        /// Add the trailing constant(s) describing the layout, then the reference vector as the last argument.
+        /// Non-strided: a single `dimension` constant. Strided: `stride` followed by `used_dims`.
+        ConstantNodePtr last_size_constant;
+        if (is_strided)
+        {
+            new_args.push_back(std::make_shared<ConstantNode>(stride));
+            last_size_constant = std::make_shared<ConstantNode>(used_dims);
+            new_args.push_back(last_size_constant);
+        }
+        else
+        {
+            last_size_constant = std::make_shared<ConstantNode>(dimension);
+            new_args.push_back(last_size_constant);
+        }
+
+        /// The transposed distance functions propagate nullability from any argument, so the original (user-facing) call may be
+        /// Nullable because of the precision, used_dims, or reference-vector arguments. The rewritten internal form drops the precision and
+        /// used_dims arguments and casts the reference vector, any of which can otherwise lose the nullability, so force the nullability onto
+        /// the trailing size constant whenever the original result was Nullable to keep the rewritten result type identical.
+        auto original_result_type = function_node->getResultType();
+        if (original_result_type->isNullable() || original_result_type->isLowCardinalityNullable())
+            last_size_constant->convertToNullable();
 
         /// Cast reference vector to match QBit type. This is the only information about the type of the QBit after this pass is applied
         auto expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit->getElementType());
@@ -134,8 +185,6 @@ public:
 
             new_args.push_back(cast_function);
         }
-
-        auto original_result_type = function_node->getResultType();
 
         /// Re-resolve function with new arguments
         function_node->getArguments().getNodes() = std::move(new_args);
