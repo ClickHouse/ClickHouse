@@ -1,6 +1,9 @@
--- Tags: no-parallel
+-- Tags: no-parallel, long
 -- Tag no-parallel: enables a server-global failpoint that forces Default coordination mode on
 -- parallel-replicas followers, which would perturb other concurrent parallel-replicas queries.
+-- Tag long: a 1M-row table is needed so followers genuinely issue the bare-table read request
+-- that reproduces the bug (smaller tables let the initiator's splits cover the read before any
+-- follower participates), so a single run can exceed the 180s flaky-check limit under sanitizers.
 
 -- Regression test: a parallel-replicas follower that plans an in-order read in Default coordination
 -- mode (requesting the bare-table stream) while the initiator splits it into `#split_i` streams used
