@@ -61,3 +61,20 @@ SELECT toTypeName(argMaxManyState(3)(number, number)) FROM numbers(3);
 -- corrupt the heap. This must match the equivalent ORDER BY ... LIMIT computed per prefix.
 SELECT argMaxMany(2)(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(5);
 SELECT argMinMany(2)(number, number) OVER (ORDER BY number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM numbers(5);
+
+-- Merge path with NaN: a partial state whose only val is NaN must still be beaten by a real val
+-- from another partial state, regardless of merge order. NaN ranks as the worst candidate for both
+-- argMaxMany (largest wins) and argMinMany (smallest wins). Reproduces a bug where the merge path
+-- (addEntry) used raw Field ordering, which treats NaN as the largest value, and so kept the NaN.
+SELECT argMaxManyMerge(1)(s) FROM
+(
+    SELECT argMaxManyState(1)(arg, val) AS s FROM (SELECT 'a' AS arg, nan AS val)
+    UNION ALL
+    SELECT argMaxManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, toFloat64(1) AS val)
+);
+SELECT argMinManyMerge(1)(s) FROM
+(
+    SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'a' AS arg, nan AS val)
+    UNION ALL
+    SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, toFloat64(1) AS val)
+);

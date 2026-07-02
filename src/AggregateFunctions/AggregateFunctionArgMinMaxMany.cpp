@@ -112,8 +112,10 @@ class AggregateFunctionArgMinMaxMany final
         if constexpr (isMin)
         {
             /// Max-heap: root is the largest val among the N smallest we keep.
-            /// Replace root if the new val is smaller.
-            if (new_entry.val < data.entries[0].val)
+            /// Replace root if the new val is smaller. Use the same `NaN`-aware comparator policy
+            /// as `add`, otherwise the raw `Field` ordering (which treats `NaN` as the largest value)
+            /// would keep a `NaN` root and reject real values on the merge path.
+            if (valLess(new_entry.val, data.entries[0].val))
             {
                 std::pop_heap(data.entries.begin(), data.entries.end(), MaxHeapComparator{});
                 data.entries.back() = std::move(new_entry);
@@ -123,8 +125,10 @@ class AggregateFunctionArgMinMaxMany final
         else
         {
             /// Min-heap: root is the smallest val among the N largest we keep.
-            /// Replace root if the new val is larger.
-            if (new_entry.val > data.entries[0].val)
+            /// Replace root if the new val is larger. Use the same `NaN`-aware comparator policy
+            /// as `add`, otherwise the raw `Field` ordering (which treats `NaN` as the largest value)
+            /// would keep a `NaN` root and reject real values on the merge path.
+            if (valGreater(new_entry.val, data.entries[0].val))
             {
                 std::pop_heap(data.entries.begin(), data.entries.end(), MinHeapComparator{});
                 data.entries.back() = std::move(new_entry);

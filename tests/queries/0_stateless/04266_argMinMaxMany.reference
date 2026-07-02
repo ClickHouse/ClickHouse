@@ -30,3 +30,5 @@ AggregateFunction(argMaxMany(3), UInt64, UInt64)
 [0,1]
 [0,1]
 [0,1]
+['b']
+['b']
