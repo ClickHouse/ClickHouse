@@ -1,9 +1,9 @@
-# Toolchain for building a fully static binary against musl libc, with musl
-# built from sources (see contrib/musl-cmake). Select it with
-# -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-x86_64-musl.cmake; it sets
+# Toolchain for building a fully static aarch64 binary against musl libc, with
+# musl built from sources (see contrib/musl-cmake). Select it with
+# -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-aarch64-musl.cmake; it sets
 # USE_MUSL itself, so no separate -DUSE_MUSL=1 is needed.
 #
-# The generic linux/toolchain-x86_64.cmake stays glibc-only on purpose; all
+# The generic linux/toolchain-aarch64.cmake stays glibc-only on purpose; all
 # musl-specific setup lives here.
 #
 # See linux/toolchain-x86_64.cmake for details about the double load of the
@@ -13,17 +13,17 @@ include_guard(GLOBAL)
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 set (CMAKE_SYSTEM_NAME "Linux")
-set (CMAKE_SYSTEM_PROCESSOR "x86_64")
+set (CMAKE_SYSTEM_PROCESSOR "aarch64")
 
-set (CMAKE_C_COMPILER_TARGET "x86_64-linux-musl")
-set (CMAKE_CXX_COMPILER_TARGET "x86_64-linux-musl")
-set (CMAKE_ASM_COMPILER_TARGET "x86_64-linux-musl")
+set (CMAKE_C_COMPILER_TARGET "aarch64-linux-musl")
+set (CMAKE_CXX_COMPILER_TARGET "aarch64-linux-musl")
+set (CMAKE_ASM_COMPILER_TARGET "aarch64-linux-musl")
 
 # The glibc sysroot is used only for kernel headers (linux/, asm/,
 # asm-generic/). musl's own headers are given higher priority via the -isystem
 # flags below.
-set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-x86_64")
-set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/x86_64-linux-gnu/libc")
+set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-aarch64")
+set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-linux-gnu/libc")
 
 set (USE_MUSL 1)
 add_definitions(-DUSE_MUSL=1 -D__MUSL__=1)

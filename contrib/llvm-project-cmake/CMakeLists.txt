@@ -402,8 +402,16 @@ target_compile_definitions(llvm-min-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-min-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-min-tblgen PRIVATE pthread)
+endif()
+
+# When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
+# clickhouse_add_executable handles this for normal targets, but plain add_executable does not.
+if (USE_MUSL)
+    target_sources(llvm-min-tblgen PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
 endif()
 
 #
@@ -546,12 +554,29 @@ target_include_directories(llvm-tblgen PRIVATE
 
 target_compile_definitions(llvm-tblgen PRIVATE ${LLVM_COMPILE_DEFINITIONS})
 
+# Build-time tool — pin to x86-64-v3 to dodge a clang/LLVM codegen bug that
+# manifests at v4 (`-march=x86-64-v4`) as "instregex has no matches" inside
+# X86SchedIceLake.td (probably an AVX-512 codegen issue in one of TableGen's
+# string-matching helpers). Since `llvm-tblgen` only runs on the build host
+# to emit `.inc` files, the target ISA level is irrelevant — we just need
+# something that runs correctly.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 4)
+    target_compile_options(llvm-tblgen PRIVATE -march=x86-64-v3)
+endif()
+
 # On Linux with glibc, link with pthread and dl
 # musl has these in libc, so no separate libraries needed
 if (UNIX AND NOT APPLE AND NOT USE_MUSL)
     target_link_libraries(llvm-tblgen PRIVATE pthread dl)
-elseif (UNIX AND NOT APPLE)
-    target_link_libraries(llvm-tblgen PRIVATE pthread)
+endif()
+
+# When using musl, native build tools need CRT objects (crt1, crti, crtn) for _start.
+if (USE_MUSL)
+    target_sources(llvm-tblgen PRIVATE
+        $<TARGET_OBJECTS:musl-crt1>
+        $<TARGET_OBJECTS:musl-crti>
+        $<TARGET_OBJECTS:musl-crtn>
+    )
 endif()
 
 # End of native tablegen build block

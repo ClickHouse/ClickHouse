@@ -17,11 +17,21 @@ if (ENABLE_LLVM_LIBC_MATH)
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 endif()
 
+# musl ships only slow byte-loop mem*/math implementations; we rely on llvm-libc
+# to replace them. Building musl without llvm-libc is never intended, so reject
+# it instead of silently producing a slow binary.
+if (USE_MUSL AND NOT ENABLE_LLVM_LIBC_MATH)
+    message(FATAL_ERROR "USE_MUSL requires ENABLE_LLVM_LIBC_MATH=ON")
+endif()
+
 if (OS_ANDROID)
     # pthread and rt are included in libc
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
+    # musl is linked via target_link_libraries in cmake/musl.cmake
+    # Use -nostartfiles to prevent linker from using glibc's crt*.o from sysroot
+    # We will provide musl's CRT objects explicitly via cmake/musl.cmake
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles")
 else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
@@ -32,10 +42,37 @@ set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
 add_library(Threads::Threads INTERFACE IMPORTED)
-set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+if (USE_MUSL)
+    # musl includes pthread implementation in libmusl.a, no separate library needed
+    # Just link to musl target which is already set up
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+else ()
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+endif ()
+
+# Set MUSL_ARCH early, BEFORE including cxx.cmake which needs it for libcxx/libcxxabi includes
+# This must be done before the cxx.cmake include because libcxxabi-cmake/CMakeLists.txt uses MUSL_ARCH
+if (USE_MUSL)
+    if (ARCH_AMD64)
+        set(MUSL_ARCH "x86_64" CACHE INTERNAL "Musl architecture")
+    elseif (ARCH_AARCH64)
+        set(MUSL_ARCH "aarch64" CACHE INTERNAL "Musl architecture")
+    else()
+        message(FATAL_ERROR "USE_MUSL is supported only on amd64 and aarch64, not ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+endif()
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+# memcpy/memmove/memset/memcmp/bcmp are supplied by LLVM-libc via the
+# libllvmlibc target (see contrib/libllvmlibc-cmake). The corresponding musl
+# sources are stripped from libmusl.a in contrib/musl-cmake/CMakeLists.txt.
+
+# Include musl build and link configuration
+if (USE_MUSL)
+    include (cmake/musl.cmake)
+endif()
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)

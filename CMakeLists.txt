@@ -595,7 +595,13 @@ macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+    # When USE_MUSL is set, we also include musl CRT objects (crt1, crti, crtn) since we use -nostartfiles
+    # to avoid glibc's CRT objects from the sysroot.
+    # memcpy and friends are provided by libllvmlibc (see contrib/libllvmlibc-cmake)
+    # under USE_MUSL, so no separate $<TARGET_OBJECTS:memcpy> is appended there.
+    if (USE_MUSL)
+        add_executable (${ARGV} $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn> $<TARGET_OBJECTS:clickhouse_malloc>)
+    elseif (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
@@ -719,6 +725,7 @@ if (NATIVE_BUILD_TARGETS
     AND NOT(
         CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
         AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR
+        AND NOT USE_MUSL
     )
 )
     message (STATUS "Building native targets: ${NATIVE_BUILD_TARGETS}")

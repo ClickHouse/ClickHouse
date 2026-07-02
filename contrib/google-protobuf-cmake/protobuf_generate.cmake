@@ -76,13 +76,13 @@ if(NOT DEFINED PROTOBUF_GENERATE_CPP_APPEND_PATH)
 endif()
 
 function(protobuf_generate)
-  # ClickHouse build: Use the native plugins when cross-compiling
-  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+  # ClickHouse build: Use the native plugins when cross-compiling or using musl
+  # (musl builds use -nostartfiles which breaks standalone executables)
+  if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
     set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
   else ()
     set(NATIVE_protoc $<TARGET_FILE:protoc>)
   endif()
-
 
   set(_options APPEND_PATH DESCRIPTORS)
   set(_singleargs LANGUAGE OUT_VAR EXPORT_MACRO PROTOC_OUT_DIR)
