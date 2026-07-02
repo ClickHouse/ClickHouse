@@ -267,7 +267,7 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
         HashiCorpVault & vault;
         bool active;
 
-        VaultCertificateGuard(HashiCorpVault & v)
+        explicit VaultCertificateGuard(HashiCorpVault & v)
             : mgr(Poco::Net::SSLManager::instance()), vault(v)
         {
             active = vault.certificate_handler_type != CertificateHandlerType::Default;
