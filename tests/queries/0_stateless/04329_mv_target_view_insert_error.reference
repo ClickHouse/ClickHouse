@@ -1,0 +1,2 @@
+Method write is not supported by storage View: while writing to target table {db}.vw_04329 of materialized view {db}.mv_04329
+Method write is not supported by storage View
