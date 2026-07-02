@@ -1,5 +1,5 @@
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromOwnString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
