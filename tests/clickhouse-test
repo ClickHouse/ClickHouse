@@ -3944,7 +3944,19 @@ class TestSuite:
         def load_tags_and_random_settings_limits_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
             need_query_params = False
-            with open(filepath, "r", encoding="utf-8") as file:
+            try:
+                file = open(filepath, "r", encoding="utf-8")
+            except FileNotFoundError:
+                # Concurrent `clickhouse-test` workers share one queries directory. A
+                # worker that needs substitutions writes a transient per-PID copy of a
+                # test (`<name>.<pid><ext>`, see TestCase.temp_file_path) next to the
+                # original and removes it once done. Another worker's suite scan
+                # (os.listdir in get_selected_tests) can list that copy and only reach
+                # here after it was deleted, so the file is gone by the time we read its
+                # tags. A file that vanished mid-scan has no tags to contribute — skip it
+                # instead of aborting the whole run with a FileNotFoundError.
+                return [], {}, None
+            with file:
                 try:
                     lines = file.readlines()
                     tag_line = find_tag_line(lines, comment_sign)
