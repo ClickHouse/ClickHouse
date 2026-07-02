@@ -153,11 +153,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
-    extern const ServerSettingsUInt64 max_database_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
-    extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -212,7 +207,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = getContext()->getGlobalContext()->getMaxDatabaseNumToThrow();
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
@@ -2208,28 +2203,40 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
 void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
-    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
-        {
-            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
-            UInt64 attached_count = CurrentMetrics::get(metric);
-            if (num_limit > 0 && attached_count >= num_limit)
-                throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                                "Too many {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
-        };
+    auto check_and_throw = [&](UInt64 num_limit, CurrentMetrics::Metric metric, String setting_name, String entity_name)
+    {
+        UInt64 attached_count = CurrentMetrics::get(metric);
+        if (num_limit > 0 && attached_count >= num_limit)
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Too many {}. "
+                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                entity_name,
+                setting_name,
+                num_limit,
+                attached_count);
+    };
 
     String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
     bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 
+    auto global_context = getContext()->getGlobalContext();
     if (create.is_dictionary)
-        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
+        check_and_throw(
+            global_context->getMaxDictionaryNumToThrow(),
+            CurrentMetrics::AttachedDictionary,
+            "max_dictionary_num_to_throw",
+            "dictionaries");
     else if (create.isView())
-        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+        check_and_throw(global_context->getMaxViewNumToThrow(), CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
     else if (is_replicated)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+        check_and_throw(
+            global_context->getMaxReplicatedTableNumToThrow(),
+            CurrentMetrics::AttachedReplicatedTable,
+            "max_replicated_table_num_to_throw",
+            "replicated tables");
     else
-        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
+        check_and_throw(global_context->getMaxTableNumToThrow(), CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
