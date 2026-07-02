@@ -3301,17 +3301,31 @@ async function loadDatabases(server_address, user, password) {
         /// starts, rather than after the `system.tables` load succeeds: otherwise closing the
         /// whole panel while the load is still in flight detaches the row, `loadTables` bails out
         /// through its `isConnected` check, and the user's just-performed open would be forgotten,
-        /// so reopening the panel would show it collapsed. The entry is removed only on an explicit
-        /// collapse or a connection change (`resetConnectionScopedState`, which also clears the set
-        /// and closes the panel, so a stale load can no longer resurrect it). On success the row is
-        /// marked open and the refresh button is attached. Restoring passes set_current = false so
-        /// the highlight is left alone.
+        /// so reopening the panel would show it collapsed. Once the load settles, the set is
+        /// reconciled with the row's actual state (see below): a failed open is rolled back so a
+        /// database that never actually expanded is not auto-retried on every panel reopen. The
+        /// entry is otherwise removed only on an explicit collapse or a connection change
+        /// (`resetConnectionScopedState`, which also clears the set and closes the panel, so a
+        /// stale load can no longer resurrect it). On success the row is marked open and the
+        /// refresh button is attached. Restoring passes set_current = false so the highlight is
+        /// left alone.
         const openDatabase = (set_current = true) => {
             opened_databases.add(elem.database);
             return refreshTables(set_current).then(ok => {
                 if (ok !== false) {
                     database.dataset['opened'] = 1;
                     database_link.after(refresh_button);
+                }
+                /// Reconcile the restore set with what is actually on screen while the row is
+                /// still attached: an open that failed (e.g. `system.tables` errored) never
+                /// expanded the row, so drop it to avoid auto-retrying it on the next panel
+                /// reopen, while a genuine success (re-)adds it even if a superseded sibling load
+                /// of the same row rolled it back just before. A panel close instead detaches the
+                /// row (`isConnected === false`), leaving a just-performed open in the set so it
+                /// is still restored on reopen.
+                if (database.isConnected) {
+                    if (database.dataset['opened']) opened_databases.add(elem.database);
+                    else opened_databases.delete(elem.database);
                 }
                 return ok;
             });
