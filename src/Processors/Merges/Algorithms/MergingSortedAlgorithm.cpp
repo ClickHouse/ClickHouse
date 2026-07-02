@@ -67,7 +67,8 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     WriteBuffer * out_row_sources_buf_,
     const std::optional<String> & filter_column_name_,
     bool use_average_block_sizes,
-    bool apply_virtual_row_conversions_)
+    bool apply_virtual_row_conversions_,
+    size_t virtual_row_prefetch_window_)
     : header(std::move(header_))
     , merged_data(use_average_block_sizes, max_block_size_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , description(description_)
@@ -75,6 +76,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     , out_row_sources_buf(out_row_sources_buf_)
     , filter_column_position(filter_column_name_ ? header->getPositionByName(filter_column_name_.value()) : -1)
     , apply_virtual_row_conversions(apply_virtual_row_conversions_)
+    , virtual_row_prefetch_window(virtual_row_prefetch_window_)
     , current_inputs(num_inputs)
     , sorting_queue_strategy(sorting_queue_strategy_)
     , cursors(num_inputs)
@@ -110,11 +112,15 @@ void MergingSortedAlgorithm::addInput()
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    for (auto & input : inputs)
+    std::vector<char> input_is_virtual_row(inputs.size(), 0);
+
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
+        auto & input = inputs[i];
         if (!isVirtualRow(input.chunk))
             continue;
 
+        input_is_virtual_row[i] = 1;
         setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
         input.skip_last_row = true;
     }
@@ -163,6 +169,92 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             queue = QueueType(cursors);
         });
     }
+
+    /// A source that starts with a virtual row is deferred: its real data is not requested
+    /// until the merge reaches the key from the virtual row, so that sources far from the
+    /// front of the merge are not read. The flip side is that the merge would otherwise
+    /// request the deferred sources strictly one by one, serializing reads that used to
+    /// happen in parallel, so a window of them reads ahead (see `topUpPrefetch`). The
+    /// read-ahead is not started here: it begins only once the merge has consumed real data
+    /// and still needs to advance (see `merge`), so that a limit satisfied from the front
+    /// source alone does not pull in the sources deferred behind it.
+    if (virtual_row_prefetch_window && !has_collation)
+    {
+        source_deferral_state.assign(current_inputs.size(), SourceDeferralState::NotDeferred);
+        deferred_sources_in_merge_order.clear();
+        next_deferred_source_pos = 0;
+        prefetches_in_flight = 0;
+        merge_advanced_past_source = false;
+
+        for (size_t i = 0; i < current_inputs.size(); ++i)
+        {
+            if (input_is_virtual_row[i] && cursors[i].isValid())
+            {
+                source_deferral_state[i] = SourceDeferralState::Deferred;
+                deferred_sources_in_merge_order.push_back(i);
+            }
+        }
+
+        std::sort(deferred_sources_in_merge_order.begin(), deferred_sources_in_merge_order.end(),
+            [&](size_t lhs, size_t rhs)
+            {
+                return SortCursor(&cursors[rhs]).greater(SortCursor(&cursors[lhs]));
+            });
+    }
+}
+
+void MergingSortedAlgorithm::topUpPrefetch()
+{
+    /// Keep the next `virtual_row_prefetch_window` deferred sources (in the order the
+    /// merge will need them) reading ahead. The sources past the window are not read
+    /// until the merge comes closer to them, so the number of simultaneously resident
+    /// readers stays bounded by the window rather than by the number of parts.
+    ///
+    /// Reading ahead of the merge is speculative when there is a limit: the merge may
+    /// finish before it reaches the prefetched source. The window bounds the waste by
+    /// O(threads) read chunks, while reading strictly on demand was measured to degrade
+    /// to a single thread (e.g. with a selective filter over a single wide part split
+    /// into per-thread streams, where the merge stalls on each stream in turn).
+    while (next_deferred_source_pos < deferred_sources_in_merge_order.size() && prefetches_in_flight < virtual_row_prefetch_window)
+    {
+        size_t candidate = deferred_sources_in_merge_order[next_deferred_source_pos];
+        ++next_deferred_source_pos;
+        if (source_deferral_state[candidate] == SourceDeferralState::Deferred)
+        {
+            source_deferral_state[candidate] = SourceDeferralState::PrefetchIssued;
+            sources_to_prefetch.push_back(candidate);
+            ++prefetches_in_flight;
+        }
+    }
+}
+
+void MergingSortedAlgorithm::releaseDeferredSource(size_t source_num)
+{
+    if (source_deferral_state.empty())
+        return;
+
+    /// The merge has finished with this source (its real data arrived, or it was exhausted
+    /// without any), so it is past resolving the very first front source from its virtual
+    /// row. From now on a request for another source is a genuine advance that justifies
+    /// reading ahead (see `merge`).
+    merge_advanced_past_source = true;
+
+    auto prev_state = source_deferral_state[source_num];
+    source_deferral_state[source_num] = SourceDeferralState::NotDeferred;
+
+    if (prev_state == SourceDeferralState::PrefetchIssued)
+        --prefetches_in_flight;
+}
+
+void MergingSortedAlgorithm::onSourceExhausted(size_t source_num)
+{
+    /// The merge reached this source but it finished without delivering data (e.g. all its
+    /// rows were filtered out), so `consume` is never called for it. Release its read-ahead
+    /// slot here, otherwise `prefetches_in_flight` would never drop and the window would stop
+    /// refilling, degrading the merge back to reading one source at a time. This also lets
+    /// the read-ahead start when the leading sources are entirely filtered out (they are
+    /// exhausted without data, never consumed).
+    releaseDeferredSource(source_num);
 }
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -178,6 +270,9 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
+
+    if (!is_virtual_row)
+        releaseDeferredSource(source_num);
 
 #ifndef NDEBUG
     /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
@@ -211,20 +306,40 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
 {
-    if (sorting_queue_strategy == SortingQueueStrategy::Default)
-    {
-        IMergingAlgorithm::Status result = queue_variants.callOnVariant([&](auto & queue)
+    IMergingAlgorithm::Status result = sorting_queue_strategy == SortingQueueStrategy::Default
+        ? queue_variants.callOnVariant([&](auto & queue)
         {
             return mergeImpl(queue);
+        })
+        : queue_variants.callOnBatchVariant([&](auto & queue)
+        {
+            return mergeBatchImpl(queue);
         });
 
-        return result;
-    }
-
-    IMergingAlgorithm::Status result = queue_variants.callOnBatchVariant([&](auto & queue)
+    if (result.is_finished)
     {
-        return mergeBatchImpl(queue);
-    });
+        /// The merge is complete (e.g. the limit is reached): read-ahead would start
+        /// reads whose results can never be consumed.
+        sources_to_prefetch.clear();
+    }
+    else
+    {
+        /// Start (or top up) the read-ahead only when the merge has already finished with a
+        /// source and still needs another one. The first source the merge asks for is the
+        /// front source being resolved from its virtual row; prefetching the sources deferred
+        /// behind it then would read parts that a limit satisfied from the front source alone
+        /// never reaches (e.g. `ORDER BY pk LIMIT n` answered by the first part). Once a
+        /// source has been read or exhausted and the merge still asks for another, reading
+        /// ahead is worthwhile and keeps the deferred sources from being read one by one.
+        if (result.required_source >= 0 && merge_advanced_past_source)
+            topUpPrefetch();
+
+        if (!sources_to_prefetch.empty())
+        {
+            result.sources_to_prefetch = std::move(sources_to_prefetch);
+            sources_to_prefetch.clear();
+        }
+    }
 
     return result;
 }
