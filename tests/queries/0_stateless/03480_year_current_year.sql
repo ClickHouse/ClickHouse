@@ -28,5 +28,5 @@ SELECT year(toDate('2023-04-21')),
 SELECT '-- two-argument toYear(datetime, timezone) is unaffected';
 SELECT toYear(toDateTime('2023-01-01 00:00:00', 'UTC'), 'Asia/Yekaterinburg');
 
-SELECT '-- the rewrite is visible in EXPLAIN SYNTAX';
-EXPLAIN SYNTAX SELECT year();
+SELECT '-- the rewrite year() -> toYear(today()) is visible in EXPLAIN SYNTAX (analyzer-agnostic)';
+SELECT count() > 0 FROM (EXPLAIN SYNTAX SELECT year()) WHERE explain ILIKE '%toYear(today())%';

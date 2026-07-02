@@ -12,6 +12,5 @@ UInt16
 2023	1900	2077	2149
 -- two-argument toYear(datetime, timezone) is unaffected
 2023
--- the rewrite is visible in EXPLAIN SYNTAX
-SELECT toYear(today())
-FROM system.one
+-- the rewrite year() -> toYear(today()) is visible in EXPLAIN SYNTAX (analyzer-agnostic)
+1
