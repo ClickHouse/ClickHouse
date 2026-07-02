@@ -5666,14 +5666,22 @@ function acceptCompletion(index) {
     /// Capture the prefix and its position before closeCompletions() resets them.
     const prefix = completionPrefix;
     const start = completionPrefixStart;
-    completionUsage.set(word, (completionUsage.get(word) || 0) + 1);
 
     closeCompletions();
 
-    /// Nothing to do when the word is exactly what was already typed (same text, same case).
-    if (word === prefix) {
+    /// Nothing to do when the completion is the already-typed word itself: either the exact
+    /// same text, or the same word in a different canonical case (an "empty completion" whose
+    /// suffix is empty — every candidate starts with the prefix, so an equal length means an
+    /// equal word ignoring case). Accepting it must not rewrite the user's casing, e.g. typing
+    /// `hash` and pressing Right/Tab/Enter (with `HASH` offered) must leave `hash` unchanged.
+    if (word.length === prefix.length) {
         return;
     }
+
+    /// Record the acceptance only when we actually replace text, so the equal-word no-op
+    /// above stays a true no-op: accepting `HASH` for a typed `hash` must not bump its usage
+    /// and thus re-rank later suggestions (e.g. make `HASH` win the next time `ha` is typed).
+    completionUsage.set(word, (completionUsage.get(word) || 0) + 1);
 
     /// Replace the whole typed identifier with the canonical-cased completion word, so the
     /// already-typed prefix also takes the suggestion's case (e.g. "se" + accept -> "SELECT").
