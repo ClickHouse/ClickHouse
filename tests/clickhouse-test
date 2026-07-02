@@ -2125,6 +2125,17 @@ class TestCase:
             ]
         )
 
+    def has_non_throw_overflow_mode_in_test(self):
+        # The stress runner may force use_query_cache=1 as a global client option,
+        # but the server refuses use_query_cache together with any *_overflow_mode
+        # other than 'throw' (QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE): a
+        # non-throw mode can truncate the result, which must never be cached.
+        # Detect tests that set such a mode so we can drop the forced query cache
+        # for them (see add_effective_settings).
+        return not subprocess.call(
+            ["grep", "-iqE", r"_overflow_mode[[:space:]]*=?[[:space:]]*'?(any|break)", self.case_file]
+        )
+
     def add_effective_settings(self, client_options):
         new_options = ""
         if self.effective_settings:
@@ -2157,6 +2168,19 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # The stress runner enables use_query_cache=1 as a global client option for
+        # some runners. It is mutually exclusive with a non-throw *_overflow_mode
+        # (server error QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE), so tests that
+        # set such a mode fail spuriously. Turn the forced query cache back off for
+        # exactly those tests; --allow_repeated_settings makes this trailing value win.
+        # Query-level SETTINGS in the test still override it, so intentional coverage
+        # (e.g. 02494_query_cache_bugs) is preserved.
+        if "use_query_cache=1" in os.environ["CLICKHOUSE_CLIENT_OPT"] and (
+            self.has_non_throw_overflow_mode_in_test()
+        ):
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += " --use_query_cache=0"
+            client_options += " --use_query_cache=0"
 
         return new_options + " " + client_options
 
