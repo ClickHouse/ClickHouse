@@ -725,6 +725,9 @@
         #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
         #query-backdrop .q-op  { color: var(--syntax-operator); }
         #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
+        /* The token where the server reported a syntax error is painted with a red
+           background. It is cleared as soon as the user returns focus to the editor. */
+        #query-backdrop .q-err-pos { background-color: color-mix(in srgb, var(--syntax-error) 40%, transparent); border-radius: 2px; }
 
         /* Off-screen mirror used to measure the pixel coordinates of the caret inside the
            textarea. Its typography and box model MUST match the textarea exactly (same as
@@ -3816,7 +3819,7 @@ let controller = null;
 /// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `abortController` is an AbortController that can be used to cancel this query.
-async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
+async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, queryStart)
 {
     const user = user_elem.value;
     const password = password_elem.value;
@@ -3874,6 +3877,13 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             }
             if (!has_exception) {
                 targetResultEl.renderError(reply);
+            }
+
+            /// If the error message points at a position in the query (e.g. a syntax error),
+            /// highlight that position in the editor -- unless the user has returned to the editor
+            /// since this run started, in which case this response is stale and must not repaint.
+            if (editorInteractionGen === runEditorInteraction) {
+                highlightQueryError(reply, query, queryStart);
             }
 
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
@@ -3969,7 +3979,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text)
+async function postSingle(posted_request_num, query, history_query_text, queryStart)
 {
     const paramValuesSnapshot = getParamValues();
     last_query_start = performance.now();
@@ -3981,7 +3991,7 @@ async function postSingle(posted_request_num, query, history_query_text)
     progressEl.start();
 
     controller = new AbortController();
-    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot);
+    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot, queryStart);
 
     if (result.cancelled) return;
 
@@ -4165,7 +4175,7 @@ async function postMulti(posted_request_num, parsed)
         const promises = group.indices.map(i => {
             const ac = new AbortController();
             multiQueryControllers.push(ac);
-            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot)
+            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot, parsed[i].queryStart)
                 .then(result => ({ index: i, result }));
         });
 
@@ -4383,6 +4393,13 @@ function beginFlight() {
     document.getElementById('run-all').style.display = 'none';
     /// Hide any open autocompletion when a query starts running.
     closeCompletions();
+    /// Drop any previous syntax-error highlight; a fresh error (if any) will be set on failure.
+    clearQueryError();
+    /// Snapshot the editor-interaction generation. A late error response is only allowed to paint
+    /// a highlight if the user has not returned to the editor since this run started. The keystroke
+    /// or click that triggered the run has already bumped the generation (the textarea's own
+    /// handlers run before the document-level run trigger), so it is included in this snapshot.
+    runEditorInteraction = editorInteractionGen;
 }
 
 function endFlight() {
@@ -4418,13 +4435,13 @@ async function postOne()
         if (selected.length > 1) {
             await postMulti(request_num, selected);
         } else if (selected.length === 1) {
-            await postSingle(request_num, selected[0].query, all_text);
+            await postSingle(request_num, selected[0].query, all_text, selected[0].queryStart);
         }
     } else {
         const query = await getQueryUnderCursor();
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined, queryUnderCursorStart);
     }
 
     endFlight();
@@ -4444,7 +4461,7 @@ async function postAll()
         await postMulti(request_num, parsed);
     } else {
         const query = await getQueryUnderCursor();
-        await postSingle(request_num, query);
+        await postSingle(request_num, query, undefined, queryUnderCursorStart);
     }
 
     endFlight();
@@ -4787,6 +4804,12 @@ async function tokenize(query) {
     return result;
 }
 
+/// Absolute character offset (into the textarea) where the query most recently returned by
+/// `getQueryUnderCursor` begins. Callers thread it into `highlightQueryError` so a server-reported
+/// error position maps back to the statement that actually ran, even when the same query text
+/// appears more than once in the editor.
+let queryUnderCursorStart = 0;
+
 /// Regression coverage for this function lives in
 /// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
 /// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
@@ -4794,6 +4817,7 @@ async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        queryUnderCursorStart = 0;
         return all_queries;
     }
 
@@ -4826,6 +4850,7 @@ async function getQueryUnderCursor() {
             if (has_content && current_offset >= cursor_position) {
                 if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
+                queryUnderCursorStart = current_query_start;
                 return all_queries.substring(current_query_start, current_offset);
             }
             if (has_content) {
@@ -4846,6 +4871,7 @@ async function getQueryUnderCursor() {
     if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
         if (should_select_query) query_area.setSelectionRange(last_query_start, last_query_end);
         query_area.focus();
+        queryUnderCursorStart = last_query_start;
         return all_queries.substring(last_query_start, last_query_end);
     }
 
@@ -4853,6 +4879,7 @@ async function getQueryUnderCursor() {
     const tail = all_queries.substring(current_query_start);
     if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
     query_area.focus();
+    queryUnderCursorStart = current_query_start;
     return tail;
 }
 
@@ -4866,7 +4893,7 @@ const PARALLELIZABLE_KEYWORDS = new Set([
 /// (after skipping whitespace, comments, and opening brackets).
 async function splitAllQueries(text) {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length }];
+        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length, queryStart: 0 }];
     }
 
     const tokens = await tokenize(text);
@@ -4883,13 +4910,18 @@ async function splitAllQueries(text) {
 
         if (elem.token == ';') {
             if (has_significant) {
-                const q = text.substring(current_query_start, current_offset).trim();
+                const raw = text.substring(current_query_start, current_offset);
+                const q = raw.trim();
                 if (q && q !== ';') {
                     queries.push({
                         query: q,
                         is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                         start: first_significant_offset,
                         end: last_significant_end,
+                        /// Exact character offset where the trimmed query text begins in `text`,
+                        /// so a server-reported error position can be mapped to this statement even
+                        /// when the same text appears more than once (e.g. `SELECT 1; SELECT 1`).
+                        queryStart: current_query_start + (raw.length - raw.trimStart().length),
                     });
                 }
             }
@@ -4912,13 +4944,15 @@ async function splitAllQueries(text) {
 
     /// Last query (no trailing semicolon)
     if (has_significant) {
-        const last = text.substring(current_query_start).trim();
+        const raw = text.substring(current_query_start);
+        const last = raw.trim();
         if (last && last !== ';') {
             queries.push({
                 query: last,
                 is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                 start: first_significant_offset,
                 end: last_significant_end,
+                queryStart: current_query_start + (raw.length - raw.trimStart().length),
             });
         }
     }
@@ -5086,6 +5120,96 @@ function tokenClass(tokens, i) {
 let currentTokens = [];
 let currentBoundaries = [];
 let currentBackdropText = '';
+
+/// Absolute character offset (into the textarea) of the position the server reported a syntax
+/// error at, or -1 when there is no error to highlight. The token containing this offset is
+/// painted with a red background in the backdrop until the user returns focus to the editor.
+let queryErrorPos = -1;
+
+/// Monotonic counter bumped whenever the user returns to the editor (refocus, typing, caret
+/// movement, or a click inside it). `beginFlight` snapshots it into `runEditorInteraction` at run
+/// start; if it advances before the error response arrives, `postImpl` suppresses the (now stale)
+/// syntax-error highlight. Without this, a late error response could repaint the marker after the
+/// user has already resumed editing, because the clear handlers only remove an already-visible
+/// marker and would not fire again on their own.
+let editorInteractionGen = 0;
+let runEditorInteraction = 0;
+
+/// Clear the syntax-error highlight and repaint. Called when the user returns to the editor
+/// (focus, typing, cursor movement) or when a new query run starts.
+function clearQueryError() {
+    if (queryErrorPos < 0) return;
+    queryErrorPos = -1;
+    renderQueryBackdrop();
+}
+
+/// Record that the user has interacted with the editor and clear any visible highlight. Bound to
+/// the same focus/keydown/pointerdown/input events; the generation bump is what lets a late error
+/// response know the user has already returned to editing (see `editorInteractionGen`).
+function onReturnToEditor() {
+    ++editorInteractionGen;
+    clearQueryError();
+}
+
+/// Convert a 0-based UTF-8 byte offset into a JS (UTF-16) string index. ClickHouse reports the
+/// syntax-error position as a byte offset; for ASCII queries it coincides with the character
+/// index, but non-ASCII text needs this conversion so the highlight lands on the right token.
+function byteOffsetToCharIndex(str, byteOffset) {
+    if (byteOffset <= 0) return 0;
+    let bytes = 0;
+    let i = 0;
+    while (i < str.length) {
+        const cp = str.codePointAt(i);
+        const units = cp > 0xFFFF ? 2 : 1;
+        let b;
+        if (cp <= 0x7F) b = 1;
+        else if (cp <= 0x7FF) b = 2;
+        else if (cp <= 0xFFFF) b = 3;
+        else b = 4;
+        bytes += b;
+        i += units;
+        if (bytes >= byteOffset) return i;
+    }
+    return str.length;
+}
+
+/// Parse the server's error message for a "failed at position N" hint (see
+/// `writeCommonErrorMessage` in `src/Parsers/parseQuery.cpp`) and, if found, highlight that
+/// position in the editor. `query` is the exact text that was sent to the server; the reported
+/// position is a 1-based byte offset into it, which we map back to the full textarea contents.
+/// `queryStart` is the absolute character offset in the textarea where `query` began when the run
+/// started (the caller captured it), used to disambiguate identical statements.
+function highlightQueryError(errorText, query, queryStart) {
+    if (typeof errorText !== 'string' || typeof query !== 'string') return;
+
+    const match = errorText.match(/failed at position (\d+)/);
+    if (!match) return;
+
+    /// 1-based byte offset -> 0-based.
+    const byteOffset = parseInt(match[1], 10) - 1;
+    if (!(byteOffset >= 0)) return;
+
+    /// Locate the sent query within the textarea. Prefer the exact start offset the caller
+    /// captured when the run began, so duplicate statements (e.g. `SELECT 1; SELECT 1`) map to the
+    /// one that actually failed. If the editor changed while the request was in flight and the
+    /// query is no longer at that offset, fall back to its first occurrence; if it is gone
+    /// entirely, do not paint a stale position at all.
+    const text = query_area.value;
+    let base;
+    if (typeof queryStart === 'number' && queryStart >= 0
+        && text.substring(queryStart, queryStart + query.length) === query) {
+        base = queryStart;
+    } else {
+        base = text.indexOf(query);
+    }
+    if (base < 0) return;
+
+    const charIndex = byteOffsetToCharIndex(query, byteOffset);
+    const absolute = base + charIndex;
+
+    queryErrorPos = Math.min(absolute, text.length);
+    renderQueryBackdrop();
+}
 /// Guard so that the backdrop re-renders triggered by the completion code (to update the
 /// reserved spacer) do not recurse back into `updateCompletions`.
 let inRenderBackdrop = false;
@@ -5157,9 +5281,11 @@ function renderQueryBackdrop() {
         }
 
         const cls = tokenClass(tokens, i);
+        const isErrPos = queryErrorPos >= 0 && queryErrorPos >= tokStart && queryErrorPos < tokEnd;
+        const classes = (cls ? cls : '') + (isErrPos ? (cls ? ' ' : '') + 'q-err-pos' : '');
         const escaped = escapeHTML(elem.token);
-        if (cls) {
-            html += '<span class="' + cls + '">' + escaped + '</span>';
+        if (classes) {
+            html += '<span class="' + classes + '">' + escaped + '</span>';
         } else {
             html += escaped;
         }
@@ -5178,6 +5304,12 @@ function renderQueryBackdrop() {
     /// is shown with the error style.
     if (offset < text.length) {
         html += '<span class="q-err">' + escapeHTML(text.substring(offset)) + '</span>';
+    }
+
+    /// An error reported at the very end of the query (e.g. "failed at position N (end of
+    /// query)") has no token to attach to, so we append a red marker at the end.
+    if (queryErrorPos >= text.length) {
+        html += '<span class="q-err-pos"> </span>';
     }
 
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
@@ -5209,6 +5341,14 @@ query_area.addEventListener('focus', renderQueryBackdrop);
 query_area.addEventListener('blur', renderQueryBackdrop);
 /// Hide autocompletion when the textarea loses focus.
 query_area.addEventListener('blur', closeCompletions);
+
+/// Clear the syntax-error highlight as soon as the user returns to the editor: refocusing it,
+/// typing, moving the cursor with the keyboard, or clicking inside it. `onReturnToEditor` also
+/// bumps the interaction generation so a late error response will not repaint a stale highlight.
+query_area.addEventListener('focus', onReturnToEditor);
+query_area.addEventListener('keydown', onReturnToEditor);
+query_area.addEventListener('pointerdown', onReturnToEditor);
+query_area.addEventListener('input', onReturnToEditor);
 
 /// Keep backdrop scroll in sync with textarea.
 query_area.addEventListener('scroll', () => {
@@ -5707,6 +5847,14 @@ function tryOpenCompletions() {
 /// Capture-phase key handling so it runs before the textarea's own `onkeydown` (which would
 /// otherwise treat Tab as "insert spaces").
 query_area.addEventListener('keydown', (e) => {
+    /// This handler runs in the capture phase and calls `stopImmediatePropagation` for the keys it
+    /// consumes (Tab, Enter, ArrowUp/ArrowDown, ArrowRight, Escape). At the event target, a
+    /// capture-phase listener fires before the bubble-phase one and its `stopImmediatePropagation`
+    /// prevents the bubble-phase `onReturnToEditor` (bound below) from firing at all. So record the
+    /// editor interaction here too: pressing a key to open, navigate, or dismiss completions is a
+    /// return to the editor, and without this a late error response for an in-flight query would
+    /// repaint a stale syntax-error highlight (see `editorInteractionGen`).
+    ++editorInteractionGen;
     if (!completionCandidates.length) {
         /// Completions are closed: Tab at the end of a word manually opens them if a
         /// continuation is possible; otherwise let the default Tab (indentation) happen.
