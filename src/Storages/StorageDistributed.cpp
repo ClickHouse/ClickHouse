@@ -213,6 +213,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace ActionLocks
@@ -2536,27 +2537,54 @@ void registerStorageRemote(StorageFactory & factory)
         /// validated when it was first created on this server, so no check is re-run.
         ///
         /// A backup `RESTORE` is different: it reaches here with `args.mode == SECONDARY_CREATE` and
-        /// `args.is_restore_from_backup`, introducing the definition under a possibly different user.
-        /// The plain local-shard `SELECT`/`INSERT` check must still run for it, otherwise a user who
-        /// can restore could smuggle in `Remote('127.0.0.1', protected_db, protected_table, 'default')`
-        /// and reach a local target they cannot access directly, even though a direct `CREATE` would be
-        /// rejected. Only the table-function re-analysis is additionally skipped on restore, because
-        /// analyzing the target can throw if its underlying tables have changed since creation (e.g. the
-        /// table matched by `merge(...)` was dropped), which would make a valid persisted table
-        /// impossible to restore.
+        /// `args.is_restore_from_backup`, introducing the definition under a possibly different user, so it
+        /// must be validated like a `CREATE`. Both the plain local-shard `SELECT`/`INSERT` check below and
+        /// the table-function analysis run for it, otherwise a user who can restore could smuggle in
+        /// `Remote('127.0.0.1', protected_db, protected_table, 'default')` or
+        /// `Remote('127.0.0.1', merge(db, '^protected$'), 'default')` and reach a local target they cannot
+        /// access directly, even though a direct `CREATE` would be rejected.
+        ///
+        /// The one concession for a table-function target on restore is that the analysis is allowed to
+        /// fail for reasons other than access control: the target's underlying tables may legitimately be
+        /// absent in the restore environment (e.g. the table matched by `merge(...)` was dropped since the
+        /// backup was taken), and a valid persisted table must still be restorable in that case. An
+        /// access-control failure (`ACCESS_DENIED`) is always fatal — it is the exact case a direct
+        /// `CREATE` would reject and the only one that could let the restoring user reach a local target
+        /// they cannot access. Any other failure means the target could not be analyzed (and therefore
+        /// cannot be read either, so there is nothing to leak), so the restore proceeds with the columns
+        /// carried in the backup metadata.
         const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
-        const bool skip_table_function_analysis = loading_from_existing_metadata || args.is_restore_from_backup;
 
         ColumnsDescription columns = args.columns;
-        if (columns.empty() || (has_local_shard && parsed.remote_table_function_ptr && !skip_table_function_analysis))
+
+        /// The table-function target must be analyzed under the user's context whenever the definition is
+        /// freshly introduced (`CREATE`, user `ATTACH`, or backup `RESTORE`) and can route back to a local
+        /// shard; only server startup, which loads already-validated metadata, skips it.
+        const bool analyze_table_function_target
+            = has_local_shard && parsed.remote_table_function_ptr && !loading_from_existing_metadata;
+
+        if (columns.empty() || analyze_table_function_target)
         {
-            ColumnsDescription inferred = getStructureOfRemoteTable(
-                *parsed.cluster,
-                parsed.remote_table_id,
-                args.getLocalContext(),
-                parsed.remote_table_function_ptr);
-            if (columns.empty())
-                columns = std::move(inferred);
+            /// When the structure was carried in the definition, the analysis runs purely for its access
+            /// side effect, so on restore a non-access failure (absent target) may be tolerated. When the
+            /// structure was omitted, the analysis is the only source of columns and must always succeed.
+            const bool tolerate_absent_target = !columns.empty() && args.is_restore_from_backup;
+
+            try
+            {
+                ColumnsDescription inferred = getStructureOfRemoteTable(
+                    *parsed.cluster,
+                    parsed.remote_table_id,
+                    args.getLocalContext(),
+                    parsed.remote_table_function_ptr);
+                if (columns.empty())
+                    columns = std::move(inferred);
+            }
+            catch (const Exception & e)
+            {
+                if (!tolerate_absent_target || e.code() == ErrorCodes::ACCESS_DENIED)
+                    throw;
+            }
         }
 
         /// If the cluster contains a local shard, a query against this table can be routed back to
