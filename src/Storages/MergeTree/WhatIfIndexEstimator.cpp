@@ -16,6 +16,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -28,6 +29,7 @@
 
 #include <Columns/ColumnSparse.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
@@ -44,6 +46,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
+    extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
@@ -52,7 +55,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsBool apply_deleted_mask;
 }
 
 namespace ErrorCodes
@@ -346,8 +348,7 @@ bool tryEstimateEmpirical(
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
-    UInt64 & total_rows_read,
-    UInt64 & total_bytes_read,
+    bool apply_final_pk_expand,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -367,6 +368,10 @@ bool tryEstimateEmpirical(
     UInt64 skipped_data_granules = 0;
     Stopwatch watch;
 
+    /// Under FINAL (exact mode) we feed the surviving ranges through the engine's PrimaryKeyExpand
+    /// pass, so we record which baseline marks the candidate keeps, per part, alongside the counts
+    RangesInDataParts surviving_parts;
+
     /// The whole-part scan is not the normal read pipeline, so enforce the query's
     /// read limits explicitly (max_execution_time is handled by the process-list element)
     const auto & limit_settings = context->getSettingsRef();
@@ -374,8 +379,8 @@ bool tryEstimateEmpirical(
         limit_settings[Setting::max_rows_to_read],
         limit_settings[Setting::max_bytes_to_read],
         limit_settings[Setting::read_overflow_mode]);
-    /// total_rows_read / total_bytes_read are query-level (shared across all candidates),
-    /// so max_rows_to_read / max_bytes_to_read cap the whole EXPLAIN WHATIF, not each scan
+    UInt64 total_rows_read = 0;
+    UInt64 total_bytes_read = 0;
 
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
@@ -390,6 +395,9 @@ bool tryEstimateEmpirical(
 
         const auto & part_index_granularity = part->index_granularity;
         const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
+
+        /// Baseline marks the candidate keeps in this part (only collected for the FINAL expansion)
+        std::vector<size_t> surviving_marks;
 
         std::vector<bool> in_baseline(part->getMarksCount(), false);
         for (const auto & range : mark_ranges)
@@ -422,9 +430,7 @@ bool tryEstimateEmpirical(
                 index_columns,
                 MarkRanges{read_range},
                 std::make_shared<std::atomic<size_t>>(0),
-                /// (Mirror the real read) apply the lightweight-delete mask so the
-                /// candidate does not aggregate rows the SELECT would not see
-                context->getSettingsRef()[Setting::apply_deleted_mask],
+                false,
                 false,
                 false);
 
@@ -456,6 +462,7 @@ bool tryEstimateEmpirical(
                 : 0;
             size_t data_granules_in_window = 0;
             size_t baseline_marks_in_window = 0;
+            std::vector<size_t> window_baseline_marks;
 
             auto flush_window = [&]
             {
@@ -465,13 +472,19 @@ bool tryEstimateEmpirical(
                 total_data_granules += baseline_marks_in_window;
                 if (!condition->mayBeTrueOnGranule(granule, {}))
                     skipped_data_granules += baseline_marks_in_window;
+                else if (apply_final_pk_expand)
+                    surviving_marks.insert(surviving_marks.end(), window_baseline_marks.begin(), window_baseline_marks.end());
             };
 
             auto on_mark_finished = [&]
             {
                 ++data_granules_in_window;
                 if (current_mark < in_baseline.size() && in_baseline[current_mark])
+                {
                     ++baseline_marks_in_window;
+                    if (apply_final_pk_expand)
+                        window_baseline_marks.push_back(current_mark);
+                }
 
                 if (data_granules_in_window >= skip_index_granularity)
                 {
@@ -479,6 +492,7 @@ bool tryEstimateEmpirical(
                     aggregator = index_helper->createIndexAggregator();
                     data_granules_in_window = 0;
                     baseline_marks_in_window = 0;
+                    window_baseline_marks.clear();
                 }
 
                 ++current_mark;
@@ -530,13 +544,49 @@ bool tryEstimateEmpirical(
         for (const auto & read_range : read_ranges)
             if (!scan_range(read_range))
                 return false;
+
+        if (apply_final_pk_expand)
+        {
+            /// Merge the surviving marks into ranges; carry the baseline (post-PK) ranges as the
+            /// snapshot the expansion pass needs. Empty surviving ranges still matter: this part can
+            /// be re-included if its PK values intersect a surviving range in another part.
+            MarkRanges survivor_ranges;
+            for (size_t m : surviving_marks)
+            {
+                if (!survivor_ranges.empty() && survivor_ranges.back().end == m)
+                    survivor_ranges.back().end = m + 1;
+                else
+                    survivor_ranges.push_back(MarkRange{m, m + 1});
+            }
+            RangesInDataPart entry(part);
+            entry.ranges = std::move(survivor_ranges);
+            entry.ranges_snapshot_after_pk_analysis = mark_ranges;
+            surviving_parts.push_back(std::move(entry));
+        }
     }
 
     if (total_data_granules == 0)
         return false;
 
-    result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
-    result.estimated_marks = total_data_granules - skipped_data_granules;
+    UInt64 estimated_marks = total_data_granules - skipped_data_granules;
+    if (apply_final_pk_expand)
+    {
+        /// Mirror the real read: the candidate's per-granule selection is widened by PrimaryKeyExpand
+        /// so the FINAL merge stays correct. Reuse the engine's own pass instead of reimplementing it.
+        const auto & metadata = storage_snapshot->metadata;
+        RangesInDataParts expanded = findPKRangesForFinalAfterSkipIndex(
+            metadata->getPrimaryKey(), metadata->getSortingKey(), surviving_parts, getLogger("WhatIfIndexEstimator"));
+
+        UInt64 expanded_marks = 0;
+        for (const auto & expanded_part : expanded)
+            expanded_marks += expanded_part.getMarksCount();
+
+        /// The expansion can only re-add baseline marks, never read past the baseline the query already scans
+        estimated_marks = std::clamp<UInt64>(expanded_marks, total_data_granules - skipped_data_granules, total_data_granules);
+    }
+
+    result.skip_ratio = static_cast<double>(total_data_granules - estimated_marks) / static_cast<double>(total_data_granules);
+    result.estimated_marks = estimated_marks;
     result.estimate_source = "empirical";
     result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
     result.sampled_parts = analysis.selected_parts;
@@ -553,8 +603,8 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     const WhatIfSettings & settings,
-    UInt64 & total_rows_read,
-    UInt64 & total_bytes_read,
+    bool query_with_final,
+    bool final_exact_mode,
     ContextPtr context)
 {
     const auto & data = read_step->getMergeTreeData();
@@ -563,12 +613,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     result.index_name = index_desc.name;
     result.index_type = index_desc.type;
     result.total_parts = data.getActivePartsCount();
-    /// Count marks over the active snapshot only, so the denominator matches total_parts
-    /// (getTotalMarksCount also counts outdated parts left in memory after merges/mutations)
-    size_t active_marks = 0;
-    for (const auto & active_part : data.getDataPartsVectorForInternalUsage())
-        active_marks += active_part->getMarksCount();
-    result.total_marks = active_marks;
+    result.total_marks = data.getTotalMarksCount();
 
     /// `context` already has the inner-SELECT settings applied, so these checks match a real read
     if (!context->getSettingsRef()[Setting::use_skip_indexes])
@@ -688,15 +733,27 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     result.status = WhatIfIndexEstimator::IndexResult::Applicable;
 
+    /// Under FINAL only the empirical path (with the PrimaryKeyExpand pass) models the real read;
+    /// the statistical fallback is not FINAL-aware, so don't let it produce a misleading number
+    const bool apply_final_pk_expand = query_with_final && final_exact_mode;
+
     if (settings.empirical)
     {
-        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, total_rows_read, total_bytes_read, context))
+        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, apply_final_pk_expand, context))
             return result;
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     }
     else
     {
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Disabled;
+    }
+
+    if (query_with_final)
+    {
+        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
+        result.not_applicable_reason = "EXPLAIN WHATIF under FINAL needs empirical estimation, which is unavailable "
+                                       "for this index or query (the statistical path does not model the FINAL merge)";
+        return result;
     }
 
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
@@ -774,14 +831,15 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     auto * read_step = read_steps[0];
     const auto & data = read_step->getMergeTreeData();
 
-    /// TODO(yariks5s): FINAL prevents skip indexes from pruning granules (the merge needs every
-    /// granule), so a hypothetical index can't help. Report not_applicable
     const bool query_with_final = read_step->isQueryWithFinal();
 
     /// Mirror a real read's skip-index state, use_skip_indexes, off under FINAL unless use_skip_indexes_if_final
     const auto & effective_settings = plan_context->getSettingsRef();
     const bool effective_use_skip_indexes = effective_settings[Setting::use_skip_indexes]
         && !(query_with_final && !effective_settings[Setting::use_skip_indexes_if_final]);
+
+    /// Under FINAL with exact mode the empirical pass widens its selection through PrimaryKeyExpand
+    const bool final_exact_mode = effective_settings[Setting::use_skip_indexes_if_final_exact_mode];
 
     /// force_data_skipping_indices only matters when skip indexes are actually on
     NameSet forced_indices;
@@ -846,11 +904,6 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     const auto & store = context->getHypotheticalIndexStore();
     auto hypo_indexes = store.getForTable(data.getStorageID());
 
-    /// Cumulative across every candidate's empirical scan so max_rows_to_read /
-    /// max_bytes_to_read cap the whole EXPLAIN WHATIF
-    UInt64 total_rows_read = 0;
-    UInt64 total_bytes_read = 0;
-
     if (hypo_indexes.empty())
     {
         IndexResult no_index;
@@ -865,19 +918,20 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
 
     for (const auto & index_desc : hypo_indexes)
     {
-        if (query_with_final)
+        if (query_with_final && !effective_settings[Setting::use_skip_indexes_if_final])
         {
+            /// Real reads do not use skip indexes under FINAL here, so a hypothetical one cannot help
             IndexResult r;
             r.index_name = index_desc.name;
             r.index_type = index_desc.type;
             r.status = IndexResult::NotApplicable;
-            r.not_applicable_reason = "EXPLAIN WHATIF cannot accurately model skip-index pruning under FINAL "
-                                      "(PrimaryKeyExpand may re-include granules selected by skip indexes)";
+            r.not_applicable_reason = "Skip indexes are not used under FINAL (use_skip_indexes_if_final = 0)";
             result.index_results.push_back(std::move(r));
             continue;
         }
 
-        auto index_result = evaluateIndex(index_desc, read_step, analysis, baseline_parts, settings, total_rows_read, total_bytes_read, plan_context);
+        auto index_result = evaluateIndex(
+            index_desc, read_step, analysis, baseline_parts, settings, query_with_final, final_exact_mode, plan_context);
         result.index_results.push_back(std::move(index_result));
     }
 
