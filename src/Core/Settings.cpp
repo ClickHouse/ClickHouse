@@ -4061,6 +4061,17 @@ When enabled together with `read_in_order_use_virtual_row`, emit a virtual row a
 This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
 Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
 )", 0) \
+    DECLARE(Float, read_in_order_max_primary_key_ratio, 0.5, R"(
+Maximum ratio of selected to total primary key granules for `optimize_read_in_order` to stay enabled.
+When the primary key index selects more than this fraction of granules (i.e., filtering is poor),
+the read-in-order optimization is disabled at runtime and replaced with parallel reading plus
+per-stream sorting. This avoids the parallelism loss inherent in sequential in-order reading.
+Set to 1.0 to never disable read-in-order based on PK selectivity.
+
+This guard applies to the query-plan read-in-order path (`query_plan_read_in_order = 1`, the default).
+The legacy planner path (`query_plan_read_in_order = 0`) does not consult this setting and keeps the
+previous read-in-order behavior regardless of primary key selectivity.
+)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 

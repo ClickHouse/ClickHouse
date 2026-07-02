@@ -19,11 +19,15 @@ INSERT INTO t_read_in_order_agg SELECT number FROM numbers_mt(1000000);
 -- must still expand to more than 1 stream after aggregation.
 -- The new analyzer produces "Resize 1 -> 8" (max_threads); the old analyzer
 -- produces "Resize 1 -> 16" (max_threads * ratio), so match both.
+-- The table here selects all granules, which would otherwise trigger the
+-- PK-selectivity fallback to parallel reading and bypass the read-in-order
+-- pipeline this test is asserting. Pin the ratio to 1.0 to keep read-in-order.
 SELECT count() > 0
 FROM viewExplain('EXPLAIN PIPELINE', '', (
     SELECT a FROM t_read_in_order_agg GROUP BY a
     SETTINGS optimize_aggregation_in_order = 1,
              read_in_order_two_level_merge_threshold = 1e12,
+             read_in_order_max_primary_key_ratio = 1.0,
              max_threads = 8,
              max_streams_to_max_threads_ratio = 2
 ))

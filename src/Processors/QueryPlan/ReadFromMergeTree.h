@@ -334,7 +334,20 @@ public:
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+    /// `query_limit` is the SQL `LIMIT` value (0 if the query has no `LIMIT`). It is used both for
+    /// sizing the first read task (smaller first task when there is a `LIMIT` combined with a
+    /// filter) and to decide whether to disable read-in-order on poor primary key selectivity.
+    /// `apply_pk_selectivity_check` enables the runtime PK-selectivity guard that disables
+    /// read-in-order when it is used purely to avoid a separate sort and the index does not reduce
+    /// the granule count enough. It must stay `false` for `optimizeAggregationInOrder` and
+    /// `optimizeDistinctInOrder` — those paths request read-in-order for streaming algorithm
+    /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`.
+    /// `check_only` performs the PK-selectivity check without committing any state. It returns the
+    /// same boolean that a full call would, but does not switch the step to read-in-order. This is
+    /// used by `ReadFromMerge::requestReadingInOrder` to verify all children would accept before
+    /// applying, so we never end up with some children in `read_in_order` while the parent falls
+    /// back to full sort (mixing row-limit semantics across siblings).
+    bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0, bool apply_pk_selectivity_check = false, bool check_only = false);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -462,6 +475,15 @@ private:
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
     PrewhereInfoPtr deferred_prewhere_info;
+
+    /// Whether primary key / skip index analysis ran with an actual (non-deferred) filter.
+    /// Deferred filters (FINAL with `apply_prewhere_after_final` / `apply_row_policy_after_final`)
+    /// are excluded from index analysis, so they never reduce the selected mark count. The
+    /// read-in-order PK-selectivity guard in `requestReadingInOrder` relies on this to avoid
+    /// misfiring on what is effectively a full scan. It mirrors the deferred-stripped filter DAG
+    /// passed to `buildIndexes` (`query_info.filter_actions_dag` still carries deferred filters).
+    bool index_analysis_had_filter = false;
+
     bool skip_partition_pruning = false;
 
     LoggerPtr log;

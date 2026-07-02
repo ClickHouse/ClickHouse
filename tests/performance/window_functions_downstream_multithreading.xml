@@ -1,4 +1,10 @@
 <test>
+    <settings>
+        <!-- This test relies on read-in-order so window functions over the sorting key
+             can reuse storage ordering instead of doing a separate sort. -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
+    </settings>
+
     <create_query>
         CREATE TABLE 
             window_test(id Int64, value Int64, partition Int64, msg String) 

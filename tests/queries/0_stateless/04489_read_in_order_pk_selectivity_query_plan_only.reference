@@ -1,0 +1,6 @@
+query_plan_guard_fires_on_poor_pk
+1
+query_plan_setting_off_keeps_in_order
+0
+legacy_path_ignores_setting
+1
