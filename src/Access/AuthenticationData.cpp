@@ -1,8 +1,10 @@
 #include <Access/AccessControl.h>
 #include <Access/AuthenticationData.h>
+#include <Access/BcryptConcurrencyLimiter.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Access/getValidUntilFromAST.h>
 #include <Interpreters/Context.h>
@@ -32,6 +34,11 @@ namespace CurrentMetrics
 {
     extern const Metric BcryptCacheBytes;
     extern const Metric BcryptCacheSize;
+}
+
+namespace ProfileEvents
+{
+    extern const Event BcryptAuthenticationThrottled;
 }
 
 
@@ -110,6 +117,43 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
 #endif
 }
 
+namespace
+{
+#if USE_BCRYPT
+    /// Bounds the number of concurrent bcrypt verifications across the process. See header for rationale.
+    BcryptConcurrencyLimiter & bcryptConcurrencyLimiter()
+    {
+        static BcryptConcurrencyLimiter limiter;
+        return limiter;
+    }
+
+    /// Thrown out of the cache load function when admission is denied. It escapes getOrSet without
+    /// being cached (the cache only stores values the load function returns), so a later retry under
+    /// lower load is not poisoned by a "wrong" entry. checkPasswordBcrypt catches it and reports a
+    /// failed bcrypt method (see the catch site for why this must not propagate).
+    /// Derives from std::exception only to satisfy hicpp-exception-baseclass; it never reaches a client.
+    struct BcryptThrottled : std::exception
+    {
+    };
+#endif
+}
+
+void AuthenticationData::Util::setMaxConcurrentBcryptAuthentications(UInt64 limit [[maybe_unused]])
+{
+#if USE_BCRYPT
+    bcryptConcurrencyLimiter().setLimit(limit);
+#endif
+}
+
+UInt64 AuthenticationData::Util::getMaxConcurrentBcryptAuthentications()
+{
+#if USE_BCRYPT
+    return bcryptConcurrencyLimiter().getLimit();
+#else
+    return 0;
+#endif
+}
+
 bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[maybe_unused]], const Digest & password_bcrypt [[maybe_unused]])
 {
 #if USE_BCRYPT
@@ -126,18 +170,41 @@ bool AuthenticationData::Util::checkPasswordBcrypt(std::string_view password [[m
         std::string_view{reinterpret_cast<const char *>(password_digest.data()), password_digest.size()},
         std::string_view{reinterpret_cast<const char *>(password_bcrypt.data()), password_bcrypt.size()});
 
-    auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
-        {
-            int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-            /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
-            /// and it could not be decoded by the library
-            if (ret == -1)
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
+    try
+    {
+        auto [result, _] = bcrypt_cache.getOrSet(cache_key, [&] -> std::shared_ptr<bool>
+            {
+                /// Only cache misses reach here (getOrSet runs this under a per-key token), so the limiter
+                /// protects the expensive path while leaving cache hits, including repeated identical
+                /// credentials, completely unthrottled. Admission is fail-fast: exceeding the limit signals
+                /// BcryptThrottled instead of running bcrypt. The signal escapes uncached, so a legitimate
+                /// client retrying under lower load is not poisoned by a "wrong" entry.
+                auto guard = bcryptConcurrencyLimiter().tryAcquire();
+                if (!guard.acquired())
+                {
+                    ProfileEvents::increment(ProfileEvents::BcryptAuthenticationThrottled);
+                    throw BcryptThrottled{};
+                }
 
-            return std::make_shared<bool>(ret == 0);
-        });
+                int ret = bcrypt_checkpw(password.data(), reinterpret_cast<const char *>(password_bcrypt.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                /// Before 24.6 we didn't validate hashes on creation, so it could be that the stored hash is invalid
+                /// and it could not be decoded by the library
+                if (ret == -1)
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Internal failure decoding Bcrypt hash");
 
-    return *result;
+                return std::make_shared<bool>(ret == 0);
+            });
+
+        return *result;
+    }
+    catch (const BcryptThrottled &)
+    {
+        /// Report a failed bcrypt method rather than propagating. A user may list several
+        /// authentication methods as alternatives (e.g. bcrypt_password and plaintext_password);
+        /// IAccessStorage::authenticateImpl tries the next method only when this one returns false.
+        /// Throwing here would abort that loop and reject a login that a later method would accept.
+        return false;
+    }
 #else
     throw Exception(
         ErrorCodes::SUPPORT_IS_DISABLED,
