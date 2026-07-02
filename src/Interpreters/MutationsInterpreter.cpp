@@ -1415,6 +1415,26 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// An index/projection required column can be a subcolumn (e.g. `t.a`), while the column a
+    /// mutation rewrites is recorded by its physical storage name (e.g. `t`). A `MATERIALIZE TTL`
+    /// with a `GROUP BY ... SET` records the rewritten physical columns as `TTL_TARGET`, so a
+    /// `t.a`-based index is not seen as affected when compared literally and would be hardlinked
+    /// stale instead of rebuilt. Map each required column to its storage column before comparing,
+    /// the same way the sorting-key gate (TTLResortUtils) does, so subcolumn indices/projections of
+    /// a rewritten column are rebuilt.
+    const auto physical_columns = metadata_snapshot->getColumns().getAllPhysical().getNameSet();
+    auto required_column_affected = [&](const String & col)
+    {
+        if (updated_columns.contains(col) || changed_columns.contains(col))
+            return true;
+        if (!physical_columns.contains(col))
+        {
+            if (auto column_in_storage = Nested::tryGetColumnNameInStorage(col, physical_columns))
+                return updated_columns.contains(*column_in_storage) || changed_columns.contains(*column_in_storage);
+        }
+        return false;
+    };
+
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         if (!source.hasSecondaryIndex(index.name, metadata_snapshot) || dropped_indices.contains(index.name))
@@ -1430,10 +1450,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
 
         const auto & index_cols = index.expression->getRequiredColumns();
-        bool changed = std::any_of(
-            index_cols.begin(),
-            index_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+        bool changed = std::any_of(index_cols.begin(), index_cols.end(), required_column_affected);
 
         if (changed)
         {
@@ -1464,10 +1481,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
 
         const auto & projection_cols = projection.required_columns;
-        bool changed = std::any_of(
-            projection_cols.begin(),
-            projection_cols.end(),
-            [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
+        bool changed = std::any_of(projection_cols.begin(), projection_cols.end(), required_column_affected);
 
         if (changed)
             materialized_projections.insert(projection.name);

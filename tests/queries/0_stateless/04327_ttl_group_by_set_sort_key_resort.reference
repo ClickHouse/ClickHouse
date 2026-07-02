@@ -1,0 +1,23 @@
+f64 data	41302	2100-06-10 10:00:00	41302
+f64 data	96827	2100-06-09 10:00:00	96827
+f64 sorted	1
+str data	aaa	2100-06-10 10:00:00	aaa
+str data	zzz	2100-06-09 10:00:00	zzz
+str sorted	1
+lc data	aaa	2100-06-10 10:00:00
+lc data	zzz	2100-06-09 10:00:00
+lc sorted	1
+sub data	100	2100-06-10 10:00:00
+sub data	900	2100-06-09 10:00:00
+sub sorted	1
+mut data	41302	2100-06-10 10:00:00	41302
+mut data	96827	2100-06-09 10:00:00	96827
+mut sorted	1
+mut sub data	100	2100-06-10 10:00:00
+mut sub data	900	2100-06-09 10:00:00
+mut sub sorted	1
+mut idx present	40
+mut idx matches	1
+nonkey data	3	2000-06-10 10:00:00	200
+nonkey data	5	2000-06-09 10:00:00	100
+nonkey sorted	1
