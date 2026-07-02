@@ -78,6 +78,10 @@ y	data_y
 1	10
 2	20
 3
+foo	bar	foo	baz
+foo	baz	foo	bar
+qux	bar	\N	\N
+2
 r1	m1
 r2	m2
 3
