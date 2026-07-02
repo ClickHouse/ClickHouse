@@ -742,6 +742,28 @@ def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
     azure_query(node, "DROP TABLE test_restored")
 
 
+def test_backup_zip_not_supported(cluster):
+    # Zip backups require seeking, which makes each read a separate HTTP request
+    # on object storage. They must be rejected early with a clear error (issue #53483).
+    node = cluster.instances["node"]
+    azure_query(node, "DROP TABLE IF EXISTS test_zip_not_supported")
+    azure_query(
+        node,
+        f"CREATE TABLE test_zip_not_supported (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_zip_not_supported.csv', 'CSV')",
+    )
+    azure_query(node, "INSERT INTO test_zip_not_supported VALUES (1, 'a')")
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}.zip')"
+    error = azure_query(
+        node,
+        f"BACKUP TABLE test_zip_not_supported TO {backup_destination}",
+        expect_error=True,
+    )
+    assert (
+        "Zip archive format is not supported for AzureBlobStorage backups" in error
+    ), error
+    azure_query(node, "DROP TABLE test_zip_not_supported")
+
+
 def get_profile_event_count(node, event):
     return int(
         azure_query(
