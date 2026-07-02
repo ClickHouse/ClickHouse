@@ -176,6 +176,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1271,8 +1272,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
+    /// 4. object etag to detect a concurrent in-place overwrite during the read
     if (!object_info.metadata)
+    {
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
+    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
+             && object_storage->getType() == ObjectStorageType::S3)
+    {
+        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
+        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
+        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
 
     if (use_page_cache && object_info.metadata->etag.empty())
     {
@@ -1338,6 +1350,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
+
+    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
+    /// instead of torn cross-generation data.
+    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+        stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -1686,6 +1704,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             }
             else
                 object_metadata = object_storage->getObjectMetadata(key, with_tags);
+        }
+        else
+        {
+            object_metadata.is_fetched = false;
         }
 
         if (file_progress_callback)
