@@ -1,3 +1,4 @@
+-- Tags: long
 -- Test: Skip writing all-default columns during MergeTree INSERT.
 -- Columns whose values are entirely type-defaults are removed from the part
 -- at INSERT time, saving disk space. The data reads back correctly because

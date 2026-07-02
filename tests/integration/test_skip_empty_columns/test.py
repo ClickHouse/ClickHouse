@@ -10,11 +10,12 @@ from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True)
+node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True, macros={"replica": "node1"})
+node2 = cluster.add_instance("node2", with_zookeeper=True, stay_alive=True, macros={"replica": "node2"})
 old_node = cluster.add_instance(
     "old_node",
     with_zookeeper=True,
+    macros={"replica": "old_node"},
     image="clickhouse/clickhouse-server",
     tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     stay_alive=True,
