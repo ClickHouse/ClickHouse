@@ -1,5 +1,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Columns/ColumnConst.h>
 #include <Core/SortDescription.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
@@ -174,7 +175,21 @@ void QueryPipelineBuilder::addDefaultTotals()
 
     for (size_t i = 0; i < current_header->columns(); ++i)
     {
-        auto column = current_header->getByPosition(i).type->createColumn();
+        const auto & elem = current_header->getByPosition(i);
+        /// Keep the value of a constant column in the synthesized totals row.
+        /// Every row of a constant column carries the same value, so the totals
+        /// row must carry it too; otherwise it collapses to a type default. This
+        /// matters for JOINs with `WITH TOTALS`: the default totals are produced
+        /// for the side that has no totals of its own (e.g. a constant subquery),
+        /// and which side that is can change depending on build/probe ordering
+        /// (`query_plan_join_swap_table`).
+        if (elem.column && isColumnConst(*elem.column))
+        {
+            columns.emplace_back(elem.column->cloneResized(1));
+            continue;
+        }
+
+        auto column = elem.type->createColumn();
         column->insertDefault();
         columns.emplace_back(std::move(column));
     }
