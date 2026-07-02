@@ -4,7 +4,7 @@ from pathlib import Path
 from shutil import copy2, rmtree
 from typing import Optional
 
-from ci_utils import Shell, WithIter
+from ci.praktika.utils import MetaClasses, Shell
 from ci.jobs.create_release import (
     PackageDownloader,
     ReleaseContextManager,
@@ -13,7 +13,7 @@ from ci.jobs.create_release import (
 )
 
 
-class MountPointApp(metaclass=WithIter):
+class MountPointApp(metaclass=MetaClasses.WithIter):
     S3FS = "s3fs"
     GEESEFS = "geesefs"
 
@@ -102,7 +102,7 @@ class R2MountPoint:
         Shell.check(f"umount {cls.MOUNT_POINT}", verbose=True)
 
 
-class RepoCodenames(metaclass=WithIter):
+class RepoCodenames(metaclass=MetaClasses.WithIter):
     LTS = "lts"
     STABLE = "stable"
 

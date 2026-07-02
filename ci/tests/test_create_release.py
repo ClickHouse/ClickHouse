@@ -9,8 +9,8 @@ must keep:
     real argparse option (catches the orchestrator drifting from the tool),
   * every workflow-dispatch input that ``release_job.py`` reads is declared by
     the workflow definition,
-  * ``release_job.py`` points at the moved ``ci/jobs/create_release.py`` and at
-    ``tests/ci/artifactory.py``,
+  * ``release_job.py`` points at the moved ``ci/jobs/create_release.py`` and
+    ``ci/jobs/artifactory.py``,
   * the generated workflow keeps the release-safety invariants (a ``release``
     concurrency group, the ``workflow_call`` reuse contract used by
     ``auto_releases.yml``, and boolean dispatch inputs),
@@ -117,10 +117,11 @@ def test_workflow_declares_every_input_the_job_reads():
 def test_release_job_points_at_moved_paths():
     text = _read(RELEASE_JOB)
     assert "./ci/jobs/create_release.py" in text
-    assert "./tests/ci/artifactory.py" in text
-    # The file was moved out of tests/ci; the orchestrator must not call the
-    # old location.
+    assert "./ci/jobs/artifactory.py" in text
+    # Both files were moved out of tests/ci; the orchestrator must not call the
+    # old locations.
     assert "tests/ci/create_release.py" not in text
+    assert "tests/ci/artifactory.py" not in text
 
 
 def test_generated_workflow_preserves_release_invariants():

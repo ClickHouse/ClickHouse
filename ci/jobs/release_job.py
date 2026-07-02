@@ -513,7 +513,7 @@ def main():
             step(
                 name=name,
                 command=[
-                    f"python3 ./tests/ci/artifactory.py {flag}"
+                    f"python3 ./ci/jobs/artifactory.py {flag}"
                     f" {dry_run_flag}".strip()
                 ],
                 workdir=REPO_PATH,
@@ -737,7 +737,7 @@ def main():
     # do not persist for a later job on a reused self-hosted runner.
     def cleanup_credentials():
         # Unmount the geesefs FUSE mount of the production `packages` bucket
-        # first. tests/ci/artifactory.py mounts it at ~/mountpoint and its
+        # first. ci/jobs/artifactory.py mounts it at ~/mountpoint and its
         # teardown is not in a finally block, so an export step that fails
         # before teardown leaves the bucket mounted; on a reused runner the next
         # job could still read or mutate it even after the R2 auth files below
