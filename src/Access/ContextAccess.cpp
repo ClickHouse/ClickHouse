@@ -251,6 +251,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+
+        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {
