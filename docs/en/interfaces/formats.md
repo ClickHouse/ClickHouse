@@ -103,6 +103,7 @@ The supported formats are:
 | [PrettySpaceMonoBlock](./formats/Pretty/PrettySpaceMonoBlock.md)                                           | ✗   | ✔     |
 | [PrettySpaceNoEscapesMonoBlock](./formats/Pretty/PrettySpaceNoEscapesMonoBlock.md)                         | ✗   | ✔     |
 | [Prometheus](./formats/Prometheus.md)                                                                      | ✗   | ✔     |
+| [OpenMetrics](./formats/OpenMetrics.md)                                                                    | ✔   | ✔     |
 | [Protobuf](./formats/Protobuf/Protobuf.md)                                                                 | ✔   | ✔     |
 | [ProtobufSingle](./formats/Protobuf/ProtobufSingle.md)                                                     | ✔   | ✔     |
 | [ProtobufList](./formats/Protobuf/ProtobufList.md)                                                         | ✔   | ✔     |
