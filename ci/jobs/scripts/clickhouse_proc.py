@@ -1029,6 +1029,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+            elif proc:
+                # start() spawned a server but timed out before the pid file
+                # appeared, so `pid` is unset and the graceful branch is skipped.
+                # `proc` may be the `sh -c` wrapper rather than the server, so
+                # kill by the unique --pid-file token (reaches wrapper, server
+                # and any duplicate), then reap the wrapper.
+                Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         return self
 

@@ -656,13 +656,38 @@ def main():
             if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
                 print("SETUP FAILURE: minio/azurite did not start")
                 return False
-            if not CH.start():
-                print("SETUP FAILURE: clickhouse-server process did not start")
-                return False
-            if not CH.wait_ready():
-                # wait_ready() already tails the server err log to stdout on
-                # timeout; the marker just names the sub-step for triage.
-                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+            # A transient host condition at boot (e.g. a brief memory spike from
+            # a co-tenant job on the same runner) can make clickhouse-server exit
+            # a few seconds after start, before it even creates its err.log, with
+            # no diagnostics - a plain re-start then succeeds. Observed as an
+            # opaque "Start ClickHouse Server" FAIL across several unrelated PRs
+            # in the same short window. Retry the boot a few times so a single
+            # transient death does not fail the whole job; a persistent boot
+            # failure still fails after the last attempt with wait_ready()'s
+            # err-log tail preserved for triage. Only the initial setup boot is
+            # retried - the per-build-type binary-swap boot below stays fail-closed.
+            boot_attempts = 3
+            booted = False
+            for boot_attempt in range(boot_attempts):
+                if not CH.start():
+                    setup_failure = "clickhouse-server process did not start"
+                elif not CH.wait_ready():
+                    # wait_ready() already tails the server err log to stdout on
+                    # timeout; the marker just names the sub-step for triage.
+                    setup_failure = "clickhouse-server not ready (wait_ready)"
+                else:
+                    booted = True
+                    break
+                if boot_attempt + 1 < boot_attempts:
+                    print(
+                        f"SETUP WARNING: {setup_failure} "
+                        f"(attempt {boot_attempt + 1}/{boot_attempts}); restarting"
+                    )
+                    CH.stop_server()
+                    CH.clean_logs()
+                    Utils.sleep(5)
+            if not booted:
+                print(f"SETUP FAILURE: {setup_failure}")
                 return False
 
             if not CH.start_kafka():
