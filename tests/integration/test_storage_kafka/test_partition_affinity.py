@@ -22,6 +22,7 @@ instance = cluster.add_instance(
         "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
         "kafka_shard_num_bad": "3",
+        "kafka_shard_num_empty": "",
     },
 )
 
@@ -349,6 +350,28 @@ def test_partition_affinity_macro_expanded_out_of_range_fails(kafka_cluster):
             """
         )
     assert "must not be greater than" in str(exc_info.value)
+
+
+def test_partition_affinity_macro_expanded_to_empty_fails(kafka_cluster):
+    """
+    Regression test: when kafka_partition_shard_num uses a macro that expands
+    to an empty string, CREATE TABLE must fail with BAD_ARGUMENTS instead of
+    silently disabling partition affinity.
+    The macro {kafka_shard_num_empty} expands to '', which is invalid.
+    """
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        instance.query(
+            f"""
+            CREATE TABLE test.kafka_bad_empty_macro (value UInt64)
+            ENGINE = Kafka('{instance.cluster.kafka_host}:19092', 'some_topic', 'some_group', 'JSONEachRow', '\\n')
+            SETTINGS kafka_keeper_path = '/clickhouse/test/bad_empty_macro',
+                     kafka_replica_name = 'r1',
+                     kafka_partition_shard_num = '{{kafka_shard_num_empty}}',
+                     kafka_shard_count = 2
+            SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+            """
+        )
+    assert "expanded to an empty string" in str(exc_info.value)
 
 
 def test_partition_affinity_equality_1based_succeeds(kafka_cluster):

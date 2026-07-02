@@ -611,12 +611,25 @@ void StorageKafka2::drop()
 
 void StorageKafka2::parsePartitionAffinitySettings()
 {
-    const auto & partition_num_str = getContext()->getMacros()->expand(
-        (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value, macros_info);
+    const auto & raw_partition_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
     const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
 
-    if (partition_num_str.empty() || shard_count_val == 0)
+    // Neither setting is specified — affinity is not enabled
+    if (raw_partition_num.empty() && shard_count_val == 0)
         return;
+
+    const auto & partition_num_str = getContext()->getMacros()->expand(raw_partition_num, macros_info);
+
+    if (partition_num_str.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' expanded to an empty string after macro substitution (original: '{}')",
+            raw_partition_num);
+
+    if (shard_count_val == 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
 
     UInt64 parsed_partition_num = 0;
     try
