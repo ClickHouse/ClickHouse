@@ -48,6 +48,12 @@ SELECT groupBloomFilterState(4096, 21)(number) FROM numbers(10); -- { serverErro
 -- false_positive_rate = 0.0 must throw
 SELECT groupBloomFilterState(1000, 0.0)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
 
+-- Integer-like parameters must not allow lossy conversion
+SELECT groupBloomFilterState(1000, 1.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+SELECT groupBloomFilterState(1000.5, 5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+SELECT groupBloomFilterState(1000, 5, 42.5)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+SELECT groupBloomFilterState(1000.5, 0.01)(number) FROM numbers(10); -- { serverError BAD_ARGUMENTS }
+
 -- More than 3 parameters must throw
 SELECT groupBloomFilterState(1000, 0.01, 0, 99)(number) FROM numbers(10); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 

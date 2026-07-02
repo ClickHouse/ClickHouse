@@ -17,6 +17,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Core/Field.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
@@ -35,6 +36,26 @@ namespace ErrorCodes
 
 namespace
 {
+
+UInt64 convertGroupBloomFilterParameterToUInt64(const Field & parameter, std::string_view parameter_name)
+{
+    try
+    {
+        UInt64 value = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameter);
+        if (!accurateEquals(parameter, Field(value)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Parameter {} for aggregate function {} must be an integer value in the range of UInt64",
+                parameter_name, AggregateFunctionGroupBloomFilterData::name);
+
+        return value;
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Parameter {} for aggregate function {} must be an integer value in the range of UInt64",
+            parameter_name, AggregateFunctionGroupBloomFilterData::name);
+    }
+}
 
 /// Base class for Bloom filter aggregate functions
 template <typename Derived>
@@ -210,7 +231,7 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
     else if (parameters.size() == 1)
     {
         /// (expected_elements) — use default false positive rate
-        size_t expected_elements = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[0]);
+        size_t expected_elements = convertGroupBloomFilterParameterToUInt64(parameters[0], "expected_elements");
         std::tie(filter_size_bytes, num_hashes) = bloomFilterOptimalParams(
             expected_elements, BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE);
     }
@@ -225,18 +246,18 @@ AggregateFunctionPtr createAggregateFunctionGroupBloomFilter(
         if (second_is_small_float)
         {
             /// (expected_elements, false_positive_rate[, seed])
-            size_t expected_elements = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[0]);
+            size_t expected_elements = convertGroupBloomFilterParameterToUInt64(parameters[0], "expected_elements");
             std::tie(filter_size_bytes, num_hashes) = bloomFilterOptimalParams(expected_elements, param2_as_float);
         }
         else
         {
             /// (filter_size_bytes, num_hashes[, seed])
-            filter_size_bytes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[0]);
-            num_hashes = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), param2);
+            filter_size_bytes = convertGroupBloomFilterParameterToUInt64(parameters[0], "filter_size_bytes");
+            num_hashes = convertGroupBloomFilterParameterToUInt64(param2, "num_hashes");
         }
 
         if (parameters.size() == 3)
-            seed = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), parameters[2]);
+            seed = convertGroupBloomFilterParameterToUInt64(parameters[2], "seed");
     }
 
     if (filter_size_bytes == 0)
