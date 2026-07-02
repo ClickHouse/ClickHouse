@@ -2984,14 +2984,19 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
       * Example: WITH (x -> x + lambda_2(x)) AS lambda_1, (x -> x + lambda_1(x)) AS lambda_2 SELECT 1;
+      *
+      * A recursive reference resolves to a fresh clone of the alias node, so re-entry must be
+      * detected by structure (tree hash), not by pointer identity. Compute that hash once here and
+      * reuse it for the contains/insert/erase below, instead of letting each operation recompute the
+      * lambda body's full getTreeHash (this guard is on the hot path for queries with large lambdas).
       */
-    auto it = lambdas_in_resolve_process.find(lambda_node);
-    if (it != lambdas_in_resolve_process.end())
+    const QueryTreeNodePtrWithHash lambda_with_hash{lambda_node};
+    if (lambdas_in_resolve_process.contains(lambda_with_hash))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
-    lambdas_in_resolve_process.emplace(lambda_node);
+    lambdas_in_resolve_process.insert(lambda_with_hash);
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3044,7 +3049,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    lambdas_in_resolve_process.erase(lambda_node);
+    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
