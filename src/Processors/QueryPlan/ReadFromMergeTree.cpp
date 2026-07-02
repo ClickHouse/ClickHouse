@@ -3433,12 +3433,13 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     /// Test hook: force a parallel-replicas follower to plan this read in Default mode (bare-table
     /// stream) even when the initiator splits it into #split_i streams, reproducing a cross-node
     /// coordination-mode divergence that a homogeneous single-server test cluster cannot otherwise
-    /// manufacture. Only affects a non-initiator replica, so the initiator's registered stream set is
-    /// unchanged.
+    /// manufacture. Gated on the follower predicate so it only affects a genuine follower and never
+    /// the initiator (isParallelReplicasLocalPlanForFollower requires collaborate_with_initiator,
+    /// which is false on the initiator); the initiator's registered stream set stays unchanged.
     bool force_default_on_follower = false;
     fiu_do_on(FailPoints::parallel_replicas_force_default_mode_on_follower,
     {
-        if (is_parallel_reading_from_replicas && !isParallelReplicasLocalPlanForInitiator())
+        if (isParallelReplicasLocalPlanForFollower())
             force_default_on_follower = true;
     });
 
