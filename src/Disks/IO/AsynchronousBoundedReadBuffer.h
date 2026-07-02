@@ -4,6 +4,8 @@
 #include <utility>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 
 namespace Poco { class Logger; }
@@ -15,7 +17,7 @@ struct AsyncReadCounters;
 using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
 class ReadBufferFromRemoteFSGather;
 
-class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     using Impl = ReadBufferFromFileBase;
@@ -53,11 +55,15 @@ public:
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
 
-    /// NOTE: readBigAt() here doesn't use async logic of AsynchronousBoundedReadBuffer and just calls impl's (when supported),
-    /// this is possible because readBigAt is asynchronous on its own
+    /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
+    /// (when supported), which is possible because readBigAt is asynchronous on its own. If a (small-object)
+    /// initial prefetch is in flight it is consumed first: the requested range is served from the prefetched
+    /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     const ImplPtr impl;
@@ -76,7 +82,8 @@ private:
     size_t bytes_to_ignore = 0;
 
     Memory<> prefetch_buffer;
-    std::future<IAsynchronousReader::Result> prefetch_future;
+    /// mutable: a pending prefetch may be consumed from the const readBigAt().
+    mutable std::future<IAsynchronousReader::Result> prefetch_future;
 
     /// When using userspace page cache, we directly use memory owned by the cache instead of
     /// allocating our own buffers.
@@ -96,7 +103,7 @@ private:
         std::chrono::system_clock::time_point submit_time;
         Priority priority;
     };
-    LastPrefetchInfo last_prefetch_info;
+    mutable LastPrefetchInfo last_prefetch_info;
 
     bool nextImpl() override;
 
