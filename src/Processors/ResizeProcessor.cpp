@@ -295,4 +295,257 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
     return Status::PortFull;
 }
 
+GradualResizeProcessor::GradualResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs, size_t min_rows_per_output_, size_t min_bytes_per_output_)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    , all_outputs_active(num_outputs <= 1)
+    , min_rows_per_output(min_rows_per_output_)
+    , min_bytes_per_output(min_bytes_per_output_)
+{
+}
+
+void GradualResizeProcessor::maybeActivateMoreOutputs()
+{
+    if (num_active_outputs >= output_ports.size())
+        return;
+
+    /// Once the per-output threshold is crossed, activate all outputs at once instead of
+    /// ramping up one at a time. Gradual ramp-up causes permanent imbalance in downstream
+    /// aggregator hash tables: chunks pushed during the ramp land disproportionately in
+    /// early outputs, and the downstream merge then combines N uneven partial states. For
+    /// heavy aggregate states (`groupArraySorted`, `uniqExact`, ...) the merge cost scales
+    /// super-linearly with table size, so the early skew hurts even when total data is large.
+    bool rows_threshold = min_rows_per_output > 0 && total_rows_pushed >= min_rows_per_output;
+    bool bytes_threshold = min_bytes_per_output > 0 && total_bytes_pushed >= min_bytes_per_output;
+
+    if (!rows_threshold && !bytes_threshold)
+        return;
+
+    num_active_outputs = output_ports.size();
+    all_outputs_active = true;
+}
+
+void GradualResizeProcessor::promoteInactiveWaitingOutputs()
+{
+    std::queue<UInt64> remaining;
+    while (!inactive_waiting_outputs.empty())
+    {
+        auto idx = inactive_waiting_outputs.front();
+        inactive_waiting_outputs.pop();
+
+        if (output_ports[idx].status == OutputStatus::Finished)
+            continue;
+
+        if (all_outputs_active || idx < num_active_outputs)
+            waiting_outputs.push(idx);
+        else
+            remaining.push(idx);
+    }
+    inactive_waiting_outputs = std::move(remaining);
+}
+
+/// This implementation uses ResizeProcessor-like many-to-many routing.
+/// All inputs are kept active at all times so upstream parallelism is never throttled.
+/// Data is collected from any input and routed only to active (gradually activated) outputs.
+IProcessor::Status GradualResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    if (!initialized)
+    {
+        initialized = true;
+
+        for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
+            input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        }
+
+        for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
+            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
+    }
+
+    /// 1. Process updated outputs.
+    for (const auto * output_port : updated_outputs)
+    {
+        const auto output_number = output_port_index.at(output_port);
+        auto & output = output_ports[output_number];
+        if (output.port->isFinished())
+        {
+            if (output.status != OutputStatus::Finished)
+            {
+                ++num_finished_outputs;
+                output.status = OutputStatus::Finished;
+
+                /// If an active output finishes, we need to activate another one to avoid deadlock.
+                /// Otherwise, if all active outputs finish before thresholds grow, no data can flow.
+                if (!all_outputs_active && output_number < num_active_outputs)
+                {
+                    while (num_active_outputs < output_ports.size())
+                    {
+                        size_t candidate = num_active_outputs;
+                        ++num_active_outputs;
+                        if (output_ports[candidate].status != OutputStatus::Finished)
+                            break;
+                    }
+                    if (num_active_outputs >= output_ports.size())
+                        all_outputs_active = true;
+
+                    /// Newly activated outputs may already have requested data and be sitting in
+                    /// `inactive_waiting_outputs`. Promote them now so data can flow to them
+                    /// without waiting for a new updated_outputs event.
+                    promoteInactiveWaitingOutputs();
+                }
+            }
+            continue;
+        }
+
+        if (output.port->canPush())
+        {
+            if (output.status != OutputStatus::NeedData)
+            {
+                output.status = OutputStatus::NeedData;
+
+                if (all_outputs_active || output_number < num_active_outputs)
+                    waiting_outputs.push(output_number);
+                else
+                    inactive_waiting_outputs.push(output_number);
+            }
+        }
+    }
+
+    /// Start reading from all inputs once any output needs data.
+    if (!is_reading_started && !waiting_outputs.empty())
+    {
+        for (auto & input : inputs)
+            input.setNeeded();
+        is_reading_started = true;
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+        return Status::Finished;
+    }
+
+    /// 2. Process updated inputs — collect data from any input that has it.
+    for (const auto * input_port : updated_inputs)
+    {
+        const auto input_number = input_port_index.at(input_port);
+        auto & input = input_ports[input_number];
+        if (input.port->isFinished())
+        {
+            if (input.status != InputStatus::Finished)
+            {
+                input.status = InputStatus::Finished;
+                ++num_finished_inputs;
+            }
+            continue;
+        }
+
+        if (input.port->hasData())
+        {
+            if (input.status != InputStatus::HasData)
+            {
+                input.status = InputStatus::HasData;
+                inputs_with_data.push(input_number);
+            }
+        }
+    }
+
+    /// 3. Route data from inputs to active waiting outputs.
+    while (!waiting_outputs.empty() && !inputs_with_data.empty())
+    {
+        auto & waiting_output = output_ports[waiting_outputs.front()];
+        waiting_outputs.pop();
+
+        /// Skip outputs that became finished after they were queued.
+        if (waiting_output.status == OutputStatus::Finished)
+            continue;
+
+        auto & input_with_data = input_ports[inputs_with_data.front()];
+        inputs_with_data.pop();
+
+        auto data = input_with_data.port->pullData();
+
+        if (!all_outputs_active)
+        {
+            if (min_rows_per_output > 0)
+                total_rows_pushed += data.chunk.getNumRows();
+            /// `Chunk::bytes` iterates all columns, so skip it when the bytes threshold is disabled.
+            if (min_bytes_per_output > 0)
+                total_bytes_pushed += data.chunk.bytes();
+        }
+
+        waiting_output.port->pushData(std::move(data));
+        input_with_data.status = InputStatus::NotActive;
+        waiting_output.status = OutputStatus::NotActive;
+
+        if (input_with_data.port->isFinished())
+        {
+            input_with_data.status = InputStatus::Finished;
+            ++num_finished_inputs;
+        }
+    }
+
+    /// 4. Maybe activate more outputs after pushing data.
+    if (!all_outputs_active)
+    {
+        size_t prev_active = num_active_outputs;
+        maybeActivateMoreOutputs();
+
+        if (num_active_outputs > prev_active)
+        {
+            promoteInactiveWaitingOutputs();
+
+            /// Try to push more data to newly activated outputs.
+            while (!waiting_outputs.empty() && !inputs_with_data.empty())
+            {
+                auto & waiting_output = output_ports[waiting_outputs.front()];
+                waiting_outputs.pop();
+
+                /// Skip outputs that became finished after they were queued.
+                if (waiting_output.status == OutputStatus::Finished)
+                    continue;
+
+                auto & input_with_data = input_ports[inputs_with_data.front()];
+                inputs_with_data.pop();
+
+                auto data = input_with_data.port->pullData();
+
+                if (!all_outputs_active)
+                {
+                    if (min_rows_per_output > 0)
+                        total_rows_pushed += data.chunk.getNumRows();
+                    if (min_bytes_per_output > 0)
+                        total_bytes_pushed += data.chunk.bytes();
+                }
+
+                waiting_output.port->pushData(std::move(data));
+                input_with_data.status = InputStatus::NotActive;
+                waiting_output.status = OutputStatus::NotActive;
+
+                if (input_with_data.port->isFinished())
+                {
+                    input_with_data.status = InputStatus::Finished;
+                    ++num_finished_inputs;
+                }
+            }
+        }
+    }
+
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+        return Status::Finished;
+    }
+
+    if (!waiting_outputs.empty())
+        return Status::NeedData;
+
+    return Status::PortFull;
+}
+
 }
