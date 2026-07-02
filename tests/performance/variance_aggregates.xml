@@ -1,0 +1,39 @@
+<test>
+    <settings>
+        <max_memory_usage>35G</max_memory_usage>
+    </settings>
+
+    <!--
+        Focused coverage for the vectorized variance/stddev aggregation
+        (`AggregateFunctionVarianceSimple::addBatchSinglePlace`). One query per
+        code path the fast path exercises:
+          - direct accumulation for `Float64`/`Float32` (no conversion);
+          - tiled convert for integers - `UInt32` (vectorized `int32->double`)
+            vs `Int64` (scalar convert, no `vcvtqq2pd` at `x86-64-v3`);
+          - tiled convert for `Decimal32`/`Decimal64`/`Decimal128`;
+          - moment levels 2 (`varPop`/`varSamp`/`stddev`), 3 (`skewPop`) and 4
+            (`kurtPop`).
+        Typed columns (not casts in the query) so the only conversion measured is
+        the one inside the aggregate. These functions are otherwise covered only
+        by three queries in `decimal_aggregates`, two of which are too small to be
+        stable.
+    -->
+    <create_query>CREATE TABLE t (f64 Float64, f32 Float32, u32 UInt32, i64 Int64, d32 Decimal32(3), d64 Decimal64(4), d128 Decimal128(5)) ENGINE = Memory</create_query>
+
+    <!-- ~300M rows; use few threads and several batches to keep fill memory bounded -->
+    <fill_query>INSERT INTO t SELECT number, number, number, number, number % 1000000, number, number FROM numbers_mt(100000000)            SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number, number, number, number, number % 1000000, number, number FROM numbers_mt(100000000, 100000000) SETTINGS max_threads = 2</fill_query>
+    <fill_query>INSERT INTO t SELECT number, number, number, number, number % 1000000, number, number FROM numbers_mt(200000000, 100000000) SETTINGS max_threads = 2</fill_query>
+
+    <drop_query>DROP TABLE IF EXISTS t</drop_query>
+
+    <query>SELECT varPop(f64), varSamp(f64), stddevPop(f64) FROM t</query>
+    <query>SELECT varPop(f32), varSamp(f32), stddevPop(f32) FROM t</query>
+    <query>SELECT varPop(u32), stddevPop(u32) FROM t</query>
+    <query>SELECT varPop(i64), stddevPop(i64) FROM t</query>
+    <query>SELECT varPop(d32), varSamp(d32), stddevPop(d32) FROM t</query>
+    <query>SELECT varPop(d64), varSamp(d64), stddevPop(d64) FROM t</query>
+    <query>SELECT varPop(d128), varSamp(d128), stddevPop(d128) FROM t</query>
+    <query>SELECT skewPop(f64), kurtPop(f64) FROM t</query>
+    <query>SELECT skewPop(d64), kurtPop(d64) FROM t</query>
+</test>
