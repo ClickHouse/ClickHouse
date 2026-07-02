@@ -2386,7 +2386,10 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
         const int64_t min_part_data_version = MergeTreeData::IMutationsSnapshot::getMinPartDataVersionForPartition(params, partition_id);
         const int64_t max_mutation_version_to_include = MergeTreeData::IMutationsSnapshot::getMaxMutationVersionForPartition(params, partition_id);
 
-        bool seen_all_data_mutations = !params.need_data_mutations && !params.need_alter_mutations;
+        /// Alter and metadata mutations carry alter_version != -1 and are handled by the metadata
+        /// branch below, so requesting only alter mutations does not need the data-mutation walk
+        /// (alter_version == -1 entries are never included when need_data_mutations is false).
+        bool seen_all_data_mutations = !params.need_data_mutations;
         bool seen_all_metadata_mutations = params.min_part_metadata_version >= params.metadata_version;
 
         auto & partition_snapshot = mutations_snapshot[partition_id];

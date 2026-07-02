@@ -11094,6 +11094,11 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
 
+    /// Request alter mutations when a pending ALTER MODIFY COLUMN exists (num_alter counts pending
+    /// READ_COLUMN mutations) so skip-index analysis can exclude indexes whose on-disk type is now
+    /// incompatible. Gating on num_alter keeps the empty-snapshot fast path for reads without one.
+    bool has_alter_mutations = getMutationCounters().num_alter > 0;
+
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
@@ -11101,7 +11106,7 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
         .min_part_data_versions = std::move(parts_info.min_data_versions),
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
-        .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,
+        .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts || has_alter_mutations,
         .need_patch_parts = apply_patch_parts,
         .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
     };
