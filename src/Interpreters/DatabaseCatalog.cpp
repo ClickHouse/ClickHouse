@@ -24,6 +24,7 @@
 #include <Storages/StorageMemory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/UniqueLock.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -99,6 +100,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
+}
+
+namespace FailPoints
+{
+    extern const char database_catalog_drop_finally_before_id_erase[];
 }
 
 class DatabaseNameHints : public IHints<>
@@ -1457,8 +1463,14 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
         tables_marked_dropped.erase(it_dropped_table);
-        [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(dropped_table.table_id.uuid);
-        chassert(removed);
+        /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+        auto id_it = tables_marked_dropped_ids.find(dropped_table.table_id.uuid);
+        chassert(id_it != tables_marked_dropped_ids.end());
+        if (id_it != tables_marked_dropped_ids.end())
+            tables_marked_dropped_ids.erase(id_it);
+        else
+            LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being undropped, it's a bug",
+                      dropped_table.table_id.getNameForLogs());
         CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
     }
 
@@ -1581,12 +1593,22 @@ void DatabaseCatalog::dropTablesParallel(TablesMarkedAsDropped tables_to_drop)
             {
                 dropTableFinally(*table_iterator);
 
+                /// The UUID mapping is gone (dropTableFinally above) but the id is still in
+                /// tables_marked_dropped_ids until the guarded erase below: window for a same-UUID re-drop.
+                FailPointInjection::pauseFailPoint(FailPoints::database_catalog_drop_finally_before_id_erase);
+
                 TableMarkedAsDropped table_to_delete_without_lock;
                 {
                     std::lock_guard lock(tables_marked_dropped_mutex);
 
-                    [[maybe_unused]] auto removed = tables_marked_dropped_ids.erase(table_iterator->table_id.uuid);
-                    chassert(removed);
+                    /// Erase a single occurrence: the same UUID may be present more than once (CREATE OR REPLACE with a fixed UUID).
+                    auto id_it = tables_marked_dropped_ids.find(table_iterator->table_id.uuid);
+                    chassert(id_it != tables_marked_dropped_ids.end());
+                    if (id_it != tables_marked_dropped_ids.end())
+                        tables_marked_dropped_ids.erase(id_it);
+                    else
+                        LOG_ERROR(log, "Table {} is missing from tables_marked_dropped_ids while being dropped, it's a bug",
+                                  table_iterator->table_id.getNameForLogs());
 
                     table_to_delete_without_lock = std::move(*table_iterator);
 
