@@ -86,8 +86,10 @@ def test_system_logs_engine_expr(start_cluster):
     node2.query("SYSTEM FLUSH LOGS")
 
     # Check 'engine_full' of system.query_log.
-    # An explicit `<engine>` in config is used verbatim, so the implicit
-    # `add_minmax_index_for_numeric_columns = 0` (added only for default-built engines) is absent.
+    # `SystemLog::getCreateTableQuery` opts every MergeTree-family system log out of the implicit
+    # min-max index, including a config-supplied explicit `<engine>`; the injected
+    # `add_minmax_index_for_numeric_columns = 0` is appended after the engine's own settings.
+    # The substring below is a prefix of the full clause, so it still matches.
     expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'policy2\\', ttl_only_drop_parts = 1"
     assert expected in node2.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
@@ -100,8 +102,10 @@ def test_system_logs_engine_s3_plain_rw_expr(start_cluster):
     node4.query("SYSTEM FLUSH LOGS")
 
     # Check 'engine_full' of system.query_log.
-    # An explicit `<engine>` in config is used verbatim, so the implicit
-    # `add_minmax_index_for_numeric_columns = 0` (added only for default-built engines) is absent.
+    # `SystemLog::getCreateTableQuery` opts every MergeTree-family system log out of the implicit
+    # min-max index, including a config-supplied explicit `<engine>`; the injected
+    # `add_minmax_index_for_numeric_columns = 0` is appended after the engine's own settings.
+    # The substring below is a prefix of the full clause, so it still matches.
     expected = "MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + toIntervalDay(30) SETTINGS storage_policy = \\'s3_plain_rewritable\\', ttl_only_drop_parts = 1"
     assert expected in node4.query(
         "SELECT engine_full FROM system.tables WHERE database='system' and name='query_log'"
