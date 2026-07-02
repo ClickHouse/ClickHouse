@@ -1,0 +1,6 @@
+before	['Compact']
+after_merge	['Wide']
+after_mutate	['Wide']
+rows	2000
+filtered	1
+1

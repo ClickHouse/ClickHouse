@@ -2085,7 +2085,7 @@ private:
         NameSet removed_indices;
         NameSet removed_projections;
 
-        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
+        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -2099,7 +2099,7 @@ private:
             }
         }
 
-        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
+        bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->source_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
         /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
@@ -2149,15 +2149,18 @@ private:
             }
             else
             {
-                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
-                auto it = ctx->source_part->checksums.files.upper_bound(prefix);
-                while (it != ctx->source_part->checksums.files.end())
-                {
-                    if (!startsWith(it->first, prefix))
-                        break;
+                const String index_file_name = index_ptr->getFileName();
+                const auto index_format = index_ptr->getDeserializedFormat(ctx->source_part->checksums, index_file_name, &ctx->source_part->getDataPartStorage());
 
-                    entries_to_hardlink.insert(it->first);
-                    ++it;
+                for (const auto & substream : index_format.substreams)
+                {
+                    const String stream_name = index_file_name + substream.suffix;
+
+                    if (auto data_file = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, ctx->source_part->checksums))
+                        entries_to_hardlink.insert(*data_file + substream.extension);
+
+                    if (auto mark_file = IMergeTreeDataPart::getStreamNameOrHash(stream_name, ctx->mrk_extension, ctx->source_part->checksums))
+                        entries_to_hardlink.insert(*mark_file + ctx->mrk_extension);
                 }
             }
         }
@@ -2221,6 +2224,19 @@ private:
                     hardlinked_files.insert(file_name_with_projection_prefix);
                 }
             }
+        }
+
+        /// The all-columns mutation rebuilds checksums.txt from scratch, recording only freshly
+        /// written columns and recalculated indexes. Files hardlinked from the source part (e.g.
+        /// per-file skip indexes that were not recalculated) carry no checksum otherwise, leaving
+        /// untracked files in the new part: CHECK TABLE fails and getDeserializedFormat (which
+        /// probes checksums before the storage fallback) stops seeing the index. Copy the source
+        /// checksum for every hardlinked file the source part tracked.
+        for (const auto & file : entries_to_hardlink)
+        {
+            auto it = ctx->source_part->checksums.files.find(file);
+            if (it != ctx->source_part->checksums.files.end())
+                ctx->all_gathered_data.checksums.files.emplace(file, it->second);
         }
 
         /// Tracking of hardlinked files required for zero-copy replication.
