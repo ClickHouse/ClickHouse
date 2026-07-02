@@ -120,15 +120,32 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
     Data::NodeToSourceMapping expression_sources;
 
     const auto & input_nodes = actions_dag_.getInputs();
-    if (input_nodes.size() != left_header.columns() + right_header.columns())
+    const size_t number_of_left_inputs = left_header.columns();
+    if (input_nodes.size() != number_of_left_inputs + right_header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Input nodes size mismatch in dag: {}, expected: [{}], [{}]",
                         actions_dag_.dumpDAG(), left_header.dumpNames(), right_header.dumpNames());
 
     auto left_column_names = std::ranges::to<std::unordered_set<std::string_view>>(left_header | std::views::transform(&ColumnWithTypeAndName::name));
     auto right_column_names = std::ranges::to<std::unordered_set<std::string_view>>(right_header | std::views::transform(&ColumnWithTypeAndName::name));
 
-    if (std::ranges::any_of(left_column_names, [&right_column_names](const auto & name) { return right_column_names.contains(name); }))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Left and right columns have same names: [{}], [{}]", left_header.dumpNames(), right_header.dumpNames());
+    /// A name shared by both headers (the `__join_result_dummy` marker) can only be disambiguated by
+    /// position, and that is sound only while inputs keep the canonical order
+    /// [left header columns..., right header columns...]. JoinStepLogical::preCalculateKeys() appends
+    /// computed key inputs and breaks that order, so verify the layout before trusting position.
+    const bool has_shared_name = std::ranges::any_of(
+        left_column_names, [&](const auto & name) { return right_column_names.contains(name); });
+
+    bool inputs_match_headers_by_position = has_shared_name;
+    for (size_t i = 0; has_shared_name && i < input_nodes.size(); ++i)
+    {
+        const auto & header = i < number_of_left_inputs ? left_header : right_header;
+        const size_t pos = i < number_of_left_inputs ? i : i - number_of_left_inputs;
+        if (input_nodes[i]->result_name != header.getByPosition(pos).name)
+        {
+            inputs_match_headers_by_position = false;
+            break;
+        }
+    }
 
     for (size_t i = 0; i < input_nodes.size(); ++i)
     {
@@ -137,9 +154,22 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} is not INPUT in dag: {}",
                             i, actions_dag_.dumpDAG());
         const auto & column_name = input_nodes[i]->result_name;
-        if (left_column_names.contains(column_name))
+        const bool in_left = left_column_names.contains(column_name);
+        const bool in_right = right_column_names.contains(column_name);
+        if (in_left && in_right)
+        {
+            /// Duplicate name present on both sides: resolvable only by position, and only when the
+            /// canonical input layout was verified above.
+            if (!inputs_match_headers_by_position)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot determine the source side of duplicated input column '{}': join inputs are "
+                    "not laid out as [left columns..., right columns...]. Left: [{}], right: [{}], dag: {}",
+                    column_name, left_header.dumpNames(), right_header.dumpNames(), actions_dag_.dumpDAG());
+            rels.set(i < number_of_left_inputs ? 0 : 1);
+        }
+        else if (in_left)
             rels.set(0);
-        else if (right_column_names.contains(column_name))
+        else if (in_right)
             rels.set(1);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Input node {} from is not in headers: [{}] [{}], dag: {}",
