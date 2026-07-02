@@ -1,0 +1,254 @@
+#include <Processors/MemoryAwareResizeProcessor.h>
+#include <Common/logger_useful.h>
+#include <Interpreters/Squashing.h>
+
+namespace DB
+{
+
+namespace
+{
+    size_t estimateChunkBytes(const Chunk & chunk)
+    {
+        size_t bytes = chunk.bytes();
+        if (bytes > 0)
+            return bytes;
+        /// Between PlanSquashingTransform and ApplySquashingTransform the outer Chunk
+        /// carries `ChunksToSquash` as chunk info: the real columns live in `info->data`
+        /// and `Chunk::bytes()` reports 0. Pull the byte size out of the inner chunks.
+        if (auto squashing_info = chunk.getChunkInfos().get<ChunksToSquash>())
+        {
+            for (const auto & entry : squashing_info->data)
+                bytes += entry.chunk.bytes();
+        }
+        return bytes;
+    }
+}
+
+MemoryAwareResizeProcessor::MemoryAwareResizeProcessor(
+    SharedHeader header,
+    size_t num_inputs,
+    size_t num_outputs,
+    InsertMemoryThrottlePtr throttle_)
+    : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    , throttle(std::move(throttle_))
+    /// Start with just `min_outputs` active — we have no chunk-size estimate yet, so we cannot
+    /// safely fan out. `updateAllowedOutputs` expands the active set on each `prepare` once it
+    /// has observed at least one chunk and confirmed headroom.
+    , allowed_outputs(throttle ? min_outputs : num_outputs)
+{
+}
+
+void MemoryAwareResizeProcessor::updateAllowedOutputs()
+{
+    if (!throttle)
+        return;
+
+    const size_t total = output_ports.empty() ? allowed_outputs : output_ports.size();
+    const size_t prev_allowed = allowed_outputs;
+    allowed_outputs = throttle->calculateAllowedOutputs(total, min_outputs);
+
+    /// Outputs we just re-enabled won't be re-notified by the executor, wake them up
+    if (allowed_outputs > prev_allowed && initialized)
+    {
+        for (size_t i = prev_allowed; i < allowed_outputs && i < output_ports.size(); ++i)
+        {
+            auto & output = output_ports[i];
+            if (output.port->isFinished())
+            {
+                if (output.status != OutputStatus::Finished)
+                {
+                    ++num_finished_outputs;
+                    output.status = OutputStatus::Finished;
+                }
+                continue;
+            }
+            if (output.status != OutputStatus::NeedData && output.port->canPush())
+            {
+                output.status = OutputStatus::NeedData;
+                waiting_outputs.push(i);
+            }
+        }
+    }
+}
+
+IProcessor::Status MemoryAwareResizeProcessor::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts & updated_outputs)
+{
+    if (!initialized)
+    {
+        initialized = true;
+
+        for (auto & input : inputs)
+        {
+            input_port_index[&input] = input_ports.size();
+            input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
+        }
+
+        for (auto & output : outputs)
+        {
+            output_port_index[&output] = output_ports.size();
+            output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
+        }
+    }
+
+    updateAllowedOutputs();
+
+    for (const auto * output_port : updated_outputs)
+    {
+        const auto output_number = output_port_index.at(output_port);
+        auto & output = output_ports[output_number];
+        if (output.port->isFinished())
+        {
+            if (output.status != OutputStatus::Finished)
+            {
+                ++num_finished_outputs;
+                output.status = OutputStatus::Finished;
+            }
+
+            continue;
+        }
+
+        if (output_number < allowed_outputs && output.port->canPush())
+        {
+            if (output.status != OutputStatus::NeedData)
+            {
+                output.status = OutputStatus::NeedData;
+                waiting_outputs.push(output_number);
+            }
+        }
+    }
+
+    /// if every active output is finished but inactive ones remain,
+    /// expand `allowed_outputs` so the pipeline can drain
+    if (allowed_outputs < output_ports.size())
+    {
+        bool any_active_alive = false;
+        for (size_t i = 0; i < allowed_outputs && i < output_ports.size(); ++i)
+        {
+            if (output_ports[i].status != OutputStatus::Finished)
+            {
+                any_active_alive = true;
+                break;
+            }
+        }
+        if (!any_active_alive)
+        {
+            for (size_t i = allowed_outputs; i < output_ports.size(); ++i)
+            {
+                auto & output = output_ports[i];
+                if (output.port->isFinished())
+                {
+                    if (output.status != OutputStatus::Finished)
+                    {
+                        ++num_finished_outputs;
+                        output.status = OutputStatus::Finished;
+                    }
+                    continue;
+                }
+                if (output.status != OutputStatus::NeedData && output.port->canPush())
+                {
+                    output.status = OutputStatus::NeedData;
+                    waiting_outputs.push(i);
+                }
+            }
+            allowed_outputs = output_ports.size();
+        }
+    }
+
+    if (!is_reading_started && !waiting_outputs.empty())
+    {
+        for (auto & input : inputs)
+            input.setNeeded();
+        is_reading_started = true;
+    }
+
+    if (num_finished_outputs == outputs.size())
+    {
+        for (auto & input : inputs)
+            input.close();
+
+        return Status::Finished;
+    }
+
+    for (const auto * input_port : updated_inputs)
+    {
+        const auto input_number = input_port_index.at(input_port);
+        auto & input = input_ports[input_number];
+        if (input.port->isFinished())
+        {
+            if (input.status != InputStatus::Finished)
+            {
+                input.status = InputStatus::Finished;
+                ++num_finished_inputs;
+            }
+            continue;
+        }
+
+        if (input.port->hasData())
+        {
+            if (input.status != InputStatus::HasData)
+            {
+                input.status = InputStatus::HasData;
+                inputs_with_data.push(input_number);
+            }
+        }
+    }
+
+    while (!waiting_outputs.empty() && !inputs_with_data.empty())
+    {
+        auto output_idx = waiting_outputs.front();
+        waiting_outputs.pop();
+
+        if (output_idx >= allowed_outputs)
+        {
+            /// port may have finished between being queued, do not set finished
+            /// otherwise the next `updateAllowedOutputs` expansion would re-count this output
+            auto & stale = output_ports[output_idx];
+            if (stale.status != OutputStatus::Finished)
+                stale.status = OutputStatus::NotActive;
+            continue;
+        }
+
+        auto & waiting_output = output_ports[output_idx];
+
+        if (waiting_output.port->isFinished())
+        {
+            if (waiting_output.status != OutputStatus::Finished)
+            {
+                ++num_finished_outputs;
+                waiting_output.status = OutputStatus::Finished;
+            }
+            continue;
+        }
+
+        auto & input_with_data = input_ports[inputs_with_data.front()];
+        inputs_with_data.pop();
+
+        auto data = input_with_data.port->pullData();
+        if (throttle)
+            throttle->observeChunkBytes(estimateChunkBytes(data.chunk));
+        waiting_output.port->pushData(std::move(data));
+        input_with_data.status = InputStatus::NotActive;
+        waiting_output.status = OutputStatus::NotActive;
+
+        if (input_with_data.port->isFinished())
+        {
+            input_with_data.status = InputStatus::Finished;
+            ++num_finished_inputs;
+        }
+    }
+
+    if (num_finished_inputs == inputs.size())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+
+    if (!waiting_outputs.empty())
+        return Status::NeedData;
+
+    return Status::PortFull;
+}
+
+}
