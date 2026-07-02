@@ -38,10 +38,20 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # Sum HEADs done by the worker (secondary) queries only. Expected: 0 (worker reuses the propagated
 # metadata). Before the fix the worker re-HEAD made this >= 1.
+#
+# Secondary queries (is_initial_query = 0) run as the `default` user, so their `current_database` is
+# `default`, not the test database - we can't filter them by `current_database = currentDatabase()`
+# directly. Instead pin that filter on the initial query (which does run in the test database, as the
+# style check requires) and match the secondary rows by `initial_query_id` (see 04201).
 ${CLICKHOUSE_CLIENT} -q "
+    WITH initial_query_ids AS
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$qid' AND is_initial_query = 1 AND type = 'QueryFinish' AND event_date >= today() - 1
+    )
     SELECT sum(ProfileEvents['S3HeadObject'])
     FROM system.query_log
-    WHERE initial_query_id = '$qid' AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
+    WHERE initial_query_id IN (SELECT query_id FROM initial_query_ids) AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
 "
 
 # When the `_tags` virtual column is requested, the propagated metadata (which carries no tags) is not
@@ -58,7 +68,12 @@ ${CLICKHOUSE_CLIENT} --query_id "$qid_tags" -q "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 ${CLICKHOUSE_CLIENT} -q "
+    WITH initial_query_ids AS
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$qid_tags' AND is_initial_query = 1 AND type = 'QueryFinish' AND event_date >= today() - 1
+    )
     SELECT sum(ProfileEvents['S3HeadObject']) >= 1
     FROM system.query_log
-    WHERE initial_query_id = '$qid_tags' AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
+    WHERE initial_query_id IN (SELECT query_id FROM initial_query_ids) AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
 "
