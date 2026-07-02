@@ -32,12 +32,24 @@
 #include <Common/HTTPConnectionPool.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
+#include <Common/logger_useful.h>
 
 #include <Common/DNSResolver.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/String.h>
+#include <Poco/DOM/DOMParser.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/DOM/Node.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <cstdlib>
+#include <filesystem>
+#include <unordered_set>
+
+namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
 
@@ -53,6 +65,11 @@ extern const Metric PointInPolygonCacheSizeLimit;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+}
 
 
 namespace
@@ -1907,6 +1924,950 @@ SettingsTierType ServerSettings::getTier(std::string_view name) const
 void ServerSettings::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     impl->loadSettingsFromConfig(config);
+}
+
+
+void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check)
+{
+    /// `skip_check` carries the escape hatch resolved from the layered config (so a command-line
+    /// `--skip_check_for_incorrect_settings=1` is honored); `config.getBool` covers the same flag
+    /// set inside the validated config file itself.
+    if (skip_check || config.getBool("skip_check_for_incorrect_settings", false))
+        return;
+
+    /// Collect all known top-level keys from ServerSettings:
+    /// - For settings without paths, the setting name itself is the top-level key.
+    /// - For settings with paths, the first segment of the path (before any dot) is the top-level key.
+    std::unordered_set<String> known_keys;
+    {
+        ServerSettingsImpl settings;
+        for (const auto & setting : settings.all())
+        {
+            String path{setting.getPath()};
+            if (path.empty())
+            {
+                known_keys.insert(String(setting.getName()));
+            }
+            else
+            {
+                auto dot_pos = path.find('.');
+                if (dot_pos != String::npos)
+                    known_keys.insert(path.substr(0, dot_pos));
+                else
+                    known_keys.insert(path);
+            }
+        }
+    }
+
+    /// Known config sections that have complex/dynamic structure
+    /// and cannot be represented as simple scalar ServerSettings.
+    /// If you add a new config section, add it here to avoid throwing on unknown config.
+    static const std::unordered_set<String> known_complex_sections = {
+        /// Network
+        "listen_host",
+        "interserver_listen_host",
+
+        /// Ports
+        "http_port",
+        "https_port",
+        "tcp_port",
+        "tcp_port_secure",
+        "mysql_port",
+        "postgresql_port",
+        "grpc_port",
+        "interserver_http_port",
+        "interserver_https_port",
+        "tcp_with_proxy_port",
+        "tcp_ssh_port",
+        "arrowflight_port",
+
+        /// Cluster and replication
+        "remote_servers",
+        "zookeeper",
+        "keeper",
+        "auxiliary_zookeepers",
+        "allow_experimental_cluster_discovery",
+        "macros",
+        "interserver_http_credentials",
+        "replica_group_name",
+
+        /// Storage
+        "storage_configuration",
+        "backups",
+        "compression",
+        "encryption_codecs",
+        "disk_encrypted_keys",
+        "merge_tree",
+        "replicated_merge_tree",
+        "database_replicated",
+        "filesystem_caches",
+        "custom_cached_disks_base_directory",
+        "custom_local_disks_base_directory",
+
+        /// Dictionaries and functions
+        "dictionaries_config",
+        "user_defined_executable_functions_config",
+        "user_defined_executable_function_drivers_config",
+        "nb_models",
+        "dictionary",
+        "lemmatizers",
+        "synonyms_extensions",
+        "catboost_lib_path",
+        "path_to_regions_hierarchy_file",
+        "path_to_regions_names_files",
+
+        /// Access control
+        "users",
+        "profiles",
+        "quotas",
+        "roles",
+        "users_config",
+        "user_directories",
+        "ldap_servers",
+        "kerberos",
+        "jwt",
+        "jwt_authenticators",
+        "http_authentication_servers",
+        "connections_credentials",
+        "custom_settings_prefixes",
+        "default_profile",
+        "system_profile",
+        "buffer_profile",
+        "background_profile",
+        "access_control_path",
+        "access_control_improvements",
+        "password_complexity",
+        "default_password_type",
+        "bcrypt_workfactor",
+        "allow_implicit_no_password",
+        "allow_no_password",
+        "allow_plaintext_password",
+
+        /// Named collections
+        "named_collections",
+        "named_collections_storage",
+
+        /// Networking and protocols
+        "protocols",
+        "grpc",
+        "http_options_response",
+        "http_server_default_response",
+        "http_forbid_headers",
+        "remote_url_allow_hosts",
+        "http_handlers",
+        "arrowflight",
+        "proxy",
+        "enable_http_stacktrace",
+        "enable_verbose_replicas_status",
+        "proto_caps",
+        "enable_http_close_session",
+        "enable_arrow_close_session",
+
+        /// Monitoring and metrics
+        "graphite",
+        "send_crash_reports",
+
+        /// System log tables
+        "query_log",
+        "query_thread_log",
+        "part_log",
+        "background_schedule_pool_log",
+        "trace_log",
+        "crash_log",
+        "text_log",
+        "metric_log",
+        "transposed_metric_log",
+        "histogram_metric_log",
+        "predicate_statistics_log",
+        "error_log",
+        "filesystem_cache_log",
+        "filesystem_read_prefetches_log",
+        "s3queue_log",
+        "azure_queue_log",
+        "asynchronous_metric_log",
+        "opentelemetry_span_log",
+        "query_views_log",
+        "zookeeper_log",
+        "session_log",
+        "transactions_info_log",
+        "processors_profile_log",
+        "asynchronous_insert_log",
+        "backup_log",
+        "blob_storage_log",
+        "query_metric_log",
+        "dead_letter_queue",
+        "zookeeper_connection_log",
+        "aggregated_zookeeper_log",
+        "iceberg_metadata_log",
+        "delta_lake_metadata_log",
+        "distributed_cache_log",
+        "distributed_cache_server_log",
+        "instrumentation_trace_log",
+        "default_system_log_flush_policy",
+
+        /// Other logging
+        "query_masking_rules",
+
+        /// Engine-specific
+        "kafka",
+        "rabbitmq",
+        "nats",
+        "s3",
+        "azure",
+        "rocksdb",
+        "distributed",
+        "mqs",
+        "kafka_consumer_hang",
+        "iceberg_biglake_metadata_service_hosts",
+
+        /// External bridges
+        "library_bridge",
+        "odbc_bridge",
+        "jdbc_bridge",
+
+        /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
+        "shared_database_catalog",
+        "shared_merge_tree",
+        "shared_log_pipeline",
+        "distributed_cache_client",
+        "distributed_cache_server",
+        "distributed_query",
+        "stateless_worker_client",
+        "stateless_worker_server",
+        "stateless_worker_discovery_service",
+        "_functional_tests_helper_shared_catalog",
+        "server_uuid_from_replica_name",
+        "cloud",
+        "default_user_for_system_dictionaries",
+
+        /// Miscellaneous
+        "core_dump",
+        "core_path",
+        "resources",
+        "resources_and_workloads",
+        "workload_classifiers",
+        "top_level_domains_lists",
+        "url_scheme_mappers",
+        "dashboards",
+        "acme",
+        "ai",
+        "placement_info",
+        "placement",
+        "display_name",
+        "database_disk",
+        "allow_system_allocate_memory",
+        "timezone",
+        "allow_experimental_transactions",
+        "transaction_log",
+        "allow_moving_table_directory_to_trash",
+        "allow_remove_stale_moving_parts",
+        "allow_zookeeper_write",
+        "auth_use_forwarded_address",
+        "builtin_dictionaries_reload_interval",
+        "default_session_timeout",
+        "max_session_timeout",
+        "keeper_map_path_prefix",
+        "keeper_map_keys_limit",
+        "user_defined_zookeeper_path",
+        "user_defined_path",
+        "workload_zookeeper_path",
+        "workload_path",
+        "warning_supress_regexp",
+        "enable_system_unfreeze",
+        "disable_insertion_and_mutation",
+        "use_analyzer_for_mutations",
+        "streaming_storage_shutdown_threads",
+        "local_disk_check_period_ms",
+        "page_cache_size",
+        "replicated_merge_tree_paranoid_check_on_drop_range",
+        "replicated_merge_tree_paranoid_check_on_startup",
+        "test",
+        "include",
+        "include_endpoint",
+        "ignore_table_dependencies_on_metadata_loading",
+        "allow_reserved_database_name_tmp_convert",
+        "resource_overload_warnings",
+        "distributed_ddl_keeper_max_retries",
+        "distributed_ddl_keeper_initial_backoff_ms",
+        "distributed_ddl_keeper_max_backoff_ms",
+
+        /// Daemon-level settings (read by `BaseDaemon` before the server starts)
+        "umask",
+        "pid",
+        "pending_signals",
+
+        /// Obsolete settings that may still appear in long-lived configurations
+        /// (e.g., cloud installations carrying historical settings). Kept here so
+        /// that upgrading installations don't fail to start due to leftover keys.
+        "format_alter_operations_with_parentheses",
+
+        /// Background pool settings (legacy, moved to merge_tree section)
+        "background_processing_pool_thread_sleep_seconds",
+        "background_processing_pool_thread_sleep_seconds_if_nothing_to_do",
+        "background_processing_pool_thread_sleep_seconds_random_part",
+        "background_processing_pool_task_sleep_seconds_when_no_work_min",
+        "background_processing_pool_task_sleep_seconds_when_no_work_max",
+        "background_processing_pool_task_sleep_seconds_when_no_work_multiplier",
+        "background_processing_pool_task_sleep_seconds_when_no_work_random_part",
+        "background_move_processing_pool_thread_sleep_seconds",
+        "background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do",
+        "background_move_processing_pool_thread_sleep_seconds_random_part",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_min",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_max",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier",
+        "background_move_processing_pool_task_sleep_seconds_when_no_work_random_part",
+
+        /// Schema inference cache settings
+        "schema_inference_cache_max_elements_for_s3",
+        "schema_inference_cache_max_elements_for_file",
+        "schema_inference_cache_max_elements_for_url",
+        "schema_inference_cache_max_elements_for_azure",
+        "schema_inference_cache_max_elements_for_hdfs",
+        "schema_inference_cache_max_elements_for_local",
+
+        /// Config processing
+        "include_from",
+
+        /// Startup
+        "startup_scripts",
+        "fail_points_active",
+
+        /// SSL and security
+        "ssh",
+        "ssh_server",
+
+        /// Testing
+        "_functional_tests_helper_database_replicated_replace_args_macros",
+    };
+
+    /// Some config sections have user-defined names (e.g., graphite rollup rules, HTTP handlers).
+    /// We recognize them by known prefixes: exact match or prefix followed by '_' separator.
+    /// This prevents typos like "graphite_rollupTypo" from silently passing.
+    /// Do NOT add a blanket `users` prefix here: every legitimate top-level `users_*` key
+    /// (`users`, `users_config`, `users_to_ignore_early_memory_limit_check`, ...) is already
+    /// covered by `known_keys` (from `ServerSettings`) or by `known_complex_sections`,
+    /// and a prefix would silently accept typos like `<users_cnfig>` (typo of `users_config`).
+    static const std::vector<String> known_prefixes = {
+        "graphite_rollup",
+        "http_handlers",
+        /// Per-user HDFS client sections: `<hdfs_USERNAME>` where USERNAME is arbitrary
+        /// (the global `<hdfs>` section is covered by the `hdfs.libhdfs3_conf` setting path).
+        "hdfs",
+    };
+
+    /// Normalize a config path to its top-level component: strip at the first `.` or `[` so
+    /// `custom.handlers` -> `custom` and `my_payload[1].field` -> `my_payload`. The final
+    /// validation below sees only top-level section names, so every exemption must be reduced
+    /// to the top-level component it actually shields.
+    auto top_level_component = [](const String & path) -> String
+    {
+        auto sep_pos = path.find_first_of(".[");
+        return sep_pos == String::npos ? path : path.substr(0, sep_pos);
+    };
+
+    /// Two distinct concepts, kept in separate sets so they cannot cross-contaminate:
+    ///
+    ///  - `handler_group_paths`: full config prefixes whose rules we scan for `config://`
+    ///    references. A handler group is a *prefix*, not necessarily a top-level section:
+    ///    `<protocols><X><handlers>custom.handlers</handlers></X></protocols>` points
+    ///    `createHandlerFactory` at the prefix `custom.handlers` (rules live under
+    ///    `<custom><handlers>...</handlers></custom>`), whose top-level section is `custom`.
+    ///
+    ///  - `referenced_top_level_keys`: the actual top-level section names to exempt from the
+    ///    final unknown-key check (always normalized via `top_level_component`).
+    ///
+    /// Mixing the two (as a single `referenced_keys` set once did) lets a `config://` payload
+    /// section that merely happens to contain handler-shaped children be re-scanned as if it
+    /// were a handler group, whitelisting a second unrelated top-level key — a false negative.
+    std::unordered_set<String> handler_group_paths;
+    std::unordered_set<String> referenced_top_level_keys;
+
+    /// (a) Handler sections referenced by `<protocols>...<handlers>NAME</handlers>...</protocols>`.
+    /// Only HTTP protocol endpoints actually consult `handlers` (see `buildProtocolStackFromConfig`
+    /// in `Server.cpp`), so gate the allowlist on `type == "http"` to keep typos in non-HTTP
+    /// protocols rejected. The referenced value is a config *prefix*: scan it in full, but exempt
+    /// only its top-level component.
+    if (config.has("protocols"))
+    {
+        Poco::Util::AbstractConfiguration::Keys protocols;
+        config.keys("protocols", protocols);
+        for (const auto & proto : protocols)
+        {
+            String type_key = "protocols." + proto + ".type";
+            if (!config.has(type_key) || config.getString(type_key) != "http")
+                continue;
+            String handlers_key = "protocols." + proto + ".handlers";
+            if (config.has(handlers_key))
+            {
+                String handler_section = config.getString(handlers_key);
+                /// `createHTTPHandlerFactory` consults the named handler prefix only when it
+                /// actually exists (`config.has(handler_section)`); otherwise it falls back to
+                /// the default `http_handlers` and never reads the named section. Exempting the
+                /// top-level component when the referenced prefix is absent would whitelist a
+                /// misspelled or missing section the server does not consume — a false negative
+                /// (e.g. `<handlers>custom.handlers</handlers>` while the config only has
+                /// `<custom><typo>...</typo></custom>`, so `custom.handlers` does not exist and
+                /// the top-level `<custom>` is a genuine unknown key). Gate the exemption (and
+                /// the `config://` scan below) on the prefix existing, mirroring the consumer.
+                if (!handler_section.empty() && config.has(handler_section))
+                {
+                    handler_group_paths.insert(handler_section);
+                    referenced_top_level_keys.insert(top_level_component(handler_section));
+                }
+            }
+        }
+    }
+
+    /// Also scan the legacy `http_handlers*` top-level sections for `config://` references.
+    /// These are already exempt as top-level keys (via `known_complex_sections`/`known_prefixes`),
+    /// so they only need to enter `handler_group_paths` for the scan below.
+    {
+        Poco::Util::AbstractConfiguration::Keys top_groups;
+        config.keys("", top_groups);
+        for (const auto & group : top_groups)
+            if (group.starts_with("http_handlers"))
+                handler_group_paths.insert(group);
+    }
+
+    /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
+    /// Only a handler of `type == "static"` consumes a `config://` reference, and it reads
+    /// it exclusively from `handler.response_content` (see `createStaticHandlerFactory` and
+    /// `StaticRequestHandler`). Exempting any other field, or `response_content` on a
+    /// non-static handler (e.g. `redirect`, which ignores it), would whitelist a top-level
+    /// key that no server code reads — a false negative that lets a genuinely unknown
+    /// section pass validation. So gate the scan on the handler type and the single
+    /// consumed field. We iterate only the known handler-group prefixes, never the growing
+    /// exemption set, so a discovered payload key can never be mistaken for a handler group.
+    ///
+    /// Read `response_content` with `getRawString`, exactly as `createStaticHandlerFactory`
+    /// does. `getString` would expand Poco `${...}` references first, so a value like
+    /// `${ref}` (with `<ref>config://payload</ref>` elsewhere) would record `payload` as
+    /// referenced here, while `StaticRequestHandler` sees the raw `${ref}` text and never
+    /// reads `payload` — exempting `payload` on that basis is a false negative.
+    {
+        static const String config_prefix = "config://";
+        for (const auto & group : handler_group_paths)
+        {
+            if (!config.has(group))
+                continue;
+            Poco::Util::AbstractConfiguration::Keys rules;
+            config.keys(group, rules);
+            for (const auto & rule : rules)
+            {
+                String type_path = group + "." + rule + ".handler.type";
+                if (!config.has(type_path) || config.getString(type_path) != "static")
+                    continue;
+                String path = group + "." + rule + ".handler.response_content";
+                if (!config.has(path))
+                    continue;
+                String value = config.getRawString(path);
+                if (value.starts_with(config_prefix))
+                {
+                    /// `StaticRequestHandler::writeResponse` reads the referenced path with
+                    /// `getRawString(referenced_path, "Ok.\n")`: when the full path is absent it
+                    /// serves the default `Ok.\n` and never consumes the referenced section. So a
+                    /// `config://payload.suffix` whose exact path `payload.suffix` does not exist
+                    /// must not exempt the top-level `<payload>` — doing so would whitelist a
+                    /// section no server code reads (a false negative). Exempt the top-level
+                    /// component only when the full referenced path exists, mirroring the consumer.
+                    String referenced_path = value.substr(config_prefix.size());
+                    if (!referenced_path.empty() && config.has(referenced_path))
+                    {
+                        String ref = top_level_component(referenced_path);
+                        if (!ref.empty())
+                            referenced_top_level_keys.insert(ref);
+                    }
+                }
+            }
+        }
+    }
+
+    /// (c) Top-level keys that act as substitution sources for `<elem incl="X"/>` references.
+    /// An `incl` attribute is resolved by `ConfigProcessor` *exclusively* from the
+    /// `<include_from>` source document (see `doIncludesRecursive`: the lookup is
+    /// `getRootNode(include_from)->getNodeByPath(name)`), never from arbitrary top-level keys
+    /// of the merged config. The substitution replaces the *contents* of the referencing
+    /// element while the element keeps its own name, so an `incl` source tag becomes a
+    /// top-level key of the merged config only when the source file is itself merged — i.e.
+    /// when the `<include_from>` source is placed under `config.d/`.
+    ///
+    /// We therefore derive the exemption from the *actual* top-level tags of the parsed
+    /// `<include_from>` source, not from `incl` attribute names: keying off the reference name
+    /// alone would exempt an unrelated top-level key that merely happens to share a name with
+    /// some `incl` reference (even when no such tag exists in the real source), masking exactly
+    /// the typo/misplaced-section class this check is meant to catch.
+    ///
+    /// The `<include_from>` directive may live in either the main config or the users config
+    /// (or any `*.d/*` fragment merged into them), so scan all standard config files to collect
+    /// the source paths, then exempt every top-level tag of each parsed source.
+    {
+        Poco::XML::DOMParser dom_parser;
+        std::unordered_set<std::string> include_from_paths;
+
+        /// Reference names of *top-level* `<include incl="X"/>` elements found in the server config
+        /// (the main config or a merged `config.d`/`conf.d` fragment). `ConfigProcessor` expands such
+        /// an element by inserting the *children* of node `X` (resolved from the `<include_from>`
+        /// source) into the root, so those child tags become real top-level keys of the merged config
+        /// even when the source is external and not merged. Collected only from server-config files
+        /// (never the users config, whose `<include>` targets a separate tree).
+        std::unordered_set<std::string> top_level_include_refs;
+
+        /// Whether any *server*-config file declares an explicit `<include_from>` element. Mirrors
+        /// `ConfigProcessor::processConfig`, which falls back to the default `/etc/metrika.xml`
+        /// substitution source only when the processed config declares no `<include_from>` of its
+        /// own; the metrika default is then used to resolve top-level `<include incl="X"/>` refs.
+        bool server_config_has_include_from = false;
+
+        /// Whether a server-config file contains a *top-level* `<include from_zk="..."/>`. Such an
+        /// element imports the children of a ZooKeeper node as top-level keys, but resolving it would
+        /// need a ZooKeeper connection at config-validation time (before `<zookeeper>` itself is
+        /// validated), so the imported keys cannot be determined here — the check bails out below.
+        bool has_unresolvable_top_level_from_zk_include = false;
+
+        /// Canonicalize paths so that symlinks (e.g. a symlinked `/etc/clickhouse-server`) and
+        /// relative segments do not defeat the merge-set membership test below.
+        auto to_canonical = [](const fs::path & p) -> std::string
+        {
+            std::error_code ec;
+            fs::path c = fs::weakly_canonical(p, ec);
+            return ec ? p.string() : c.string();
+        };
+
+        /// Canonical paths of the files whose top-level tags actually become top-level keys of the
+        /// *validated* (main server) config — i.e. the main config and the `config.d`/`conf.d`
+        /// fragments `ConfigProcessor` merges into it. The users config is a separate tree that is
+        /// not merged into the server config, so it is intentionally excluded here.
+        std::unordered_set<std::string> merge_files;
+
+        /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
+        /// a root the merger accepts. Only such files contribute their top-level tags to the merged
+        /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source
+        /// and, when `is_server_file` is set, any top-level `<include incl="X"/>` reference name.
+        auto scan_file = [&](const fs::path & p, bool is_server_file) -> bool
+        {
+            if (!fs::exists(p) || !fs::is_regular_file(p))
+                return false;
+            try
+            {
+                Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
+                if (!doc)
+                    return false;
+                /// Align with `ConfigProcessor::merge`: it merges only files whose root matches the
+                /// main config root (`clickhouse` and `yandex` are treated as equivalent). A fragment
+                /// with any other root is not merged, so its top-level tags never become top-level
+                /// keys of the validated config — it must not enter `merge_files`, and walking it
+                /// would inject bogus `incl` references and mask real typos in the merged config.
+                auto * root = doc->documentElement();
+                if (!root)
+                    return false;
+                const String root_name = root->nodeName();
+                if (root_name != "clickhouse" && root_name != "yandex")
+                    return false;
+                /// Pick up a top-level `<include_from>` so we can later parse the source.
+                /// Also resolve `from_env="VAR"` substitutions, which leave `innerText()` empty
+                /// in the raw XML (the value lives in the environment, not the document).
+                /// From server-config files also pick up top-level `<include incl="X"/>` reference
+                /// names, whose expansion imports `<X>`'s children as top-level keys (see above).
+                for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                {
+                    if (child->nodeType() != Poco::XML::Node::ELEMENT_NODE)
+                        continue;
+                    if (child->nodeName() == "include_from")
+                    {
+                        if (is_server_file)
+                            server_config_has_include_from = true;
+                        String src = child->innerText();
+                        if (src.empty())
+                        {
+                            auto * elem = static_cast<Poco::XML::Element *>(child);
+                            if (elem->hasAttribute("from_env"))
+                            {
+                                const String env_name = elem->getAttribute("from_env");
+                                if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                                    src = env_val;
+                            }
+                        }
+                        if (!src.empty())
+                            include_from_paths.insert(std::move(src));
+                    }
+                    else if (is_server_file && child->nodeName() == "include")
+                    {
+                        /// A top-level `<include .../>` is expanded by `doIncludesRecursive` by
+                        /// importing the *children* of the referenced node into the root, so those
+                        /// child tags become real top-level keys of the merged config. `<include>`
+                        /// accepts exactly one of the substitution attributes `incl`, `from_env`,
+                        /// `from_zk` (see `ConfigProcessor::SUBSTITUTION_ATTRS`); mirror all three so
+                        /// none of them makes a previously valid config rejected as unknown.
+                        auto * elem = static_cast<Poco::XML::Element *>(child);
+                        if (elem->hasAttribute("incl"))
+                        {
+                            /// Resolved later against each `<include_from>` source (a lookup table),
+                            /// exactly as `doIncludesRecursive` resolves an `incl` reference.
+                            String ref = elem->getAttribute("incl");
+                            if (!ref.empty())
+                                top_level_include_refs.insert(std::move(ref));
+                        }
+                        else if (elem->hasAttribute("from_env"))
+                        {
+                            /// `from_env` is fully resolvable here: the processor wraps the environment
+                            /// variable's value as `<from_env>VALUE</from_env>` and imports its
+                            /// children, so parse it the same way and exempt those imported keys.
+                            const String env_name = elem->getAttribute("from_env");
+                            if (const char * env_val = std::getenv(env_name.c_str())) // NOLINT(concurrency-mt-unsafe)
+                            {
+                                try
+                                {
+                                    Poco::AutoPtr<Poco::XML::Document> env_doc
+                                        = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+                                    if (auto * env_root = env_doc ? env_doc->documentElement() : nullptr)
+                                    {
+                                        for (auto * c = env_root->firstChild(); c; c = c->nextSibling())
+                                        {
+                                            if (c->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                                                referenced_top_level_keys.insert(c->nodeName());
+                                        }
+                                    }
+                                }
+                                catch (...) // NOLINT(bugprone-empty-catch)
+                                {
+                                    /// A malformed value would already have failed `ConfigProcessor`
+                                    /// before validation is reached; tolerate it here. Ok.
+                                }
+                            }
+                        }
+                        else if (elem->hasAttribute("from_zk"))
+                        {
+                            /// `from_zk` imports the children of a ZooKeeper node, which cannot be
+                            /// resolved without a live connection at config-validation time. Record it
+                            /// so the check bails out rather than falsely rejecting the imported keys.
+                            has_unresolvable_top_level_from_zk_include = true;
+                        }
+                    }
+                }
+                return true;
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Best-effort scan: ignore parse failures (broken or non-config XML in the dir). Ok.
+                return false;
+            }
+        };
+
+        /// Scan the main config and every fragment `ConfigProcessor` actually merges into it.
+        /// Mirror `ConfigProcessor::getConfigMergeFiles` (it merges `<config-name>.d` and legacy
+        /// `conf.d`, accepting `.xml`, `.conf`, `.yaml`, and `.yml`) instead of hard-coding
+        /// `config.d` with an `.xml`/`.yaml` filter — otherwise a substitution source kept in a
+        /// `.conf` file or a `conf.d` directory would be missed and the merged config rejected.
+        /// A file enters `merge_files` only when `scan_file` confirms the merger would merge it
+        /// (matching root), so a fragment the merger would skip cannot exempt its top-level tags.
+        fs::path config_dir = fs::path(config_path).remove_filename();
+        if (scan_file(config_path, /*is_server_file=*/true))
+            merge_files.insert(to_canonical(config_path));
+        for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(config_path))
+        {
+            if (scan_file(merge_file, /*is_server_file=*/true))
+                merge_files.insert(to_canonical(merge_file));
+        }
+
+        /// The merged `config` already has `<include_from>` substitutions (from_env, from_zk)
+        /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
+        /// from raw XML alone (e.g. ZooKeeper-backed substitutions).
+        if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
+            include_from_paths.insert(std::move(resolved_include_from));
+
+        /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
+        /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
+        /// (which would let a real unknown top-level server-config key slip through):
+        ///   - explicit `<users_config>`: resolve a relative path against the main config dir;
+        ///   - empty `<users_config>` and no `<user_directories>`: the main config doubles as the
+        ///     users config (`config_path`), which is already scanned above;
+        ///   - empty `<users_config>` with `<user_directories>`: there is no users config file at all.
+        String users_config_value = config.getString("users_config", "");
+        bool has_user_directories = config.has("user_directories");
+        fs::path users_path;
+        if (users_config_value.empty())
+        {
+            if (!has_user_directories)
+                users_path = config_path;
+        }
+        else
+        {
+            users_path = users_config_value;
+            if (users_path.is_relative() && fs::exists(config_dir / users_path))
+                users_path = config_dir / users_path;
+        }
+        /// Scan the active users config and the fragments merged into it, unless it is the main
+        /// config (already scanned) or there is no separate users config (empty `users_path`).
+        if (!users_path.empty() && users_path != fs::path(config_path))
+        {
+            scan_file(users_path, /*is_server_file=*/false);
+            for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
+                scan_file(merge_file, /*is_server_file=*/false);
+        }
+
+        /// A top-level `<include from_zk="..."/>` in the server config imports the children of a
+        /// ZooKeeper node as top-level keys, but resolving it needs a ZooKeeper connection that is
+        /// unavailable at config-validation time (it runs before `<zookeeper>` is validated and, on
+        /// the initial load, before any connection exists). The set of legitimately imported keys
+        /// therefore cannot be determined, so rejecting an unrecognized top-level key would be a
+        /// false positive for a previously valid config. Skip the whole check in this rare case —
+        /// fail open, never refuse to start a valid config — and log so a genuine typo remains
+        /// visible. `<skip_check_for_incorrect_settings>` is not required for such setups.
+        if (has_unresolvable_top_level_from_zk_include)
+        {
+            LOG_WARNING(
+                getLogger("ServerSettings"),
+                "Not checking for unknown config options in '{}': it contains a top-level "
+                "<include from_zk=.../>, whose imported top-level keys cannot be resolved without a "
+                "ZooKeeper connection at config-validation time.",
+                config_path);
+            return;
+        }
+
+        /// Mirror `ConfigProcessor::processConfig`: when the server config declares no explicit
+        /// `<include_from>`, the processor still uses the default source `/etc/metrika.xml` if it
+        /// exists. A top-level `<include incl="X"/>` then imports `<X>`'s children from it, so seed
+        /// the same default here (only when there is such a reference to resolve against it) —
+        /// otherwise those imported top-level keys would be wrongly rejected as unknown.
+        if (!server_config_has_include_from && !top_level_include_refs.empty())
+        {
+            static const std::string default_include_from = "/etc/metrika.xml";
+            if (fs::exists(default_include_from))
+                include_from_paths.insert(default_include_from);
+        }
+
+        for (const auto & include_from_path : include_from_paths)
+        {
+            if (!fs::exists(include_from_path) || !fs::is_regular_file(include_from_path))
+                continue;
+
+            /// A source's own top-level tags become top-level keys of the merged config only when
+            /// the source file is itself merged into the server config (it lives under
+            /// `config.d`/`conf.d`, so `ConfigProcessor` copies its top-level children into the
+            /// loaded config). An external `<include_from>` source that is *only* a substitution
+            /// lookup table (e.g. `/etc/metrika.xml`) contributes no top-level key of its own —
+            /// `ConfigProcessor::processIncludes` reads it solely to resolve `incl` references — so
+            /// exempting its tags would let a genuinely unknown top-level key pass merely because the
+            /// lookup table happens to define a tag of the same name, masking exactly the typo /
+            /// misplaced-section class this check catches. The one way an external source *does*
+            /// contribute a top-level key is a top-level `<include incl="X"/>`, handled below.
+            const bool source_is_merged = merge_files.contains(to_canonical(include_from_path));
+            if (!source_is_merged && top_level_include_refs.empty())
+                continue;
+            try
+            {
+                Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
+                auto * root = include_from_doc ? include_from_doc->documentElement() : nullptr;
+                if (!root)
+                    continue;
+
+                /// The source is a merged fragment: `ConfigProcessor` copies every one of its
+                /// top-level tags into the loaded config, so exempt them all.
+                if (source_is_merged)
+                {
+                    for (auto * child = root->firstChild(); child; child = child->nextSibling())
+                    {
+                        if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                            referenced_top_level_keys.insert(child->nodeName());
+                    }
+                }
+
+                /// A top-level `<include incl="X"/>` is expanded by `doIncludesRecursive` by
+                /// inserting the *children* of node `X` from this `<include_from>` source into the
+                /// root, so those child tags become real top-level keys of the merged config even
+                /// when the source is external and not merged. Resolve `<X>` exactly as the processor
+                /// does (`getRootNode(include_from)->getNodeByPath(name)`) and exempt only the
+                /// imported children — nothing else, so an unrelated typo elsewhere stays rejected.
+                for (const auto & ref : top_level_include_refs)
+                {
+                    if (auto * referenced = root->getNodeByPath(ref))
+                    {
+                        for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
+                        {
+                            if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                                referenced_top_level_keys.insert(child->nodeName());
+                        }
+                    }
+                }
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Best-effort: tolerate a missing or malformed include source. Ok.
+            }
+        }
+    }
+
+    /// A `GraphiteMergeTree` rollup configuration section can have an *arbitrary* top-level name:
+    /// the name is taken from the table definition `GraphiteMergeTree('<section>')` (see
+    /// `setGraphitePatternsFromConfig`), not from a fixed allowlist, so such sections cannot be
+    /// matched by name or by prefix. They have a fixed *shape* instead. We recognize that shape so a
+    /// deployment that names its rollup section e.g. `<retention_5m>` (valid before this check
+    /// existed) keeps starting, while a typo is still rejected.
+    ///
+    /// The shape mirrors exactly what `setGraphitePatternsFromConfig` accepts: it iterates the
+    /// section's children and throws `UNKNOWN_ELEMENT_IN_CONFIG` unless *every* child is a
+    /// `<pattern>` rule, the single `<default>` rule, or one of the four column-name overrides
+    /// (`path_column_name`, `time_column_name`, `value_column_name`, `version_column_name`). A
+    /// section that *only* overrides column names (no patterns) is still a valid `GraphiteMergeTree`
+    /// config (`selectPatternForPath` just yields no rollup rule), so it must be accepted too.
+    ///
+    /// An *existing* section with zero children is a valid (degenerate) `GraphiteMergeTree` config
+    /// too: `setGraphitePatternsFromConfig` only throws `NO_ELEMENTS_IN_CONFIG` when the section is
+    /// *missing*, so a present-but-empty section (e.g. `<retention_cfg/>`) keeps the default column
+    /// names and an empty pattern list and starts fine. It must be exempted, not rejected.
+    ///
+    /// We therefore accept the section iff every child (if any) is one of those recognized keys.
+    /// This must mirror the parser exactly: accepting a section just because *some* child looks like
+    /// a rollup rule would let a typo'd top-level section that merely happens to contain a
+    /// `<pattern>` (alongside an unrelated child the parser rejects) pass validation — a false
+    /// negative for exactly the unknown top-level sections this check is meant to catch.
+    ///
+    /// The check is also recursive into each rollup rule.
+    /// A `<pattern>`/`<default>` rollup rule is accepted by `appendGraphitePattern` only when it is
+    /// structurally *and* semantically valid. Mirror all of its config-level checks so a typo'd
+    /// section that merely resembles a rollup rule is not exempted from the unknown-key check:
+    ///  - every child is `regexp`, `function`, `rule_type` or a `retention*` block (anything else
+    ///    throws `UNKNOWN_ELEMENT_IN_CONFIG`). A `<retention*>` block is materialized by reading
+    ///    `.age` and `.precision` with `getUInt`, so both must be present and parse as unsigned
+    ///    integers, otherwise the parser throws; only those two grandchildren are read;
+    ///  - the rule carries at least one `function` or `retention*` child, otherwise the parser throws
+    ///    `NO_ELEMENTS_IN_CONFIG` ("at least one of an aggregate function or retention rules is
+    ///    mandatory");
+    ///  - every `rule_type` value parses to a known type (`all`/`plain`/`tagged`/`tag_list`), otherwise
+    ///    `ruleType` throws `BAD_ARGUMENTS`;
+    ///  - the `<default>` rule keeps `rule_type` as `all` (it defaults to `all` when absent), otherwise
+    ///    the parser throws `BAD_ARGUMENTS` ("Default must have rule_type all").
+    /// Mirroring only the child *names* (as an earlier version did) would exempt e.g.
+    /// `<pattern><regexp>.*</regexp></pattern>` — a rule the parser rejects — while never rejecting a
+    /// section the parser would accept.
+    auto graphite_rule_valid = [&config](const String & rule_element, bool is_default) -> bool
+    {
+        Poco::Util::AbstractConfiguration::Keys rule_children;
+        config.keys(rule_element, rule_children);
+        bool has_function_or_retention = false;
+        for (const auto & rule_child : rule_children)
+        {
+            const bool ok = rule_child == "regexp" || rule_child == "function"
+                || rule_child == "rule_type" || rule_child.starts_with("retention");
+            if (!ok)
+                return false;
+
+            if (rule_child == "function")
+                has_function_or_retention = true;
+
+            if (rule_child.starts_with("retention"))
+            {
+                /// `appendGraphitePattern` materializes a `retention*` block by reading `.age` and
+                /// `.precision` with `getUInt`. A block missing either child, or whose value is not
+                /// an unsigned integer, makes the parser throw, so it is not a valid rollup rule and
+                /// the section must not be exempted. Only `age`/`precision` are read (matching the
+                /// parser), so other grandchildren are ignored.
+                const String retention = rule_element + "." + rule_child;
+                if (!config.has(retention + ".age") || !config.has(retention + ".precision"))
+                    return false;
+                try
+                {
+                    config.getUInt(retention + ".age");
+                    config.getUInt(retention + ".precision");
+                }
+                catch (const Poco::Exception &)
+                {
+                    return false;
+                }
+                has_function_or_retention = true;
+            }
+
+            if (rule_child == "rule_type")
+            {
+                const String rule_type = config.getString(rule_element + ".rule_type");
+                const bool known_rule_type = rule_type == "all" || rule_type == "plain"
+                    || rule_type == "tagged" || rule_type == "tag_list";
+                if (!known_rule_type)
+                    return false;
+                /// `appendGraphitePattern` rejects a `<default>` whose `rule_type` is not `all`.
+                if (is_default && rule_type != "all")
+                    return false;
+            }
+        }
+        return has_function_or_retention;
+    };
+
+    auto looks_like_graphite_rollup = [&config, &graphite_rule_valid](const String & section) -> bool
+    {
+        Poco::Util::AbstractConfiguration::Keys children;
+        config.keys(section, children);
+
+        /// A present-but-empty *container* section is a valid (degenerate) `GraphiteMergeTree`
+        /// config: `setGraphitePatternsFromConfig` accepts it, keeping the default column names and
+        /// no rollup rules. Rejecting it would make a previously valid config fail to start.
+        ///
+        /// But `config.keys` reports only child *elements*, so a scalar leaf key such as
+        /// `<max_thred_pool_size>16</max_thred_pool_size>` (a typo'd setting — exactly what this
+        /// check must catch) also has zero children. A `GraphiteMergeTree` section never carries a
+        /// scalar value of its own, so a childless section with a non-empty value is not a rollup
+        /// section: exempt the empty container, but let the valued leaf fall through and be rejected.
+        if (children.empty())
+            return Poco::trim(config.getString(section, "")).empty();
+
+        for (const auto & child : children)
+        {
+            /// Poco yields repeated `<pattern>` elements as `pattern`, `pattern[1]`, ...; the parser
+            /// matches them all with `startsWith(key, "pattern")`. A second `<default>` would be
+            /// `default[1]`, which the parser does NOT accept, so only the exact `default` is matched.
+            const bool is_pattern = child.starts_with("pattern");
+            const bool is_default = child == "default";
+            const bool is_column = child == "path_column_name" || child == "time_column_name"
+                || child == "value_column_name" || child == "version_column_name";
+
+            if (!is_pattern && !is_default && !is_column)
+                return false;
+
+            /// Recurse into rollup rules: a `<pattern>`/`<default>` that `appendGraphitePattern` would
+            /// reject (a foreign nested key, no `function`/`retention`, or an invalid or
+            /// `default`-incompatible `rule_type`) makes the whole section an unknown top-level key.
+            if ((is_pattern || is_default) && !graphite_rule_valid(section + "." + child, is_default))
+                return false;
+        }
+        return true;
+    };
+
+    Poco::Util::AbstractConfiguration::Keys top_level_keys;
+    config.keys("", top_level_keys);
+
+    for (auto key : top_level_keys)
+    {
+        /// Strip array indices like "listen_host[1]"
+        auto bracket_pos = key.find('[');
+        if (bracket_pos != String::npos)
+            key.resize(bracket_pos);
+
+        if (known_keys.contains(key) || known_complex_sections.contains(key) || referenced_top_level_keys.contains(key))
+            continue;
+
+        bool matches_prefix = false;
+        for (const auto & prefix : known_prefixes)
+        {
+            if (key == prefix || (key.starts_with(prefix) && key.size() > prefix.size() && key[prefix.size()] == '_'))
+            {
+                matches_prefix = true;
+                break;
+            }
+        }
+        if (matches_prefix)
+            continue;
+
+        /// Arbitrary-named `GraphiteMergeTree` rollup sections, recognized by their structure.
+        if (looks_like_graphite_rollup(key))
+            continue;
+
+        throw Exception(
+            ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+            "Unknown element '{}' found in config {}."
+            " If it is a new option, it should be added to ServerSettings or to the known config sections."
+            " You can also disable this check with <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>.",
+            key,
+            config_path);
+    }
 }
 
 

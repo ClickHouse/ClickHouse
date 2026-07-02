@@ -1,0 +1,11 @@
+<clickhouse>
+    <!--
+        A `GraphiteMergeTree` rollup section that is present but empty: no `<pattern>`/`<default>`
+        rules and no column-name overrides. `setGraphitePatternsFromConfig` only throws
+        `NO_ELEMENTS_IN_CONFIG` when the section is *missing*; an existing empty section is accepted
+        (it keeps the default column names and an empty pattern list), so it was a valid config
+        before this check existed. The validator must recognize the empty shape and accept it,
+        instead of rejecting it as an unknown top-level key.
+    -->
+    <retention_empty/>
+</clickhouse>

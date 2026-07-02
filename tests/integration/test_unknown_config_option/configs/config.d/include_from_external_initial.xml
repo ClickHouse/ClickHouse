@@ -1,0 +1,8 @@
+<clickhouse>
+    <!--
+        Minimal placeholder config for the `include_from_external` cluster. The test injects an
+        external `<include_from>` substitution source (kept OUTSIDE `config.d/`) together with an
+        unknown top-level key of the same name via `config.d/`, then reloads to assert the unknown
+        key is still rejected (the external lookup source must not exempt it).
+    -->
+</clickhouse>

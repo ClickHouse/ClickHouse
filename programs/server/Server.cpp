@@ -12,6 +12,8 @@
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/LayeredConfiguration.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
 #include <Common/ErrorCodes.h>
@@ -27,6 +29,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/safeExit.h>
 #include <base/Numa.h>
+#include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
@@ -1767,6 +1770,13 @@ try
     }
 
     Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+    /// Validate the loaded XML config directly (not the layered config) so that command-line
+    /// options injected by `argsToConfig` (`--config-file`, `--daemon`, `-C`, ...) and Poco-internal
+    /// layers (`system`, `application`) are not mistaken for unknown top-level config keys.
+    /// The `skip_check_for_incorrect_settings` escape hatch is resolved from the layered `config()`,
+    /// so it works when supplied from the command line as well as from the config file.
+    ServerSettings::checkUnknownSettings(
+        *loaded_config.configuration, config_path, config().getBool("skip_check_for_incorrect_settings", false));
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
@@ -2408,6 +2418,22 @@ try
         dns_cache_updater->start();
     }
 
+    /// Whether `--skip_check_for_incorrect_settings=1` was passed on the *command line*, captured
+    /// independently of any config file layer. Reusing the layered `config()` here would conflate
+    /// the command-line value with whatever the *previously loaded* file set: a config that once
+    /// contained `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>` would
+    /// leave that flag live in `config()`, so a reload that *removes* the flag while adding an
+    /// unknown key would still be skipped — diverging from a fresh startup with the same file,
+    /// which would reject it. Re-parsing `argv()` with `argsToConfig` (exactly as `BaseDaemon`
+    /// populates the command-line layer) reproduces the command-line-only view; the priority is
+    /// irrelevant because the throwaway config has a single layer.
+    bool command_line_skip_check = false;
+    {
+        Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line_config(new Poco::Util::LayeredConfiguration);
+        argsToConfig(argv(), *command_line_config, PRIO_DEFAULT);
+        command_line_skip_check = command_line_config->getBool("skip_check_for_incorrect_settings", false);
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2416,9 +2442,21 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
-            config().replace("default", loaded_config, PRIO_DEFAULT, true);
+            /// Validate the new config BEFORE installing it into the global layered config, so a
+            /// failed reload does not leave `config()` partially mutated with unvalidated changes.
+            /// The escape hatch is honored when it is either passed on the command line (persisted
+            /// across reloads) or present in the *new* file being validated — never inherited from
+            /// the previously loaded file layer (see `command_line_skip_check` above). This matches
+            /// startup: validating the same file fresh must reach the same accept/reject decision.
+            const bool skip_check
+                = command_line_skip_check || loaded_config->getBool("skip_check_for_incorrect_settings", false);
+            if (!skip_check)
+                Settings::checkNoSettingNamesAtTopLevel(*loaded_config, config_path);
+            /// Same as on initial load: validate the reloaded XML config rather than the layered
+            /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
+            ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
-            Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
+            config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
