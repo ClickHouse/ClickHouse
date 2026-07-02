@@ -4071,6 +4071,12 @@ the read-in-order optimization is disabled at runtime and replaced with parallel
 per-stream sorting. This avoids the parallelism loss inherent in sequential in-order reading.
 Set to 1.0 to never disable read-in-order based on PK selectivity.
 
+The guard also accounts for skip indexes: it disables read-in-order only when the read is still large
+*after* skip-index pruning. Both the primary key granule ratio (`selected_marks_pk / total_marks_pk`)
+and the final granule ratio after skip indexes (`selected_marks / total_marks_pk`) must exceed this value.
+As a result, a query whose primary key is non-selective but whose skip index prunes most of the final read
+keeps read-in-order, even when `selected_marks_pk / total_marks_pk` is close to 1.0.
+
 This guard applies to the query-plan read-in-order path (`query_plan_read_in_order = 1`, the default).
 The legacy planner path (`query_plan_read_in_order = 0`) does not consult this setting and keeps the
 previous read-in-order behavior regardless of primary key selectivity.
