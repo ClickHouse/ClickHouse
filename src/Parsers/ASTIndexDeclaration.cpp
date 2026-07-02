@@ -2,6 +2,8 @@
 
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTWithAlias.h>
@@ -13,6 +15,44 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// True when `str` starts with a `(` whose matching `)` is not the final character (the leading
+/// parenthesis does not enclose the whole expression). Parentheses inside string / quoted-identifier
+/// literals are ignored (ClickHouse backslash-escapes the closing quote in formatted output).
+bool leadingParenClosesEarly(std::string_view str)
+{
+    if (str.empty() || str.front() != '(')
+        return false;
+
+    int depth = 0;
+    for (size_t i = 0; i < str.size(); ++i)
+    {
+        const char c = str[i];
+        if (c == '\'' || c == '"' || c == '`')
+        {
+            /// Skip a quoted literal; ClickHouse escapes the closing quote with a backslash.
+            const char quote = c;
+            for (++i; i < str.size(); ++i)
+            {
+                if (str[i] == '\\')
+                    ++i;
+                else if (str[i] == quote)
+                    break;
+            }
+            continue;
+        }
+        if (c == '(')
+            ++depth;
+        else if (c == ')' && --depth == 0)
+            return i + 1 != str.size();
+    }
+    return false;
+}
+
 }
 
 
@@ -81,7 +121,20 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
                 ostr << ")";
             }
             else
-                expr->format(ostr, s, state, nested_frame);
+            {
+                /// The parser consumes one leading `(` as the index's own bracket. If the single
+                /// expression formats to a leading `(` that closes before the end (`(a, b).1`,
+                /// `(x, y) -> x`, `(a + b) * c`), re-wrap it so the re-parse does not swallow that
+                /// `(` as the index bracket and drop the trailing operator. Forms already enclosed
+                /// by their leading `(` (`(a, b)`, `(expr AS alias)`) are left as is.
+                WriteBufferFromOwnString expr_buf;
+                expr->format(expr_buf, s, state, nested_frame);
+                const auto expr_str = expr_buf.stringView();
+                if (leadingParenClosesEarly(expr_str))
+                    ostr << "(" << expr_str << ")";
+                else
+                    ostr << expr_str;
+            }
         }
         else
         {
