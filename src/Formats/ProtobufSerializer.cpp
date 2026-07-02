@@ -3549,8 +3549,6 @@ namespace
             auto check_enum
                 = [&throw_incompatible_oneof](const auto * data_type_enum, const OneofDescriptor * oneof_descriptor, int field_tag)
             {
-                /// Compare by numeric value in int64_t so the protobuf field number is never narrowed
-                /// to the Enum's underlying type (which could wrap around for large tags).
                 bool has_omitted_marker = false;
                 bool has_field_tag = false;
                 for (const auto & elem : data_type_enum->getValues())
