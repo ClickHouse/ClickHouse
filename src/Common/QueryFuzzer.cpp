@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/likePatternToRegexp.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -35,6 +36,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateNamedCollectionQuery.h>
@@ -60,6 +62,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTRefreshStrategy.h>
@@ -112,6 +115,29 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int TOO_DEEP_RECURSION;
+}
+
+namespace
+{
+
+/// Configures a regexp column matcher with a random column-name-like glob pattern, storing the
+/// regexp the parser would produce (ILIKE/case-insensitive prepends `(?i)`). With `as_like` it
+/// renders as `* LIKE/ILIKE '<glob>'`; otherwise as the plain `COLUMNS('<regexp>')` form. Shared
+/// by matcher generation and the fuzz() mutation path. Exercises the syntax added in
+/// https://github.com/ClickHouse/ClickHouse/pull/104569.
+template <typename Matcher, typename Rng>
+void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
+{
+    static const Strings like_patterns = {"%", "c%", "%a%", "_", "col%", "%1", "a_c", "%_%", "ID%"};
+    const String & pattern = like_patterns[rng() % like_patterns.size()];
+    const bool case_insensitive = rng() % 2 == 0;
+
+    matcher.setPattern(case_insensitive ? "(?i)" + likePatternToRegexp(pattern) : likePatternToRegexp(pattern));
+    matcher.format_as_asterisk_like = as_like;
+    matcher.asterisk_like_case_insensitive = case_insensitive;
+    matcher.asterisk_like_pattern = pattern;
+}
+
 }
 
 static const Strings insert_formats = {
@@ -624,6 +650,167 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     return setIdentifierAliasOrNot(new_ast);
 }
 
+ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
+{
+    /// Build `APPLY` / `EXCEPT` / `REPLACE` transformers to attach to an asterisk or matcher,
+    /// exercising forms like `* EXCEPT (...) REPLACE (...)` and `* LIKE 'pat' ...`
+    /// The fuzz() cases for these transformer nodes mutate them further (toggle strictness, recurse
+    /// into the inner expressions).
+    auto random_column_name = [&]() -> String
+    {
+        if (!column_like.empty())
+            return column_like[fuzz_rand() % column_like.size()].first;
+        return "c" + std::to_string(fuzz_rand() % 4);
+    };
+
+    auto list = make_intrusive<ASTColumnsTransformerList>();
+
+    /// APPLY <func>  or  APPLY (x -> <func>(x))
+    {
+        static const Strings apply_funcs = {"toString", "toTypeName", "isNull"};
+        const String & func = apply_funcs[fuzz_rand() % apply_funcs.size()];
+        auto apply = make_intrusive<ASTColumnsApplyTransformer>();
+        if (fuzz_rand() % 2 == 0)
+        {
+            /// Lambda form: `x -> func(x)` — an ASTFunction "lambda" of [tuple(x), func(x)].
+            auto lambda = makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction(func, make_intrusive<ASTIdentifier>("x")));
+            lambda->setIsLambdaFunction(true);
+            apply->lambda = lambda;
+            apply->lambda_arg = "x";
+        }
+        else
+        {
+            apply->func_name = func;
+        }
+        list->children.push_back(apply);
+    }
+    /// EXCEPT <col>  |  EXCEPT (c1, c2, ...)  |  EXCEPT '<regexp>'
+    {
+        auto except = make_intrusive<ASTColumnsExceptTransformer>();
+        switch (fuzz_rand() % 3)
+        {
+            case 0:
+            {
+                static const Strings except_regexps = {"c.*", ".*", "^c", "[0-9]", "col.*"};
+                except->setPattern(except_regexps[fuzz_rand() % except_regexps.size()]);
+                break;
+            }
+            case 1:
+                except->children.push_back(make_intrusive<ASTIdentifier>(random_column_name()));
+                break;
+            default:
+                /// Multiple columns -> rendered as `EXCEPT (c1, c2[, c3])`.
+                for (size_t i = 0, n = 2 + fuzz_rand() % 2; i < n; ++i)
+                    except->children.push_back(make_intrusive<ASTIdentifier>(random_column_name()));
+                break;
+        }
+        list->children.push_back(except);
+    }
+    /// REPLACE (<expr> AS <col>)
+    {
+        auto replacement = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
+        replacement->name = random_column_name();
+        replacement->children.push_back(make_intrusive<ASTLiteral>(fuzz_rand() % 100));
+        auto replace = make_intrusive<ASTColumnsReplaceTransformer>();
+        replace->children.push_back(replacement);
+        list->children.push_back(replace);
+    }
+
+    return list;
+}
+
+ASTPtr QueryFuzzer::makeFuzzedAsteriskLikeMatcher()
+{
+    /// Sometimes attach column transformers to the generated asterisk/matcher.
+    ASTPtr transformers;
+    if (fuzz_rand() % 2 == 0)
+        transformers = makeFuzzedColumnTransformers();
+
+    auto attach = [&](IAST & node, ASTPtr & transformers_field)
+    {
+        if (transformers)
+        {
+            transformers_field = transformers;
+            node.children.push_back(transformers);
+        }
+    };
+
+    /// Most of the time a plain `*`; otherwise a regexp matcher (`* LIKE/ILIKE 'pattern'` or
+    /// `COLUMNS('regexp')`) or a list matcher (`COLUMNS(c1, c2, ...)`).
+    if (fuzz_rand() % 4 != 0)
+    {
+        auto matcher = make_intrusive<ASTAsterisk>();
+        attach(*matcher, matcher->transformers);
+        return matcher;
+    }
+
+    /// Either a regexp matcher (`* LIKE 'pat'` / `COLUMNS('regexp')`) or a list matcher
+    /// (`COLUMNS(c1, c2, ...)`, an explicit list of column-name identifiers).
+    const bool use_list = fuzz_rand() % 2 == 0;
+    const bool as_like = fuzz_rand() % 2 == 0;
+
+    auto make_column_list = [&]() -> ASTPtr
+    {
+        auto col_list = make_intrusive<ASTExpressionList>();
+        for (size_t i = 0, n = 1 + fuzz_rand() % 3; i < n; ++i)
+        {
+            const String name = !column_like.empty() ? column_like[fuzz_rand() % column_like.size()].first
+                                                      : "c" + std::to_string(fuzz_rand() % 4);
+            col_list->children.push_back(make_intrusive<ASTIdentifier>(name));
+        }
+        return col_list;
+    };
+
+    /// Occasionally emit the qualified `<table>.* LIKE ...` / `<table>.COLUMNS(...)` form when a
+    /// table name is known.
+    if (fuzz_rand() % 4 == 0 && !table_like.empty())
+    {
+        auto qualifier = make_intrusive<ASTIdentifier>(table_like[fuzz_rand() % table_like.size()].first);
+        if (fuzz_rand() % 3 == 0)
+        {
+            /// Bare qualified asterisk `t.*`.
+            auto matcher = make_intrusive<ASTQualifiedAsterisk>();
+            matcher->qualifier = qualifier;
+            matcher->children.push_back(matcher->qualifier);
+            attach(*matcher, matcher->transformers);
+            return matcher;
+        }
+        if (use_list)
+        {
+            auto matcher = make_intrusive<ASTQualifiedColumnsListMatcher>();
+            matcher->qualifier = qualifier;
+            matcher->column_list = make_column_list();
+            matcher->children.push_back(matcher->qualifier);
+            matcher->children.push_back(matcher->column_list);
+            attach(*matcher, matcher->transformers);
+            return matcher;
+        }
+        auto matcher = make_intrusive<ASTQualifiedColumnsRegexpMatcher>();
+        setAsteriskLikeMatcher(*matcher, fuzz_rand, as_like);
+        matcher->qualifier = qualifier;
+        matcher->children.push_back(matcher->qualifier);
+        attach(*matcher, matcher->transformers);
+        return matcher;
+    }
+
+    if (use_list)
+    {
+        auto matcher = make_intrusive<ASTColumnsListMatcher>();
+        matcher->column_list = make_column_list();
+        matcher->children.push_back(matcher->column_list);
+        attach(*matcher, matcher->transformers);
+        return matcher;
+    }
+
+    auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+    setAsteriskLikeMatcher(*matcher, fuzz_rand, as_like);
+    attach(*matcher, matcher->transformers);
+    return matcher;
+}
+
 ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
 {
     if (column_like.empty())
@@ -1054,6 +1241,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
         if (fuzz_rand() % 20 == 0)
             fuzz_setting("vertical_merge_algorithm_min_bytes_to_activate", UInt64(1) << (fuzz_rand() % 14));
+        if (fuzz_rand() % 20 == 0)
+            fuzz_setting("allow_tuple_element_aggregation", UInt64(fuzz_rand() % 2));
     }
 
     /// Fuzz CREATE MATERIALIZED VIEW: toggle POPULATE and refresh strategy parameters
@@ -2202,8 +2391,19 @@ DataTypePtr QueryFuzzer::getRandomType()
                    std::make_shared<DataTypeBFloat16>(),
                    std::make_shared<DataTypeFloat32>(),
                    std::make_shared<DataTypeFloat64>()};
+            const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
+
+            /// Occasionally build a strided QBit. The constraints are: dimension % stride == 0 and (when strided) stride % 8 == 0.
+            if (fuzz_rand() % 4 == 0)
+            {
+                const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
+                const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
+                const size_t dimension = stride * num_groups;
+                return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            }
+
             const size_t dimension = fuzz_rand() % 128 + 1;
-            return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
         }
         case TypeIndex::AggregateFunction: {
             const size_t nargs = fuzz_rand() % 3;
@@ -2586,9 +2786,10 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         {
             if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
             {
-                /// Return a '*' literal
+                /// Return a fuzzed asterisk/matcher: `*`, `* LIKE/ILIKE 'pattern'`, or `table.*`,
+                /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 if (fuzz_rand() % asterisk_prob == 0)
-                    new_child = make_intrusive<ASTAsterisk>();
+                    new_child = makeFuzzedAsteriskLikeMatcher();
                 else if (fuzz_rand() % 800 == 0 && param_counter < 10)
                 {
                     /// Inject a {fuzz_param_N:Type} in place of the literal, exercising
@@ -2606,8 +2807,9 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
             }
             else if (fuzz_rand() % asterisk_prob == 0 && dynamic_cast<ASTWithAlias *>(child.get()))
             {
-                /// Return a '*' literal
-                new_child = make_intrusive<ASTAsterisk>();
+                /// Return a fuzzed asterisk/matcher: `*`, `* LIKE/ILIKE 'pattern'`, or `table.*`,
+                /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
+                new_child = makeFuzzedAsteriskLikeMatcher();
             }
             else if (fuzz_rand() % 1500 == 0 && current_ast_depth < 80)
             {
@@ -4720,6 +4922,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
+            case ASTAlterCommand::MODIFY_CONSTRAINT:
             case ASTAlterCommand::COMMENT_COLUMN:
             case ASTAlterCommand::RENAME_COLUMN:
             case ASTAlterCommand::MATERIALIZE_COLUMN:
@@ -4847,6 +5050,65 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 50 == 0)
             replace_transformer->is_strict = !replace_transformer->is_strict;
         fuzz(replace_transformer->children);
+    }
+    else if (auto * regexp_matcher = typeid_cast<ASTColumnsRegexpMatcher *>(ast.get()))
+    {
+        /// Flip `COLUMNS('re')` <-> `* LIKE/ILIKE 'pattern'` to exercise the matcher parser path
+        if (fuzz_rand() % 5 == 0)
+            setAsteriskLikeMatcher(*regexp_matcher, fuzz_rand);
+        else if (regexp_matcher->format_as_asterisk_like && fuzz_rand() % 3 == 0)
+            regexp_matcher->format_as_asterisk_like = false;
+        fuzz(regexp_matcher->children);
+    }
+    else if (auto * qualified_regexp_matcher = typeid_cast<ASTQualifiedColumnsRegexpMatcher *>(ast.get()))
+    {
+        /// Flip `t.COLUMNS('re')` <-> `t.* LIKE/ILIKE 'pattern'`
+        if (fuzz_rand() % 5 == 0)
+            setAsteriskLikeMatcher(*qualified_regexp_matcher, fuzz_rand);
+        else if (qualified_regexp_matcher->format_as_asterisk_like && fuzz_rand() % 3 == 0)
+            qualified_regexp_matcher->format_as_asterisk_like = false;
+        fuzz(qualified_regexp_matcher->children);
+    }
+    else if (auto * asterisk = typeid_cast<ASTAsterisk *>(ast.get()))
+    {
+        /// Occasionally attach `APPLY` / `EXCEPT` / `REPLACE` transformers to a bare `*` so an
+        /// existing `SELECT *` becomes e.g. `SELECT * EXCEPT (...) REPLACE (...)`.
+        if (!asterisk->transformers && fuzz_rand() % 10 == 0)
+        {
+            asterisk->transformers = makeFuzzedColumnTransformers();
+            asterisk->children.push_back(asterisk->transformers);
+        }
+        fuzz(asterisk->children);
+    }
+    else if (auto * qualified_asterisk = typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+    {
+        /// Same for a qualified `t.*`.
+        if (!qualified_asterisk->transformers && fuzz_rand() % 10 == 0)
+        {
+            qualified_asterisk->transformers = makeFuzzedColumnTransformers();
+            qualified_asterisk->children.push_back(qualified_asterisk->transformers);
+        }
+        fuzz(qualified_asterisk->children);
+    }
+    else if (auto * columns_list_matcher = typeid_cast<ASTColumnsListMatcher *>(ast.get()))
+    {
+        /// Same for a `COLUMNS(c1, c2)` list matcher.
+        if (!columns_list_matcher->transformers && fuzz_rand() % 10 == 0)
+        {
+            columns_list_matcher->transformers = makeFuzzedColumnTransformers();
+            columns_list_matcher->children.push_back(columns_list_matcher->transformers);
+        }
+        fuzz(columns_list_matcher->children);
+    }
+    else if (auto * qualified_columns_list_matcher = typeid_cast<ASTQualifiedColumnsListMatcher *>(ast.get()))
+    {
+        /// Same for a qualified `t.COLUMNS(c1, c2)` list matcher.
+        if (!qualified_columns_list_matcher->transformers && fuzz_rand() % 10 == 0)
+        {
+            qualified_columns_list_matcher->transformers = makeFuzzedColumnTransformers();
+            qualified_columns_list_matcher->children.push_back(qualified_columns_list_matcher->transformers);
+        }
+        fuzz(qualified_columns_list_matcher->children);
     }
     else if (auto * create_function = typeid_cast<ASTCreateSQLFunctionQuery *>(ast.get()))
     {
