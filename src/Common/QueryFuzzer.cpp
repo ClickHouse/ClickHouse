@@ -837,7 +837,7 @@ ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
 
 void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
 {
-    switch (fuzz_rand() % 10)
+    switch (fuzz_rand() % 12)
     {
         case 0: elem->direction = -1; break;
         case 1: elem->direction = 1; break;
@@ -856,6 +856,33 @@ void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
         case 5:
             if (fuzz_rand() % 5 == 0)
                 elem->with_fill = !elem->with_fill;
+            break;
+        case 6:
+            /// Populate WITH FILL bounds; FillingTransform validates FROM/TO/STEP, and
+            /// zero, negative or reversed values exercise its rejection paths.
+            if (fuzz_rand() % 5 == 0)
+            {
+                elem->with_fill = true;
+                if (fuzz_rand() % 2 == 0)
+                    elem->setFillFrom(make_intrusive<ASTLiteral>(Int64(fuzz_rand() % 100) - 50));
+                if (fuzz_rand() % 2 == 0)
+                    elem->setFillTo(make_intrusive<ASTLiteral>(Int64(fuzz_rand() % 100) - 50));
+                if (fuzz_rand() % 2 == 0)
+                    elem->setFillStep(make_intrusive<ASTLiteral>(Int64(fuzz_rand() % 5) - 2));
+            }
+            break;
+        case 7:
+            /// COLLATE routes comparison through ICU; it is only valid for String-family
+            /// sort keys, so non-string keys exercise the validation error path.
+            if (elem->getCollation() && fuzz_rand() % 3 == 0)
+            {
+                elem->setCollation(nullptr);
+            }
+            else if (fuzz_rand() % 5 == 0)
+            {
+                static const Strings collation_locales = {"en", "tr", "cs", "de", "ru", "ja", "zh"};
+                elem->setCollation(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, collation_locales)));
+            }
             break;
         default:
             // do nothing
@@ -2368,9 +2395,9 @@ DataTypePtr QueryFuzzer::getRandomType()
                                                         TypeIndex::Dynamic,    TypeIndex::Time,           TypeIndex::Time64,
                                                         TypeIndex::Object,     TypeIndex::QBit,           TypeIndex::AggregateFunction};
 
-    /// Geo types (Point, Ring, Polygon, MultiPolygon) are custom-named Array aliases with no TypeIndex
-    /// of their own, so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "Ring", "Polygon", "MultiPolygon"};
+    /// Geo types are custom-named Array aliases with no TypeIndex of their own,
+    /// so they are appended after the TypeIndex vector in a unified selection.
+    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
