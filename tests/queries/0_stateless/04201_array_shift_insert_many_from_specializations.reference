@@ -1,0 +1,23 @@
+== FixedString ==
+['xx','xx','aa']
+['cc','xx','xx']
+== Decimal128 ==
+[99.9,99.9,1.5]
+[3.5,99.9,99.9]
+== Decimal64 ==
+[99.9,99.9,1.5]
+== Nullable(Int64) (insertManyFrom on a NULL position) ==
+[99,99,1]
+[NULL,99,99]
+== Tuple ==
+[(0,'z'),(0,'z'),(1,'a')]
+[(3,'c'),(0,'z'),(0,'z')]
+== Map ==
+[{'z':0},{'z':0},{'a':1}]
+[{'c':3},{'z':0},{'z':0}]
+== JOIN exercising insertManyFrom on left FixedString and Decimal columns ==
+abc	12.34
+abc	12.34
+abc	12.34
+def	56.78
+def	56.78
