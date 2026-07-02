@@ -768,17 +768,25 @@ function connectionSnapshot() {
     };
 }
 
-let checkCredentialsNum = 0;
+/// Monotonic token shared by every operation that can repaint the credential status (the green/red
+/// on the user/password fields and the `Connected to ...` line): the `checkCredentials` probe below
+/// and each `loadAll` batch. Both bump it at start and capture the value, and apply the paint/store
+/// only while their captured value is still the latest. Field equality (`conn.isCurrent()`) alone is
+/// not enough: two operations against the *same* `url`/`user`/`password` — `Load` clicked twice, or a
+/// paste-probe racing a newer load — both satisfy it, so an older callback could otherwise flip the
+/// fields to `fail` after a newer load has already succeeded. The token makes the latest-started
+/// probe-or-load the sole authority over the credential status.
+let credentialStatusGeneration = 0;
 async function checkCredentials() {
-    const num = ++checkCredentialsNum;
+    const myStatus = ++credentialStatusGeneration;
     const conn = connectionSnapshot();
-    /// A newer probe also supersedes this one, even when the field values are unchanged.
-    const stillProbing = () => num === checkCredentialsNum && conn.isCurrent();
+    /// A newer probe or load supersedes this one, even when the field values are unchanged.
+    const isCurrentStatus = () => myStatus === credentialStatusGeneration && conn.isCurrent();
     try {
         const res = await chQuery('SELECT version() AS v', conn);
-        if (stillProbing()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
+        if (isCurrentStatus()) setCredentialStatus(true, res.rows[0] && res.rows[0].v);
     } catch (e) {
-        if (stillProbing()) setCredentialStatus(false);
+        if (isCurrentStatus()) setCredentialStatus(false);
     }
 }
 
@@ -992,18 +1000,24 @@ async function loadAll() {
     /// cannot redirect later queries — or their credentials — to a different origin. The same
     /// snapshot decides whether a result may paint or store a now-stale credential status.
     const conn = connectionSnapshot();
+    /// Take the shared credential-status token too (see `credentialStatusGeneration`): this load
+    /// may repaint the credential status below, and a newer probe or load must win even when the
+    /// connection fields are identical, so gating on `conn.isCurrent()` alone is not enough — an
+    /// older load that fails after a newer one succeeded would otherwise flip the fields to `fail`.
+    const myStatus = ++credentialStatusGeneration;
+    const isCurrentStatus = () => myStatus === credentialStatusGeneration && conn.isCurrent();
     let tablesRes;
     try {
         tablesRes = await chQuery(tablesQ, conn);
     } catch (e) {
         if (isLatestLoad()) setStatus('Failed: ' + e.message, true);
-        if (conn.isCurrent()) setCredentialStatus(false);
+        if (isCurrentStatus()) setCredentialStatus(false);
         return;
     }
     /// The probe succeeded, so the credentials are valid: reflect that, and offer to
-    /// remember them through the Credential Management API - but only while the fields
-    /// still hold the values that were actually validated.
-    if (conn.isCurrent()) {
+    /// remember them through the Credential Management API - but only while this is still the
+    /// latest credential-determining operation and the fields still hold the validated values.
+    if (isCurrentStatus()) {
         setCredentialStatus(true);
         storeCredentials();
     }
