@@ -47,12 +47,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 
-    /// Capture the generation the coordinator saw (notably the ETag) so the worker can pin its read
-    /// to it. Scoped to the bucket-splitting path with read-time ETag validation enabled: there the
-    /// coordinator already refreshed the metadata while reading the object to compute bucket
-    /// boundaries, and the worker reads a sub-range of that same generation. For every other path
-    /// (non-bucket s3Cluster, validation disabled, non-S3 backends) we leave it empty so the worker
-    /// fetches its own metadata exactly as before - no behavioral change.
+    /// Capture the coordinator's split-time metadata (see `etag` in the header). Only for the bucket-split
+    /// path with ETag validation on; every other path leaves it empty (worker fetches its own), as before.
     if (object->file_bucket_info && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
     {
         if (auto object_metadata = object->getObjectMetadata())
@@ -95,10 +91,8 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
 
-    /// Pin the worker's read to the generation the coordinator saw at split time: reconstruct the
-    /// object metadata (notably the ETag) so `createReadBuffer` validates every ranged GET against it
-    /// instead of re-fetching the current - possibly overwritten - generation. Only when an ETag was
-    /// actually captured; otherwise leave the metadata empty so the worker fetches it itself, as before.
+    /// Rebuild the propagated split-time metadata (see `etag` in the header) so the worker's ranged GETs
+    /// validate against it. Only when an ETag was captured; otherwise leave it empty (worker fetches its own).
     if (!etag.empty())
     {
         ObjectMetadata object_metadata;

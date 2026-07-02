@@ -95,9 +95,7 @@ namespace DB
 {
 namespace FailPoints
 {
-    /// Test-only: pause a worker just before it reads a bucket-split object, after the coordinator
-    /// has computed the split and (with the fix) propagated the object metadata. Lets a test
-    /// deterministically overwrite the object in place between the split and the worker read.
+    /// Test-only: pause a bucket-split worker just before its read (see `04418`) to overwrite between split and read.
     extern const char object_storage_source_pause_before_read[];
 }
 
@@ -793,9 +791,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info || object_info->getPath().empty())
             return {};
 
-        /// Bucket-split worker read: pause here (test-only) so a test can overwrite the object in
-        /// place after the coordinator's split but before this read, exercising read-time ETag
-        /// validation against the propagated split-time generation.
+        /// Test-only pause point (see the failpoint declaration) so a test can overwrite between split and read.
         if (object_info->file_bucket_info)
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_read);
 
@@ -810,11 +806,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// An s3Cluster bucket-split worker task carries the coordinator's split-time object
-            /// metadata, set together with `file_bucket_info` (the only path that propagates metadata,
-            /// see `ClusterFunctionReadTaskResponse`). Ordinary reads may already carry metadata from
-            /// listing / key iteration; that must keep its existing no-extra-fetch behavior, so the
-            /// special handling below is limited to the propagated bucket-split case.
+            /// Only a bucket-split worker task carries the coordinator's propagated split-time metadata
+            /// (marked by `file_bucket_info`, see `ClusterFunctionReadTaskResponse`); limit the special
+            /// handling below to that case so ordinary listing/key-iteration reads keep their existing
+            /// no-extra-fetch behavior.
             const bool is_propagated_split_metadata = object_info->file_bucket_info && propagated_metadata.has_value();
 
             if (is_propagated_split_metadata)

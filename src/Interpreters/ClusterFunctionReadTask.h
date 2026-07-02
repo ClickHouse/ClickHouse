@@ -27,13 +27,11 @@ struct ClusterFunctionReadTaskResponse
     /// Iceberg object metadata
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
 
-    /// Object metadata captured on the coordinator at split/listing time, i.e. the generation it
-    /// read to compute the bucket boundaries. It is propagated so the worker pins its read to the
-    /// SAME generation via read-time ETag validation, instead of re-fetching metadata and validating
-    /// against a possibly newer (concurrently overwritten) generation - which would let stale bucket
-    /// offsets be applied to new bytes without `S3_OBJECT_CHANGED_DURING_READ`. An empty `etag` means
-    /// "not captured" (e.g. ETag validation disabled, or a path that never read the object); in that
-    /// case the worker fetches the metadata itself, as before.
+    /// Object metadata (notably the ETag) captured by the coordinator at split time. Propagated so the
+    /// worker pins its read to that SAME generation via read-time ETag validation, instead of validating
+    /// against a possibly newer (overwritten) generation and applying stale bucket offsets to new bytes
+    /// without `S3_OBJECT_CHANGED_DURING_READ`. An empty `etag` means "not captured" - the worker fetches
+    /// the metadata itself, as before.
     String etag;
     UInt64 size_bytes = 0;
     bool is_size_known = true;
