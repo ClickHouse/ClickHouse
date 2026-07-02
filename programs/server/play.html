@@ -3819,7 +3819,7 @@ let controller = null;
 /// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `abortController` is an AbortController that can be used to cancel this query.
-async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot)
+async function postImpl(posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, queryStart)
 {
     const user = user_elem.value;
     const password = password_elem.value;
@@ -3881,7 +3881,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 
             /// If the error message points at a position in the query (e.g. a syntax error),
             /// highlight that position in the editor.
-            highlightQueryError(reply, query);
+            highlightQueryError(reply, query, queryStart);
 
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
         } else if (content_type.startsWith('image/')) {
@@ -3976,7 +3976,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text)
+async function postSingle(posted_request_num, query, history_query_text, queryStart)
 {
     const paramValuesSnapshot = getParamValues();
     last_query_start = performance.now();
@@ -3988,7 +3988,7 @@ async function postSingle(posted_request_num, query, history_query_text)
     progressEl.start();
 
     controller = new AbortController();
-    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot);
+    const result = await postImpl(posted_request_num, query, resultEl, controller, paramValuesSnapshot, queryStart);
 
     if (result.cancelled) return;
 
@@ -4172,7 +4172,7 @@ async function postMulti(posted_request_num, parsed)
         const promises = group.indices.map(i => {
             const ac = new AbortController();
             multiQueryControllers.push(ac);
-            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot)
+            return postImpl(posted_request_num, parsed[i].query, resultElements[i], ac, paramValuesSnapshot, parsed[i].queryStart)
                 .then(result => ({ index: i, result }));
         });
 
@@ -4427,13 +4427,13 @@ async function postOne()
         if (selected.length > 1) {
             await postMulti(request_num, selected);
         } else if (selected.length === 1) {
-            await postSingle(request_num, selected[0].query, all_text);
+            await postSingle(request_num, selected[0].query, all_text, selected[0].queryStart);
         }
     } else {
         const query = await getQueryUnderCursor();
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined, queryUnderCursorStart);
     }
 
     endFlight();
@@ -4453,7 +4453,7 @@ async function postAll()
         await postMulti(request_num, parsed);
     } else {
         const query = await getQueryUnderCursor();
-        await postSingle(request_num, query);
+        await postSingle(request_num, query, undefined, queryUnderCursorStart);
     }
 
     endFlight();
@@ -4796,6 +4796,12 @@ async function tokenize(query) {
     return result;
 }
 
+/// Absolute character offset (into the textarea) where the query most recently returned by
+/// `getQueryUnderCursor` begins. Callers thread it into `highlightQueryError` so a server-reported
+/// error position maps back to the statement that actually ran, even when the same query text
+/// appears more than once in the editor.
+let queryUnderCursorStart = 0;
+
 /// Regression coverage for this function lives in
 /// `src/Parsers/tests/gtest_play_get_query_under_cursor.cpp` (a port of the token-walking
 /// algorithm on top of the same `DB::Lexer`). Keep the two in sync when changing the logic.
@@ -4803,6 +4809,7 @@ async function getQueryUnderCursor() {
     const all_queries = query_area.value;
 
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+        queryUnderCursorStart = 0;
         return all_queries;
     }
 
@@ -4835,6 +4842,7 @@ async function getQueryUnderCursor() {
             if (has_content && current_offset >= cursor_position) {
                 if (should_select_query) query_area.setSelectionRange(current_query_start, current_offset);
                 query_area.focus();
+                queryUnderCursorStart = current_query_start;
                 return all_queries.substring(current_query_start, current_offset);
             }
             if (has_content) {
@@ -4855,6 +4863,7 @@ async function getQueryUnderCursor() {
     if (current_query_start === current_offset && current_offset === all_queries.length && last_query_end >= 0) {
         if (should_select_query) query_area.setSelectionRange(last_query_start, last_query_end);
         query_area.focus();
+        queryUnderCursorStart = last_query_start;
         return all_queries.substring(last_query_start, last_query_end);
     }
 
@@ -4862,6 +4871,7 @@ async function getQueryUnderCursor() {
     const tail = all_queries.substring(current_query_start);
     if (should_select_query) query_area.setSelectionRange(current_query_start, all_queries.length);
     query_area.focus();
+    queryUnderCursorStart = current_query_start;
     return tail;
 }
 
@@ -4875,7 +4885,7 @@ const PARALLELIZABLE_KEYWORDS = new Set([
 /// (after skipping whitespace, comments, and opening brackets).
 async function splitAllQueries(text) {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length }];
+        return [{ query: text, is_select: PARALLELIZABLE_KEYWORDS.has(text.trimStart().split(/\s/)[0].toUpperCase()), start: 0, end: text.length, queryStart: 0 }];
     }
 
     const tokens = await tokenize(text);
@@ -4892,13 +4902,18 @@ async function splitAllQueries(text) {
 
         if (elem.token == ';') {
             if (has_significant) {
-                const q = text.substring(current_query_start, current_offset).trim();
+                const raw = text.substring(current_query_start, current_offset);
+                const q = raw.trim();
                 if (q && q !== ';') {
                     queries.push({
                         query: q,
                         is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                         start: first_significant_offset,
                         end: last_significant_end,
+                        /// Exact character offset where the trimmed query text begins in `text`,
+                        /// so a server-reported error position can be mapped to this statement even
+                        /// when the same text appears more than once (e.g. `SELECT 1; SELECT 1`).
+                        queryStart: current_query_start + (raw.length - raw.trimStart().length),
                     });
                 }
             }
@@ -4921,13 +4936,15 @@ async function splitAllQueries(text) {
 
     /// Last query (no trailing semicolon)
     if (has_significant) {
-        const last = text.substring(current_query_start).trim();
+        const raw = text.substring(current_query_start);
+        const last = raw.trim();
         if (last && last !== ';') {
             queries.push({
                 query: last,
                 is_select: first_keyword !== null && PARALLELIZABLE_KEYWORDS.has(first_keyword),
                 start: first_significant_offset,
                 end: last_significant_end,
+                queryStart: current_query_start + (raw.length - raw.trimStart().length),
             });
         }
     }
@@ -5135,7 +5152,9 @@ function byteOffsetToCharIndex(str, byteOffset) {
 /// `writeCommonErrorMessage` in `src/Parsers/parseQuery.cpp`) and, if found, highlight that
 /// position in the editor. `query` is the exact text that was sent to the server; the reported
 /// position is a 1-based byte offset into it, which we map back to the full textarea contents.
-function highlightQueryError(errorText, query) {
+/// `queryStart` is the absolute character offset in the textarea where `query` began when the run
+/// started (the caller captured it), used to disambiguate identical statements.
+function highlightQueryError(errorText, query, queryStart) {
     if (typeof errorText !== 'string' || typeof query !== 'string') return;
 
     const match = errorText.match(/failed at position (\d+)/);
@@ -5145,15 +5164,25 @@ function highlightQueryError(errorText, query) {
     const byteOffset = parseInt(match[1], 10) - 1;
     if (!(byteOffset >= 0)) return;
 
+    /// Locate the sent query within the textarea. Prefer the exact start offset the caller
+    /// captured when the run began, so duplicate statements (e.g. `SELECT 1; SELECT 1`) map to the
+    /// one that actually failed. If the editor changed while the request was in flight and the
+    /// query is no longer at that offset, fall back to its first occurrence; if it is gone
+    /// entirely, do not paint a stale position at all.
+    const text = query_area.value;
+    let base;
+    if (typeof queryStart === 'number' && queryStart >= 0
+        && text.substring(queryStart, queryStart + query.length) === query) {
+        base = queryStart;
+    } else {
+        base = text.indexOf(query);
+    }
+    if (base < 0) return;
+
     const charIndex = byteOffsetToCharIndex(query, byteOffset);
+    const absolute = base + charIndex;
 
-    /// Locate the sent query within the textarea. In multi-query mode the sent query is a
-    /// substring, so we offset the position by where it starts. `indexOf` is enough because the
-    /// text has not changed since the run started.
-    const base = query_area.value.indexOf(query);
-    const absolute = (base >= 0 ? base : 0) + charIndex;
-
-    queryErrorPos = Math.min(absolute, query_area.value.length);
+    queryErrorPos = Math.min(absolute, text.length);
     renderQueryBackdrop();
 }
 /// Guard so that the backdrop re-renders triggered by the completion code (to update the
