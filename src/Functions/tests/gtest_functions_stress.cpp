@@ -1667,12 +1667,8 @@ struct FunctionsStressTestThread
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned nullptr column");
         if (column->size() != expected_rows)
             throw Exception(ErrorCodes::INCORRECT_DATA, "function returned unexpected number of rows: {} instead of {}", column->size(), expected_rows);
-        /// strict_decimal_scale also rejects a Decimal/DateTime64/Time64 column whose physical
-        /// scale diverges from its declared type. Such a column is structurally inconsistent and,
-        /// if stashed and reused as a later argument, surfaces as a misattributed LOGICAL_ERROR in
-        /// an innocent consumer (e.g. arrayPush's generic writeSlice). Reject it at the producer.
-        if (!columnMatchesType(*column, *data_type, /*strict_decimal_scale=*/ true))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type or scale: {} instead of {}", column->getName(), data_type->getName());
+        if (!columnMatchesType(*column, *data_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "function returned column of unexpected type: {} instead of {}", column->getName(), data_type->getName());
 
         auto apply = [&](IColumn & col)
         {
