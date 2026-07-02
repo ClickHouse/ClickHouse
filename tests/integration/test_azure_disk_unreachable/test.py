@@ -4,7 +4,6 @@ Reproduces the issue where a transport-level failure during Azure container
 existence check in `getContainerClient` would crash the server at startup.
 """
 
-import os
 
 import pytest
 

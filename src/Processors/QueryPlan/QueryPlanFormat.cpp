@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -200,35 +201,37 @@ namespace QueryPlanFormat
 
         String formatConstant(const ActionsDAG::Node * node)
         {
-            if (!node->column || node->column->empty())
+            if (!node->column)
                 return node->result_name;
 
             if (node->result_type && WhichDataType(node->result_type).isSet())
                 return node->result_name;
 
+            /// node->column is a size-0 ColumnConst; read the value from its data column.
+            const auto & data_col = node->column->getDataColumnPtr();
             WhichDataType data_type(node->result_type);
 
             if (data_type.isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64())
             {
                 WriteBufferFromOwnString buf;
                 writeChar('\'', buf);
-                const auto & col = node->column->convertToFullColumnIfConst();
-                node->result_type->getDefaultSerialization()->serializeText(*col, 0, buf, {});
+                node->result_type->getDefaultSerialization()->serializeText(*data_col, 0, buf, {});
                 writeChar('\'', buf);
                 return buf.str();
             }
 
             Field value;
-            node->column->get(0, value);
+            data_col->get(0, value);
             return applyVisitor(FieldVisitorToString(), value);
         }
 
         String getRuntimeFilterId(const ActionsDAG::Node * node)
         {
-            const ActionsDAG::Node * first_child = node->children[0];
-            if (const auto * col = checkAndGetColumnConst<ColumnString>(first_child->column.get()))
-                return col->getValue<String>();
-            return first_child->result_name;
+            /// The first `__applyFilter` argument is a const whose DAG result NAME is the stable
+            /// structural id (`_runtime_filter_<hash>`), under which `runtime_filter_names` is keyed
+            /// (`BuildRuntimeFilterStep::getFilterName`). Its VALUE is the volatile per-plan-build
+            /// rendezvous key, which must never surface in EXPLAIN — so key on the result name.
+            return node->children[0]->result_name;
         }
 
         String formatSetPretty(
@@ -240,9 +243,7 @@ namespace QueryPlanFormat
             if (!set_node->column)
                 return trimColumnIdentifier(set_node->result_name);
 
-            const auto * column_ptr = set_node->column.get();
-            const auto * col_const = typeid_cast<const ColumnConst *>(column_ptr);
-            const ColumnSet * column_set = col_const ? typeid_cast<const ColumnSet *>(&col_const->getDataColumn()) : typeid_cast<const ColumnSet *>(column_ptr);
+            const ColumnSet * column_set = typeid_cast<const ColumnSet *>(&set_node->column->getDataColumn());
 
             if (!column_set || !column_set->getData())
                 return trimColumnIdentifier(set_node->result_name);

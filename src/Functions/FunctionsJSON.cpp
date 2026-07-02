@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeObject.h>
 
 #include <Functions/IFunction.h>
@@ -259,16 +260,24 @@ public:
             auto merged_type = data_type_object.getSubcolumnType(combined_name);
             auto merged = data_type_object.getSubcolumn(combined_name, object_column);
 
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
             constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
 
             if constexpr (is_has)
             {
+                if (is_typed_path)
+                    return DataTypeUInt8().createColumnConst(input_rows_count, 1u)->convertToFullColumnIfConst();
+
                 auto result = ColumnVector<UInt8>::create(input_rows_count);
                 auto & data = result->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    data[i] = merged->isDefaultAt(i) ? 0 : 1;
+                    data[i] = merged->isNullAt(i) ? 0 : 1;
                 return result;
             }
 
@@ -293,7 +302,7 @@ public:
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
-                    if (merged->isDefaultAt(i))
+                    if (!is_typed_path && merged->isNullAt(i))
                     {
                         raw_col->insertDefault();
                     }

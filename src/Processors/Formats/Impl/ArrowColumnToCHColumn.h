@@ -41,6 +41,13 @@ public:
         std::shared_ptr<const arrow::KeyValueMetadata> metadata,
         BlockMissingValues * block_missing_values = nullptr);
 
+    /// Validate that every validity bitmap in the record batch (recursively, including nested
+    /// children and dictionaries) covers its declared rows.  Must be called before building an
+    /// arrow::Table from the batch: Arrow computes an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds when the bitmap is
+    /// truncated.  Throws INCORRECT_DATA on a malformed bitmap.
+    static void checkRecordBatchValidityBitmaps(const arrow::RecordBatch & batch);
+
     /// Transform arrow schema to ClickHouse header
     static Block arrowSchemaToCHHeader(
         const arrow::Schema & schema,
