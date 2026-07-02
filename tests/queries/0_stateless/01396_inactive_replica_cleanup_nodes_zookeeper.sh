@@ -31,11 +31,21 @@ $CLICKHOUSE_CLIENT --max_execution_time 600 --insert_keeper_fault_injection_prob
 # Now wait for cleanup thread to reduce ZK log entries.
 # Require count to be a number: [[ "" -lt N ]] is true in bash, so a transient
 # empty read would otherwise break the loop early before cleanup has run.
+# A successful query always returns one numeric row (root and /log are permanent
+# nodes), so an empty count means the read errored. Capture that error and, if the
+# wait never converges, surface it below instead of silently asserting a wrong count.
+poll_err="${CLICKHOUSE_TMP}/01396_poll_err_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 for _ in {1..120}; do
-    count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>/dev/null)
+    count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>"$poll_err")
     [[ $count =~ ^[0-9]+$ ]] && [[ $count -lt $((SCALE / 4)) ]] && break
     sleep 1
 done
+
+if ! { [[ $count =~ ^[0-9]+$ ]] && [[ $count -lt $((SCALE / 4)) ]]; }; then
+    echo "cleanup wait did not converge: last count='$count', last poll error:" >&2
+    cat "$poll_err" >&2
+fi
+rm -f "$poll_err"
 
 
 $CLICKHOUSE_CLIENT --query "SELECT numChildren < $((SCALE / 4)) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'";
