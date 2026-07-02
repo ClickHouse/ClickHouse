@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <tuple>
 #include <Interpreters/ITokenizer.h>
 
 #include <Columns/ColumnArray.h>
@@ -455,6 +457,183 @@ String SparseGramsTokenizer::getDescription() const
     if (min_cutoff_length.has_value())
         result += fmt::format(", {}", *min_cutoff_length);
     return result + ")";
+}
+
+std::pair<size_t, size_t> SegmentationTokenizer::convertPartPositionsToTokensPositions(size_t part_start, size_t part_count) const
+{
+    const size_t token_start = minor_part_starts[part_start];
+    const size_t last_part = part_start + part_count - 1;
+    const size_t token_end = minor_part_starts[last_part] + minor_part_lengths[last_part];
+    return {token_start, token_end - token_start};
+}
+
+void SegmentationTokenizer::buildStateIfNeeded(const char * data, size_t length) const
+{
+    if (data == previous_data && length == previous_len)
+        return;
+
+    previous_data = data;
+    previous_len = length;
+    major_part_index.clear();
+    minor_part_starts.clear();
+    minor_part_lengths.clear();
+
+    current_part_i = 0;
+    current_part_j = 1;
+
+    size_t part_begin = 0;
+    size_t cur_major_part_index = 0;
+    for (size_t i = 0; i <= length; ++i)
+    {
+        if (i == length || isMajorSplitChar(data[i]) || isMinorSplitChar(data[i]))
+        {
+            if (i > part_begin)
+            {
+                minor_part_starts.push_back(part_begin);
+                minor_part_lengths.push_back(i - part_begin);
+                major_part_index.push_back(cur_major_part_index);
+            }
+            part_begin = i + 1;
+            if (isMajorSplitChar(data[i]))
+            {
+                ++cur_major_part_index;
+            }
+        }
+    }
+}
+
+bool SegmentationTokenizer::nextInString(const char * data, size_t length, size_t & __restrict /*pos*/, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+    buildStateIfNeeded(data, length);
+
+    const size_t n_parts = minor_part_starts.size();
+
+    if (current_part_i >= n_parts)
+        return false;
+
+    auto [ts, tl] = convertPartPositionsToTokensPositions(current_part_i, current_part_j - current_part_i);
+    token_start = ts;
+    token_length = tl;
+
+    ++current_part_j;
+    if (current_part_j > n_parts || major_part_index[current_part_i] != major_part_index[current_part_j - 1])
+    {
+        ++current_part_i;
+        current_part_j = current_part_i + 1;
+    }
+
+    return true;
+}
+
+bool SegmentationTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
+{
+    token.clear();
+    bool escaped = false;
+    while (pos < length)
+    {
+        const char c = data[pos];
+        if (!escaped && (c == '%' || c == '_'))
+        {
+            while (!token.empty() && isSplitChar(token.back()))
+                token.pop_back();
+            if (!token.empty())
+                return true;
+            ++pos;
+        }
+        else if (!escaped && c == '\\')
+        {
+            escaped = true;
+            ++pos;
+        }
+        else if (isMajorSplitChar(c))
+        {
+            while (!token.empty() && isSplitChar(token.back()))
+                token.pop_back();
+            ++pos;
+            if (!token.empty())
+                return true;
+        }
+        else
+        {
+            if (token.empty() && isSplitChar(c))
+            {
+                ++pos;
+                escaped = false;
+                continue;
+            }
+            token += c;
+            ++pos;
+            escaped = false;
+        }
+    }
+    while (!token.empty() && isSplitChar(token.back()))
+        token.pop_back();
+    return !token.empty();
+}
+
+void SegmentationTokenizer::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    while (length > 0 && isSplitChar(data[0]))
+    {
+        ++data;
+        --length;
+    }
+
+    while (length > 0 && isSplitChar(data[length - 1]))
+    {
+        --length;
+    }
+
+    if (length > 0)
+        stringToBloomFilter(data, length, bloom_filter);
+}
+
+void SegmentationTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+{
+    while (length > 0 && isSplitChar(data[0]))
+    {
+        ++data;
+        --length;
+    }
+
+    while (length > 0 && isSplitChar(data[length - 1]))
+    {
+        --length;
+    }
+    if (length > 0)
+        stringToTokens(data, length, tokens);
+}
+
+std::vector<String> SegmentationTokenizer::compactTokens(const std::vector<String> & tokens) const
+{
+    std::unordered_set<String> result;
+    auto sorted_tokens = tokens;
+
+    std::sort(sorted_tokens.begin(), sorted_tokens.end(), [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); }); /// NOLINT(clang-analyzer-cplusplus.Move)
+
+    for (const auto & token : sorted_tokens)
+    {
+        bool is_covered = false;
+
+        for (const auto & existing_token : result)
+        {
+            if (existing_token.find(token) != std::string::npos)
+            {
+                is_covered = true;
+                break;
+            }
+        }
+
+        if (!is_covered)
+            result.insert(token);
+    }
+
+    return std::vector<String>(result.begin(), result.end());
+}
+
+String SegmentationTokenizer::getDescription() const
+{
+    return getName();
 }
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter)

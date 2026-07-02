@@ -281,6 +281,12 @@ static void registerTokenizers(TokenizerFactory & factory)
 
     factory.registerTokenizer(AsciiCJKTokenizer::getName(), ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
     factory.registerTokenizer("unicodeWord", ITokenizer::Type::AsciiCJK, ascii_cjk_creator);
+
+    auto segmentation_creator = [](const FieldVector & /*args*/) -> std::unique_ptr<ITokenizer>
+    {
+        return std::make_unique<SegmentationTokenizer>();
+    };
+    factory.registerTokenizer(SegmentationTokenizer::getName(), ITokenizer::Type::Segmentation, segmentation_creator);
 }
 
 }
