@@ -40,12 +40,14 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char rmt_merge_task_sleep_in_prepare[];
+    extern const char merge_throw_after_commit_before_part_log[];
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 MergeFromLogEntryTask::MergeFromLogEntryTask(
@@ -481,18 +483,35 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
+    /// From here the result part is committed (active). The cache prewarming below can still throw,
+    /// so it is guarded: on any failure we queue the part_log row before rethrowing. Otherwise the
+    /// part stays active with no part_log row, which would let SYSTEM SYNC MERGES return before
+    /// part_log is populated for this merge (the merge list entry is gone once the task unwinds).
+    try
+    {
+        fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
+        });
 
-    if (prewarm_caches.mark_cache)
-        addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
+        auto prewarm_caches = storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
-    if (prewarm_caches.index_mark_cache)
-        addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
+        if (prewarm_caches.mark_cache)
+            addMarksToCache(*part, cached_marks, prewarm_caches.mark_cache.get());
 
-    /// Move index to cache and reset it here because we need
-    /// a correct part name after rename for a key of cache entry.
-    if (prewarm_caches.primary_index_cache)
-        part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+        if (prewarm_caches.index_mark_cache)
+            addMarksToCache(*part, cached_index_marks, prewarm_caches.index_mark_cache.get());
+
+        /// Move index to cache and reset it here because we need
+        /// a correct part name after rename for a key of cache entry.
+        if (prewarm_caches.primary_index_cache)
+            part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+    }
+    catch (...)
+    {
+        write_part_log(ExecutionStatus::fromCurrentException("", true));
+        throw;
+    }
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

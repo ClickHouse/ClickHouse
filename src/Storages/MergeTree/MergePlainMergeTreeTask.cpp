@@ -10,6 +10,7 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -18,9 +19,16 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char merge_throw_after_commit_before_part_log[];
+    extern const char merge_pause_after_commit_before_part_log[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 
@@ -159,29 +167,52 @@ void MergePlainMergeTreeTask::finish()
     storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
     transaction.commit();
 
-    ThreadFuzzer::maybeInjectSleep();
-    ThreadFuzzer::maybeInjectMemoryLimitException();
-
-    auto prewarm_caches = storage.getCachesToPrewarm(new_part->getBytesUncompressedOnDisk());
-
-    if (prewarm_caches.mark_cache)
+    /// From here the result part is active. The post-commit work below can still throw
+    /// (memory limit injection, cache prewarming), so it is guarded: on any failure we queue
+    /// the part_log row before rethrowing. Otherwise the executor would cancel the task and
+    /// destroy its merge list entry with no part_log row, while the part stays active -- which
+    /// would let SYSTEM SYNC MERGES return before part_log is populated for this merge.
+    try
     {
-        auto marks = merge_task->releaseCachedMarks();
-        addMarksToCache(*new_part, marks, prewarm_caches.mark_cache.get());
+        ThreadFuzzer::maybeInjectSleep();
+        ThreadFuzzer::maybeInjectMemoryLimitException();
+
+        fiu_do_on(FailPoints::merge_throw_after_commit_before_part_log,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after commit before part_log");
+        });
+
+        auto prewarm_caches = storage.getCachesToPrewarm(new_part->getBytesUncompressedOnDisk());
+
+        if (prewarm_caches.mark_cache)
+        {
+            auto marks = merge_task->releaseCachedMarks();
+            addMarksToCache(*new_part, marks, prewarm_caches.mark_cache.get());
+        }
+
+        if (prewarm_caches.index_mark_cache)
+        {
+            auto index_marks = merge_task->releaseCachedIndexMarks();
+            addMarksToCache(*new_part, index_marks, prewarm_caches.index_mark_cache.get());
+        }
+
+        if (prewarm_caches.primary_index_cache)
+        {
+            /// Move index to cache and reset it here because we need
+            /// a correct part name after rename for a key of cache entry.
+            new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+        }
+    }
+    catch (...)
+    {
+        write_part_log(ExecutionStatus::fromCurrentException("", true));
+        throw;
     }
 
-    if (prewarm_caches.index_mark_cache)
-    {
-        auto index_marks = merge_task->releaseCachedIndexMarks();
-        addMarksToCache(*new_part, index_marks, prewarm_caches.index_mark_cache.get());
-    }
-
-    if (prewarm_caches.primary_index_cache)
-    {
-        /// Move index to cache and reset it here because we need
-        /// a correct part name after rename for a key of cache entry.
-        new_part->moveIndexToCache(*prewarm_caches.primary_index_cache);
-    }
+    /// The result part is active but its part_log row is queued only below. A test pauses here to
+    /// hold that window open deterministically and observe that SYSTEM SYNC MERGES (and its retries)
+    /// wait for the part_log write rather than returning as soon as the part becomes active.
+    FailPointInjection::pauseFailPoint(FailPoints::merge_pause_after_commit_before_part_log);
 
     write_part_log({});
 
