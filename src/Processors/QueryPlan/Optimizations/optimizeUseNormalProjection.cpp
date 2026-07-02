@@ -689,6 +689,14 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
+    /// filterPartsByProjection mutates parent_reading_select_result in place. When it is the analyzed
+    /// result held by the parent ReadFromMergeTree, that mutation is visible to the regular read. If
+    /// the structure check below makes us skip the projection, the regular read must still see every
+    /// part, so remember the pre-filter result and restore it on that path.
+    ReadFromMergeTree::AnalysisResultPtr analyzed_result_to_restore_on_skip;
+    if (reading->getAnalyzedResult() == parent_reading_select_result)
+        analyzed_result_to_restore_on_skip = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
@@ -740,6 +748,32 @@ std::optional<String> optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
+    /// The rewritten projection stream must keep the same structure as the subplan it replaces:
+    /// columns from `required_columns` that `query.dag` does not consume survive as pass-throughs
+    /// and would otherwise widen the output header, breaking the parent step's header contract.
+    /// Materialize constants if needed and require equal structure, else skip (regular read stays correct).
+    const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
+    const auto * proj_stream = &next_node->step->getOutputHeader();
+
+    if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
+    {
+        auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
+        proj_stream = &converting->getOutputHeader();
+        auto & expr_node = nodes.emplace_back();
+        expr_node.step = std::move(converting);
+        expr_node.children.push_back(next_node);
+        next_node = &expr_node;
+    }
+
+    if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
+    {
+        /// Skipping the projection: undo the filterPartsByProjection mutation so the regular read,
+        /// which stays in the plan, still sees all parts instead of silently returning too few rows.
+        if (analyzed_result_to_restore_on_skip)
+            reading->setAnalyzedResult(std::move(analyzed_result_to_restore_on_skip));
+        return {};
+    }
+
     if (parent_reading_select_result->parts_with_ranges.empty())
     {
         /// All parts are taken from projection
@@ -747,25 +781,6 @@ std::optional<String> optimizeUseNormalProjections(
     }
     else
     {
-        const auto & main_stream = iter->node->children[iter->next_child - 1]->step->getOutputHeader();
-        const auto * proj_stream = &next_node->step->getOutputHeader();
-
-        if (auto materializing = makeMaterializingDAG(**proj_stream, *main_stream))
-        {
-            auto converting = std::make_unique<ExpressionStep>(*proj_stream, std::move(*materializing));
-            proj_stream = &converting->getOutputHeader();
-            auto & expr_node = nodes.emplace_back();
-            expr_node.step = std::move(converting);
-            expr_node.children.push_back(next_node);
-            next_node = &expr_node;
-        }
-
-        /// Verify headers are compatible before creating the Union.
-        /// If they differ (e.g., different columns due to different query DAGs being applied),
-        /// skip this optimization to avoid "Block structure mismatch" errors.
-        if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
-
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
