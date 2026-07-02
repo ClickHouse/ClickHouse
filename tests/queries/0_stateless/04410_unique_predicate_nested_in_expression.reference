@@ -1,0 +1,11 @@
+UNIQUE nested in an aggregate function in ORDER BY
+3
+UNIQUE nested in an aggregate function in SELECT
+3
+UNIQUE nested in a scalar function
+2
+0
+UNIQUE with duplicate column names nested in an aggregate function
+3
+Exact fuzzer reproducer: UNIQUE nested in an aggregate function in ORDER BY with duplicate columns
+3

@@ -1,0 +1,77 @@
+---
+description: 'Documentation for the `UNIQUE` operator'
+sidebar_label: 'UNIQUE'
+sidebar_position: 3
+slug: /sql-reference/operators/unique
+title: 'UNIQUE'
+doc_type: 'reference'
+---
+
+# UNIQUE {#unique}
+
+The `UNIQUE` predicate tests whether a subquery result contains no duplicate rows. It returns `1` if all rows are distinct, and `0` if any duplicates exist. An empty subquery is considered vacuously unique and returns `1`.
+
+**Syntax**
+
+```sql
+UNIQUE(subquery)
+```
+
+**Arguments**
+
+- `subquery` — A subquery whose rows are checked for uniqueness.
+
+**Returned value**
+
+- `1` if all rows in the subquery are distinct.
+- `0` if any duplicate rows exist.
+
+Type: [UInt8](/sql-reference/data-types/int-uint.md).
+
+**NULL handling**
+
+Per the SQL standard, rows containing `NULL` in any column are never considered duplicates. Two rows are duplicates only when every corresponding column value is non-null and equal. This means a subquery returning only `NULL` rows is considered unique.
+
+**Implementation details**
+
+Internally, `UNIQUE(subquery)` is rewritten to `SELECT count() = uniqExact(*) FROM (subquery) WHERE isNotNull(c1) AND isNotNull(c2) AND ...`, where `c1`, `c2`, etc. are the projected columns. Rows containing `NULL` in any column are filtered out before comparison. The remaining row count is compared against the number of distinct rows — if they are equal, all rows are unique.
+
+Correlated subqueries are not currently supported with `UNIQUE`.
+
+**Example**
+
+All distinct rows:
+
+```sql
+SELECT UNIQUE(SELECT number FROM numbers(5));
+```
+
+```text
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+Duplicate rows present:
+
+```sql
+SELECT UNIQUE(SELECT number % 3 FROM numbers(6));
+```
+
+```text
+┌─result─┐
+│      0 │
+└────────┘
+```
+
+`UNIQUE` can also be used in a [WHERE](../../sql-reference/statements/select/where.md) clause:
+
+```sql
+SELECT 'has unique rows' WHERE UNIQUE(SELECT number FROM numbers(3));
+```
+
+```text
+┌─'has unique rows'─┐
+│ has unique rows    │
+└────────────────────┘
+```
