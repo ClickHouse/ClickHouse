@@ -25,8 +25,10 @@ FROM numbers(2)
 ORDER BY value
 FORMAT Prometheus;
 
--- A "nullable" labels expression resolves to `Variant(Map(String, LowCardinality(String)))`,
+-- A "nullable" labels expression resolves to `Variant(Map(String, String))`,
 -- which the format must reject rather than serialize a metric without labels.
+-- `clickhouse-client` applies the `Prometheus` output format locally to the `Native`
+-- blocks received from the server, so the rejection surfaces as a `clientError`.
 SELECT
     'http_requests_total' AS name,
     'counter' AS type,
@@ -36,4 +38,4 @@ SELECT
     0 :: Float64 AS timestamp
 FROM numbers(4)
 ORDER BY value
-FORMAT Prometheus; -- { serverError BAD_ARGUMENTS }
+FORMAT Prometheus; -- { clientError BAD_ARGUMENTS }
