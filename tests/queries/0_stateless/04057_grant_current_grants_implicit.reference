@@ -1,0 +1,14 @@
+-- Test 1: GRANT CURRENT GRANTS(CREATE VIEW) with implicit privileges
+GRANT CREATE VIEW ON default.*
+-- Test 2: GRANT CURRENT GRANTS(DROP VIEW) with implicit privileges
+GRANT DROP VIEW ON default.*
+-- Test 3: GRANT CURRENT GRANTS with multiple implicit privileges
+GRANT SELECT, CREATE VIEW, DROP VIEW ON default.*
+-- Test 4: GRANT CURRENT GRANTS (all) includes implicit privileges
+GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT, CREATE TABLE, CREATE VIEW, DROP TABLE, DROP VIEW ON default.*
+-- Test 5: CREATE VIEW and CREATE TABLE fail without grants
+-- Test 6: CREATE VIEW succeeds, CREATE TABLE fails with only CREATE VIEW grant
+CREATE VIEW: OK
+-- Test 7: CREATE TABLE and CREATE VIEW both succeed with CREATE TABLE grant
+CREATE TABLE: OK
+CREATE VIEW: OK

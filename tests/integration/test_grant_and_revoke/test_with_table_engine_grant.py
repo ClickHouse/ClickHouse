@@ -639,7 +639,10 @@ def test_grant_current_grants():
     instance.query("CREATE USER B")
     instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
-        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO B"]
+        [
+            "GRANT CREATE ARBITRARY TEMPORARY TABLE, CREATE TEMPORARY VIEW ON *.* TO B",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT, CREATE TABLE, CREATE VIEW ON test.* TO B",
+        ]
     )
 
     instance.query("CREATE USER C")
@@ -678,9 +681,9 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT ON *.* TO B",
-            "REVOKE SELECT ON test.* FROM B",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT, CREATE ARBITRARY TEMPORARY TABLE, CREATE TEMPORARY VIEW ON *.* TO B",
+            "REVOKE SHOW TABLES, SHOW COLUMNS, SELECT ON test.* FROM B",
+            "GRANT SHOW TABLES, SHOW COLUMNS, SELECT, CREATE TABLE, CREATE VIEW ON test.`table` TO B",
         ]
     )
 
@@ -689,9 +692,9 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH GRANT OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT ON *.* TO B WITH GRANT OPTION",
-            "REVOKE SELECT ON test.* FROM B",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT, CREATE ARBITRARY TEMPORARY TABLE, CREATE TEMPORARY VIEW ON *.* TO B WITH GRANT OPTION",
+            "REVOKE SHOW TABLES, SHOW COLUMNS, SELECT ON test.* FROM B",
+            "GRANT SHOW TABLES, SHOW COLUMNS, SELECT, CREATE TABLE, CREATE VIEW ON test.`table` TO B WITH GRANT OPTION",
         ]
     )
 
@@ -701,8 +704,8 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("GRANT CURRENT GRANTS ON *.* TO C", user="B")
     assert instance.query("SHOW GRANTS FOR C") == TSV(
         [
-            "GRANT SELECT ON *.* TO C",
-            "GRANT CREATE TABLE ON test.`table` TO C",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT, CREATE ARBITRARY TEMPORARY TABLE, CREATE TEMPORARY VIEW ON *.* TO C",
+            "GRANT CREATE TABLE, CREATE VIEW ON test.`table` TO C",
         ]
     )
 
@@ -711,7 +714,8 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("GRANT CURRENT GRANTS ON test.* TO B WITH GRANT OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO B WITH GRANT OPTION",
+            "GRANT SHOW DATABASES ON test.* TO B WITH GRANT OPTION",
+            "GRANT SHOW TABLES, SHOW COLUMNS, SELECT, CREATE TABLE, CREATE VIEW ON test.`table` TO B WITH GRANT OPTION",
         ]
     )
 
@@ -736,8 +740,8 @@ def test_current_grants_override():
     instance.query("GRANT CURRENT GRANTS ON *.* TO B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT ON *.* TO B",
-            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON *.* TO B",
+            "REVOKE SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON test.* FROM B",
             "GRANT SELECT ON test.`table` TO B",
         ]
     )
@@ -752,8 +756,8 @@ def test_current_grants_override():
     instance.query("GRANT CURRENT GRANTS ON *.* TO B WITH REPLACE OPTION", user="A")
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT SELECT ON *.* TO B",
-            "REVOKE SELECT ON test.* FROM B",
+            "GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON *.* TO B",
+            "REVOKE SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SELECT ON test.* FROM B",
         ]
     )
 

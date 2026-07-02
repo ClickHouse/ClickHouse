@@ -390,7 +390,7 @@ namespace
         std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
-        auto current_user_grantable_rights = current_user_access->getAccessRights()->getGrantableRights();
+        auto current_user_grantable_rights = current_user_access->getAccessRightsWithImplicit()->getGrantableRights();
         rights.grant(elements_to_grant);
         rights.makeIntersection(current_user_grantable_rights);
     }
