@@ -3944,19 +3944,7 @@ class TestSuite:
         def load_tags_and_random_settings_limits_from_file(filepath):
             comment_sign = get_comment_sign(filepath)
             need_query_params = False
-            try:
-                file = open(filepath, "r", encoding="utf-8")
-            except FileNotFoundError:
-                # Concurrent `clickhouse-test` workers share one queries directory. A
-                # worker that needs substitutions writes a transient per-PID copy of a
-                # test (`<name>.<pid><ext>`, see TestCase.temp_file_path) next to the
-                # original and removes it once done. Another worker's suite scan
-                # (os.listdir in get_selected_tests) can list that copy and only reach
-                # here after it was deleted, so the file is gone by the time we read its
-                # tags. A file that vanished mid-scan has no tags to contribute — skip it
-                # instead of aborting the whole run with a FileNotFoundError.
-                return [], {}, None
-            with file:
+            with open(filepath, "r", encoding="utf-8") as file:
                 try:
                     lines = file.readlines()
                     tag_line = find_tag_line(lines, comment_sign)
@@ -5211,13 +5199,31 @@ def do_run_tests(
     return total_tests
 
 
+def is_transient_test_copy(suite_dir, case):
+    # `SharedEngineReplacer` writes a transient per-PID copy of a test next to the
+    # original while the test runs, named `<name>.<pid><ext>` (see
+    # `SharedEngineReplacer.temp_file_path`), and removes it afterwards. Concurrent
+    # `clickhouse-test` invocations share one queries directory, so another one's
+    # suite scan (`os.listdir` in `get_selected_tests`) can observe such a copy and
+    # would otherwise schedule it as a real test — which then fails either as
+    # `FileNotFoundError` once the copy is gone or as `NO_REFERENCE` for the bogus
+    # PID-suffixed name. Recognize and skip these copies at discovery so they never
+    # enter the test list. The copy is only skipped when the original it was made
+    # from is present, which makes a false positive on a genuine test impossible.
+    root, ext = os.path.splitext(case)
+    base, dot, pid = root.rpartition(".")
+    return bool(dot) and pid.isdigit() and os.path.isfile(os.path.join(suite_dir, base + ext))
+
+
 def is_test_from_dir(suite_dir, case):
     case_file = os.path.join(suite_dir, case)
     # We could also test for executable files (os.access(case_file, os.X_OK),
     # but it interferes with 01610_client_spawn_editor.editor, which is invoked
     # as a query editor in the test, and must be marked as executable.
-    return os.path.isfile(case_file) and any(
-        case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS
+    return (
+        os.path.isfile(case_file)
+        and any(case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS)
+        and not is_transient_test_copy(suite_dir, case)
     )
 
 
