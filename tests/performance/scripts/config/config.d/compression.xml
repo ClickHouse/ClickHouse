@@ -1,0 +1,25 @@
+<clickhouse>
+    <!--
+        Pin the built-in default compression codec to `LZ4` for the performance
+        comparison.
+
+        This repository changes the default codec from `LZ4` to `ZSTD(3)`. That
+        makes almost every read-bound and insert-bound performance test slower
+        (ZSTD costs more CPU than LZ4 to decompress and compress), which would
+        drown the report in expected codec regressions and hide any genuine
+        algorithmic change. Both the reference and the tested server load this
+        config, so the codec is identical on both sides and the comparison
+        measures the query logic, not the codec switch.
+
+        A `<case>` with no `min_part_size` / `min_part_size_ratio` conditions
+        matches every part, so `CompressionCodecSelector::choose` returns `LZ4`
+        for all MergeTree column data regardless of part size, overriding the
+        size-aware built-in default. This covers tables created via `AS SELECT`
+        too, which cannot carry a per-column `CODEC`.
+    -->
+    <compression>
+        <case>
+            <method>lz4</method>
+        </case>
+    </compression>
+</clickhouse>
