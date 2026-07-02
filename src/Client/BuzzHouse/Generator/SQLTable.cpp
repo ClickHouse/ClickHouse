@@ -1785,7 +1785,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         /// For index types that require specific column types, filter to compatible columns first.
         /// Text/ngrambf/tokenbf indices require String-compatible columns; using numeric columns causes CREATE TABLE to fail.
         /// Vector similarity indices require Array columns.
-        const bool need_string = itpe == IDX_text || itpe == IDX_ngrambf_v1 || itpe == IDX_tokenbf_v1;
+        const bool need_string = itpe == IDX_text || itpe == IDX_ngrambf_v1 || itpe == IDX_tokenbf_v1 || itpe == IDX_sparse_grams;
         const bool need_array = itpe == IDX_vector_similarity;
 
         if ((need_string || need_array) && rg.nextBool())
@@ -1857,6 +1857,22 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 5));
             idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 1000));
             break;
+        case IndexType::IDX_sparse_grams: {
+            /// sparse_grams(min_ngram_length, max_ngram_length[, min_cutoff_length], size_in_bytes, num_hash_functions, seed)
+            const uint32_t min_ngram = rg.randomInt<uint32_t>(1, 8);
+
+            idef->add_params()->set_ival(min_ngram);
+            idef->add_params()->set_ival(min_ngram + rg.randomInt<uint32_t>(0, 8));
+            if (rg.nextBool())
+            {
+                /// Optional min_cutoff_length
+                idef->add_params()->set_ival(rg.randomInt<uint32_t>(0, 16));
+            }
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 1000));
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 5));
+            idef->add_params()->set_ival(rg.randomInt<uint32_t>(1, 1000));
+        }
+        break;
         case IndexType::IDX_text: {
             String buf;
             bool has_paren = rg.nextSmallNumber() < 8;

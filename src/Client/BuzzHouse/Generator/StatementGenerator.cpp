@@ -2050,6 +2050,15 @@ std::optional<String> StatementGenerator::alterSingleTable(
             {2 * static_cast<uint32_t>(no_oracle && nconstrs < 4), [&] { addTableConstraint(rg, t, ati->mutable_add_constraint()); }},
             {2 * static_cast<uint32_t>(no_oracle && has_constrs),
              [&] { ati->mutable_remove_constraint()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx)); }},
+            {2 * static_cast<uint32_t>(no_oracle && has_constrs),
+             [&]
+             {
+                 /// Generate a new predicate for an existing constraint
+                 ConstraintDef * cdef = ati->mutable_modify_constraint();
+
+                 addTableConstraint(rg, t, cdef);
+                 cdef->mutable_constr()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx));
+             }},
             /// Partition operations
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]

@@ -4766,6 +4766,10 @@ CONV_FN(AlterItem, alter)
             ret += "DROP CONSTRAINT ";
             SQLIdentifierToString(ret, alter.remove_constraint());
             break;
+        case AlterType::kModifyConstraint:
+            ret += "MODIFY ";
+            ConstraintDefToString(ret, alter.modify_constraint());
+            break;
         case AlterType::kDetachPartition:
             ret += "DETACH ";
             SinglePartitionExprToString(ret, alter.detach_partition());
