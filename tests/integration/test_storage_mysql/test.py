@@ -1015,15 +1015,16 @@ def test_mysql_geometry(started_cluster):
 
     # The concrete spatial column types are mapped to the corresponding ClickHouse geometric types,
     # because their subtype is fixed by the column type. The generic `geometry` column type can hold
-    # any subtype (including ones with no ClickHouse counterpart, such as `MULTIPOINT`), so it
-    # conservatively maps to `String` (the raw WKB) and is never claimed as the `Geometry` Variant
-    # during schema inference.
+    # a value of any subtype, so it maps to the umbrella `Geometry` type (a `Variant` over the
+    # concrete geometric types). A value whose subtype has no ClickHouse counterpart (`MULTIPOINT`,
+    # `GEOMETRYCOLLECTION`) then throws at read time (checked below); this incompatibility is accepted
+    # in exchange for a proper geometric type.
     assert (
         node1.query(
             "SELECT toTypeName(ls), toTypeName(pg), toTypeName(mls), toTypeName(mpg), toTypeName(geo), toTypeName(geo_mp) "
             f"FROM {table_function} LIMIT 1"
         ).strip()
-        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tString\tString"
+        == "LineString\tPolygon\tMultiLineString\tMultiPolygon\tGeometry\tGeometry"
     )
 
     assert (
@@ -1042,12 +1043,17 @@ def test_mysql_geometry(started_cluster):
         node1.query(f"SELECT mpg FROM {table_function}").strip()
         == "[[[(0,0),(2,0),(2,2),(0,2),(0,0)]]]"
     )
-    # Regression test: a generic `geometry` column reads as raw WKB `String` without error, even for
-    # subtypes that have no ClickHouse counterpart (`MULTIPOINT` here). Mapping it to the `Geometry`
-    # Variant would make such rows throw at read time, because `MULTIPOINT` is not representable.
+    # A generic `geometry` column holding a representable subtype reads back as the geometric value:
+    # `geo` stores a LINESTRING, so it is read through the `Geometry` Variant's `LineString` alternative.
     assert (
-        node1.query(f"SELECT length(geo) > 0, length(geo_mp) > 0 FROM {table_function}").strip()
-        == "1\t1"
+        node1.query(f"SELECT geo FROM {table_function}").strip()
+        == "[(5,5),(6,6)]"
+    )
+    # Regression test for the accepted incompatibility: a generic `geometry` column holding a subtype
+    # with no ClickHouse counterpart (`MULTIPOINT` here) throws at read time, because `MULTIPOINT` is
+    # not representable by the `Geometry` Variant.
+    assert "Incorrect geometry type" in node1.query_and_get_error(
+        f"SELECT geo_mp FROM {table_function}"
     )
 
     # Regression test: the WKB parsing of spatial values read from MySQL honors the
