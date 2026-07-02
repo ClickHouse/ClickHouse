@@ -66,7 +66,9 @@ check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
 ## Row policy tests
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name;"
 
-# Row policy on column `a`: idx_a and idx_ab denied, idx_b allowed
+# Any non-trivial SELECT row policy denies every text index read: the dictionary and part
+# metadata reveal tokens and row existence the policy hides, even for an index on a column
+# the policy does not reference (idx_b here), so idx_a, idx_b and idx_ab are all denied.
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p1_03917 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING a = 'hello' TO $user_name;"
 
 check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_a)"
