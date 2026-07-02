@@ -38,6 +38,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/Txn/SnapshotPinning.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -94,6 +95,12 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+
+namespace UniqueKeyTxn
+{
+    class PartitionTxnController;
+}
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 namespace ErrorCodes
@@ -521,6 +528,12 @@ public:
                   LoadingStrictnessLevel mode,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    /// Out-of-line so the `unique_key_txn_controllers` map's
+    /// `unique_ptr<UniqueKeyTxn::PartitionTxnController>` members are destroyed in
+    /// `MergeTreeData.cpp` (where the type is complete), not in every TU that
+    /// only forward-declares it.
+    ~MergeTreeData() override;
+
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
     /// from minmax_indices, the first expression of primary key, and part rows.
     ///
@@ -652,6 +665,13 @@ public:
         RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
+
+        /// UNIQUE KEY — per-partition query snapshots pinned BEFORE `parts` was
+        /// captured (so each pinned csn lower-bounds the part list). The read
+        /// path keys off `data_part->info.getPartitionId()`: in-map ⇒ apply the
+        /// snapshot's csn filter + delete bitmap; not-in-map ⇒ fully live. Empty
+        /// for non-UK tables. `QuerySnapshot` is move-only, so this map is too.
+        std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> uk_partition_snapshots;
     };
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
@@ -731,6 +751,16 @@ public:
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
+    /// Returns a shared, read-only snapshot of the Active parts in a single
+    /// partition. Callers iterate the returned vector outside any lock; the
+    /// snapshot is consistent at the moment of the call. If a writer publishes
+    /// a new part after the pointer is obtained, the caller observes the
+    /// slightly-stale view — that's safe for snap-then-commit flows that hold
+    /// a higher-level coordination primitive (e.g. the UK partition mutex).
+    /// Briefly acquires `data_parts_mutex` shared (via `readLockParts`) to
+    /// materialize the vector.
+    DataPartsVectorPtr getActivePartsInPartitionShared(const String & partition_id) const;
+
     /// Returns the number of data mutations suitable for applying on the fly.
     virtual MutationCounters getMutationCounters() const = 0;
 
@@ -759,6 +789,29 @@ public:
     DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
     DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
+    /// UNIQUE KEY — lazily return the partition's transaction controller. Owned
+    /// by `unique_key_txn_controllers`, valid for the table's lifetime (no eviction).
+    UniqueKeyTxn::PartitionTxnController & getOrCreateTxnController(const String & partition_id) const;
+
+    /// UNIQUE KEY — pin a query snapshot on EVERY currently-ACTIVE partition,
+    /// returning partition_id → snapshot. Instantiates the controller for any
+    /// active partition not yet touched (lazily created controllers would
+    /// otherwise miss a partition that has on-disk delete bitmaps but no
+    /// in-memory controller after restart — "no controller" does NOT imply "no
+    /// committed DELETE"). Callers MUST invoke this BEFORE capturing the part
+    /// list, so each pinned csn is a lower bound consistent with the parts they
+    /// then read: a DELETE committing after the pin gets a csn above it, its
+    /// marker part is `creation_csn`-filtered, and `readBitmap(part, C)` excludes
+    /// its bitmap. A partition ABSENT from the map did not exist at pin time
+    /// (created concurrently after the snapshot) ⇒ no pre-snapshot DELETE ⇒ its
+    /// parts are fully live for this snapshot (the read path must skip the bitmap
+    /// filter, NOT lazily pin). Returns empty for a non-UK table / no active
+    /// partitions.
+    /// TODO(unique-key): this holds GC pins table-wide for the query because the
+    /// snapshot is taken before partition pruning knows which partitions the
+    /// query reads; narrow once pruning can inform the snapshot.
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> captureUniqueKeyPartitionSnapshots() const;
+
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
@@ -782,6 +835,19 @@ public:
     size_t getTotalActiveSizeInBytes() const;
     size_t getTotalActiveSizeInRows() const;
     size_t getTotalUncompressedBytesInPatches() const;
+
+    /// UNIQUE KEY — sum of delete-bitmap dead rows across `parts`, each at its
+    /// partition's snapshot from `partition_snapshots` (pinned by the caller via
+    /// `captureUniqueKeyPartitionSnapshots()` BEFORE it captured `parts`, so the
+    /// csns lower-bound the part list). A part whose partition is in the map: a
+    /// too-new part (`creation_csn > C`) counts all its rows dead, else the
+    /// bitmap-at-C cardinality. A part whose partition is ABSENT (no controller
+    /// at pin time ⇒ no committed DELETE) contributes 0 dead. Corrects the
+    /// trivial-count shortcut so `count()` agrees with `SELECT`. Read errors
+    /// propagate.
+    size_t getDeadRowsForUniqueKey(
+        const DataPartsVector & parts,
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & partition_snapshots) const;
 
     size_t getAllPartsCount() const;
     size_t getActivePartsCount() const;
@@ -1601,6 +1667,15 @@ protected:
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
 
+    /// UNIQUE KEY — per-partition transaction controllers, lazily populated by
+    /// `getOrCreateTxnController`. Each controller owns the partition's writer
+    /// mutex (handed out via `controller.lockForWrite()`), so there is no
+    /// separate mutex registry. `mutable` because `getOrCreateTxnController` is
+    /// logically `const` from the caller's point of view (lazily materializing
+    /// an ephemeral coordination primitive, not mutating table data).
+    mutable std::mutex unique_key_txn_controllers_mutex;
+    mutable std::unordered_map<String, std::unique_ptr<UniqueKeyTxn::PartitionTxnController>> unique_key_txn_controllers;
+
     MergeTreePartsMover parts_mover;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1639,8 +1714,14 @@ protected:
         return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
 
+    /// `uk_partition_snapshots` must be pinned by the caller via
+    /// `captureUniqueKeyPartitionSnapshots()` BEFORE it captured `parts` (empty
+    /// for non-UK / replicated). Threaded into `getDeadRowsForUniqueKey`.
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
-        const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
+        const ActionsDAG & filter_actions_dag,
+        ContextPtr context,
+        const RangesInDataParts & parts,
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & uk_partition_snapshots) const;
 
     static decltype(auto) getStateModifier(DataPartState state)
     {
@@ -1809,6 +1890,14 @@ protected:
     virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
+
+    /// UNIQUE KEY — per-partition txn-state recovery: sweep each `tmp_<op>_<part>/`
+    /// manifest's orphaned sidecars, then drop the tmp dir (SMT is a no-op).
+    /// Fail-closed — an unrecoverable manifest/bitmap state throws CORRUPTED_DATA,
+    /// halting startup. Must run WITHOUT `data_parts_mutex` held (the csn-seed path
+    /// takes its own shared parts lock), so the StorageMergeTree ctor calls it after
+    /// loadDataParts releases that lock.
+    void runUniqueKeyTxnRecovery();
 
     template <typename AddedParts, typename RemovedParts>
     void updateSerializationHints(const AddedParts & added_parts, const RemovedParts & removed_parts, const DataPartsLock & lock);

@@ -81,6 +81,10 @@ public:
     /// *not* in the bitmap, 0 otherwise. `n == 0` is a no-op.
     void containsBulk(const UInt64 * rows, size_t n, uint8_t * out_keep) const;
 
+    /// Build a per-row keep mask for `rows` (1=keep, 0=deleted) into `out_keep`;
+    /// returns the number kept. Wraps `containsBulk`. Caller sizes `out_keep` to `n`.
+    size_t buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const;
+
     /// Set `row`.
     void add(UInt64 row);
     /// Set every entry of `rows`. Empty input is a no-op.
@@ -140,8 +144,6 @@ private:
     bool is64Bit() const;
     void upgradeTo64();
 };
-
-using DeleteBitmapPtr = std::shared_ptr<DeleteBitmap>;
 
 /// Result of a tolerant, non-throwing `.rbm` parse for inspection tooling
 /// (`clickhouse-disk read-bitmap`): a malformed magic / version / CRC / body is

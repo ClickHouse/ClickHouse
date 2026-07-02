@@ -840,6 +840,13 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
     if (!table_ptr->isMergeTree())
         return false;
 
+    /// UNIQUE KEY — the per-row delete-bitmap filter is applied from a partition
+    /// snapshot pinned in this server's memory; a remote replica has no access to
+    /// it, so reading there would resurrect logically-deleted rows. Keep UK reads
+    /// on the local single-replica path. Mirrors the guard in StorageMergeTree::read.
+    if (auto metadata = table_ptr->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false); metadata && metadata->hasUniqueKey())
+        return false;
+
     if (!table_ptr->supportsReplication() && !query_settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 

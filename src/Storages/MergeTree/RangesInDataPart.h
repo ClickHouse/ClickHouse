@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyTxnTypes.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
@@ -116,6 +117,15 @@ struct RangesInDataPart
 
     /// Offset ranges from parent part, used during projection index reading.
     PartOffsetRanges parent_ranges;
+
+    /// UNIQUE KEY — delete bitmap visible at the read snapshot, for this
+    /// part. Captured at `ReadFromMergeTree::selectRangesToRead()` via the
+    /// partition's `QuerySnapshot::bitmap_at(part)`, which picks the sidecar
+    /// with `max csn ≤ snapshot_csn` (delegates to
+    /// `IBitmapStore::readBitmap`). Non-null on UK tables (empty bitmap when
+    /// the part has no deletions visible at `snapshot_csn`); nullptr when the
+    /// table has no unique key.
+    UniqueKeyTxn::ConstDeleteBitmapPtr delete_bitmap;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

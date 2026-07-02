@@ -37,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/Txn/UniqueKeyManifest.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -69,6 +70,7 @@
 #include <base/defines.h>
 #include <atomic>
 #include <exception>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string_view>
@@ -1569,6 +1571,15 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
         result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
+    /// UNIQUE KEY per-part manifest (`unique_key.txt`). Must be enumerated
+    /// here or BACKUP / `sendPart` silently drop it — they build the
+    /// transferred file set from `checksums` ∪ `getFileNamesWithoutChecksums()`,
+    /// not by globbing, so a transferred part would arrive as legacy (no
+    /// manifest). Gated on file existence alone (a present file is always
+    /// enumerated); avoids forcing a manifest parse during enumeration.
+    if (getDataPartStorage().existsFile(UniqueKeyTxn::UniqueKeyManifest::FILE_NAME))
+        result.emplace(UniqueKeyTxn::UniqueKeyManifest::FILE_NAME);
+
     return result;
 }
 
@@ -1627,6 +1638,36 @@ void IMergeTreeDataPart::loadSourcePartsSet()
         source_parts_set.readBinary(*in);
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
+}
+
+std::optional<UniqueKeyTxn::UniqueKeyPartMeta> IMergeTreeDataPart::getUniqueKeyMeta() const
+{
+    std::lock_guard lock(unique_key_meta_mutex);
+
+    if (unique_key_meta_loaded)
+        return unique_key_meta;
+
+    /// Legacy parts without `unique_key.txt` cache `nullopt`; consumers treat
+    /// that as "no manifest".
+    if (UniqueKeyTxn::UniqueKeyManifest::exists(getDataPartStorage()))
+    {
+        /// Parse the full manifest (fail-closed `CORRUPTED_DATA` on a broken
+        /// file — identical to what the former eager part-load did) but retain
+        /// only the scalars; the `bitmaps_created` / `forwarded` lists are not
+        /// read on active parts and are dropped here.
+        auto manifest = UniqueKeyTxn::UniqueKeyManifest::read(getDataPartStorage());
+        unique_key_meta = UniqueKeyTxn::UniqueKeyPartMeta{manifest.creation_csn, manifest.is_marker};
+    }
+
+    unique_key_meta_loaded = true;
+    return unique_key_meta;
+}
+
+void IMergeTreeDataPart::setUniqueKeyMeta(const UniqueKeyTxn::UniqueKeyPartMeta & meta)
+{
+    std::lock_guard lock(unique_key_meta_mutex);
+    unique_key_meta = meta;
+    unique_key_meta_loaded = true;
 }
 
 template <typename Writer>

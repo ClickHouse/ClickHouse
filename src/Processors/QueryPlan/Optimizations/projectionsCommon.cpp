@@ -53,13 +53,14 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     /// MergeTreeDataSelectExecutor. A unique-key table with no projection is
     /// unaffected.
     /// TODO(unique-key): support reading via projections on UNIQUE KEY tables.
-    /// TODO(unique-key): count shortcuts that bypass the delete bitmap — the
-    /// implicit _minmax_count_projection here and the trivial-count path
-    /// (supportsTrivialCountOptimization -> totalRows) — are deferred to the
-    /// read+delete work, which makes count() delete-bitmap-aware.
+    /// Disable ALL projection-based reading for UK — including the IMPLICIT
+    /// `_minmax_count_projection` (which needs no user projection). That implicit
+    /// count reads physical row counts without subtracting the delete bitmap, so
+    /// `count()` would overcount after a DELETE. With projections off, `count()`
+    /// falls back to the bitmap-aware `totalRows` / full-read path.
     {
         const auto metadata = reading->getStorageMetadata();
-        if (metadata->hasUniqueKey() && metadata->hasProjections())
+        if (metadata->hasUniqueKey())
             return false;
     }
 

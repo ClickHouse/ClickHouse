@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
 #include <Common/SharedMutex.h>
 
 #include <memory>
@@ -14,7 +15,7 @@ namespace DB
 {
 
 class IDataPartStorage;
-class IMergeTreeDataPart;
+class MergeTreeData;
 
 /// UNIQUE KEY — MergeTree-backed bitmap store. Bitmap files are named
 /// `delete_bitmap_<csn>.rbm`; each commit allocates a global
@@ -22,28 +23,40 @@ class IMergeTreeDataPart;
 /// at that csn. Readers pin a `snapshot_csn` and pick the file with
 /// `max csn ≤ snapshot_csn` per part.
 ///
+/// Also serves as the Local implementation of the transaction layer's
+/// `IBitmapStore` seam: the `PartName`-keyed overrides resolve a part name
+/// to its `(storage, cache_identity)` over the `MergeTreeData` + partition_id
+/// supplied to the resolution-context ctor, then forward to the storage-level
+/// methods below. The cache-only ctor leaves the context unset; the
+/// `PartName` overrides then throw `LOGICAL_ERROR`.
+///
 /// Holds a shared_ptr to the process-wide `DeleteBitmapCache` (owned by `Context`); null when
 /// caching is disabled. Shared ownership avoids a dangling cache reference.
-class MergeTreeBitmapStore
+class MergeTreeBitmapStore : public UniqueKeyTxn::IBitmapStore
 {
 public:
     explicit MergeTreeBitmapStore(DeleteBitmapCachePtr cache_ = nullptr);
 
-    /// Install `bitmap` for `part` at `csn`. Atomic. Caller has already
-    /// computed the cumulative `prev_bitmap ∪ new_kills`. Caller MUST
-    /// hold the per-partition UK mutex and has fsync'd the per-part
-    /// manifest before this call. Throws `LOGICAL_ERROR` if `csn` is
-    /// not strictly greater than every previously installed version
-    /// for this part (monotonicity).
-    void installBitmap(
-        const IMergeTreeDataPart & part,
-        BitmapVersion csn,
-        const DeleteBitmap & bitmap);
+    /// Resolution-context ctor: the `PartName`-keyed `IBitmapStore` overrides
+    /// resolve names over `data`'s active+outdated parts. `data` must outlive
+    /// the store.
+    MergeTreeBitmapStore(const MergeTreeData & data, DeleteBitmapCachePtr cache_);
 
-    /// Storage-level overload. The `IMergeTreeDataPart` version forwards to
-    /// this one after unpacking `part_id` and `part_name`. Exposed so unit
-    /// tests can exercise the install path without constructing a real
-    /// part. Same contract.
+    /// `IBitmapStore` (txn seam). Resolve `part`/`target` to its
+    /// `(storage, cache_identity)` over the resolution context, then forward
+    /// to the storage-level methods. Throw `LOGICAL_ERROR` if the store was
+    /// built with the cache-only ctor (no resolution context).
+    std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, UniqueKeyTxn::CSN>
+        readBitmap(const UniqueKeyTxn::PartName & part, UniqueKeyTxn::CSN snapshot_csn) override;
+    void installBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn, const DeleteBitmap & bitmap) override;
+    void removeBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn) override;
+
+    /// Install `bitmap` for `(storage, part_id)` at `csn`. Atomic. Caller has
+    /// already computed the cumulative `prev_bitmap ∪ new_kills`, MUST hold the
+    /// partition's writer guard (`controller.lockForWrite()`), and has fsync'd
+    /// the per-part manifest before this call. Throws `LOGICAL_ERROR` if `csn`
+    /// is not strictly greater than every
+    /// previously installed version for this part (monotonicity).
     void installBitmap(
         IDataPartStorage & storage,
         const std::string & part_id,
@@ -58,7 +71,7 @@ public:
     /// Returned pointer is `const`: cached bitmaps are shared across
     /// readers. Writers that need to build a new version copy first
     /// and mutate the copy.
-    std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> readBitmap(
+    std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, BitmapVersion> readBitmap(
         const IDataPartStorage & storage,
         BitmapVersion snapshot_csn,
         const std::string & part_id);
@@ -78,8 +91,36 @@ public:
     /// entries. Storage is not touched. Idempotent.
     void dropPart(const std::string & part_id);
 
+    /// Precisely remove the single `(part_id, csn)` bitmap file, drop its
+    /// cache entry, and erase that csn from the in-memory version index.
+    /// Idempotent — a missing file/entry is not an error. Used by commit
+    /// rollback and recovery's orphan tmp-scan to reclaim a bitmap named in
+    /// an aborted commit's `bitmaps_created`. Caller must serialize this with
+    /// `installBitmap` / `gcObsoleteBitmaps` / `dropPart` for the same part
+    /// under the partition's writer guard (see `installBitmap`).
+    void removeBitmap(
+        IDataPartStorage & storage,
+        const std::string & part_id,
+        BitmapVersion csn);
+
 private:
     DeleteBitmapCachePtr cache;
+
+    /// Resolution context for the `PartName`-keyed `IBitmapStore` overrides.
+    /// Unset under the cache-only ctor, in which case those overrides throw.
+    /// Non-owning — the resolution-context ctor's caller keeps `data` alive
+    /// longer than the store.
+    const MergeTreeData * resolution_data = nullptr;
+
+    /// Per-part handle a `PartName` resolves to over `resolution_data`:
+    /// `storage` (null when the part is gone) + the part's
+    /// `getDeleteBitmapCacheIdentity` (empty → caller falls back to the name).
+    struct ResolvedPart
+    {
+        IDataPartStorage * storage = nullptr;
+        std::string cache_identity;
+    };
+    ResolvedPart resolvePart(const UniqueKeyTxn::PartName & part_name) const;
 
     /// Per-`part_id` sorted ascending csn list. Lazily populated on
     /// first access; updated by `installBitmap` and `gcObsoleteBitmaps`.

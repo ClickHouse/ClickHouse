@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
+#include <Storages/MergeTree/UniqueKey/Txn/SnapshotPinning.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
 
@@ -170,6 +171,13 @@ public:
         bool has_exact_ranges = false;
         std::atomic<bool> exceeded_row_limits = false;
 
+        /// UNIQUE KEY per-partition snapshot pins (csn + bitmap_at + a GC-blocking
+        /// PinHandle), captured at `selectRangesToRead`; nullptr without a unique
+        /// key. shared_ptr-to-(move-only-)vector keeps `AnalysisResult` copyable for
+        /// plan cloning; `initializePipeline` moves them onto the pipeline so they
+        /// outlive plan teardown.
+        std::shared_ptr<std::vector<UniqueKeyTxn::QuerySnapshot>> uk_partition_pins;
+
         AnalysisResult() = default;
 
         AnalysisResult(const AnalysisResult & other)
@@ -190,6 +198,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
+            , uk_partition_pins(other.uk_partition_pins)
         {}
 
         AnalysisResult(AnalysisResult && other) noexcept
@@ -210,6 +219,7 @@ public:
             , selected_rows(other.selected_rows)
             , has_exact_ranges(other.has_exact_ranges)
             , exceeded_row_limits(other.exceeded_row_limits.load())
+            , uk_partition_pins(std::move(other.uk_partition_pins))
         {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
@@ -326,7 +336,12 @@ public:
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
-        bool supports_skip_indexes_on_data_read);
+        bool supports_skip_indexes_on_data_read,
+        /// UNIQUE KEY — per-partition snapshots pinned at part-selection time
+        /// (`MergeTreeData::SnapshotData::uk_partition_snapshots`). Null on
+        /// estimation / without-data paths ⇒ every partition reads as fully
+        /// live. See `applyUniqueKeyDeleteBitmaps`.
+        const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots = nullptr);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
@@ -419,6 +434,15 @@ public:
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
+    /// UNIQUE KEY. Force `_part_offset` into the read columns
+    /// WITHOUT altering the public `output_header` — the extra column is
+    /// stripped by the final `makeConvertingActions` step in
+    /// `initializePipeline`. Returns whether it added the column (false if
+    /// `_part_offset` was already present). Used so the delete-bitmap row
+    /// filter can key on absolute part-local row offsets even under PREWHERE /
+    /// skip-indexes.
+    bool addPartOffsetForDeleteBitmap();
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 

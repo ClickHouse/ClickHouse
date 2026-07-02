@@ -1,0 +1,16 @@
+before_count	4
+before_survivors	1	10	a
+before_survivors	3	10	c
+before_survivors	4	20	d
+before_survivors	6	20	f
+after_count	4
+after_survivors	1	10	a
+after_survivors	3	10	c
+after_survivors	4	20	d
+after_survivors	6	20	f
+after_p10	2
+after_p20	2
+after_more_delete	3
+after_more_survivors	1
+after_more_survivors	4
+after_more_survivors	6

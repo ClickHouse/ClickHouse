@@ -2,10 +2,10 @@
 
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
-#include <IO/ReadSettings.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
@@ -34,17 +34,11 @@ MergeTreeBitmapStore::MergeTreeBitmapStore(DeleteBitmapCachePtr cache_)
 {
 }
 
-namespace
+MergeTreeBitmapStore::MergeTreeBitmapStore(
+    const MergeTreeData & data, DeleteBitmapCachePtr cache_)
+    : cache(std::move(cache_))
+    , resolution_data(&data)
 {
-    std::shared_ptr<DeleteBitmap> readFromStorage(
-        const IDataPartStorage & storage,
-        const std::string & file_name)
-    {
-        ReadSettings read_settings;
-        auto buf = storage.readFile(file_name, read_settings, /*read_hint=*/{});
-        auto deserialized = DeleteBitmap::deserialize(*buf);
-        return std::shared_ptr<DeleteBitmap>(deserialized.release());
-    }
 }
 
 std::vector<BitmapVersion> MergeTreeBitmapStore::getSnapshotCSNs(
@@ -73,19 +67,6 @@ std::vector<BitmapVersion> MergeTreeBitmapStore::getSnapshotCSNs(
 }
 
 void MergeTreeBitmapStore::installBitmap(
-    const IMergeTreeDataPart & part,
-    BitmapVersion csn,
-    const DeleteBitmap & bitmap)
-{
-    installBitmap(
-        const_cast<IDataPartStorage &>(part.getDataPartStorage()),
-        part.getDeleteBitmapCacheIdentity(),
-        part.name,
-        csn,
-        bitmap);
-}
-
-void MergeTreeBitmapStore::installBitmap(
     IDataPartStorage & storage,
     const std::string & part_id,
     const std::string & part_name,
@@ -99,21 +80,36 @@ void MergeTreeBitmapStore::installBitmap(
             "UNIQUE KEY: bitmap version (csn) must be non-zero for part {}; 0 is the no-bitmap sentinel",
             part_name);
 
-    /// The store is the in-memory authority for a part's installed versions; no disk read is needed
-    /// to manage the index. Hold the lock across the whole install so the monotonicity check, the
-    /// durable write, and the in-memory index update are one critical section — a concurrent reader
-    /// (shared lock) observes either the pre- or post-install state, never a half-state where the
-    /// file is on disk but the index doesn't list it (or vice versa).
+    /// Hold the lock across the whole install so the monotonicity check, the durable write, and the
+    /// in-memory index update are one critical section — a concurrent reader (shared lock) observes
+    /// either the pre- or post-install state, never a half-state where the file is on disk but the
+    /// index doesn't list it (or vice versa).
     ///
-    /// Pre-existing on-disk versions are expected to be loaded into `csns_per_part` at part-load by
-    /// the write-integration slice; install does not enumerate disk to rediscover them.
+    /// On a cold index (no entry for `part_id`, e.g. after a restart), self-load the part's on-disk
+    /// versions before checking monotonicity — symmetric with `readBitmap`/`getSnapshotCSNs`. Without
+    /// this, an empty list silently bypasses the monotonicity guard and drops the on-disk history. A
+    /// warm entry is the in-memory authority (install/gc/remove keep it in sync), so disk is read
+    /// only when the entry is absent, not on every install.
     ///
     /// TODO(unique-key): the lock spans writeBitmapToStorage (disk I/O), serializing the store-wide
     /// index during the write. Acceptable now (installs serialized per partition, small/infrequent
     /// writes, no production caller), but could be narrowed later — reserve the csn slot under the
     /// lock, write outside it, then publish — once a concurrent workload justifies it.
     std::unique_lock lock(csns_mutex);
-    auto & csns = csns_per_part[part_id];
+    auto map_it = csns_per_part.find(part_id);
+    if (map_it == csns_per_part.end())
+    {
+        /// Mirror `getSnapshotCSNs`'s enumeration inline — calling it would re-acquire `csns_mutex`
+        /// (SharedMutex, non-reentrant) and deadlock.
+        auto files = DeleteBitmapFileOps::enumerateFiles(storage);
+        std::vector<BitmapVersion> on_disk;
+        on_disk.reserve(files.size());
+        for (const auto & f : files)
+            on_disk.push_back(f.version);
+        std::sort(on_disk.begin(), on_disk.end());
+        map_it = csns_per_part.emplace(part_id, std::move(on_disk)).first;
+    }
+    auto & csns = map_it->second;
     if (!csns.empty() && csn <= csns.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Bitmap version {} for part {} must be strictly greater "
@@ -126,7 +122,7 @@ void MergeTreeBitmapStore::installBitmap(
     csns.push_back(csn); /// csn > csns.back() (checked above) keeps the list sorted ascending
 }
 
-std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapStore::readBitmap(
+std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, BitmapVersion> MergeTreeBitmapStore::readBitmap(
     const IDataPartStorage & storage,
     BitmapVersion snapshot_csn,
     const std::string & part_id)
@@ -138,10 +134,9 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
         return {std::make_shared<DeleteBitmap>(), 0};
     const BitmapVersion chosen_csn = *(--it);
 
-    const String file_name = DeleteBitmap::fileNameForCSN(chosen_csn);
     if (!cache)
     {
-        std::shared_ptr<const DeleteBitmap> bm = readFromStorage(storage, file_name);
+        UniqueKeyTxn::ConstDeleteBitmapPtr bm = DeleteBitmapFileOps::readBitmapFromStorage(storage, chosen_csn, part_id);
         return {std::move(bm), chosen_csn};
     }
 
@@ -150,11 +145,11 @@ std::pair<std::shared_ptr<const DeleteBitmap>, BitmapVersion> MergeTreeBitmapSto
     auto [ptr, _loaded] = cache->getOrSet(key, [&]()
     {
         Stopwatch load_watch;
-        auto bm = readFromStorage(storage, file_name);
+        auto bm = DeleteBitmapFileOps::readBitmapFromStorage(storage, chosen_csn, part_id);
         ProfileEvents::increment(ProfileEvents::UniqueKeyBitmapLoadMicroseconds, load_watch.elapsedMicroseconds());
         return bm;
     });
-    std::shared_ptr<const DeleteBitmap> immutable = std::move(ptr);
+    UniqueKeyTxn::ConstDeleteBitmapPtr immutable = std::move(ptr);
     return {std::move(immutable), chosen_csn};
 }
 
@@ -165,7 +160,7 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
     BitmapVersion oldest_snapshot_csn)
 {
     /// Caller must serialize this with `installBitmap` (and `dropPart`) for the same part under the
-    /// per-partition UK mutex: both mutate the part's on-disk files and the in-memory CSN index, and
+    /// partition's writer guard: both mutate the part's on-disk files and the in-memory CSN index, and
     /// a gc that unlinks a version while an install is mid-flight could otherwise leave the index
     /// listing a removed version.
     auto csns = getSnapshotCSNs(storage, part_id);
@@ -221,10 +216,43 @@ size_t MergeTreeBitmapStore::gcObsoleteBitmaps(
     return removed.size();
 }
 
+void MergeTreeBitmapStore::removeBitmap(
+    IDataPartStorage & storage,
+    const std::string & part_id,
+    BitmapVersion csn)
+{
+    /// Reconcile the in-memory index on every exit once the file is unlinked: if cache
+    /// eviction (or anything after the unlink) throws, `csns_per_part` must still match
+    /// disk — otherwise a later `readBitmap` could select `csn`, whose file is gone, and
+    /// throw. Mirrors the SCOPE_EXIT reconciliation in `gcObsoleteBitmaps`.
+    bool unlinked = false;
+    SCOPE_EXIT({
+        if (!unlinked)
+            return;
+        std::unique_lock lock(csns_mutex);
+        auto it = csns_per_part.find(part_id);
+        if (it == csns_per_part.end())
+            return;
+        auto & csns = it->second;
+        csns.erase(std::remove(csns.begin(), csns.end(), csn), csns.end());
+    });
+
+    /// Unlink the file (idempotent — `removeFileIfExists` no-ops a missing file).
+    storage.removeFileIfExists(DeleteBitmap::fileNameForCSN(csn));
+    unlinked = true;
+
+    /// Invalidate the cache entry so a later reader does not serve a removed version.
+    if (cache)
+        cache->remove(DeleteBitmapCache::makeKey(part_id, csn));
+
+    LOG_TRACE(getLogger("MergeTreeBitmapStore"),
+              "UNIQUE KEY: removed delete bitmap sidecar delete_bitmap_{}.rbm for part '{}'", csn, part_id);
+}
+
 void MergeTreeBitmapStore::dropPart(const std::string & part_id)
 {
     /// Caller must serialize this with `installBitmap` / `gcObsoleteBitmaps` for the same part under
-    /// the per-partition UK mutex (see `installBitmap`): all three mutate the part's index state.
+    /// the partition's writer guard (see `installBitmap`): all three mutate the part's index state.
     {
         std::unique_lock lock(csns_mutex);
         csns_per_part.erase(part_id);
@@ -241,6 +269,89 @@ void MergeTreeBitmapStore::dropPart(const std::string & part_id)
     /// CacheBase, not worked around here.
     if (cache)
         cache->removeEntriesForPart(part_id);
+}
+
+MergeTreeBitmapStore::ResolvedPart
+MergeTreeBitmapStore::resolvePart(const UniqueKeyTxn::PartName & part_name) const
+{
+    if (!resolution_data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "MergeTreeBitmapStore: PartName-keyed bitmap access requires a resolution "
+            "context (data + partition_id); this store was built cache-only");
+
+    /// Single indexed lookup (`data_parts_by_info.find`, O(log P)). Part names are
+    /// globally unique and encode the partition, so the global index needs no
+    /// partition scoping. Active resolves to the live part; Outdated is also
+    /// accepted because the sink can stage supersession bitmaps for parts that a
+    /// merge Outdated between probe and commit — the old part's storage is still
+    /// on disk until the cleaner runs, and writing the bitmap there is a harmless
+    /// no-op (no reader observes an Outdated part). Returning a null target would
+    /// crash via `installBitmap`'s LOGICAL_ERROR.
+    if (auto p = resolution_data->getPartIfExists(
+            part_name,
+            {MergeTreeData::DataPartState::Active, MergeTreeData::DataPartState::Outdated}))
+    {
+        ResolvedPart resolved;
+        /// `IDataPartStorage` is logically const on the part; the bitmap
+        /// sidecar dir is legitimately mutable bookkeeping.
+        resolved.storage = const_cast<IDataPartStorage *>(&p->getDataPartStorage());
+        /// Stable cache key (part UUID, or `disk:path` fallback) so the
+        /// process-wide `DeleteBitmapCache` is keyed identically to every
+        /// other reader of this part's bitmaps.
+        resolved.cache_identity = p->getDeleteBitmapCacheIdentity();
+        return resolved;
+    }
+
+    /// Truly absent (deleting or never existed) — empty handle. `installBitmap`
+    /// raises `LOGICAL_ERROR` on null storage; `removeBitmap` / `readBitmap`
+    /// tolerate it.
+    return {};
+}
+
+namespace
+{
+    /// Cache identity for the storage-level forward: the part's
+    /// `getDeleteBitmapCacheIdentity` when resolution supplied one, else the
+    /// `PartName` (single-part contexts that don't track a UUID).
+    std::string cacheIdentityOf(
+        const std::string & resolved_identity, const UniqueKeyTxn::PartName & part)
+    {
+        return resolved_identity.empty() ? part : resolved_identity;
+    }
+}
+
+std::pair<UniqueKeyTxn::ConstDeleteBitmapPtr, UniqueKeyTxn::CSN>
+MergeTreeBitmapStore::readBitmap(const UniqueKeyTxn::PartName & part, UniqueKeyTxn::CSN snapshot_csn)
+{
+    auto resolved = resolvePart(part);
+    if (!resolved.storage)
+        /// Unresolved part → miss sentinel (empty NON-NULL bitmap at csn 0).
+        /// Callers MUST NOT branch on null — an empty bitmap is "no deletions".
+        return {std::make_shared<DeleteBitmap>(), 0};
+
+    return readBitmap(*resolved.storage, snapshot_csn, cacheIdentityOf(resolved.cache_identity, part));
+}
+
+void MergeTreeBitmapStore::installBitmap(
+    const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn, const DeleteBitmap & bitmap)
+{
+    auto resolved = resolvePart(target);
+    if (!resolved.storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "MergeTreeBitmapStore::installBitmap: resolver returned null storage for part '{}'", target);
+
+    installBitmap(*resolved.storage, cacheIdentityOf(resolved.cache_identity, target), target, csn, bitmap);
+}
+
+void MergeTreeBitmapStore::removeBitmap(const UniqueKeyTxn::PartName & target, UniqueKeyTxn::CSN csn)
+{
+    auto resolved = resolvePart(target);
+    /// A null target (part already gone from the active+outdated set) is
+    /// tolerated: nothing to unlink, no index/cache entry to clear.
+    if (!resolved.storage)
+        return;
+
+    removeBitmap(*resolved.storage, cacheIdentityOf(resolved.cache_identity, target), csn);
 }
 
 }

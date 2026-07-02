@@ -4,6 +4,10 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
+#include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
+#include <Storages/MergeTree/UniqueKey/Txn/MakeLocalStrategies.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -1822,7 +1826,10 @@ Block MergeTreeData::getBlockWithVirtualsForFilter(
 
 
 std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
-    const ActionsDAG & filter_actions_dag, ContextPtr local_context, const RangesInDataParts & parts) const
+    const ActionsDAG & filter_actions_dag,
+    ContextPtr local_context,
+    const RangesInDataParts & parts,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & uk_partition_snapshots) const
 {
     if (parts.empty())
         return 0;
@@ -1866,11 +1873,26 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     // At this point, empty `part_values` means all parts.
 
     size_t res = 0;
+    DataPartsVector matched_parts;
+    const bool table_has_uk = metadata_snapshot->hasUniqueKey();
     for (const auto & part : parts)
     {
         if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
+        {
             res += part.data_part->rows_count;
+            if (table_has_uk)
+                matched_parts.push_back(part.data_part);
+        }
+    }
+
+    /// UNIQUE KEY: subtract dead rows so `count()` reflects live rows, not
+    /// raw `rows_count`. The `table_has_uk` guard just avoids building
+    /// `matched_parts` on the non-UK hot path.
+    if (table_has_uk)
+    {
+        size_t dead = getDeadRowsForUniqueKey(matched_parts, uk_partition_snapshots);
+        res = (dead >= res) ? 0 : res - dead;
     }
     return res;
 }
@@ -2612,6 +2634,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
+    /// UNIQUE KEY txn-state recovery runs in the StorageMergeTree constructor
+    /// AFTER loadDataParts returns: its csn-seed path takes a shared parts
+    /// lock, which would self-deadlock against the exclusive `part_lock` held
+    /// here.
+
     resetSerializationHints(part_lock);
 
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
@@ -2698,6 +2725,93 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             });
 
         refresh_parts_task->scheduleAfter(refresh_parts_interval);
+    }
+}
+
+void MergeTreeData::runUniqueKeyTxnRecovery()
+{
+    /// SMT delegates to Keeper; this Local-only path enumerates `tmp_<op>_*`
+    /// dirs at the table's data root, groups by partition_id, and drives
+    /// `PartitionTxnController::recover` per partition.
+    if (supportsReplication())
+        return;
+
+    /// Each tmp dir is wrapped in a `DataPartStorageOnDiskFull` so all manifest
+    /// IO during recovery routes through the part-storage abstraction.
+    std::unordered_map<String, std::vector<MutableDataPartStoragePtr>> tmp_storages_by_partition;
+
+    for (const auto & disk : getDisks())
+    {
+        /// Fail closed on a broken disk: it may hold a UK `tmp_<op>/` manifest +
+        /// orphaned sidecars that csn-seed will still observe, so silently skipping
+        /// it would weaken the fail-closed recovery contract. A read-only disk is
+        /// still SCANNED (it can hold tmp state, and reads succeed); if such state
+        /// needs a write to reconcile, the per-tmp recover() below fails closed.
+        if (disk->isBroken())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "UNIQUE KEY txn-state recovery: disk '{}' is broken and may hold unrecovered "
+                "tmp marker/bitmap state; aborting startup to stay fail-closed.",
+                disk->getName());
+        if (!disk->existsDirectory(relative_data_path))
+            continue;
+
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        {
+            const std::string & basename = it->name();
+            if (!basename.starts_with("tmp_"))
+                continue;
+
+            /// Strip `tmp_<op>_` — find the second `_` after `tmp_`.
+            const auto op_sep = basename.find('_', 4); /// skip "tmp_"
+            if (op_sep == std::string::npos || op_sep + 1 >= basename.size())
+                continue;
+
+            const std::string part_name = basename.substr(op_sep + 1);
+            auto info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+            if (!info)
+                continue;
+
+            auto volume = std::make_shared<SingleDiskVolume>("volume_uk_recovery_" + disk->getName(), disk);
+            auto tmp_storage = std::make_shared<DataPartStorageOnDiskFull>(
+                std::move(volume), relative_data_path, basename);
+            tmp_storages_by_partition[info->getPartitionId()].emplace_back(std::move(tmp_storage));
+        }
+    }
+
+    if (tmp_storages_by_partition.empty())
+        return;
+
+    for (auto & [partition_id, tmp_storages] : tmp_storages_by_partition)
+    {
+        /// Recover each tmp dir in isolation so one bad dir doesn't
+        /// short-circuit the rest. A manifest-less tmp dir is benign under the
+        /// manifest-precedes-bitmap durability invariant (a normal
+        /// `tmp_insert_`/`tmp_merge_` dir, or a pre-manifest crash with no UK
+        /// sidecars to reconcile), so skip it without a fail-closed throw.
+        for (const auto & tmp_storage : tmp_storages)
+        {
+            if (!UniqueKeyTxn::UniqueKeyManifest::exists(*tmp_storage))
+                continue;
+            try
+            {
+                getOrCreateTxnController(partition_id).recover({tmp_storage});
+            }
+            catch (...)
+            {
+                /// Fail closed: a manifest EXISTS but recover() threw. Recovery
+                /// rolls back partially-installed (aborted-DELETE) bitmaps; a
+                /// failed rollback can leave an uncommitted bitmap version that
+                /// csn-seed surfaces as committed. Rethrow so this table's
+                /// attach/startup fails (we run in the StorageMergeTree ctor)
+                /// rather than silently continuing with torn sidecar state.
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "UNIQUE KEY txn-state recovery failed for tmp dir '{}' (partition '{}') on table {}: {}. "
+                    "Startup aborted to stay fail-closed. Inspect the tmp dir and its target part's "
+                    "delete_bitmap_<csn>.rbm sidecars, remove the stale aborted-commit bitmap, then re-attach.",
+                    tmp_storage->getFullPath(), partition_id, getStorageID().getNameForLogs(),
+                    getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            }
+        }
     }
 }
 
@@ -4472,6 +4586,18 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
+            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the part
+            /// via the full mutation path, dropping the delete-bitmap sidecars and
+            /// resurrecting deleted rows. Reject for ANY column, key or not (the
+            /// UK-column DROP/RENAME/MODIFY reject below is column-specific; this
+            /// covers non-key CLEAR too).
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap "
+                    "sidecars and resurrecting deleted rows.",
+                    command.column_name);
+
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN
@@ -5071,15 +5197,12 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
+    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes via the full
+    /// read+rewrite mutation path, which publishes a replacement part WITHOUT the
+    /// `delete_bitmap_<csn>.rbm` sidecars — resurrecting deleted rows. This holds
+    /// for ANY column, key or not, so reject regardless of `is_uk_column`.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
     {
-        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
-        auto is_uk_column = [&](const String & column)
-        {
-            return std::find(uk_column_names.begin(), uk_column_names.end(), column) != uk_column_names.end();
-        };
-
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
@@ -5094,19 +5217,19 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
-            if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
+            if (command.type == MutationCommand::MATERIALIZE_COLUMN)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
-                    "and MATERIALIZE would rewrite stored values without going through UNIQUE KEY dedup, "
-                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
+                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap sidecars "
+                    "and resurrecting deleted rows.",
+                    command.column_name);
 
-            if (command.type == MutationCommand::DROP_COLUMN && command.clear && is_uk_column(command.column_name))
+            if (command.type == MutationCommand::DROP_COLUMN && command.clear)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
-                    "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
-                    "producing duplicate live keys. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
+                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
+                    "it rewrites the part via the full mutation path, dropping the delete-bitmap sidecars "
+                    "and resurrecting deleted rows.",
+                    command.column_name);
 
             /// These commands rebuild whole parts (the full read+rewrite mutation path) and
             /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
@@ -6094,6 +6217,55 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
+size_t MergeTreeData::getDeadRowsForUniqueKey(
+    const DataPartsVector & parts,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> & partition_snapshots) const
+{
+    /// The snapshots were pinned by the caller (BEFORE it captured `parts`) from
+    /// the same `(csn, bitmap_at)` source the read path uses, so `count()` and
+    /// `SELECT` agree. Bitmap-read exceptions propagate (don't silently
+    /// over-count on corrupt bitmaps); see the header for the full contract.
+    size_t dead = 0;
+    for (const auto & part : parts)
+    {
+        if (!part)
+            continue;
+        const String & partition_id = part->info.getPartitionId();
+
+        /// Partition ABSENT ⇒ it was not active when the snapshots were pinned
+        /// (created concurrently after) ⇒ no pre-snapshot DELETE ⇒ no dead rows
+        /// for this read. Don't lazily pin (a gap-DELETE is post-snapshot and
+        /// must be ignored). Active partitions whose only DELETE state is on-disk
+        /// bitmaps are instantiated and pinned by the capture, so never absent.
+        auto it = partition_snapshots.find(partition_id);
+        if (it == partition_snapshots.end())
+            continue;
+
+        const auto & snapshot = it->second;
+        if (!snapshot)
+            continue;
+
+        /// Snapshot-consistency at the pinned csn C: a part newer than C is
+        /// invisible to this reader, so ALL its rows are dead at C. The caller
+        /// added this part's full `rows_count` to the live total, so counting
+        /// `rows_count` dead here nets it to zero — the live total and the dead
+        /// count stay over the SAME filtered set.
+        if (!UniqueKeyTxn::isPartVisibleAtSnapshotCsn(part->getUniqueKeyMeta(), snapshot.pinnedCsn()))
+        {
+            dead += part->rows_count;
+            continue;
+        }
+
+        if (snapshot->bitmap_at)
+        {
+            auto bitmap = snapshot->bitmap_at(part->name);
+            if (bitmap)
+                dead += bitmap->cardinality();
+        }
+    }
+    return dead;
+}
+
 size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load();
@@ -6498,6 +6670,66 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
+
+MergeTreeData::DataPartsVectorPtr
+MergeTreeData::getActivePartsInPartitionShared(const String & partition_id) const
+{
+    auto parts_lock = readLockParts();
+    DataPartStateAndPartitionID state_with_partition{DataPartState::Active, partition_id};
+    DataPartsVector parts(
+        data_parts_by_state_and_info.lower_bound(state_with_partition),
+        data_parts_by_state_and_info.upper_bound(state_with_partition));
+    return std::make_shared<const DataPartsVector>(std::move(parts));
+}
+
+UniqueKeyTxn::PartitionTxnController & MergeTreeData::getOrCreateTxnController(const String & partition_id) const
+{
+    std::lock_guard lock(unique_key_txn_controllers_mutex);
+    auto it = unique_key_txn_controllers.find(partition_id);
+    if (it != unique_key_txn_controllers.end())
+        return *it->second;
+
+    /// Engine-specific factory dispatch on `supportsReplication()`: plain
+    /// MergeTree uses the process-local mutex + in-memory CSN (Local bundle);
+    /// the Keeper-CAS (Shared) bundle for replicated engines is not yet
+    /// implemented.
+    if (supportsReplication())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SharedMergeTree UNIQUE KEY transaction strategies are not implemented");
+    auto state = UniqueKeyTxn::MakeLocalStrategies(*this, partition_id);
+    auto [inserted_it, _] = unique_key_txn_controllers.emplace(partition_id, std::move(state));
+    return *inserted_it->second;
+}
+
+std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> MergeTreeData::captureUniqueKeyPartitionSnapshots() const
+{
+    /// Enumerate every ACTIVE partition — NOT just the controllers already
+    /// instantiated. A controller is created lazily (`getOrCreateTxnController`),
+    /// and on a clean restart/ATTACH a partition with committed
+    /// `delete_bitmap_<csn>.rbm` sidecars on disk has no in-memory controller
+    /// until first access. If we pinned only existing controllers, such a
+    /// partition would be absent from the map, the read would skip its bitmap
+    /// filter, and already-deleted rows would resurface. So instantiate (and
+    /// CSN-seed from on-disk state via `MakeLocalStrategies`) a controller for
+    /// every active partition, then pin it.
+    ///
+    /// `getAllPartitionIds()` takes (and releases) the parts read-lock and
+    /// returns a value copy; we hold no stock-MergeTree lock while calling
+    /// `getOrCreateTxnController` (registry mutex) or `takeQuerySnapshot`
+    /// (coordinator publish lock), per the no-stock-lock-under-strategy-lock
+    /// contract.
+    const auto active_partition_ids = getAllPartitionIds();
+
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> snapshots;
+    snapshots.reserve(active_partition_ids.size());
+    for (const auto & partition_id : active_partition_ids)
+        snapshots.emplace(partition_id, getOrCreateTxnController(partition_id).takeQuerySnapshot());
+    return snapshots;
+}
+
+/// Out-of-line here (where `PartitionTxnController` is complete) so the
+/// `unique_key_txn_controllers` `unique_ptr` members destroy correctly. See decl.
+MergeTreeData::~MergeTreeData() = default;
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
 {
@@ -11085,6 +11317,13 @@ MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapsho
 
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
+
+    /// UNIQUE KEY — pin the per-partition snapshots BEFORE capturing the part
+    /// list, so each pinned csn lower-bounds the parts the read then sees and a
+    /// DELETE committing in the gap is excluded by the read-side csn filter.
+    /// Non-UK tables skip this entirely.
+    if (metadata_snapshot->hasUniqueKey())
+        snapshot_data->uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
 
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
     snapshot_data->parts = query_ranges;

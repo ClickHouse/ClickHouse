@@ -243,6 +243,53 @@ TEST(MergeTreeBitmapStoreTest, InstallBitmapRejectsCsnZero)
     EXPECT_INSTALL_REJECTS(store.installBitmap(*fx.storage, "p", "part", /*csn=*/0, bitmapWithRow(1)));
 }
 
+/// Write delete_bitmap_5.rbm / _8.rbm via one store, leaving a fresh store with a cold (empty)
+/// version index — the post-restart state. Each test below builds on this helper.
+namespace
+{
+    void seedVersions5And8(const PartStorageFixture & fx)
+    {
+        MergeTreeBitmapStore store1{/*cache=*/nullptr};
+        store1.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(50));
+        store1.installBitmap(*fx.storage, "p", "part", /*csn=*/8, bitmapWithRow(80));
+    }
+}
+
+TEST(MergeTreeBitmapStoreTest, InstallSelfWarmsColdIndexFromDisk)
+{
+    /// A cold install must self-load the part's on-disk history (same self-heal `readBitmap` does),
+    /// not clobber it. Fresh store2 installs csn 9 over on-disk 5/8; the 5/8 versions must remain
+    /// readable. This is the half that proves the fix and runs in every build.
+    PartStorageFixture fx;
+    seedVersions5And8(fx);
+
+    MergeTreeBitmapStore store2{/*cache=*/nullptr};
+    store2.installBitmap(*fx.storage, "p", "part", /*csn=*/9, bitmapWithRow(90));
+    {
+        auto [bm, v] = store2.readBitmap(*fx.storage, /*snapshot_csn=*/7, "p");
+        EXPECT_EQ(v, 5u);
+        EXPECT_TRUE(bm->contains(50));
+    }
+    {
+        auto [bm, v] = store2.readBitmap(*fx.storage, /*snapshot_csn=*/9, "p");
+        EXPECT_EQ(v, 9u);
+        EXPECT_TRUE(bm->contains(90));
+    }
+}
+
+TEST(MergeTreeBitmapStoreTest, InstallMonotonicityFiresOnColdIndex)
+{
+    /// The monotonicity guard must fire even cold: a fresh store over on-disk 5/8 must reject an
+    /// install at csn 5 (≤ on-disk max 8). Without the self-warm fix the cold index is empty and
+    /// this silently succeeds. Gated by EXPECT_INSTALL_REJECTS — the guard is a LOGICAL_ERROR,
+    /// which aborts in debug/sanitizer (skipped there) and throws otherwise.
+    PartStorageFixture fx;
+    seedVersions5And8(fx);
+
+    MergeTreeBitmapStore store3{/*cache=*/nullptr};
+    EXPECT_INSTALL_REJECTS(store3.installBitmap(*fx.storage, "p", "part", /*csn=*/5, bitmapWithRow(51)));
+}
+
 TEST(MergeTreeBitmapStoreTest, CorruptFileSurfacesError)
 {
     PartStorageFixture fx;

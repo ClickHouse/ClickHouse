@@ -230,6 +230,15 @@ void DeleteBitmap::containsBulk(const UInt64 * rows, size_t n, uint8_t * out_kee
     std::visit([&](const auto & p) { containsBulkAny(*p, rows, n, out_keep); }, bitmap);
 }
 
+size_t DeleteBitmap::buildKeepFilter(const UInt64 * rows, size_t n, UInt8 * out_keep) const
+{
+    containsBulk(rows, n, reinterpret_cast<uint8_t *>(out_keep));
+    size_t kept = 0;
+    for (size_t i = 0; i < n; ++i)
+        kept += out_keep[i];
+    return kept;
+}
+
 void DeleteBitmap::add(UInt64 row)
 {
     /// Upgrade before dispatch so the visit can pick the right overload.

@@ -1,11 +1,12 @@
 -- Tags: no-ordinary-database, no-async-insert, no-fasttest, no-object-storage, no-s3-storage
 -- UNIQUE KEY: mutation-guard coverage.
 --
--- `MergeTreeData::checkMutationIsPossible` must reject every mutation-class
--- operation that rewrites stored column bytes for a UNIQUE KEY column,
--- because those operations bypass `MergeTreeSinkUniqueKeyCommit::run` and
--- would create duplicate live keys. Covers ALTER DELETE / ALTER UPDATE /
--- MATERIALIZE COLUMN / CLEAR COLUMN.
+-- `MergeTreeData::checkMutationIsPossible` (and `checkAlterIsPossible`) must
+-- reject every mutation-class operation that rewrites stored column bytes on a
+-- UNIQUE KEY table: ALTER DELETE / ALTER UPDATE bypass UNIQUE KEY dedup (would
+-- create duplicate live keys), and MATERIALIZE / CLEAR COLUMN rewrite the part
+-- via the full mutation path, dropping the delete-bitmap sidecars (would
+-- resurrect deleted rows). The guard covers ANY column, key or not.
 
 SET allow_experimental_unique_key = 1;
 SET async_insert = 0;
@@ -42,38 +43,33 @@ SELECT 'lightweight_force_update_uk' AS step;
 ALTER TABLE uk_mut_guard UPDATE d = 'z' WHERE a = 1
 SETTINGS alter_update_mode = 'lightweight_force', enable_lightweight_update = 1; -- { serverError SUPPORT_IS_DISABLED }
 
--- MATERIALIZE COLUMN on a UK column must be rejected (error code
--- SUPPORT_IS_DISABLED = 344). Error message must name the column and reference
--- UNIQUE KEY.
+-- MATERIALIZE COLUMN / CLEAR COLUMN on a UK table must be rejected with
+-- SUPPORT_IS_DISABLED = 344, for ANY column (key or not): both rewrite the
+-- part via the full mutation path, which hardlinks only checksummed entries
+-- and drops the delete-bitmap sidecars — resurrecting deleted rows. The UK
+-- mutation guard fires before the generic key-column ALTER_OF_COLUMN_IS_FORBIDDEN.
 SELECT 'materialize_uk_a' AS step;
 ALTER TABLE uk_mut_guard MATERIALIZE COLUMN a; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'materialize_uk_b' AS step;
 ALTER TABLE uk_mut_guard MATERIALIZE COLUMN b; -- { serverError SUPPORT_IS_DISABLED }
 
--- CLEAR COLUMN on a UK column: rejected by the existing Phase-1-B.2
--- `checkAlterIsPossible` UK-column guard BEFORE reaching the mutation path
--- (which would also reject with SUPPORT_IS_DISABLED per this fix). Error
--- code is ALTER_OF_COLUMN_IS_FORBIDDEN (524). Both guards are defensive in
--- depth — either rejecting is correct.
 SELECT 'clear_uk_a' AS step;
-ALTER TABLE uk_mut_guard CLEAR COLUMN a IN PARTITION ID 'all'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE uk_mut_guard CLEAR COLUMN a IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'clear_uk_b' AS step;
-ALTER TABLE uk_mut_guard CLEAR COLUMN b IN PARTITION ID 'all'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE uk_mut_guard CLEAR COLUMN b IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
 
--- Non-UK columns must still allow MATERIALIZE / CLEAR (c is in ORDER BY so
--- materialize on c is meaningless in practice but not forbidden by the UK
--- guard; d is a plain column with a DEFAULT, no restrictions apply).
+-- A non-key column is rejected just the same: clearing / materializing `d`
+-- still rewrites the part and would drop the bitmap sidecars.
 SET mutations_sync = 2;
 SELECT 'materialize_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d;
+ALTER TABLE uk_mut_guard MATERIALIZE COLUMN d; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'clear_non_uk_d' AS step;
-ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all';
+ALTER TABLE uk_mut_guard CLEAR COLUMN d IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
 
--- State: cleared `d` means its values are now reset to the default;
--- count is preserved.
+-- State: every rewrite above was rejected, so nothing changed; count is 2.
 SELECT count() FROM uk_mut_guard;  -- 2
 
 DROP TABLE uk_mut_guard;

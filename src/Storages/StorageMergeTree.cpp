@@ -25,6 +25,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
@@ -47,6 +48,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyDelete.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -213,6 +215,19 @@ StorageMergeTree::StorageMergeTree(
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
 
+    /// UNIQUE KEY txn-state recovery. Runs AFTER the stale-data guard above so a
+    /// plain CREATE pointing at an existing data directory is rejected before
+    /// recovery can mutate it (recovery unlinks delete-bitmap sidecars and removes
+    /// tmp_ marker dirs — it is not read-only). Also runs AFTER loadDataParts
+    /// releases the exclusive DataPartsLock: recovery's csn-seed path takes a
+    /// shared parts lock, which would self-deadlock under that exclusive lock.
+    if (!isStaticStorage())
+    {
+        auto uk_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
+        if (uk_metadata && uk_metadata->hasUniqueKey())
+            runUniqueKeyTxnRecovery();
+    }
+
     increment.set(getMaxBlockNumber());
 
     loadMutations();
@@ -331,8 +346,15 @@ void StorageMergeTree::read(
     size_t num_streams)
 {
     const auto & settings = local_context->getSettingsRef();
+
+    /// UNIQUE KEY — the per-row delete-bitmap filter is applied from a partition
+    /// snapshot pinned in THIS server's memory during `selectRangesToRead`; another
+    /// replica/node has no access to it, so any branch that ships the read elsewhere
+    /// would resurrect logically-deleted rows. Force the local single-replica path.
+    const bool is_unique_key = storage_snapshot->metadata->hasUniqueKey();
+
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!is_unique_key && local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
@@ -340,7 +362,7 @@ void StorageMergeTree::read(
         return;
     }
 
-    if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
+    if (!is_unique_key && local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer] && local_context->getClientInfo().distributed_depth == 0)
     {
         auto cluster = local_context->getClusterForParallelReplicas();
@@ -367,7 +389,7 @@ void StorageMergeTree::read(
             cluster->getName());
     }
 
-    const bool enable_parallel_reading = local_context->canUseParallelReplicasOnFollower()
+    const bool enable_parallel_reading = !is_unique_key && local_context->canUseParallelReplicasOnFollower()
         && local_context->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
 
     QueryPlanPtr plan = MergeTreeDataSelectExecutor(*this).read(
@@ -395,15 +417,42 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
-    return getTotalActiveSizeInRows();
+    /// Fast path for non-UK tables: the cached atomic is correct and cheap.
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
+        return getTotalActiveSizeInRows();
+
+    /// UNIQUE KEY: derive BOTH the raw total and the dead-row total from a
+    /// SINGLE parts snapshot. Reusing `getTotalActiveSizeInRows()` could pair
+    /// a pre-merge sum with a post-merge snapshot (merge publish/retire is not
+    /// atomic to this reader) and return a count matching neither state.
+    /// Pin the per-partition snapshots BEFORE capturing parts so a DELETE
+    /// committing in the gap is excluded by the csn filter (snapshot isolation).
+    auto uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
+    auto parts = getDataPartsVectorForInternalUsage();
+    UInt64 total = 0;
+    for (const auto & part : parts)
+    {
+        if (part)
+            total += part->rows_count;
+    }
+    size_t dead = getDeadRowsForUniqueKey(parts, uk_partition_snapshots);
+    return (dead >= total) ? UInt64{0} : total - dead;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
 {
+    /// UNIQUE KEY only: pin BEFORE capturing parts (snapshot isolation). Guard so
+    /// a plain count on a non-UK table doesn't pay the `getAllPartitionIds()` scan
+    /// or instantiate a controller per partition as a side effect.
+    std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> uk_partition_snapshots;
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/false);
+    if (metadata_snapshot && metadata_snapshot->hasUniqueKey())
+        uk_partition_snapshots = captureUniqueKeyPartitionSnapshots();
     auto parts = getVisibleDataPartsVector(local_context);
-    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts));
+    return totalRowsByPartitionPredicateImpl(filter_actions_dag, local_context, RangesInDataParts(parts), uk_partition_snapshots);
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
@@ -821,6 +870,24 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
     if (it == current_mutations_by_version.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find mutation {}", mutation_id);
     it->second.writeCSN(csn);
+}
+
+void StorageMergeTree::deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr query_context)
+{
+    /// Thin dispatcher: validate the query shape and UNIQUE KEY status, then
+    /// delegate to `executeUniqueKeyDelete` (see it for the full contract).
+    /// ALTER DELETE on UK stays rejected earlier in `checkMutationIsPossible`.
+    assertNotReadonly();
+
+    const auto & delete_query = query_ptr->as<ASTDeleteQuery &>();
+    if (!delete_query.predicate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DELETE on UNIQUE KEY tables requires a WHERE predicate");
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/false);
+    if (!metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "deleteByUniqueKey called on a table without UNIQUE KEY");
+
+    executeUniqueKeyDelete(*this, query_ptr, query_context);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
@@ -1275,7 +1342,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
-    /// per-partition UK mutex guards DELETE but not merges), silently dropping the
+    /// partition's writer guard serializes DELETEs but not merges), silently dropping the
     /// delete. Until merge-side bitmap forwarding + late-kill lands, gate every
     /// merge here — the single chokepoint for both background selection and the
     /// OPTIMIZE -> merge() path. Marker + data parts simply accumulate for now.

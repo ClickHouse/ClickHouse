@@ -22,6 +22,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageMergeTree.h>
 
 
 namespace DB
@@ -85,6 +86,14 @@ BlockIO InterpreterDeleteQuery::execute()
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// UNIQUE KEY is a local-only (per-node) marker/bitmap layer, so routing a
+        /// UK DELETE through replicated DDL would replay it on every replica
+        /// independently and diverge their state. Reject before the enqueue.
+        auto uk_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+        if (uk_metadata->hasUniqueKey())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "DELETE on UNIQUE KEY tables is not supported inside a Replicated database");
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
@@ -96,6 +105,31 @@ BlockIO InterpreterDeleteQuery::execute()
     /// supportsDelete() and subsequent mutation checks see valid metadata.
     table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+
+    /// UNIQUE KEY: `DELETE FROM ... WHERE ...` is dispatched to the storage's
+    /// synchronous marker-part path, bypassing both the `supportsDelete`
+    /// mutation route and the default `_row_exists = 0` lightweight path.
+    /// ALTER DELETE on UK stays blocked in `checkMutationIsPossible`.
+    if (metadata_snapshot->hasUniqueKey())
+    {
+        /// `ON CLUSTER` has no dispatch on the single-node UK path; reject
+        /// explicitly rather than silently ignore it.
+        if (!delete_query.cluster.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "DELETE ... ON CLUSTER is not supported on UNIQUE KEY tables "
+                "(synchronous single-node path only).");
+
+        if (auto * merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
+        {
+            merge_tree->deleteByUniqueKey(query_ptr, getContext());
+            return {};
+        }
+        /// ReplicatedMergeTree and other variants: only the non-replicated
+        /// `StorageMergeTree` synchronous DELETE path is implemented.
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "DELETE on UNIQUE KEY tables is only supported on StorageMergeTree (got {})",
+            table->getName());
+    }
 
     if (table->supportsDelete())
     {

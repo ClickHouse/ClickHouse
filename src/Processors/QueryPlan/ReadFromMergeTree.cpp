@@ -62,6 +62,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/Txn/PartitionTxnController.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyReadFilter.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageSnapshot.h>
@@ -302,6 +305,23 @@ namespace ErrorCodes
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_TABLE;
+}
+
+/// UNIQUE KEY — keeps the per-partition snapshot pins alive for the whole
+/// running pipeline. The pins live on the step's `AnalysisResult`, which is
+/// destroyed with the `QueryPlan` right after `buildQueryPipeline` and before
+/// the pipeline executes; without this holder the pins would drop before the
+/// last read task runs, letting concurrent GC reclaim a bitmap the scan still
+/// references. Attached to the pipeline resources alongside `QueryIdHolder`.
+namespace
+{
+    struct UniqueKeyPinResourceHolder : public ICustomResourceHolder
+    {
+        explicit UniqueKeyPinResourceHolder(std::shared_ptr<std::vector<UniqueKeyTxn::QuerySnapshot>> pins_)
+            : pins(std::move(pins_))
+        {}
+        std::shared_ptr<std::vector<UniqueKeyTxn::QuerySnapshot>> pins;
+    };
 }
 
 static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
@@ -1469,6 +1489,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     part.part_starting_offset_in_query,
                     std::move(ranges_to_get_from_part),
                     part.read_hints);
+                /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
+                /// delete bitmap; propagate it onto the rebuilt range.
+                new_parts.back().delete_bitmap = part.delete_bitmap;
             }
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
@@ -1813,6 +1836,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     part_it->part_starting_offset_in_query,
                     part_it->ranges,
                     part_it->read_hints);
+                /// UNIQUE KEY — the 6-arg ctor doesn't carry the pinned
+                /// delete bitmap; propagate it onto the rebuilt range.
+                new_parts.back().delete_bitmap = part_it->delete_bitmap;
                 current_ranges_marks += part_it->getMarksCount();
             }
 
@@ -1984,6 +2010,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
+    /// UNIQUE KEY — forward the per-partition snapshots pinned when this query's
+    /// `StorageSnapshot` was built (before the part list was captured), so the
+    /// delete-bitmap filter uses csns consistent with the parts it reads.
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots = nullptr;
+    if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        uk_partition_snapshots = &snapshot_data->uk_partition_snapshots;
+
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
         mutations_snapshot,
@@ -2002,7 +2035,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
-        supportsSkipIndexesOnDataRead());
+        supportsSkipIndexesOnDataRead(),
+        uk_partition_snapshots);
 
     return analyzed_result_ptr;
 }
@@ -2499,7 +2533,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
-    bool supports_skip_indexes_on_data_read)
+    bool supports_skip_indexes_on_data_read,
+    const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> * uk_partition_snapshots)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -2942,6 +2977,25 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
             .num_parts_after = result.parts_with_ranges.size(),
             .num_granules_after = sum_marks});
+    }
+
+    /// UNIQUE KEY — snapshot-anchored bitmap pin + granule-skip. One snapshot
+    /// per touched partition (uniqueness scope is per-partition); per part, pick
+    /// the bitmap visible at the snapshot csn and drop fully-dead granules. The
+    /// returned pins are held in `AnalysisResult`; `initializePipeline` moves
+    /// them onto the pipeline so they outlive the read tasks (the
+    /// `AnalysisResult` dies with the plan). See `UniqueKeyReadFilter`.
+    if (metadata_snapshot->hasUniqueKey() && !result.parts_with_ranges.empty())
+    {
+        /// The snapshot map was pinned at part-selection time (in
+        /// `createStorageSnapshot`, before this part list was captured). A null
+        /// map means no `MergeTreeData::SnapshotData` reached us (e.g. a
+        /// without-data path); treat it as empty — every partition is then
+        /// "not in map" (fully live), the same as a brand-new UK table.
+        static const std::unordered_map<String, UniqueKeyTxn::QuerySnapshot> empty_snapshots;
+        result.uk_partition_pins = UniqueKeyTxn::applyUniqueKeyDeleteBitmaps(
+            uk_partition_snapshots ? *uk_partition_snapshots : empty_snapshots,
+            result.parts_with_ranges, log, sum_marks, sum_ranges, sum_rows);
     }
 
     result.total_parts = total_parts;
@@ -3488,6 +3542,34 @@ void ReadFromMergeTree::addStartingPartOffsetAndPartOffset(bool & added_part_sta
     required_source_columns = all_column_names;
 }
 
+bool ReadFromMergeTree::addPartOffsetForDeleteBitmap()
+{
+    /// UNIQUE KEY — force `_part_offset` into the read columns but leave the
+    /// public output header untouched; the final `makeConvertingActions`
+    /// strips it when `output_header` lacks it. Idempotent: returns whether it
+    /// added the column (false if `_part_offset` was already present).
+    for (const auto & col_name : all_column_names)
+        if (col_name == "_part_offset")
+            return false;
+
+    /// Prepend to preserve the existing column order at the end.
+    Names new_column_names;
+    new_column_names.reserve(all_column_names.size() + 1);
+    new_column_names.push_back("_part_offset");
+    new_column_names.insert(new_column_names.end(), all_column_names.begin(), all_column_names.end());
+    all_column_names = std::move(new_column_names);
+
+    /// `required_source_columns` (not `output_header`) so the reader populates
+    /// the virtual column while it stays out of the public output.
+    required_source_columns = all_column_names;
+
+    /// Keep the analysis result's column list in sync for pool construction.
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    return true;
+}
+
 bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 {
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
@@ -3666,6 +3748,27 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         /// Cannot cache PREWHERE results when ranges are filtered by bucket_id.
         reader_settings.use_query_condition_cache = false;
+    }
+
+    /// UNIQUE KEY — the in-processor row filter keys on `_part_offset`
+    /// (absolute part-local row numbers, surviving PREWHERE / skip-indexes),
+    /// so force it through the reader when any part has a non-empty bitmap.
+    /// Skipped in the common zero-delete case (the processor short-circuits
+    /// on `bitmap->empty()`).
+    const bool need_part_offset_for_bitmap = std::any_of(
+        result.parts_with_ranges.begin(),
+        result.parts_with_ranges.end(),
+        [](const RangesInDataPart & p) { return p.delete_bitmap && !p.delete_bitmap->empty(); });
+    if (need_part_offset_for_bitmap)
+    {
+        const bool added_part_offset = addPartOffsetForDeleteBitmap();
+        /// Keep `result.column_names_to_read` in sync — the pool reads from it.
+        if (added_part_offset
+            && std::find(result.column_names_to_read.begin(), result.column_names_to_read.end(), "_part_offset")
+                   == result.column_names_to_read.end())
+        {
+            result.column_names_to_read.insert(result.column_names_to_read.begin(), "_part_offset");
+        }
     }
 
     if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
@@ -4059,6 +4162,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     // Attach QueryIdHolder if needed
     if (query_id_holder)
         pipeline.setQueryIdHolder(std::move(query_id_holder));
+
+    /// UNIQUE KEY — move the snapshot pins onto the pipeline so they outlive
+    /// the soon-to-be-destroyed QueryPlan (and this step) and stay held until
+    /// the last read task finishes. See `UniqueKeyPinResourceHolder`.
+    if (result.uk_partition_pins && !result.uk_partition_pins->empty())
+        pipeline.addCustomResource(
+            std::make_shared<UniqueKeyPinResourceHolder>(std::move(result.uk_partition_pins)));
 }
 
 static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
@@ -4612,7 +4722,22 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
         }
     }
 
-    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata));
+    /// Clone `data` (don't move it): the original `StorageSnapshot` is shared
+    /// (held by `query_info` etc.) and its `data` is dereferenced elsewhere on the
+    /// read path, so moving it out would empty the shared object and null-deref.
+    /// The clone keeps the UNIQUE KEY per-partition pins alive via `.share()`.
+    StorageSnapshot::DataPtr cloned_data;
+    if (const auto * src = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+    {
+        auto clone = std::make_unique<MergeTreeData::SnapshotData>();
+        clone->storage = src->storage;
+        clone->parts = src->parts;
+        clone->mutations_snapshot = src->mutations_snapshot;
+        for (const auto & [partition_id, snap] : src->uk_partition_snapshots)
+            clone->uk_partition_snapshots.emplace(partition_id, snap.share());
+        cloned_data = std::move(clone);
+    }
+    storage_snapshot = std::make_shared<StorageSnapshot>(storage_snapshot->storage, std::move(new_metadata), std::move(cloned_data));
 
     if (output_header != nullptr)
     {
@@ -4864,6 +4989,15 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
 
 void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
+    /// UNIQUE KEY: a distributed query plan serializes part names/flags but NOT the
+    /// per-partition CSN pins / delete-bitmap snapshot, so a worker rebuilds the read
+    /// and could apply a later DELETE. `serialize` is only reached on the
+    /// distributed-plan path (a local read never calls it), so this rejects only the
+    /// distributed case. Drop once the snapshot is serialized into the plan.
+    if (getStorageMetadata()->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "distributed query plan is not supported on UNIQUE KEY tables");
+
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
     /// earlier in checkDistributedReadSupported.)

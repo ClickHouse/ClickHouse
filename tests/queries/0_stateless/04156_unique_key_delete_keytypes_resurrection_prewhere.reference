@@ -1,0 +1,23 @@
+res_after_insert	3
+res_after_delete	2
+res_v_for_2	0
+res_after_reinsert	3
+res_value_2	2	new2
+res_survivors	1	old1
+res_survivors	2	new2
+res_survivors	3	old3
+str_after_insert	4
+str_after_delete	2
+str_survivors	alpha	1
+str_survivors	charlie	3
+cmp_after_insert	4
+cmp_after_delete1	3
+cmp_after_delete2	1
+cmp_survivors	2	y	r4
+pw_after_insert	6
+pw_after_delete	4
+pw_grp100	1	a
+pw_grp100	5	e
+pw_grp200	3	c
+pw_grp200	6	f
+pw_dead	0
