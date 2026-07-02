@@ -186,6 +186,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void checkCascadesSupported(const QueryPlan::Node & root);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -312,11 +313,12 @@ void optimizeTreeSecondPass(
     }
 
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
-    /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
-    /// than silently running single-node.
+    /// carry, and PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans
+    /// cannot be distributed. make_distributed_plan is explicit, so fail rather than silently
+    /// running single-node.
     if (optimization_settings.make_distributed_plan && planHasUnsupportedDistributedStep(root))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE or extremes");
+            "make_distributed_plan does not support WITH TOTALS, ROLLUP, CUBE, extremes or PASTE JOIN");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
@@ -345,6 +347,7 @@ void optimizeTreeSecondPass(
     /// partial aggregation states reaching consumers unmerged).
     if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
     {
+        checkCascadesSupported(root);
         CascadesOptimizer cascades_optimizer(query_plan);
         cascades_optimizer.optimize();
     }

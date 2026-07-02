@@ -26,4 +26,13 @@ SELECT '-- 3. With both settings on, WITH TOTALS is rejected (fail-close)';
 SELECT k, sum(x) FROM t_gating GROUP BY k WITH TOTALS ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- `force_aggregation_in_order` makes an in-order aggregation. It passes the Cascades
+-- pre-check (the step sorts its own input, so exchanges below it are safe), but the plan
+-- serializer cannot ship an in-order aggregation to workers, so the query is rejected
+-- cleanly instead of returning wrong groups.
+SELECT '-- 4. force_aggregation_in_order is rejected (in-order aggregation is not serializable)';
+SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
+    force_aggregation_in_order = 1, distributed_plan_execute_locally = 1; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE t_gating;

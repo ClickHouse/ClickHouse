@@ -105,13 +105,15 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void checkCascadesSupported(const QueryPlan::Node & root);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
-/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry, and
-/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support. Such plans stay single-node.
+/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry,
+/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support, and a PASTE join pairs
+/// rows by position, which no exchange preserves. Such plans stay single-node.
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
@@ -126,6 +128,11 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
             || typeid_cast<const RollupStep *>(step)
             || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
+            return true;
+        /// A PASTE join pairs rows by position. An exchange below it (e.g. a gather over a
+        /// distributed read) reorders rows arbitrarily and silently changes the pairing.
+        if (const auto * join_step = typeid_cast<const JoinStepLogical *>(step);
+            join_step && join_step->getJoinOperator().kind == JoinKind::Paste)
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
@@ -156,6 +163,28 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "make_distributed_plan does not support a distributed read exposing the {} virtual column", column);
         }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
+/// Rejects plans the Cascades optimizer cannot distribute correctly. An in-order aggregation
+/// without explicit input sorting assumes its input arrives ordered by the group keys, which
+/// exchanges do not guarantee; such steps are only created by a pass that is skipped when Cascades
+/// is active, so this check is defensive.
+void checkCascadesSupported(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack = {&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(node->step.get());
+            aggregating_step && aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
 
         for (const auto * child : node->children)
             stack.push_back(child);
