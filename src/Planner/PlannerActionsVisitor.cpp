@@ -1179,6 +1179,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (auto it = actions_stack.rbegin(); it != actions_stack.rend(); ++it)
         it->addInputColumnIfNecessary(function_node_name, function_node.getResultType());
 
+    /// The same correlated EXISTS subquery can be referenced multiple times in one filter, e.g. after
+    /// convert_query_to_cnf rewrites `exists(q) OR (a AND b AND c)` into `(exists(q) OR a) AND ... ` and
+    /// CNF::toQueryTree clones the `exists(q)` node into each conjunct. Such clones share one
+    /// action_node_name, so registering each would decorrelate into several joins all emitting that
+    /// same-named column and break HashJoin's column bookkeeping. Register the subquery only once
+    /// (the input column above is already deduplicated). Mirrors the scalar path in visitQuery.
+    for (const auto & existing : correlated_subtrees.subqueries)
+    {
+        if (existing.action_node_name == function_node_name)
+            return { function_node_name, Levels(exists_function_level) };
+    }
+
     auto subquery_argument = function_node.getArguments().getNodes().front();
     auto * query_node = subquery_argument->as<QueryNode>();
     auto * union_node = subquery_argument->as<UnionNode>();
