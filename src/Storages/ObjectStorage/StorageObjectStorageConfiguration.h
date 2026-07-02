@@ -292,7 +292,9 @@ public:
         return true;
     }
 
-    virtual void drop(ContextPtr) {}
+    /// See IDataLakeMetadata::drop: `commit` (catalog entry removal) is invoked exactly once,
+    /// between data deletion and metadata deletion. The default just runs `commit`.
+    virtual void drop(ContextPtr, const std::function<void()> & commit) { commit(); }
 
     virtual bool isBackgroundExecutable() const
     {

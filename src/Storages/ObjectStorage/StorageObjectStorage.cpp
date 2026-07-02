@@ -67,6 +67,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char iceberg_drop_data_cleanup_fail[];
+    extern const char iceberg_drop_catalog_remove_fail[];
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -747,17 +748,27 @@ void StorageObjectStorage::drop()
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop data cleanup");
     });
 
-    configuration->drop(drop_context);
-
-    /// Remove the catalog entry last: it is the commit point of the drop. The cleanup above can
-    /// throw (metadata init, listFiles, or an object-storage delete), so doing it while the table
-    /// is still registered keeps DROP atomic and retryable instead of orphaning the files under a
-    /// removed catalog entry.
-    if (catalog)
+    /// Remove the catalog entry as the commit point of the drop, ordered between data deletion and
+    /// metadata deletion by configuration->drop(). Deleting data first keeps DROP retryable if the
+    /// commit throws; deleting the metadata anchor only after the commit keeps the table
+    /// reconstructable for a retry (a fresh DROP rebuilds IcebergMetadata from that anchor).
+    /// Non-Iceberg engines and cleanup-disabled drops just run this commit.
+    auto commit = [this]
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
-    }
+        /// Models a catalog-service failure at the commit point, to check the metadata anchor
+        /// still exists afterwards so the drop can be retried.
+        fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
+        });
+
+        if (catalog)
+        {
+            const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            catalog->dropTable(namespace_name, table_name);
+        }
+    };
+
+    configuration->drop(drop_context, commit);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(

@@ -1315,15 +1315,46 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+void IcebergMetadata::drop(ContextPtr context, const std::function<void()> & commit)
 {
-    if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        /// Empty prefix: listFiles keys on `path / prefix`, so the prefix must be empty to enumerate
-        /// everything under the table path (passing table_path here too matches nothing).
-        auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
-        for (const auto & file : files)
-            object_storage->removeObjectIfExists(StoredObject(file));
+        /// Cleanup disabled: leave the files in place, just remove the catalog entry.
+        commit();
+        return;
+    }
+
+    /// Empty prefix: listFiles keys on `path / prefix`, so the prefix must be empty to enumerate
+    /// everything under the table path (passing table_path here too matches nothing).
+    auto files = listFiles(*object_storage, persistent_components.table_path, "", "");
+
+    /// Delete data and manifest files first but keep the `*.metadata.json` anchor. A DROP retry
+    /// reconstructs IcebergMetadata from that anchor (DatabaseDataLake copies its location into
+    /// iceberg_metadata_file_path), so if a data delete or the catalog commit below throws, the
+    /// anchor still exists and the next DROP can reconstruct the table state and finish cleanup.
+    std::vector<String> metadata_files;
+    for (const auto & file : files)
+    {
+        if (file.ends_with(".metadata.json"))
+        {
+            metadata_files.push_back(file);
+            continue;
+        }
+        LOG_DEBUG(log, "Deleting Iceberg data file on drop: {}", file);
+        object_storage->removeObjectIfExists(StoredObject(file));
+    }
+
+    /// Remove the catalog entry: the commit point of the drop. Everything above is retryable
+    /// (table still registered, metadata anchor intact); once this succeeds the table is gone.
+    commit();
+
+    /// Delete the metadata anchor last. The table is already unregistered here, so a failure only
+    /// orphans the small `*.metadata.json` file(s) (the data is already gone) without affecting
+    /// the correctness or completeness of the drop.
+    for (const auto & file : metadata_files)
+    {
+        LOG_DEBUG(log, "Deleting Iceberg metadata file on drop: {}", file);
+        object_storage->removeObjectIfExists(StoredObject(file));
     }
 }
 
