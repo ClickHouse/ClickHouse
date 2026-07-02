@@ -258,5 +258,28 @@ def test_gitmodules_shape_rejects_name_path_mismatch(tmp_path, monkeypatch):
     assert violation and "not equal to its path" in violation
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../../../../ClickHouse",   # parent traversal — the reported exploit
+        "contrib/../../etc",        # `..` component after a valid-looking prefix
+        "/etc/cron.d/evil",         # absolute path
+        "evil",                     # outside contrib/
+    ],
+)
+def test_gitmodules_shape_rejects_traversal_path(tmp_path, monkeypatch, path):
+    # name == path and a github URL, so only the path-shape guard can reject these.
+    # Otherwise `dst = os.path.join(BEFORE_SRC, path)` would escape before_src and the
+    # `rm -rf` in prepare_before_worktree could delete the mounted checkout itself.
+    _write_gitmodules(
+        tmp_path,
+        monkeypatch,
+        f'[submodule "{path}"]\n\tpath = {path}\n'
+        "\turl = https://github.com/ClickHouse/foo.git\n",
+    )
+    violation = gitmodules_shape_violation()
+    assert violation and "unsafe path" in violation
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

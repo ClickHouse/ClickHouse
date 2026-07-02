@@ -176,6 +176,19 @@ def gitmodules_shape_violation():
         name = key.removeprefix("submodule.").removesuffix(".path")
         if name != path:
             return f"submodule name '{name}' is not equal to its path '{path}'"
+        # SECURITY: the path is later joined onto BEFORE_SRC and passed to `rm -rf`/`cp -al`
+        # (see prepare_before_worktree). An absolute path or a `..` component would let a
+        # PR-controlled `.gitmodules` (e.g. path = ../../../../ClickHouse) resolve outside
+        # before_src and operate on the mounted checkout itself. Require a plain relative
+        # path under contrib/ (all real submodules live there) with no `..` component. This
+        # is the pre-fetch half of the defense; prepare_before_worktree adds a realpath
+        # containment check as the second half before the destructive `rm -rf`.
+        if (
+            os.path.isabs(path)
+            or ".." in path.split("/")
+            or not path.startswith("contrib/")
+        ):
+            return f"submodule '{name}' has an unsafe path '{path}'"
     return None
 
 
@@ -240,11 +253,25 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         "git config --file .gitmodules --get-regexp '^submodule\\..*\\.path$' "
         "| awk '{print $2}'"
     ).splitlines()
+    before_src_real = os.path.realpath(BEFORE_SRC)
     for path in sub_paths:
         path = path.strip()
         if not path or not os.path.isdir(path) or not os.listdir(path):
             continue
         dst = os.path.join(BEFORE_SRC, path)
+        # SECURITY: defense in depth against a traversal path that somehow slipped past
+        # gitmodules_shape_violation — never `rm -rf`/`cp` a destination that resolves
+        # outside before_src (e.g. the mounted checkout itself). realpath collapses any
+        # `..` / symlink before the containment test; a violation is a hard stop, not a
+        # skip, because the shape guard above should already have rejected it.
+        dst_real = os.path.realpath(dst)
+        if dst_real != before_src_real and not dst_real.startswith(
+            before_src_real + os.sep
+        ):
+            raise RuntimeError(
+                f"refusing to populate submodule '{path}': destination '{dst}' "
+                f"escapes '{BEFORE_SRC}'"
+            )
         # SECURITY: submodule paths come from the PR's `.gitmodules` and are PR-controlled,
         # so shell-quote them (and use `--`) before Shell.check to avoid command/option
         # injection on the runner.
