@@ -87,7 +87,7 @@ CREATE TABLE tab_pk_partial_adaptive(
     vec Array(Float32),
     INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2
 ) ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 3, index_granularity_bytes = 64, min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 3, index_granularity_bytes = 64, min_index_granularity_bytes = 10, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab_pk_partial_adaptive VALUES
     (0, repeat('a', 0), [1.0, 0.0]), (1, repeat('a', 20), [1.1, 0.0]), (2, repeat('a', 40), [1.2, 0.0]),
