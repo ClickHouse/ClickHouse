@@ -3,6 +3,7 @@
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -35,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -531,6 +533,48 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
+        /// `LIKE pattern ESCAPE 'c'` and `ILIKE pattern ESCAPE 'c'` arrive here as a 3-argument
+        /// function call `like(col, pattern, escape_char)`. Fold the escape character into the
+        /// pattern and dispatch through the existing 2-argument handler.
+        if (function_arguments_size == 3 && (function_name == "like" || function_name == "ilike"))
+        {
+            auto lhs_argument = function.getArgumentAt(0);
+            auto pattern_argument = function.getArgumentAt(1);
+            auto escape_argument = function.getArgumentAt(2);
+
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (pattern_argument.tryGetConstant(pattern_field, pattern_type)
+                && escape_argument.tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`.
+                /// Without this, direct read from the text index can strip the `like` call,
+                /// so a query that should raise `BAD_ARGUMENTS` returns rows from the index.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        function_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                /// An unknown backslash escape (e.g. `a\b`) keeps the literal backslash at row-level
+                /// but `nextInStringLike` drops it, so the tokens would not match the indexed value and
+                /// the index could wrongly prune a granule. Decline and fall back to row-level evaluation.
+                if (likePatternHasUnknownBackslashEscape(rewritten))
+                    return false;
+                Field rewritten_field(std::move(rewritten));
+                if (traverseFunctionNode(function, lhs_argument, pattern_type, rewritten_field, out))
+                    return true;
+            }
+            return false;
+        }
+
         if (function_arguments_size != 2)
             return false;
 
@@ -851,6 +895,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!value_data_type.isStringOrFixedString())
             return false;
 
+        /// Same divergence as the plain `like` branch below: `nextInStringLike` drops the backslash for an
+        /// unknown escape `\c`, so the requested tokens would not match the indexed key/value. Decline and
+        /// let row-level evaluation handle it.
+        if ((function_name == "mapContainsKeyLike" || function_name == "mapContainsValueLike")
+            && value_field.getType() == Field::Types::String
+            && likePatternHasUnknownBackslashEscape(value_field.safeGet<String>()))
+            return false;
+
         auto make_map_function = [&](VectorWithMemoryTracking<String> tokens)
         {
             out.function = RPNElement::FUNCTION_EQUALS;
@@ -1118,6 +1170,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like")
     {
+        /// `nextInStringLike` drops the backslash for an unknown escape `\c`, diverging from row-level
+        /// matching, so decline and let row-level evaluation handle it.
+        if (value_field.getType() == Field::Types::String
+            && likePatternHasUnknownBackslashEscape(value_field.safeGet<String>()))
+            return false;
+
         /// Requires explicit opt-in via use_text_index_like_evaluation_by_dictionary_scan because scanning
         /// the index dictionary for pattern-matching tokens has non-trivial overhead.
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor

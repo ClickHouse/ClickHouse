@@ -1,0 +1,76 @@
+Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern
+1024
+1024
+1024
+1024
+1024
+3072
+3072
+ESCAPE used to match a literal LIKE wildcard returns the expected zero rows
+0
+0
+Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 4 parts / 32 granules
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 8/32
+Text index analysis with LIKE ESCAPE on a non-existent token: 0 parts and 0 granules selected
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 0/4
+Granules: 0/32
+Text index analysis with ILIKE ESCAPE: index narrows correctly
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 8/32
+Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form
+1024
+1024
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 8/32
+Text index with array tokenizer also uses the index with LIKE ESCAPE
+1024
+1024
+Name: idx
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 8/32
+A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call
+An unknown backslash escape is not pruned by the text index (would otherwise drop the literal backslash and tokenize differently than the indexed value)
+Correctness check: the row containing the literal backslash is returned
+1
+Text index analysis declines the condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+A plain two-argument LIKE with an unknown backslash escape is also not pruned by the text index
+Correctness check: the row containing the literal backslash is returned
+1
+Text index analysis declines the condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+A map LIKE with an unknown backslash escape is also not pruned by the text index
+Correctness check: the key and the value containing the literal backslash are returned
+1
+2
+Text index analysis declines both conditions: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+Parts: 1 | Granules: 3
+Granules: 3/3
+A valid map LIKE pattern still uses the text index (decline is targeted, not blanket)
+Parts: 1 | Granules: 1
+Granules: 3/3
+Granules: 1/3
+A trailing backslash is not pruned by the text index (row-level LIKE raises, so the index must decline)
+Text index analysis declines the condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+Correctness check: the query raises instead of silently returning an empty result
+A trailing backslash in a map LIKE is not pruned by the text index either
+Text index analysis declines the map condition: all 3 granules are scanned
+Parts: 1 | Granules: 3
+Granules: 3/3
+Correctness check: the map query raises instead of silently returning an empty result

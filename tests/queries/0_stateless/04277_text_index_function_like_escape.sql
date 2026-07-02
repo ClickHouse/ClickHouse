@@ -1,0 +1,296 @@
+-- Tags: no-parallel-replicas
+
+-- Tests that the text index is still used when the predicate uses
+-- `LIKE pattern ESCAPE 'c'` or `ILIKE pattern ESCAPE 'c'`. The escape
+-- character is folded into the pattern (rewritten to standard backslash
+-- escapes) before the index dispatches it through the existing 2-argument
+-- handlers.
+
+SET enable_analyzer = 1;
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+-- A moderate index_granularity keeps the text index small (few granules) so the
+-- flaky check stays well under its per-run time limit; the four single-value parts
+-- still demonstrate that a `LIKE ... ESCAPE` predicate prunes to the matching part.
+SETTINGS index_granularity = 128;
+
+INSERT INTO tab SELECT number, 'Hello ClickHouse' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickHousez rocks' FROM numbers(1024);
+
+SELECT 'Results are the same with and without an ESCAPE clause when the escape character is not used in the pattern';
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+SELECT count() FROM tab WHERE message LIKE '%World%';
+SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|';
+SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '#';
+
+SELECT count() FROM tab WHERE message ILIKE '%world%';
+SELECT count() FROM tab WHERE message ILIKE '%world%' ESCAPE '|';
+
+SELECT count() FROM tab WHERE message NOT LIKE '%World%';
+SELECT count() FROM tab WHERE message NOT LIKE '%World%' ESCAPE '|';
+
+SELECT 'ESCAPE used to match a literal LIKE wildcard returns the expected zero rows';
+
+SELECT count() FROM tab WHERE message LIKE '%fast|%' ESCAPE '|';
+SELECT count() FROM tab WHERE message LIKE '%fast#%' ESCAPE '#';
+
+SELECT 'Text index analysis with LIKE ESCAPE: index narrows to 1 part / 8 granules out of 4 parts / 32 granules';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%World%' ESCAPE '|'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 3, 4;
+
+SELECT 'Text index analysis with LIKE ESCAPE on a non-existent token: 0 parts and 0 granules selected';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message LIKE '%missing%' ESCAPE '|'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 3, 4;
+
+SELECT 'Text index analysis with ILIKE ESCAPE: index narrows correctly';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE message ILIKE '%world%' ESCAPE '|'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 3, 4;
+
+SELECT 'Functional 3-argument form like(haystack, needle, escape) is equivalent to the operator form';
+
+SELECT count() FROM tab WHERE like(message, '%World%', '|');
+SELECT count() FROM tab WHERE ilike(message, '%world%', '|');
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE like(message, '%World%', '|')
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 3, 4;
+
+DROP TABLE tab;
+
+SELECT 'Text index with array tokenizer also uses the index with LIKE ESCAPE';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    tag String,
+    INDEX idx(tag) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 128;  -- keep the text index small for the flaky check (see the note above)
+
+INSERT INTO tab SELECT number, 'ClickHouseServer' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickhouseclient' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickHouseCloud' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'ClickhouseSQL' FROM numbers(1024);
+
+SELECT count() FROM tab WHERE tag LIKE '%Cloud%';
+SELECT count() FROM tab WHERE tag LIKE '%Cloud%' ESCAPE '|';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE tag LIKE '%Cloud%' ESCAPE '|'
+) WHERE explain LIKE '%Name:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+LIMIT 3, 4;
+
+SELECT 'A non-ASCII ESCAPE byte is rejected at planning time so the direct-read text-index optimization cannot strip the call';
+
+-- Without the validation in `MergeTreeIndexConditionText`, the text-index analyzer accepts a
+-- single non-ASCII byte and the direct-read optimization replaces the `like` call with a
+-- virtual-column reference. The execution-layer BAD_ARGUMENTS check never runs and the query
+-- silently returns rows. Mirroring the validation in the analyzer makes the error appear at
+-- planning time, before any optimization can drop the predicate.
+SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+EXPLAIN indexes = 1 SELECT count() FROM tab WHERE like(tag, '%Cloud%', unhex('FF')); -- { serverError BAD_ARGUMENTS }
+
+DROP TABLE tab;
+
+SELECT 'An unknown backslash escape is not pruned by the text index (would otherwise drop the literal backslash and tokenize differently than the indexed value)';
+
+-- The row contains the literal token "a\b" (a, backslash, b). `splitByNonAlpha` indexes it as the
+-- tokens "a" and "b", but `nextInStringLike` on the rewritten pattern drops the backslash and asks
+-- for the single token "ab", which is absent, so the granule would be wrongly pruned. The analyzer
+-- declines the 3-argument condition for unknown backslash escapes and falls back to row-level.
+-- ('foo a\\b bar' is the literal string with one backslash before b.)
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'foo a\\b bar'), (2, 'foo ab bar'), (3, 'nothing here');
+
+SELECT 'Correctness check: the row containing the literal backslash is returned';
+
+SELECT id FROM tab WHERE msg LIKE '% a\\b %' ESCAPE '\\' ORDER BY id;
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE '% a\\b %' ESCAPE '\\'
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'A plain two-argument LIKE with an unknown backslash escape is also not pruned by the text index';
+
+-- Same divergence as above but for a plain two-argument `LIKE '% a\b %'` (no ESCAPE clause).
+-- The literal token "a\b" is indexed by `splitByNonAlpha` as "a" and "b", but `nextInStringLike`
+-- drops the backslash and asks for "ab", which is absent, so the granule would be wrongly pruned.
+SET optimize_rewrite_like_perfect_affix = 0;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'foo a\\b bar'), (2, 'foo ab bar'), (3, 'nothing here');
+
+SELECT 'Correctness check: the row containing the literal backslash is returned';
+
+SELECT id FROM tab WHERE msg LIKE '% a\\b %' ORDER BY id;
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE '% a\\b %'
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'A map LIKE with an unknown backslash escape is also not pruned by the text index';
+
+-- Same divergence for mapContainsKeyLike / mapContainsValueLike on a text index over mapKeys / mapValues.
+-- A map key/value "foo a\b bar" is indexed by `splitByNonAlpha` as tokens "foo", "a", "b", "bar", but
+-- `nextInStringLike` drops the backslash and asks for the single token "ab", which is absent, so the
+-- granule containing the matching entry would be wrongly pruned. The analyzer declines the map LIKE
+-- condition for unknown backslash escapes and falls back to row-level.
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX map_keys_idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX map_values_idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, {'foo a\\b bar':'v1'}), (2, {'k2':'foo a\\b baz'}), (3, {'nothing':'here'});
+
+SELECT 'Correctness check: the key and the value containing the literal backslash are returned';
+
+SELECT id FROM tab WHERE mapContainsKeyLike(m, '% a\\b %') ORDER BY id;
+SELECT id FROM tab WHERE mapContainsValueLike(m, '% a\\b %') ORDER BY id;
+
+SELECT 'Text index analysis declines both conditions: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, '% a\\b %')
+) WHERE explain LIKE '%Granules:%';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsValueLike(m, '% a\\b %')
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'A valid map LIKE pattern still uses the text index (decline is targeted, not blanket)';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, '% bar %')
+) WHERE explain LIKE '%Granules:%';
+
+DROP TABLE tab;
+
+SELECT 'A trailing backslash is not pruned by the text index (row-level LIKE raises, so the index must decline)';
+
+-- A trailing backslash is an invalid escape: row-level `LIKE` raises CANNOT_PARSE_ESCAPE_SEQUENCE,
+-- but `nextInStringLike` silently drops it and asks the index for the token `abc`. If the index then
+-- prunes every granule (none of these rows contains `abc`), the `like` is never evaluated and a query
+-- that should raise returns an empty result. The analyzer must decline the condition so row-level
+-- evaluation runs and raises. ('abc\\' is the four-byte string a, b, c, backslash.)
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'zzz none'), (2, 'qqq nothing'), (3, 'more here');
+
+SELECT 'Text index analysis declines the condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE msg LIKE 'abc\\'
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'Correctness check: the query raises instead of silently returning an empty result';
+
+SELECT count() FROM tab WHERE msg LIKE 'abc\\'; -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE tab;
+
+SELECT 'A trailing backslash in a map LIKE is not pruned by the text index either';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX map_keys_idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1,
+    INDEX map_values_idx mapValues(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, {'kkk':'vvv'}), (2, {'nnn':'mmm'}), (3, {'ppp':'qqq'});
+
+SELECT 'Text index analysis declines the map condition: all 3 granules are scanned';
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE mapContainsKeyLike(m, 'abc\\')
+) WHERE explain LIKE '%Granules:%';
+
+SELECT 'Correctness check: the map query raises instead of silently returning an empty result';
+
+SELECT count() FROM tab WHERE mapContainsKeyLike(m, 'abc\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+SELECT count() FROM tab WHERE mapContainsValueLike(m, 'abc\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
+DROP TABLE tab;

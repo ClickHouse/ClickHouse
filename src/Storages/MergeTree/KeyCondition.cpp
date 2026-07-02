@@ -28,6 +28,7 @@
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -65,6 +66,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -3523,6 +3525,50 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
 
+        /// `LIKE pattern ESCAPE 'c'` and `NOT LIKE pattern ESCAPE 'c'` arrive here as a
+        /// 3-argument function call `like(col, pattern, escape_char)`. Fold the escape
+        /// character into the pattern and dispatch through the existing 2-argument handler.
+        /// `ilike`/`notILike` are not in `atom_map` and were already rejected above.
+        Field rewritten_like_pattern;
+        DataTypePtr rewritten_like_pattern_type;
+        bool rewritten_like = false;
+        if (num_args == 3 && (func_name == "like" || func_name == "notLike"))
+        {
+            Field pattern_field;
+            DataTypePtr pattern_type;
+            Field escape_field;
+            DataTypePtr escape_type;
+            if (func.getArgumentAt(1).tryGetConstant(pattern_field, pattern_type)
+                && func.getArgumentAt(2).tryGetConstant(escape_field, escape_type)
+                && pattern_field.getType() == Field::Types::String
+                && escape_field.getType() == Field::Types::String)
+            {
+                const String & escape_str = escape_field.safeGet<String>();
+                /// Mirror the execution-layer validation in `FunctionsStringSearch::executeImpl`
+                /// so a query with an invalid ESCAPE byte fails at planning time even if a
+                /// downstream optimization would otherwise drop the original predicate.
+                if (escape_str.size() != 1 || static_cast<unsigned char>(escape_str[0]) > 0x7F)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
+                        func_name, escape_str);
+
+                String rewritten = likePatternWithCustomEscapeToLikePattern(
+                    pattern_field.safeGet<String>(), escape_str[0]);
+                /// Unlike the text-index path, the primary-key path needs no unknown-backslash-escape
+                /// decline: `extractFixedPrefixFromLikePattern` keeps the literal backslash for an
+                /// unknown escape `\c` and reports a trailing backslash as non-exact, so the prefix
+                /// range it builds agrees with row-level matching (see #107032).
+                rewritten_like_pattern = Field(std::move(rewritten));
+                rewritten_like_pattern_type = pattern_type;
+                rewritten_like = true;
+                num_args = 2;
+            }
+
+            if (!rewritten_like)
+                return false;
+        }
+
         auto analyze_point_in_polygon = [&, this]() -> bool
         {
             /// pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])
@@ -3635,7 +3681,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             /// Looking for func(key, const) or func(const, key).
             size_t const_arg_pos = 0;
-            if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
+            if (rewritten_like)
+            {
+                /// `like(col, pattern, escape)` rewritten to `like(col, rewritten_pattern)`
+                /// above: the key is at position 0, the rewritten pattern is the constant.
+                const_value = rewritten_like_pattern;
+                const_type = rewritten_like_pattern_type;
+                const_arg_pos = 1;
+            }
+            else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
                 const_arg_pos = 1;
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
                 const_arg_pos = 0;

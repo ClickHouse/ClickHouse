@@ -1,0 +1,45 @@
+Two-argument LIKE: primary key narrows to range [abc, abd)
+Parts: 1 | Granules: 1
+Condition: (s in [\'abc\', \'abd\'))
+Parts: 1/1
+Granules: 1/1
+Three-argument LIKE with ESCAPE: escaped % is a literal, so the wildcard-free pattern uses the exact point range [abc%, abc%]
+Parts: 1 | Granules: 1
+Condition: (s in [\'abc%\', \'abc%\'])
+Parts: 1/1
+Granules: 1/1
+Functional 3-argument form like(col, pattern, escape) is equivalent to the operator form
+Parts: 1 | Granules: 1
+Condition: (s in [\'abc%\', \'abc%\'])
+Parts: 1/1
+Granules: 1/1
+Three-argument NOT LIKE with ESCAPE and a trailing wildcard: primary key narrows to not(in [abc%done, abc%donf))
+Parts: 1 | Granules: 1
+Condition: (s not in [\'abc%done\', \'abc%donf\'))
+Parts: 1/1
+Granules: 1/1
+Correctness check: LIKE ... ESCAPE returns rows whose value starts with the literal abc%
+abc%
+Correctness check: NOT LIKE ... ESCAPE excludes rows starting with abc% followed by done
+abc
+abc%
+abcd
+xyz
+A non-ASCII ESCAPE byte is rejected at planning time by the primary-key analyzer
+Unknown backslash escape: primary key keeps the literal backslash, so matching rows are not pruned
+Condition: (s in [\'a\\\\b\', \'a\\\\c\'))
+Correctness check: all four rows starting with a literal backslash are returned
+a\\b01
+a\\b02
+a\\b03
+a\\b04
+Two-argument LIKE with an unknown backslash escape: primary key keeps the literal backslash
+Condition: (s in [\'a\\\\b\', \'a\\\\c\'))
+Correctness check: all four rows starting with a literal backslash are returned
+a\\b01
+a\\b02
+a\\b03
+a\\b04
+Trailing backslash: primary key builds the relaxed prefix range so the predicate is read, not pruned away
+Condition: (s in [\'abc\', \'abd\'))
+Correctness check: the query raises instead of silently returning an empty result
