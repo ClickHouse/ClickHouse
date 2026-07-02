@@ -554,6 +554,30 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        context_mutable->setSetting("max_execution_time", static_cast<Field>(settings[Setting::max_execution_time_leaf]));
+        context_mutable->setSetting("timeout_overflow_mode", static_cast<Field>(settings[Setting::timeout_overflow_mode_leaf]));
+
+        /// The substitution above only affects remote replicas: each of them builds its own 'QueryStatus'
+        /// from the settings shipped with the sub-query, so 'max_execution_time_leaf' is enforced there.
+        /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
+        /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
+        /// timeout. As a result, with a local plan the leaf reading would not be limited by
+        /// 'max_execution_time_leaf' at all. To make the setting effective, disable the local plan so that
+        /// all leaf reading happens on remote replicas where the leaf timeout is honored.
+        if (settings[Setting::parallel_replicas_local_plan])
+        {
+            LOG_TRACE(
+                logger,
+                "Disabling 'parallel_replicas_local_plan' because 'max_execution_time_leaf' is set: the local "
+                "replica shares the initiator's query status and cannot be bounded by the leaf timeout separately");
+            context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
+        }
+    }
+
     return context_mutable;
 }
 
