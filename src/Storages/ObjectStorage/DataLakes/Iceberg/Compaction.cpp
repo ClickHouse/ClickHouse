@@ -844,6 +844,7 @@ static bool writeConsolidatedManifestFile(
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
             false,
+            /* per_entry_content_types */ {},
             existing_entry_counts,
             /* carry_forward_manifest_paths */ delete_manifest_paths,
             /* entry_partition_spec_ids */ entry_partition_spec_ids,
@@ -1118,7 +1119,9 @@ static void writeMetadataFiles(
         }
         std::vector<Int64> per_manifest_sizes;
         for (const auto & entry : renamed_manifest_entries)
+        {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,

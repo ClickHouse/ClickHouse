@@ -117,12 +117,10 @@ void generateManifestList(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {},
     const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {},
-    /// Manifest-list entry paths to copy verbatim from the parent snapshot into the new manifest list (carries delete-file manifests forward unchanged).
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
-    /// Optional per-entry `partition_spec_id` parallel to `manifest_entry_names`; when non-empty each entry records the supplied spec id instead of the table's default.
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    /// Optional per-entry partition summary parallel to `manifest_entry_names`; when non-empty the manifest-list `partitions` summary is recomputed per entry.
     const std::vector<ManifestListEntryPartitionSummary> & entry_partition_summaries = {});
 
 class IcebergStorageSink final : public SinkToStorage
