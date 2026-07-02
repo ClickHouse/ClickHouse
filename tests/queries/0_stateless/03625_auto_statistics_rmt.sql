@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the test exercises auto statistics, not parallel replicas, and reading
+-- through the randomized parallel_replicas cluster times out under sanitizers.
+
 DROP TABLE IF EXISTS test_table;
 SET allow_statistics = 1;
 SET insert_keeper_fault_injection_probability = 0.0;

@@ -114,7 +114,7 @@ struct JoinSettings
     bool use_hash_table_stats_for_join_reordering;
 
     bool enable_join_fixed_hash_table_conversion;
-    bool enable_join_runtime_filter_shared_fixed_hash_table;
+    bool join_runtime_filter_from_fixed_hash_table;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

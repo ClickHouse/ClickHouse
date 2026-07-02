@@ -205,12 +205,16 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image width and height must be greater than zero (got {}x{})", width, height);
 
-    /// The PNG specification stores width and height as 31-bit unsigned integers. Reject larger values here,
-    /// before allocating the buffer, so they cannot be silently truncated when later narrowed to `png_uint_32`.
-    static constexpr size_t MAX_IMAGE_DIMENSION = (size_t(1) << 31) - 1;
+    /// libpng rejects an image whose width or height exceeds its per-dimension user limit
+    /// (`PNG_USER_WIDTH_MAX`/`PNG_USER_HEIGHT_MAX`, 1000000 by default) at `png_set_IHDR`. That check fires
+    /// inside libpng's C frames, so it would surface only as a generic encoding failure. Reject oversized
+    /// dimensions here instead, before allocating the buffer, with a clear message naming the settings.
+    static constexpr size_t MAX_IMAGE_DIMENSION = 1000000;
     if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Image width and height must not exceed {} (got {}x{})", MAX_IMAGE_DIMENSION, width, height);
+            "Image width and height must not exceed {} (got {}x{}). "
+            "Reduce 'output_format_image_width'/'output_format_image_height'.",
+            MAX_IMAGE_DIMENSION, width, height);
 
     const size_t num_cols = header.columns();
     if (num_cols == 0)

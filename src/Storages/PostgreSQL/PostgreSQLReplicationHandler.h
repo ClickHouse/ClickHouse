@@ -135,6 +135,9 @@ private:
     /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
     mutable bool schema_as_a_part_of_table_name = false;
 
+    /// Whether to map PostgreSQL `date`/`timestamp` to `Date32`/`DateTime64` (true) or to `Date`/`DateTime` (false).
+    const bool use_extended_date_and_time_types;
+
     const bool user_managed_slot;
     const String user_provided_snapshot;
     const String replication_slot;

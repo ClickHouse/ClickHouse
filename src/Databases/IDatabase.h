@@ -10,6 +10,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
@@ -300,10 +301,10 @@ public:
         ContextPtr /*context*/, const FilterByNameFunction & /*filter_by_table_name = {}*/, bool /*skip_not_loaded = false*/) const;
 
     /// Returns list of table names.
-    virtual Strings getAllTableNames(ContextPtr context) const
+    virtual VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const
     {
         // NOTE: This default implementation wait for all tables to be loaded and started up. It should be reimplemented for databases that support async loading.
-        Strings result;
+        VectorWithMemoryTracking<String> result;
         for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
             result.emplace_back(table_it->name());
         return result;
