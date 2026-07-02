@@ -3168,6 +3168,12 @@ bool ParserTableFunctionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected
 bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto start = std::make_unique<ArrayLayer>();
+    /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+    {
+        auto pos_copy = pos;
+        if (parseOperator(pos_copy, "ARRAY", expected) && pos_copy->type == TokenType::OpeningSquareBracket)
+            pos = pos_copy;
+    }
     return ParserToken(TokenType::OpeningSquareBracket).ignore(pos, expected)
         && ParserExpressionImpl().parse(std::move(start), pos, node, expected);
 }
@@ -3655,6 +3661,20 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             return Action::OPERAND;
         }
         pos = old_pos;
+
+        /// PostgreSQL-compatible ARRAY[...] syntax for non-literal arrays (e.g. ARRAY[x+1]).
+        /// Literal arrays with ARRAY[...] are already handled by array_literal_parser above,
+        /// which preserves recordLiteralTokens for ConstantExpressionTemplate optimizations.
+        {
+            auto pos_copy = pos;
+            if (parseOperator(pos_copy, "ARRAY", expected) && pos_copy->type == TokenType::OpeningSquareBracket)
+            {
+                ++pos_copy;
+                pos = pos_copy;
+                layers.push_back(std::make_unique<ArrayLayer>());
+                return Action::OPERAND;
+            }
+        }
 
         if (identifier_parser.parse(pos, tmp, expected))
         {

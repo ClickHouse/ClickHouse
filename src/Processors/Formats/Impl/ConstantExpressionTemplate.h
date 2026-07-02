@@ -34,8 +34,9 @@ class ConstantExpressionTemplate : boost::noncopyable
                           ASTPtr & expr, const IDataType & result_type, bool null_as_default_, ContextPtr context);
 
         static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default);
-        static UInt64 getTemplateHash(const ASTPtr & expression, const LiteralsInfo & replaced_literals,
-                                      const DataTypePtr & result_column_type, bool null_as_default, const String & salt);
+        static UInt64 getTemplateHash(const ASTPtr & expression, LiteralsInfo & replaced_literals,
+                                      const DataTypePtr & result_column_type, bool null_as_default, const String & salt,
+                                      TokenIterator expression_begin, TokenIterator expression_end);
 
         String dumpTemplate() const;
 

@@ -120,7 +120,14 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         }
         else
         {
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
+            /// ARRAY is consumed as a keyword by the PostgreSQL-compatible ARRAY[...] constructor
+            /// parser, so an unquoted identifier named ARRAY followed by [...] would round-trip as
+            /// an array literal instead of an identifier subscript.  Mark it ambiguous so it is
+            /// back-quoted in WhenNecessary mode and the round-trip is preserved.
+            const bool ambiguous = (elem_name.size() == 5
+                && std::equal(elem_name.begin(), elem_name.end(), "array",
+                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }));
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/ambiguous);
         }
     };
 

@@ -475,12 +475,17 @@ String ConstantExpressionTemplate::TemplateStructure::dumpTemplate() const
 }
 
 UInt64 ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
-                                                                      const LiteralsInfo & replaced_literals,
+                                                                      LiteralsInfo & replaced_literals,
                                                                       const DataTypePtr & result_column_type,
                                                                       bool null_as_default,
-                                                                      const String & salt)
+                                                                      const String & salt,
+                                                                      TokenIterator expression_begin,
+                                                                      TokenIterator expression_end)
 {
-    /// TODO distinguish expressions with the same AST and different tokens (e.g. "CAST(expr, 'Type')" and "CAST(expr AS Type)")
+    /// Sort by token position so we can skip literal tokens while hashing fixed tokens below.
+    ::sort(replaced_literals.begin(), replaced_literals.end(),
+           [](const LiteralInfo & a, const LiteralInfo & b) { return a.token_info.begin < b.token_info.begin; });
+
     SipHash hash_state;
     hash_state.update(result_column_type->getName());
 
@@ -492,6 +497,22 @@ UInt64 ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTP
 
     /// Allows distinguish expression in the last column in Values format
     hash_state.update(salt);
+
+    /// Hash fixed (non-literal) token texts to distinguish expressions with the same AST
+    /// but different syntax, e.g. "ARRAY[...]" vs "[...]" or "CAST(x, 'T')" vs "CAST(x AS T)".
+    size_t lit_idx = 0;
+    for (auto it = expression_begin; it < expression_end; ++it)
+    {
+        /// Advance past any literal range that ends before this token.
+        while (lit_idx < replaced_literals.size() && it->begin >= replaced_literals[lit_idx].token_info.end)
+            ++lit_idx;
+
+        /// Skip tokens that fall inside the current literal's source range.
+        if (lit_idx < replaced_literals.size() && it->begin >= replaced_literals[lit_idx].token_info.begin)
+            continue;
+
+        hash_state.update(std::string_view(it->begin, it->size()));
+    }
 
     return hash_state.get64();
 }
@@ -519,7 +540,8 @@ ConstantExpressionTemplate::Cache::getFromCacheOrConstruct(const DataTypePtr & r
     ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
     param_visitor.visit(expression);
 
-    UInt64 template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt);
+    UInt64 template_hash = TemplateStructure::getTemplateHash(expression, visitor.replaced_literals, result_column_type, null_as_default, salt,
+                                                               expression_begin, expression_end);
     auto iter = cache.find(template_hash);
     if (iter == cache.end())
     {

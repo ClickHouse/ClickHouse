@@ -1524,13 +1524,22 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         {
             layers.back().arr.push_back(literal_node->as<ASTLiteral &>().value);
         }
-        else if (pos->type == opening_bracket)
-        {
-            layers.emplace_back(pos);
-            pos.increaseDepth();
-        }
         else
-            return false;
+        {
+            /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+            auto pos_copy = pos;
+            if (ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+                && pos_copy->type == TokenType::OpeningSquareBracket)
+                pos = pos_copy;
+
+            if (pos->type == opening_bracket)
+            {
+                layers.emplace_back(pos);
+                pos.increaseDepth();
+            }
+            else
+                return false;
+        }
     }
 
     expected.add(pos, getTokenName(closing_bracket));
@@ -1579,16 +1588,25 @@ private:
     IParser::Pos begin;
 };
 
-bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & /*expected*/, bool allow_map)
+bool parseAllCollectionsStart(IParser::Pos & pos, Collections & collections, Expected & expected, bool allow_map)
 {
     if (allow_map && pos->type == TokenType::OpeningCurlyBrace)
         collections.push_back(std::make_unique<MapCollection>(pos));
     else if (pos->type == TokenType::OpeningRoundBracket)
         collections.push_back(std::make_unique<CommonCollection<Tuple, TokenType::ClosingRoundBracket>>(pos));
-    else if (pos->type == TokenType::OpeningSquareBracket)
-        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
     else
-        return false;
+    {
+        /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+        if (pos->type != TokenType::OpeningSquareBracket)
+        {
+            auto pos_copy = pos;
+            if (!ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+                || pos_copy->type != TokenType::OpeningSquareBracket)
+                return false;
+            pos = pos_copy;
+        }
+        collections.push_back(std::make_unique<CommonCollection<Array, TokenType::ClosingSquareBracket>>(pos));
+    }
 
     ++pos;
     return true;
@@ -1698,6 +1716,44 @@ bool ParserAllCollectionsOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expecte
     return true;
 }
 
+
+bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Optional ARRAY keyword for PostgreSQL compatibility: ARRAY[...] is sugar for [...].
+    Pos original_pos = pos;
+    bool keyword_consumed = false;
+
+    Pos pos_copy = pos;
+    if (ParserKeyword::createDeprecated("ARRAY").ignore(pos_copy, expected)
+        && pos_copy->type == TokenType::OpeningSquareBracket)
+    {
+        pos = pos_copy;
+        keyword_consumed = true;
+    }
+
+    if (!array_parser.parse(pos, node, expected))
+        return false;
+
+    /// If the ARRAY keyword was consumed, extend the recorded literal token span to include it.
+    /// Without this, ConstantExpressionTemplate sees `ARRAY` as a fixed token that precedes the
+    /// `[...]` span.  A subsequent row spelled `[...]` (without the keyword) produces a different
+    /// fixed-token sequence, causing a template mismatch: with
+    /// input_format_values_interpret_expressions = 0 the row is rejected outright; with it enabled
+    /// parsing falls back to the slow expression-evaluation path.  Including `ARRAY` in the span
+    /// makes both spellings produce an identical fixed-token-free template, so the fast path works
+    /// regardless of which spelling appears first.
+    if (keyword_consumed && expected.literal_token_map && node)
+    {
+        if (const auto * literal = node->as<ASTLiteral>())
+        {
+            auto it = expected.literal_token_map->find(literal);
+            if (it != expected.literal_token_map->end())
+                it->second.begin = original_pos->begin;
+        }
+    }
+
+    return true;
+}
 
 bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
