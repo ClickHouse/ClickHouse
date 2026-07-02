@@ -13,7 +13,6 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
 #include <cstring> // memcpy
@@ -308,37 +307,43 @@ void ColumnArray::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
     size_t nested_begin = offsetAt(begin);
     size_t nested_end = offsetAt(end);
     getData().updateHashWithValueRange(nested_begin, nested_end, hash);
-    hash.update(reinterpret_cast<const char *>(&getOffsets()[begin]), (end - begin) * sizeof(getOffsets()[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = getOffsets()[i] - nested_begin;
+        hash.update(relative_offset);
+    }
 }
 
-WeakHash32 ColumnArray::getWeakHash32() const
+void ColumnArray::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = offsets->size();
-    WeakHash32 hash(s);
-
-    WeakHash32 internal_hash = data->getWeakHash32();
-
-    Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
-    auto & hash_data = hash.getData();
-    auto & internal_hash_data = internal_hash.getData();
 
-    for (size_t i = 0; i < s; ++i)
+    /// Hash only the elements that belong to the requested row range.
+    const size_t elem_begin = row_begin == 0 ? 0 : offsets_data[row_begin - 1];
+    const size_t elem_end = row_end == row_begin ? elem_begin : offsets_data[row_end - 1];
+    const size_t num_elems = elem_end - elem_begin;
+
+    PaddedPODArray<UInt32> elem_hash(num_elems);
+    if (num_elems)
+        data->computeHashInto(elem_begin, elem_end, elem_hash.data(), true);
+
+    Offset prev_offset = elem_begin;
+    for (size_t i = row_begin; i < row_end; ++i)
     {
-        /// This row improves hash a little bit according to integration tests.
-        /// It is the same as to use previous hash value as the first element of array.
-        hash_data[i] = static_cast<UInt32>(intHashCRC32(hash_data[i]));
+        /// Fold all element hashes of this row through a CRC32C chain seeded with
+        /// `WEAK_HASH32_INITIAL_VALUE`, self-mixed once. Each element extends the chain, so the
+        /// array length is implicitly mixed in and arrays like [], [0], [0, 0], ... do not collide.
+        /// See IColumn::computeHashInto.
+        UInt32 acc = static_cast<UInt32>(intHashCRC32(WEAK_HASH32_INITIAL_VALUE));
+        for (Offset row = prev_offset; row < offsets_data[i]; ++row)
+            acc = combineWeakHash32(elem_hash[row - elem_begin], acc);
 
-        for (size_t row = prev_offset; row < offsets_data[i]; ++row)
-            /// It is probably not the best way to combine hashes.
-            /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
-            /// Much better implementation - to add offsets as an optional argument to updateWeakHash32.
-            hash_data[i] = static_cast<UInt32>(intHashCRC32(internal_hash_data[row], hash_data[i]));
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? acc : combineWeakHash32(acc, out);
 
         prev_offset = offsets_data[i];
     }
-
-    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const

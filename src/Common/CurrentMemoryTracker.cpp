@@ -4,9 +4,11 @@
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/PerCPUMemory.h>
 
 #include <atomic>
 #include <limits>
+#include <tuple>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
@@ -76,18 +78,31 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = current_thread->untracked_memory.add(size);
-        if (new_untracked_memory > current_thread->untracked_memory_limit)
+        Int64 previous_untracked_memory = current_thread->untracked_memory;
+        DB::PerCPUMemoryThreadState previous_per_cpu = current_thread->per_cpu_untracked_memory;
+        current_thread->untracked_memory += size;
+
+        /// Flush when the per-thread cap is hit, or when the per-CPU budget cannot cover the deferral.
+        if (current_thread->untracked_memory > current_thread->untracked_memory_limit
+            || !DB::per_cpu_memory.sync(current_thread->untracked_memory, current_thread->per_cpu_untracked_memory))
         {
-            current_thread->untracked_memory.store(0);
+            DB::per_cpu_memory.release(current_thread->per_cpu_untracked_memory);
+
+            Int64 current_untracked_memory = current_thread->untracked_memory;
+            current_thread->untracked_memory = 0;
 
             try
             {
-                return memory_tracker->allocImpl(new_untracked_memory, enforce_memory_limit);
+                /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
+                if (current_untracked_memory > 0)
+                    std::ignore = memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
+                else
+                    std::ignore = memory_tracker->free(-current_untracked_memory, /*_sample_probability=*/ 0.0);
             }
             catch (...)
             {
-                current_thread->untracked_memory.add(new_untracked_memory - size);
+                current_thread->untracked_memory += previous_untracked_memory;
+                DB::per_cpu_memory.rollback(current_thread->per_cpu_untracked_memory, previous_per_cpu);
                 throw;
             }
         }
@@ -149,11 +164,21 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
         }
         current_thread->untracked_memory_blocker_level = blocker_level;
 
-        Int64 new_untracked_memory = current_thread->untracked_memory.add(-size);
-        if (new_untracked_memory < -current_thread->untracked_memory_limit)
+        current_thread->untracked_memory -= size;
+
+        /// Flush when the per-thread cap is hit, or when the per-CPU budget cannot cover the deferral.
+        if (current_thread->untracked_memory < -current_thread->untracked_memory_limit
+            || !DB::per_cpu_memory.sync(current_thread->untracked_memory, current_thread->per_cpu_untracked_memory))
         {
-            current_thread->untracked_memory.store(0);
-            return memory_tracker->free(-new_untracked_memory);
+            DB::per_cpu_memory.release(current_thread->per_cpu_untracked_memory);
+
+            Int64 untracked_memory = current_thread->untracked_memory;
+            current_thread->untracked_memory = 0;
+            /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
+            if (untracked_memory > 0)
+                std::ignore = memory_tracker->allocImpl(untracked_memory, /*enforce_memory_limit=*/ false, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
+            else
+                std::ignore = memory_tracker->free(-untracked_memory, /*_sample_probability=*/ 0.0);
         }
 
         return AllocationTrace(current_thread->getEffectiveSampleProbability(size));

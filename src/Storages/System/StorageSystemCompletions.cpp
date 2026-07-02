@@ -1,4 +1,5 @@
 #include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
@@ -88,7 +89,7 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    StorageMetadataPtr snapshot = table->getInMemoryMetadataPtr(context, false);
+    const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
@@ -175,8 +176,10 @@ static void fillDataWithAggregateFunctionCombinatorPair(MutableColumns & res_col
     const auto & aggregate_function_combinators = AggregateFunctionCombinatorFactory::instance().getAllAggregateFunctionCombinators();
     for (const auto & function_name : aggregate_functions)
     {
-        for (const auto & [combinator_name, combinator] : aggregate_function_combinators)
+        for (const auto & combinator_pair : aggregate_function_combinators)
         {
+            const auto & combinator_name = combinator_pair.name;
+            const auto & combinator = combinator_pair.combinator_ptr;
             if (combinator->isForInternalUsageOnly())
                 continue;
             res_columns[0]->insert(function_name + combinator_name);
@@ -356,3 +359,6 @@ void StorageSystemCompletions::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemCompletions) }

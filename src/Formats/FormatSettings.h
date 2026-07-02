@@ -30,6 +30,8 @@ struct FormatSettings
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
+    bool always_write_decimal_point_in_float_and_decimal = false;
+    UInt64 float_precision = 0;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -71,9 +73,9 @@ struct FormatSettings
 
     enum class DateTimeInputFormat : uint8_t
     {
-        Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
-        BestEffort,   /// Use sophisticated rules to parse whatever possible.
-        BestEffortUS  /// Use sophisticated rules to parse American style: mm/dd/yyyy
+        Basic, /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
+        BestEffort, /// Use sophisticated rules to parse whatever possible.
+        BestEffortUS /// Use sophisticated rules to parse American style: mm/dd/yyyy
     };
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
@@ -191,10 +193,21 @@ struct FormatSettings
         UInt64 receive_timeout = 1;
     };
 
+    /// Retry policy for the Confluent Schema Registry HTTP client. Applied to
+    /// transient transport-level failures (connection refused, DNS, socket
+    /// timeouts) and to retryable HTTP responses (5xx, 408, 429). Schema
+    /// validation errors (HTTP 409, malformed Avro JSON) are NOT retried.
+    struct AvroSchemaRegistryRetryConfig
+    {
+        UInt64 max_retries = 5;
+        UInt64 initial_backoff_ms = 100;
+    };
+
     struct
     {
         String schema_registry_url;
         AvroSchemaRegistryTimeouts schema_registry_timeouts;
+        AvroSchemaRegistryRetryConfig schema_registry_retry;
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
@@ -214,8 +227,10 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool serialize_tuple_into_separate_columns = true;
+        bool header_serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
+        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
@@ -404,6 +419,8 @@ struct FormatSettings
 
         bool named_tuples_as_json = true;
 
+        bool use_nbsp_for_padding = false;
+
         enum class Charset : uint8_t
         {
             UTF8,
@@ -561,6 +578,13 @@ struct FormatSettings
 
     struct
     {
+        UInt64 width = 1024;
+        UInt64 height = 1024;
+        String terminal_mode;
+    } image{};
+
+    struct
+    {
         UInt64 max_batch_size = DEFAULT_BLOCK_SIZE;
         String table_name = "table";
         bool include_column_names = true;
@@ -592,6 +616,14 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
+
+    enum class UnsupportedGeometryHandling { Throw, Null };
+
+    struct
+    {
+        UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
+        bool validate_geometry = true;
+    } geojson{};
 
 };
 

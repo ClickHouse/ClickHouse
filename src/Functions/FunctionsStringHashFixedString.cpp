@@ -107,16 +107,7 @@ struct MD4Impl
 
 /// MD5Impl moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
 
-struct SHA1Impl
-{
-    static constexpr auto name = "SHA1";
-    static constexpr const EVP_MD * (*provider)() = &EVP_sha1;
-    static constexpr bool available_in_fips_mode = false;
-    enum
-    {
-        length = SHA_DIGEST_LENGTH
-    };
-};
+/// SHA1Impl moved to FunctionSHA1.cpp (multi-buffer SIMD implementation).
 
 struct SHA224Impl
 {
@@ -340,7 +331,7 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    if USE_SSL
     using FunctionMD4 = FunctionStringHashFixedString<OpenSSLProvider<MD4Impl>>;
     /// MD5 is registered separately in FunctionMD5.cpp (multi-buffer SIMD implementation).
-    using FunctionSHA1 = FunctionStringHashFixedString<OpenSSLProvider<SHA1Impl>>;
+    /// SHA1 is registered separately in FunctionSHA1.cpp (multi-buffer SIMD implementation).
     using FunctionSHA224 = FunctionStringHashFixedString<OpenSSLProvider<SHA224Impl>>;
     using FunctionSHA256 = FunctionStringHashFixedString<OpenSSLProvider<SHA256Impl>>;
     using FunctionSHA384 = FunctionStringHashFixedString<OpenSSLProvider<SHA384Impl>>;
@@ -403,34 +394,7 @@ SELECT HEX(MD4('abc'));
 
     /// MD5 registration moved to FunctionMD5.cpp (multi-buffer SIMD implementation).
 
-    FunctionDocumentation::Description description_SHA1 = R"(
-Calculates the SHA1 hash of the given string.
-    )";
-    FunctionDocumentation::Syntax syntax_SHA1 = "SHA1(s)";
-    FunctionDocumentation::Arguments arguments_SHA1 = {
-        {"s", "The input string to hash", {"String"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value_SHA1 = {
-        "Returns the SHA1 hash of the given input string as a fixed-length string.", {"FixedString(20)"}
-    };
-    FunctionDocumentation::Examples example_SHA1 = {
-    {
-        "Usage example",
-        R"(
-SELECT HEX(SHA1('abc'));
-        )",
-        R"(
-┌─hex(SHA1('abc'))─────────────────────────┐
-│ A9993E364706816ABA3E25717850C26C9CD0D89D │
-└──────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in_SHA1 = {1, 1};
-    FunctionDocumentation::Category category_SHA1 = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation_SHA1 = {description_SHA1, syntax_SHA1, arguments_SHA1, {}, returned_value_SHA1, example_SHA1, introduced_in_SHA1, category_SHA1};
-
-    factory.registerFunction<FunctionSHA1>(documentation_SHA1);
+    /// SHA1 registration moved to FunctionSHA1.cpp (multi-buffer SIMD implementation).
 
     FunctionDocumentation::Description description_SHA224 = R"(
 Calculates the SHA224 hash of the given string.
