@@ -49,6 +49,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/QueryConsumedObjectSets.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 
@@ -2162,6 +2163,19 @@ void Planner::buildPlanForQueryNode()
         if (!referenced_tables_modification_hash)
             should_cache = false;
     }
+
+    /// Object-storage tables list their objects independently of the read, so the finalization
+    /// consistency check below could re-list a different object set than the read actually consumed (a
+    /// listing `A -> B -> A` race). This Planner-level subquery cache can reach the consistency check
+    /// without the `executeQuery` level having created the capture - e.g. an explicit per-subquery
+    /// `use_query_cache = 1` opt-in while the outer query does not use the (consistent) cache, so
+    /// `can_use_query_result_cache` is false there and no capture is allocated. Create it on the query
+    /// context here too (reusing an existing one so the read path and both finalization checks share a
+    /// single capture), so `StorageObjectStorage::getModificationHash` hashes the consumed set instead of
+    /// re-listing. See `QueryConsumedObjectSets`.
+    if (should_cache && referenced_tables_modification_hash.has_value()
+        && query_context->hasQueryContext() && !query_context->getQueryConsumedObjectSets())
+        query_context->getQueryContext()->setQueryConsumedObjectSets(std::make_shared<QueryConsumedObjectSets>());
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
     if (should_cache && settings[Setting::enable_reads_from_query_cache])
