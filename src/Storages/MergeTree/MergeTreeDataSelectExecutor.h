@@ -233,6 +233,7 @@ public:
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & context,
         LoggerPtr log);
