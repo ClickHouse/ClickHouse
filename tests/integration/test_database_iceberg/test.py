@@ -333,7 +333,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -755,6 +755,28 @@ def test_create(started_cluster):
     create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_tables_under_same_namespace(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_tables_under_same_namespace_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_names = [f"{test_ref}_table_{i}" for i in range(10)]
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    for table_name in table_names:
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+
+    catalog = load_catalog_impl(started_cluster)
+    tables = catalog.list_tables(root_namespace)
+    listed_table_names = sorted([t[1] for t in tables])
+    assert listed_table_names == sorted(table_names), f"Expected {sorted(table_names)}, got {listed_table_names}"
+    assert len(tables) == 10
+    node.query("SYSTEM FLUSH LOGS")
+    assert int(node.query(f"SELECT count() FROM system.text_log WHERE level = 'Debug' AND message LIKE '%{root_namespace}%already exists, skipping creation%'")) == 9
+
 
 
 def test_drop_table(started_cluster):

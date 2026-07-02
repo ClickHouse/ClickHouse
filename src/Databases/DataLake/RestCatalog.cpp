@@ -1129,7 +1129,12 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+void RestCatalog::sendRequest(
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result,
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1161,6 +1166,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         .withHeaders(headers)
         .withOutCallback(out_stream_callback)
         .withSkipNotFound(false)
+        .withCustomNonRetryableError(std::move(custom_non_retryable_errors))
         .create(credentials);
 
     String response_str;
@@ -1188,7 +1194,21 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(endpoint, request_body);
+        sendRequest(
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /*ignore_result=*/ false,
+            {Poco::Net::HTTPResponse::HTTP_CONFLICT});
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
+            return;
+        }
+        DB::tryLogCurrentException(log);
     }
     catch (...)
     {
