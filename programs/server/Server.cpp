@@ -30,6 +30,7 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPU.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
@@ -849,6 +850,13 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)
     {
     }
+
+    if (!PerCPU::haveRSeq())
+        server.context()->addOrUpdateWarningMessage(
+            Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
+            PreformattedMessage::create(
+                "rseq is not registered by libc (it requires glibc 2.35+ and the glibc.pthread.rseq tunable enabled), "
+                "so sched_getcpu uses a slower fallback and per-CPU profile counters are more expensive."));
 
     try
     {

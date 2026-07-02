@@ -30,4 +30,9 @@ ALWAYS_INLINE inline int32_t getCurrentCPU()
 #endif
 }
 
+/// Whether libc registered rseq for the process (glibc 2.35+ with the `glibc.pthread.rseq`
+/// tunable enabled). Without it `sched_getcpu` takes a slower fallback — on AArch64 a real
+/// syscall, since there is no `getcpu` vDSO entry — making per-CPU routing costly.
+bool haveRSeq() noexcept;
+
 }
