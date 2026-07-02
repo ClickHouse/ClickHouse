@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
+#include <Storages/MergeTree/PartitionIds.h>
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
@@ -228,6 +229,14 @@ private:
     friend class MergeTreeMergePredicate;
     friend struct PlainCommittingBlockHolder;
 
+    /// Requires currently_processing_in_background_mutex to be held.
+    std::map<std::string, MutationCommands> getUnfinishedMutationCommandsUnlocked(std::lock_guard<std::mutex> & /*lock*/) const;
+
+    bool mutationVersionsEquivalent(
+        const MergeTreePartInfo & left,
+        const MergeTreePartInfo & right,
+        std::unique_lock<std::mutex> & lock) const;
+
     std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
@@ -246,11 +255,11 @@ private:
     /// Returns a lock for lightweight update according to the update_parallel_mode setting
     std::unique_ptr<PlainLightweightUpdateLock> getLockForLightweightUpdate(const MutationCommands & commands, const ContextPtr & local_context);
 
-    /// For current mutations queue, returns maximum version of mutation for a part,
+    /// For current mutations queue, returns next version of mutation for a part,
     /// with respect of mutations which would not change it.
+    /// Mutations that do not affect the given partition are skipped.
     /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
-    UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    UInt64 getNextMutationVersion(const String & partition_id, UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
     /// Merges have to be aware of the outdated part's levels inside designated merge range.
@@ -344,11 +353,21 @@ private:
 
     struct MutationsSnapshot final : public MutationsSnapshotBase
     {
-        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        struct MutationSnapshotEntry
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            PartitionIds partition_ids;
+        };
+
+        using MutationsByVersion = std::map<UInt64, MutationSnapshotEntry>;
         MutationsByVersion mutations_by_version;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
+        MutationsSnapshot(
+            Params params_,
+            MutationCounters counters_,
+            MutationsByVersion mutations_snapshot,
+            DataPartsVector patches_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }

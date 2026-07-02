@@ -151,42 +151,18 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         is_active=1,
         creation_tid="tid0",  # Created by INSERT_1
         creation_csn="csn1_",  # Committed with Tx::NonTransactionalCSN = 1
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # Was being replaced by 0_2_2_0_7 by ALTER_2 in tid3 (not committed before restarting) -> the remove_tid is reset to Tx::Empty after restarting
+        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # ALTER_2 only affects partition id '1', so this part was never locked for removal
         removal_csn="csn0_",  # No removal_csn, tid3 was not committed yet.
     )
-    expect_part_info(
-        replace_map=replace_map,
-        table_name="mt",
-        part_name="0_2_2_0_7",
-        is_active=0,  # Created by tid3 in ALTER_2 (not committed before restarting) -> is_active = 0, creation_tid = tid3
-        creation_tid="tid3",
-        creation_csn="csn18446744073709551615_",  # creation_csn is reset to Tx::RolledBackCSN = 18446744073709551615 after restarting
-        # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
-        # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
-        # In this version, `removal_tid` is not updated when it locks the object for removal.
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
-        removal_csn="csn0_",  # No transaction attempted to remove this part
-    )
+    # ALTER_2 is `IN PARTITION id '1'`, so with partition-scoped mutations no `_7`
+    # mutation parts are created in partition 0 (parts 0_2_2_0_7 and 0_4_4_0_7).
     expect_part_info(
         replace_map=replace_map,
         table_name="mt",
         part_name="0_4_4_0",
-        is_active=1,  # Created by ALTER_2 in tid3 (not committed before restarting) -> is_active = 0, creation_tid = tid3
+        is_active=1,  # Created by INSERT_2 in tid2, not affected by ALTER_2 (partition id '1')
         creation_tid="tid2",  # Created by  INSERT_2 in tid2
         creation_csn="csn_2",  # tid2 was commited
-        removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
-        removal_csn="csn0_",  # No transaction attempted to remove this part
-    )
-    expect_part_info(
-        replace_map=replace_map,
-        table_name="mt",
-        part_name="0_4_4_0_7",
-        is_active=0,  # Created by ALTER_2 in tid3 (not committed before restarting) -> is_active = 0, creation_tid = tid3
-        creation_tid="tid3",
-        creation_csn="csn18446744073709551615_",  # creation_csn is reset to Tx::RolledBackCSN = 18446744073709551615 after restarting
-        # In the previous test version, the `removal_tid` is Tx::NonTransactionalLocalTID (tid0).
-        # Because in `MergeTreeData::preparePartForRemoval`, it sets the removal lock to `Tx::NonTransactionalLocalTID``, and `removal_tid` is updated accordingly.
-        # In this version, `removal_tid` is not updated when it locks the object for removal.
         removal_tid="(0,0,'00000000-0000-0000-0000-000000000000')",  # No transaction attempted to remove this part
         removal_csn="csn0_",  # No transaction attempted to remove this part
     )
