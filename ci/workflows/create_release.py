@@ -18,11 +18,10 @@ workflow = Workflow.Config(
     jobs=[release_job],
     secrets=SECRETS,
     # Releases mutate shared state (tags, package repos, Docker tags); never run
-    # two concurrently. Mirrors the legacy workflow's `concurrency: group: release`.
-    concurrency_group="release",
-    # auto_releases.yml reuses this workflow via `uses:`, which requires a
-    # `workflow_call` trigger in addition to `workflow_dispatch`.
-    enable_workflow_call=True,
+    # two concurrently. Dispatch workflows always emit `concurrency: group:
+    # ${{ github.workflow }}`, which serializes CreateRelease runs. auto_releases.yml
+    # reuses this workflow via `uses:`, relying on the `workflow_call` trigger that
+    # dispatch workflows now always emit.
     # Route the job's pass/fail to the Slack Praktika app (the praktika-native
     # replacement for the dropped CIBuddy notifications), as master /
     # release_branches / pull_request do, so a failed release is not silent.

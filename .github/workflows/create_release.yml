@@ -2,7 +2,7 @@
 
 name: CreateRelease
 concurrency:
-  group: release
+  group: ${{ github.workflow }}
 on:
   workflow_dispatch:
     inputs:
