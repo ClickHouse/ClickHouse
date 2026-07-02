@@ -71,6 +71,7 @@ public:
     std::string serialized_partitioner_proto;   /// SerializedPartitioner binary proto
     std::string serialized_codebook_proto;      /// CentersForAllSubspaces binary proto
     std::vector<uint8_t> hashed_data;           /// flat AH codes: num_vectors × hashed_dim
+    std::vector<uint8_t> soar_hashed_data;      /// SOAR: flat AH codes for the secondary partition, num_vectors × hashed_dim (empty if no SOAR)
     size_t hashed_dim = 0;                      /// AH code length per vector
     std::vector<std::vector<uint32_t>> datapoints_by_token; /// IVF inverted lists
 

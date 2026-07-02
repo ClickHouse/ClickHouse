@@ -31,6 +31,8 @@
 #include <scann/base/single_machine_factory_options.h>
 #include <scann/base/single_machine_factory_scann.h>
 #include <scann/data_format/dataset.h>
+#include <scann/data_format/docid_collection.h>
+#include <scann/oss_wrappers/scann_serialize.h>
 #include <scann/partitioning/partitioner.pb.h>
 #include <scann/proto/centers.pb.h>
 #include <scann/proto/scann.pb.h>
@@ -144,6 +146,20 @@ static std::string buildScannConfigString(
     else if (precision == "i8")
         reorder_quant = "fixed_point { enabled: true }";
 
+    /// SOAR (Spilling with Orthogonality-Amplified Residuals): assign each datapoint to two
+    /// partitions — its nearest centroid plus a second one chosen to be orthogonal to the first
+    /// residual — so boundary neighbours are not missed without raising num_leaves_to_search.
+    /// Only meaningful for the residual (cosine/dotProduct) tree-AH path. The replica count is
+    /// fixed at 2 by TWO_CENTER; lambda (residual orthogonality) and overretrieve_factor (query
+    /// dedup) use the ScaNN defaults. Passed as a runtime arg, so its braces are not fmt-escaped.
+    const std::string database_spilling = use_residual
+        ? "  database_spilling {\n"
+          "    spilling_type: TWO_CENTER_ORTHOGONALITY_AMPLIFIED\n"
+          "    orthogonality_amplification_lambda: 1.5\n"
+          "    overretrieve_factor: 2.0\n"
+          "  }\n"
+        : "";
+
     return fmt::format(
         "num_neighbors: 100\n"
         "distance_measure {{ distance_measure: \"{}\" }}\n"
@@ -156,6 +172,7 @@ static std::string buildScannConfigString(
         "  query_spilling {{ spilling_type: FIXED_NUMBER_OF_CENTERS max_spill_centers: {} }}\n"
         "  expected_sample_size: {}\n"
         "  query_tokenization_distance_override {{ distance_measure: \"{}\" }}\n"
+        "{}"
         "}}\n"
         "hash {{\n"
         "  asymmetric_hash {{\n"
@@ -173,6 +190,7 @@ static std::string buildScannConfigString(
         num_leaves_to_search,
         training_sample_size,
         distance_measure,
+        database_spilling,
         use_residual ? "true" : "false",
         num_blocks,
         num_blocks * 2,  /// input_dim = padded_dim = num_blocks × num_dims_per_block
@@ -231,6 +249,11 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
     {
         total += hashed_data.size();
     }
+
+    /// SOAR secondary codes (moved into the searcher's soar_hashed_dataset after restore; the
+    /// member still reflects the on-disk size before that, but the searcher exposes no accessor,
+    /// so account for the member only — it is the only copy we hold outside ScaNN).
+    total += soar_hashed_data.size();
 
     total += serialized_partitioner_proto.size();
     total += serialized_codebook_proto.size();
@@ -359,6 +382,14 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
         }
     }
 
+    /// SOAR secondary codes (empty for non-SOAR indexes → soar_rows = 0). No searcher fallback:
+    /// the searcher exposes no soar_hashed_dataset() accessor, but a restored granule is never
+    /// re-serialized (merges rebuild the index from scratch), so the member is authoritative here.
+    const size_t soar_rows = (hashed_dim > 0 && !soar_hashed_data.empty()) ? soar_hashed_data.size() / hashed_dim : 0;
+    writeIntBinary(static_cast<UInt64>(soar_rows), ostr);
+    if (soar_rows > 0)
+        ostr.write(reinterpret_cast<const char *>(soar_hashed_data.data()), soar_hashed_data.size());
+
     writeIntBinary(static_cast<UInt64>(datapoints_by_token.size()), ostr);
     for (const auto & token_dps : datapoints_by_token)
     {
@@ -441,6 +472,15 @@ void MergeTreeIndexGranuleVectorSimilarityScann::deserializeBinary(ReadBuffer & 
     {
         hashed_data.resize(hashed_rows * hashed_dim);
         istr.readStrict(reinterpret_cast<char *>(hashed_data.data()), hashed_rows * hashed_dim);
+    }
+
+    /// SOAR secondary codes (soar_rows = 0 for non-SOAR indexes).
+    UInt64 soar_rows = 0;
+    readIntBinary(soar_rows, istr);
+    if (soar_rows > 0 && hashed_dim > 0)
+    {
+        soar_hashed_data.resize(soar_rows * hashed_dim);
+        istr.readStrict(reinterpret_cast<char *>(soar_hashed_data.data()), soar_rows * hashed_dim);
     }
 
     UInt64 num_tokens = 0;
@@ -593,6 +633,16 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         hashed_data.assign(span.data(), span.data() + span.size());
     }
 
+    /// SOAR: persist the secondary-partition AH codes too. Same shape as hashed_dataset
+    /// (num_vectors × hashed_dim). On restore the per-datapoint secondary token (the docid the
+    /// reconstruction needs) is recomputed from datapoints_by_token, so only the flat codes are
+    /// stored here.
+    if (opts.soar_hashed_dataset && !opts.soar_hashed_dataset->empty())
+    {
+        const auto span = opts.soar_hashed_dataset->data();
+        soar_hashed_data.assign(span.data(), span.data() + span.size());
+    }
+
     if (opts.datapoints_by_token)
     {
         datapoints_by_token.clear();
@@ -680,6 +730,38 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
         const size_t hashed_rows = hashed_data.size() / hashed_dim;
         opts.hashed_dataset = std::make_shared<research_scann::DenseDataset<uint8_t>>(
             std::move(hashed_data), hashed_rows);
+    }
+
+    /// SOAR: rebuild the secondary-partition dataset. The tree-AH residual searcher selects the
+    /// primary vs SOAR code for a datapoint in a given leaf by reading the SOAR dataset's docid,
+    /// which must equal that datapoint's secondary token. The extracted codes carry no docids, so
+    /// recompute the secondary token as the token where the datapoint appears the second time when
+    /// datapoints_by_token is scanned in token order (identical to ScaNN's build-time split).
+    if (hashed_dim > 0 && !soar_hashed_data.empty())
+    {
+        const size_t soar_rows = soar_hashed_data.size() / hashed_dim;
+        std::vector<int32_t> secondary_token(soar_rows, -1);
+        std::vector<char> seen(soar_rows, 0);
+        for (size_t token = 0; token < datapoints_by_token.size(); ++token)
+            for (uint32_t dp : datapoints_by_token[token])
+            {
+                if (dp >= soar_rows)
+                    continue;
+                if (seen[dp])
+                    secondary_token[dp] = static_cast<int32_t>(token);
+                else
+                    seen[dp] = 1;
+            }
+
+        auto docids = std::make_unique<research_scann::FixedLengthDocidCollection>(sizeof(int32_t));
+        docids->Reserve(static_cast<research_scann::DatapointIndex>(soar_rows));
+        for (size_t i = 0; i < soar_rows; ++i)
+            if (!docids->Append(research_scann::strings::Int32ToKey(secondary_token[i])).ok())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index restore failed: could not build SOAR docids");
+
+        opts.soar_hashed_dataset = std::make_shared<research_scann::DenseDataset<uint8_t>>(
+            std::move(soar_hashed_data), std::move(docids));
     }
 
     if (!datapoints_by_token.empty())
