@@ -3297,20 +3297,20 @@ async function loadDatabases(server_address, user, password) {
         });
 
         /// Open a collapsed database, or restore a previously expanded one on panel reopen.
-        /// On success the row is marked open, remembered for the next restore, and the refresh
-        /// button is attached. Restoring passes set_current = false so the highlight is left alone.
+        /// The database is remembered for the next restore synchronously, as soon as the open
+        /// starts, rather than after the `system.tables` load succeeds: otherwise closing the
+        /// whole panel while the load is still in flight detaches the row, `loadTables` bails out
+        /// through its `isConnected` check, and the user's just-performed open would be forgotten,
+        /// so reopening the panel would show it collapsed. The entry is removed only on an explicit
+        /// collapse or a connection change (`resetConnectionScopedState`, which also clears the set
+        /// and closes the panel, so a stale load can no longer resurrect it). On success the row is
+        /// marked open and the refresh button is attached. Restoring passes set_current = false so
+        /// the highlight is left alone.
         const openDatabase = (set_current = true) => {
-            /// The connection settings can change (url/user/password edited) while this load is in
-            /// flight; `resetConnectionScopedState` then clears `opened_databases`. Capture the
-            /// generation now so a stale load does not re-add its database to the set afterwards —
-            /// that entry would otherwise resurrect the database on the next panel reopen against
-            /// the new connection. Only the connection-scoped set is guarded: the row's own DOM
-            /// (table list, opened flag, refresh button) reflects the load it actually performed.
-            const generation = connectionGeneration;
+            opened_databases.add(elem.database);
             return refreshTables(set_current).then(ok => {
                 if (ok !== false) {
                     database.dataset['opened'] = 1;
-                    if (generation === connectionGeneration) opened_databases.add(elem.database);
                     database_link.after(refresh_button);
                 }
                 return ok;
