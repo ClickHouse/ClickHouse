@@ -105,11 +105,12 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup)
     : view(view_)
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
+    , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
 
@@ -226,11 +227,12 @@ OwnedRefreshTask RefreshTask::create(
     bool attach,
     bool coordinated,
     bool empty,
+    bool start_paused,
     bool is_restore_from_backup)
 {
     std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
 
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, is_restore_from_backup);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
     task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
@@ -253,7 +255,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
