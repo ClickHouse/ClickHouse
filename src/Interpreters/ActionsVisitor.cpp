@@ -226,6 +226,169 @@ ColumnsWithTypeAndName createBlockForSet(
     /// Reuse the analyzer logic
     return getSetElementsForConstantValue(left_arg_type, right_arg_value, right_arg_type, params);
 }
+
+bool hasIdentifiers(const ASTPtr & ast)
+{
+    IdentifierNameSet identifiers;
+    ast->collectIdentifierNames(identifiers);
+    return !identifiers.empty();
+}
+
+bool isNegativeInFunctionName(const String & name)
+{
+    return name == "notIn" || name == "globalNotIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+bool inFunctionComparesNulls(const String & name)
+{
+    return name == "nullIn" || name == "globalNullIn" || name == "notNullIn" || name == "globalNotNullIn";
+}
+
+bool isTupleType(const DataTypePtr & type)
+{
+    return type && typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+}
+
+bool isTupleFunction(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    return function && function->name == "tuple";
+}
+
+size_t getTupleElementCount(const DataTypePtr & type, const ASTPtr & ast)
+{
+    if (type)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        if (tuple_type)
+            return tuple_type->getElements().size();
+    }
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "tuple")
+        return function->arguments->children.size();
+
+    return 0;
+}
+
+ASTPtr makeTupleHasNoNullElementsPredicate(const ASTPtr & tuple_value, size_t tuple_size)
+{
+    ASTPtr result;
+    for (size_t i = 0; i != tuple_size; ++i)
+    {
+        auto element_is_not_null = makeASTFunction(
+            "not",
+            makeASTFunction(
+                "isNull",
+                makeASTFunction(
+                    "tupleElement",
+                    tuple_value->clone(),
+                    make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)))));
+
+        if (result)
+            result = makeASTFunction("and", std::move(result), std::move(element_is_not_null));
+        else
+            result = std::move(element_is_not_null);
+    }
+
+    return result;
+}
+
+ASTPtr makeArrayForNonConstantInRightOperand(
+    const ASTPtr & right_operand,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple)
+{
+    if (right_operand_is_array)
+        return right_operand->clone();
+
+    if (const auto * function = right_operand->as<ASTFunction>())
+    {
+        if (function->name == "tuple" && right_operand_tuple_function_is_set)
+        {
+            auto array_function = makeASTFunction("array");
+            auto & array_arguments = array_function->arguments->children;
+            array_arguments.reserve(function->arguments->children.size());
+            for (const auto & child : function->arguments->children)
+                array_arguments.push_back(child->clone());
+            return array_function;
+        }
+    }
+
+    const auto * right_operand_tuple_type = right_operand_type
+        ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
+        : nullptr;
+    if (right_operand_tuple_type && !left_operand_is_tuple)
+    {
+        auto array_function = makeASTFunction("array");
+        auto & array_arguments = array_function->arguments->children;
+        array_arguments.reserve(right_operand_tuple_type->getElements().size());
+        for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
+            array_arguments.push_back(
+                makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+        return array_function;
+    }
+
+    return makeASTFunction("array", right_operand->clone());
+}
+
+ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
+{
+    auto function = makeASTFunction(function_name);
+    function->arguments->children = std::move(arguments);
+    return function;
+}
+
+ASTPtr makeNonConstantInReplacement(
+    const ASTFunction & node,
+    bool right_operand_is_array,
+    bool right_operand_tuple_function_is_set,
+    const DataTypePtr & right_operand_type,
+    bool left_operand_is_tuple,
+    size_t left_operand_tuple_size)
+{
+    const auto & arguments = node.arguments->children;
+    const auto & left_operand = arguments.at(0);
+    const auto & right_operand = arguments.at(1);
+
+    ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
+        right_operand,
+        right_operand_is_array,
+        right_operand_tuple_function_is_set,
+        right_operand_type,
+        left_operand_is_tuple);
+
+    auto has_function = makeASTFunction(
+        "has",
+        std::move(right_operand_array),
+        left_operand->clone());
+
+    ASTPtr result = has_function;
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (!inFunctionComparesNulls(node.name) && left_operand_tuple_size != 0)
+        result = makeASTFunction(
+            "and",
+            makeTupleHasNoNullElementsPredicate(left_operand, left_operand_tuple_size),
+            std::move(result));
+
+    if (!inFunctionComparesNulls(node.name))
+    {
+        result = makeFunctionCall("if",
+            {
+                makeASTFunction("isNull", left_operand->clone()),
+                make_intrusive<ASTLiteral>(Field{}),
+                std::move(result),
+            });
+    }
+
+    if (isNegativeInFunctionName(node.name))
+        result = makeASTFunction("not", std::move(result));
+
+    return result;
+}
 }
 
 FutureSetPtr makeExplicitSet(
@@ -783,6 +946,87 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         checkFunctionHasEmptyNullsAction(node);
         /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
         visit(node.arguments->children.at(0), data);
+
+        DataTypePtr left_argument_type;
+        if (auto name_and_type = getNameAndTypeFromAST(node.arguments->children.at(0), data))
+            left_argument_type = name_and_type->type;
+        const bool left_argument_is_tuple = isTupleType(left_argument_type) || isTupleFunction(node.arguments->children.at(0));
+
+        const auto & right_argument = node.arguments->children.at(1);
+        if (!right_argument->as<ASTSubquery>() && !right_argument->as<ASTTableIdentifier>() && hasIdentifiers(right_argument))
+        {
+            if (!data.only_consts)
+            {
+                bool right_argument_is_array = false;
+                bool right_argument_tuple_function_is_set = false;
+                DataTypePtr right_argument_type;
+                const auto * right_argument_function = right_argument->as<ASTFunction>();
+                if (right_argument_function && right_argument_function->name == "tuple")
+                {
+                    if (!left_argument_is_tuple)
+                    {
+                        right_argument_tuple_function_is_set = true;
+                    }
+                    else
+                    {
+                        visit(right_argument, data);
+                        if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                            right_argument_type = name_and_type->type;
+
+                        for (const auto & child : right_argument_function->arguments->children)
+                        {
+                            if (isTupleFunction(child))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                break;
+                            }
+
+                            if (auto name_and_type = getNameAndTypeFromAST(child, data); name_and_type && isTupleType(name_and_type->type))
+                            {
+                                right_argument_tuple_function_is_set = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                else if (right_argument_function && right_argument_function->name == "array")
+                {
+                    right_argument_is_array = true;
+                }
+                else
+                {
+                    visit(right_argument, data);
+                    if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
+                    {
+                        right_argument_type = name_and_type->type;
+                        right_argument_is_array = typeid_cast<const DataTypeArray *>(name_and_type->type.get()) != nullptr;
+                    }
+                }
+
+                const bool should_rewrite = !left_argument_is_tuple || right_argument_is_array
+                    || right_argument_tuple_function_is_set || isTupleType(right_argument_type);
+                if (should_rewrite)
+                {
+                    auto replacement = makeNonConstantInReplacement(
+                        node,
+                        right_argument_is_array,
+                        right_argument_tuple_function_is_set,
+                        right_argument_type,
+                        left_argument_is_tuple,
+                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)));
+                    visit(replacement, data);
+
+                    auto replacement_name = replacement->getColumnName();
+                    if (replacement_name != column_name)
+                        data.addAlias(replacement_name, column_name);
+                    return;
+                }
+            }
+            else
+            {
+                return;
+            }
+        }
 
         if (!data.no_makeset && !(data.is_create_parameterized_view && !analyzeReceiveQueryParams(ast).empty()))
             prepared_set = makeSet(node, data, data.no_subqueries);

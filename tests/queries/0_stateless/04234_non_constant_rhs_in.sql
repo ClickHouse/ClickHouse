@@ -1,0 +1,68 @@
+-- { echoOn }
+
+SET enable_analyzer = 1;
+
+SELECT 1 IN (tuple(tuple(1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
+SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
+SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;
+SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
+SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
+SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
+SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
+SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 0, allow_experimental_nullable_tuple_type = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 1, allow_experimental_nullable_tuple_type = 1;
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
+SETTINGS transform_null_in = 1;
+
+SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 1;
+SELECT number, NULL IN (if(number = 0, NULL, 1)), NULL NOT IN (if(number = 0, NULL, 1)) FROM numbers(2) SETTINGS transform_null_in = 0;
+SELECT number IN (number, number + 1) FROM numbers(1) FORMAT TabSeparatedWithNames;
+
+SET enable_analyzer = 0;
+
+SELECT number FROM numbers(10) WHERE number % 2 IN (number % 3, number % 5) ORDER BY number;
+SELECT number FROM numbers(10) WHERE number % 2 IN [number % 3, number % 5] ORDER BY number;
+SELECT number FROM numbers(3) WHERE number IN (number + 1) ORDER BY number;
+SELECT number, number % 3 IN (number % 2, 1), number % 3 NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT (1, 1) IN (if(number = 0, (1, 1), (2, 2)), (3, 3)) FROM numbers(2);
+SELECT toFloat64(-0.0) IN (toFloat64(0.0)), toFloat64(-0.0) NOT IN (toFloat64(0.0)), toFloat64(-0.0) IN (toFloat64(number * 0)), toFloat64(-0.0) NOT IN (toFloat64(number * 0)), toFloat64(-0.0) IN [toFloat64(number * 0)], toFloat64(-0.0) NOT IN [toFloat64(number * 0)] FROM numbers(1);
+SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 NOT IN arrayMap(x -> x + number % 2, [0, 1]) FROM numbers(6) ORDER BY number;
+SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
+SELECT number, (number % 2, number % 3) IN ((number % 3, number % 2), (1, 1)), (number % 2, number % 3) NOT IN ((number % 3, number % 2), (1, 1)) FROM numbers(6) ORDER BY number;
+SELECT number, (number, number + 1) IN [tuple(number, number + 1)], (number, number + 2) IN [tuple(number, number + 1)] FROM numbers(3) ORDER BY number;
+SELECT number, if(number >= 0, tuple(number, number + 1), tuple(0, 0)) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, tuple(number, number + 1) AS t, number IN (t), (number + 1) IN (t), (number + 2) IN (t), (number, number + 1) IN (t) FROM numbers(3) ORDER BY number;
+SELECT number, (number, number + 1) IN ((number, number + 1)), (number, number + 2) IN ((number, number + 1)) FROM numbers(3) ORDER BY number;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 0;
+SELECT CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') IN [(NULL, number), (1, number)], CAST((NULL, number), 'Tuple(Nullable(UInt64), UInt64)') NOT IN [(NULL, number), (1, number)] FROM numbers(1) SETTINGS transform_null_in = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 0, allow_experimental_nullable_tuple_type = 1;
+SELECT CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')], CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))') NOT IN [CAST((NULL, number), 'Nullable(Tuple(Nullable(UInt64), UInt64))')] FROM numbers(1) SETTINGS transform_null_in = 1, allow_experimental_nullable_tuple_type = 1;
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(2) AS y);
+
+SELECT x IN (y, 1), x NOT IN (y, 1), x IN [y, 1], x NOT IN [y, 1]
+FROM (SELECT materialize(NULL) AS x, materialize(NULL) AS y)
+SETTINGS transform_null_in = 1;
+
+SELECT NULL IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))), NULL NOT IN (if(number = 0, tuple(NULL, 1), tuple(2, 3))) FROM numbers(2) SETTINGS transform_null_in = 1;
+
+DROP TABLE IF EXISTS test_04234_non_constant_rhs_in;
+CREATE TABLE test_04234_non_constant_rhs_in (number UInt64) ENGINE = MergeTree ORDER BY number;
+INSERT INTO test_04234_non_constant_rhs_in SELECT number FROM numbers(10);
+SELECT * FROM test_04234_non_constant_rhs_in PREWHERE (number % 2) IN (number % 3, number % 5) ORDER BY number;
+DROP TABLE test_04234_non_constant_rhs_in;

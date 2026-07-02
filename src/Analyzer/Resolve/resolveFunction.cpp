@@ -105,6 +105,53 @@ static bool isNullConstant(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// Use the supertype of the LHS and all tuple elements, to support cases like
+/// `toUInt8(232) IN (1000, number)`. A NULL literal has type `Nullable(Nothing)`
+/// and should not narrow the array element type.
+static DataTypePtr getLeastSupertypeForInArrayElements(
+    const QueryTreeNodes & array_elements,
+    const QueryTreeNodePtr & in_first_argument,
+    bool left_is_null)
+{
+    DataTypes arg_types;
+    arg_types.reserve(array_elements.size() + 1);
+
+    if (!left_is_null)
+        arg_types.push_back(in_first_argument->getResultType());
+
+    for (const auto & arg : array_elements)
+        arg_types.push_back(arg->getResultType());
+
+    return tryGetLeastSupertype(arg_types);
+}
+
+template <typename CastNodeToType>
+static std::shared_ptr<ListNode> makeInArrayArgumentsList(
+    const QueryTreeNodes & array_elements,
+    DataTypePtr common_type,
+    bool rhs_has_null,
+    IdentifierResolveScope & scope,
+    CastNodeToType && cast_node_to_type)
+{
+    auto array_arguments_list = std::make_shared<ListNode>();
+    if (!common_type)
+    {
+        for (const auto & arg : array_elements)
+            array_arguments_list->getNodes().push_back(arg);
+        return array_arguments_list;
+    }
+
+    if ((rhs_has_null || !scope.context->getSettingsRef()[Setting::transform_null_in])
+        && !isTuple(common_type)
+        && !isNullableOrLowCardinalityNullable(common_type))
+        common_type = makeNullableOrLowCardinalityNullable(common_type);
+
+    for (const auto & arg : array_elements)
+        array_arguments_list->getNodes().push_back(cast_node_to_type(arg, common_type, scope));
+
+    return array_arguments_list;
+}
+
 /// Creates a NOT function node wrapping the given node (caller must resolve it)
 static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
 {
@@ -113,11 +160,40 @@ static QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
     return not_fn;
 }
 
+static QueryTreeNodePtr makeTupleHasNoNullElementsPredicate(const QueryTreeNodePtr & tuple_value, size_t tuple_size)
+{
+    QueryTreeNodePtr result;
+    for (size_t i = 0; i != tuple_size; ++i)
+    {
+        auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
+        tuple_element_function->getArguments().getNodes().push_back(tuple_value->clone());
+        tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1)));
+
+        auto is_null_function = std::make_shared<FunctionNode>("isNull");
+        is_null_function->getArguments().getNodes().push_back(tuple_element_function);
+
+        auto element_is_not_null = std::make_shared<FunctionNode>("not");
+        element_is_not_null->getArguments().getNodes().push_back(is_null_function);
+
+        if (result)
+        {
+            auto and_function = std::make_shared<FunctionNode>("and");
+            and_function->getArguments().getNodes() = {std::move(result), std::move(element_is_not_null)};
+            result = std::move(and_function);
+        }
+        else
+        {
+            result = std::move(element_is_not_null);
+        }
+    }
+
+    return result;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
-std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
+QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
     QueryTreeNodePtr element_arg,  // x (e.g. NULL)
-    const ProjectionNames & args_proj,
     IdentifierResolveScope & scope)
 {
     auto is_null_fn = std::make_shared<FunctionNode>("isNull");
@@ -127,20 +203,33 @@ std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
     has_fn->getArguments().getNodes().push_back(array_arg);
     has_fn->getArguments().getNodes().push_back(element_arg);
 
+    QueryTreeNodePtr in_result = has_fn;
+    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
+    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
+    /// elements to preserve `IN` semantics in the row-wise rewrite.
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(element_arg->getResultType()).get());
+        tuple_type && !tuple_type->getElements().empty())
+    {
+        auto and_fn = std::make_shared<FunctionNode>("and");
+        and_fn->getArguments().getNodes() =
+        {
+            makeTupleHasNoNullElementsPredicate(element_arg, tuple_type->getElements().size()),
+            std::move(in_result),
+        };
+        in_result = std::move(and_fn);
+    }
+
     auto null_const = std::make_shared<ConstantNode>(
         Field{},
         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
 
     auto raw_if = std::make_shared<FunctionNode>("if");
-    raw_if->getArguments().getNodes() = {is_null_fn, null_const, has_fn};
+    raw_if->getArguments().getNodes() = {is_null_fn, null_const, in_result};
 
     QueryTreeNodePtr if_node = raw_if;
-    auto single_name = calculateFunctionProjectionName(if_node, {}, args_proj);
-    ProjectionNames proj = {single_name};
-
     resolveFunction(if_node, scope);
 
-    return std::make_pair(if_node, proj);
+    return if_node;
 }
 
 /// Builds has() expression with proper null handling and NOT wrapping for IN rewrites
@@ -158,14 +247,14 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
 
     if (!transform_null_in)
     {
-        auto [result_node, proj_names] = makeNullSafeHas(array_arg, element_arg, arguments_projection_names, scope);
+        QueryTreeNodePtr result_node = makeNullSafeHas(array_arg, element_arg, scope);
         if (is_not_in)
         {
             result_node = createNotWrapper(result_node);
             resolveFunction(result_node, scope);
         }
         node = result_node;
-        return proj_names;
+        return ProjectionNames{proj};
     }
 
     auto has_fn = std::make_shared<FunctionNode>("has");
@@ -182,82 +271,63 @@ ProjectionNames QueryAnalyzer::buildHasExpression(
     return ProjectionNames{proj};
 }
 
-/// handles special case: NULL IN (tuple) with transform_null_in enabled
-ProjectionNames QueryAnalyzer::handleNullInTuple(
+QueryTreeNodes QueryAnalyzer::getArrayElementsForInTupleArguments(
     const QueryTreeNodes & tuple_args,
-    const std::string & function_name,
-    const ProjectionNames & parameters_projection_names,
-    const ProjectionNames & arguments_projection_names,
+    const QueryTreeNodePtr & in_first_argument,
     IdentifierResolveScope & scope,
-    QueryTreeNodePtr & node)
+    bool expand_single_tuple_value)
 {
-    std::vector<QueryTreeNodePtr> null_checks;
-    for (const auto & elem : tuple_args)
+    if (!expand_single_tuple_value
+        || tuple_args.size() != 1
+        || isTuple(removeNullable(in_first_argument->getResultType()))
+        || !isTuple(removeNullable(tuple_args[0]->getResultType())))
+        return tuple_args;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(tuple_args[0]->getResultType()).get());
+    QueryTreeNodes array_elements;
+    array_elements.reserve(tuple_type->getElements().size());
+
+    for (size_t i = 0; i != tuple_type->getElements().size(); ++i)
     {
-        if (isNullableOrLowCardinalityNullable(elem->getResultType()))
-        {
-            auto isnull_fn = std::make_shared<FunctionNode>("isNull");
-            isnull_fn->getArguments().getNodes().push_back(elem);
-            null_checks.emplace_back(isnull_fn);
-        }
+        auto tuple_element_function = std::make_shared<FunctionNode>("tupleElement");
+        tuple_element_function->getArguments().getNodes().push_back(tuple_args[0]);
+        tuple_element_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(static_cast<UInt64>(i + 1)));
+
+        QueryTreeNodePtr tuple_element = tuple_element_function;
+        resolveFunction(tuple_element, scope);
+        array_elements.push_back(std::move(tuple_element));
     }
 
-    if (null_checks.empty())
-    {
-        node = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt8>());
-        return ProjectionNames{function_name};
-    }
-
-    auto list_node = std::make_shared<ListNode>();
-    list_node->getNodes() = null_checks;
-    auto array_fn = std::make_shared<FunctionNode>("array");
-    array_fn->getArgumentsNode() = list_node;
-
-    auto arraycount_fn = std::make_shared<FunctionNode>("arrayCount");
-    arraycount_fn->getArguments().getNodes().push_back(array_fn);
-
-    auto zero_const = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt64>());
-    auto gt_fn = std::make_shared<FunctionNode>("greater");
-    gt_fn->getArguments().getNodes() = {arraycount_fn, zero_const};
-
-    node = gt_fn;
-    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-    resolveFunction(node, scope);
-
-    return {proj};
+    return array_elements;
 }
 
 /// converts tuple to array with proper type handling
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
     const QueryTreeNodePtr & in_first_argument,
-    IdentifierResolveScope & scope)
+    IdentifierResolveScope & scope,
+    bool expand_single_tuple_value)
 {
-    auto array_function_node = std::make_shared<FunctionNode>("array");
-    auto array_arguments_list = std::make_shared<ListNode>();
+    QueryTreeNodes array_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
 
-    /// Use the supertype of the LHS and all tuple elements, to support cases like
-    /// `toUInt8(232) IN (1000, number)`. If no supertype exists, keep the old
-    /// behaviour and let per-element CAST handle (or reject) the mismatch
-    DataTypes arg_types;
-    arg_types.reserve(tuple_args.size() + 1);
-    arg_types.push_back(in_first_argument->getResultType());
-    for (const auto & arg : tuple_args)
-        arg_types.push_back(arg->getResultType());
+    bool left_is_null = isNullConstant(in_first_argument);
 
-    DataTypePtr common_type = tryGetLeastSupertype(arg_types);
-    if (!common_type)
-        common_type = in_first_argument->getResultType();
-
-    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
+    bool rhs_has_null = std::any_of(array_elements.begin(), array_elements.end(),
         [](const auto & arg) { return isNullConstant(arg); });
 
-    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !isNullableOrLowCardinalityNullable(common_type))
-        common_type = makeNullableOrLowCardinalityNullable(common_type);
+    DataTypePtr common_type = getLeastSupertypeForInArrayElements(array_elements, in_first_argument, left_is_null);
+    /// If no supertype exists, keep the old behaviour for non-NULL left-hand side
+    /// values and let per-element `CAST` handle or reject the mismatch. For NULL
+    /// left-hand side values, let `array` infer the right-hand side type on its own.
+    if (!common_type && !left_is_null)
+        common_type = in_first_argument->getResultType();
 
-    for (const auto & arg : tuple_args)
-        array_arguments_list->getNodes().push_back(castNodeToType(arg, common_type, scope));
-
+    auto array_arguments_list = makeInArrayArgumentsList(array_elements, common_type, rhs_has_null, scope,
+        [this](const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & function_scope)
+        {
+            return castNodeToType(node, target_type, function_scope);
+        });
+    auto array_function_node = std::make_shared<FunctionNode>("array");
     array_function_node->getArgumentsNode() = array_arguments_list;
     QueryTreeNodePtr array_node = array_function_node;
     resolveExpressionNode(array_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
@@ -1219,8 +1289,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
             /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
             /// so it can be handled by the tuple/array → has() rewrite below.
+            bool expand_single_tuple_value = false;
+            bool wrapped_column_rhs = false;
             if (in_second_argument->as<ColumnNode>())
             {
+                const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
+                const bool right_is_tuple = isTuple(removeNullable(in_second_argument->getResultType()));
+                expand_single_tuple_value = !left_is_tuple && right_is_tuple;
+                wrapped_column_rhs = true;
                 auto tuple_function = std::make_shared<FunctionNode>("tuple");
                 tuple_function->getArguments().getNodes().push_back(std::move(in_second_argument));
                 in_second_argument = std::move(tuple_function);
@@ -1239,10 +1315,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the type of the second argument
                 bool is_array_type = (candidate_name == "array") ||
                     (non_const_set_candidate->isResolved() && isArray(non_const_set_candidate->getResultType()));
-                bool is_tuple_type = (candidate_name == "tuple");
+                bool is_tuple_function = (candidate_name == "tuple");
+                bool is_tuple_type = is_tuple_function ||
+                    (non_const_set_candidate->isResolved() && isTuple(removeNullable(non_const_set_candidate->getResultType())));
                 bool is_not_array_or_tuple_type = non_const_set_candidate->isResolved() &&
                     !isArray(non_const_set_candidate->getResultType()) &&
                     !isTuple(non_const_set_candidate->getResultType());
+                if (!is_tuple_function
+                    && is_tuple_type
+                    && !isTuple(removeNullable(in_first_argument->getResultType())))
+                    expand_single_tuple_value = true;
 
                 /// Case 1: array(..) or any function returning Array type -> rewrite to has()
                 if (is_array_type)
@@ -1254,33 +1336,62 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
                 if (is_tuple_type && in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
                 {
-                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                    QueryTreeNodes tuple_args;
+                    if (is_tuple_function)
+                    {
+                        const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
+                        const auto & candidate_arguments = non_const_set_candidate->getArguments().getNodes();
+                        const bool tuple_function_is_set = wrapped_column_rhs || !left_is_tuple || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
+                            [](const auto & arg) { return isTuple(removeNullable(arg->getResultType())); });
+
+                        if (tuple_function_is_set)
+                            tuple_args = candidate_arguments;
+                        else
+                            tuple_args = {fn_args[1]};
+                    }
+                    else
+                        tuple_args = {fn_args[1]};
                     const bool left_is_null = isNullConstant(in_first_argument);
 
-                    /// handling for NULL IN (tuple)
-                    if (left_is_null)
+                    /// Preserve NULL result for NULL IN (tuple) when NULLs are not compared.
+                    /// With transform_null_in enabled, fall through to the regular has() rewrite
+                    /// so tuple-valued RHS expressions are expanded before NULL matching.
+                    if (left_is_null && !transform_null_in)
                     {
-                        if (transform_null_in)
-                            return handleNullInTuple(tuple_args, function_name,
-                                parameters_projection_names, arguments_projection_names, scope, node);
-
                         auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                         node = std::make_shared<ConstantNode>(Field{},
                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
                         return ProjectionNames{proj};
                     }
 
+                    if (left_is_null && transform_null_in && std::any_of(tuple_args.begin(), tuple_args.end(), isNullConstant))
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = std::make_shared<ConstantNode>(is_not_in ? Field{0u} : Field{1u}, std::make_shared<DataTypeUInt8>());
+                        return ProjectionNames{proj};
+                    }
+
                     /// convert tuple to array and rewrite to has()
-                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope);
+                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value);
                     return buildHasExpression(node, array_arg, in_first_argument, is_not_in, transform_null_in,
                         arguments_projection_names, parameters_projection_names, scope);
                 }
 
-                /// Case 3: scalar-returning function -> rewrite to ifNull(equals/notEquals, default)
-                /// We wrap with ifNull to preserve IN's non-nullable behavior (NULL → 0 for IN, 1 for NOT IN)
+                /// Case 3: scalar-returning function -> rewrite to a row-wise comparison.
                 if (is_not_array_or_tuple_type)
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+
+                    if (transform_null_in)
+                    {
+                        auto comparison_fn = std::make_shared<FunctionNode>(is_not_in ? "isDistinctFrom" : "isNotDistinctFrom");
+                        comparison_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+
+                        node = comparison_fn;
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
+
                     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
                     eq_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
 
@@ -1288,7 +1399,26 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
                     ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
 
-                    node = ifnull_fn;
+                    const bool left_can_be_null = isNullableOrLowCardinalityNullable(in_first_argument->getResultType());
+                    if (left_can_be_null)
+                    {
+                        auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+                        is_null_fn->getArguments().getNodes().push_back(fn_args[0]);
+
+                        auto null_const = std::make_shared<ConstantNode>(
+                            Field{},
+                            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+                        auto raw_if = std::make_shared<FunctionNode>("if");
+                        raw_if->getArguments().getNodes() = {is_null_fn, null_const, ifnull_fn};
+
+                        node = raw_if;
+                    }
+                    else
+                    {
+                        node = ifnull_fn;
+                    }
+
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
