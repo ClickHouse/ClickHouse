@@ -1669,7 +1669,8 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
     CacheMetadata cache_metadata(cache_path,
                                  /* background_download_queue_size_limit */0,
                                  /* background_download_threads */0,
-                                 /* write_cache_per_user_directory */false);
+                                 /* write_cache_per_user_directory */false,
+                                 /* use_real_disk_size */false);
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -1801,7 +1802,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     LRUFileCachePriority priority(IFileCachePriority::QueueType::Main, max_size, max_elements);
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("evict_key");
     auto origin = FileCache::getCommonOrigin();
@@ -1922,7 +1923,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
     LRUFileCachePriority dst(IFileCachePriority::QueueType::Main, /* max_size */100, /* max_elements */10, "dst");
 
     std::string cache_path = std::filesystem::path(caches_dir) / "test_move_eviction_pos";
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
@@ -2663,7 +2664,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const std::string cache_path = caches_dir / "test_slru_modify_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -2716,7 +2717,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     const std::string cache_path = caches_dir / "test_split_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
@@ -2761,7 +2762,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     const std::string cache_path = caches_dir / "test_split_resize";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
@@ -2834,7 +2835,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const std::string cache_path = caches_dir / "test_slru_downgrade_rollback";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
@@ -2925,7 +2926,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     const std::string cache_path = caches_dir / "test_split_slru_total_cleanup";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
@@ -2985,7 +2986,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
 
     const auto cache_path = caches_dir / "test_queue_metrics";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
@@ -3031,7 +3032,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     const auto cache_path = caches_dir / "test_slru_downgrade";
     fs::create_directories(cache_path);
-    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+    CacheMetadata cache_metadata(cache_path, 0, 0, false, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
     auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);

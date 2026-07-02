@@ -1,0 +1,63 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </disk_s3>
+            <aligned_cache>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/tmp/s3_aligned_cache/</path>
+                <max_size>1Gi</max_size>
+                <use_real_disk_size>1</use_real_disk_size>
+            </aligned_cache>
+            <!-- An encrypted disk on top of a cache with `use_real_disk_size` writes a tiny
+                 (sub-block) header file during `checkAccess` at startup, which exercises a
+                 cache reservation whose disk-accounted delta is zero. -->
+            <aligned_cache_encrypted>
+                <type>encrypted</type>
+                <disk>aligned_cache</disk>
+                <key>1234567812345678</key>
+            </aligned_cache_encrypted>
+            <!-- A small cache with sub-block file segments (`max_file_segment_size` below the
+                 filesystem block size) and a tiny `max_size`, used to force LRU eviction of
+                 sub-block segments and check that the eviction telemetry reports the same
+                 block-aligned unit as `FilesystemCacheSize`. -->
+            <aligned_cache_evict>
+                <type>cache</type>
+                <disk>disk_s3</disk>
+                <path>/tmp/s3_aligned_cache_evict/</path>
+                <max_size>32Ki</max_size>
+                <max_file_segment_size>512</max_file_segment_size>
+                <boundary_alignment>512</boundary_alignment>
+                <use_real_disk_size>1</use_real_disk_size>
+            </aligned_cache_evict>
+        </disks>
+        <policies>
+            <external>
+                <volumes>
+                    <main>
+                        <disk>aligned_cache</disk>
+                    </main>
+                </volumes>
+            </external>
+            <external_encrypted>
+                <volumes>
+                    <main>
+                        <disk>aligned_cache_encrypted</disk>
+                    </main>
+                </volumes>
+            </external_encrypted>
+            <external_evict>
+                <volumes>
+                    <main>
+                        <disk>aligned_cache_evict</disk>
+                    </main>
+                </volumes>
+            </external_evict>
+        </policies>
+    </storage_configuration>
+</clickhouse>

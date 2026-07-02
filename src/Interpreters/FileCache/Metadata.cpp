@@ -3,6 +3,8 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
 #include <Common/ProfileEvents.h>
+#include <Common/filesystemHelpers.h>
+#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
@@ -62,8 +64,12 @@ FileSegmentMetadata::FileSegmentMetadata(FileSegmentPtr && file_segment_)
 
 size_t FileSegmentMetadata::size() const
 {
+    auto metadata = file_segment->tryGetKeyMetadata();
+    if (metadata && metadata->useRealDiskSize())
+        return metadata->alignFileSize(file_segment->getReservedSize());
     return file_segment->getReservedSize();
 }
+
 
 KeyMetadata::KeyMetadata(
     const Key & key_,
@@ -185,22 +191,59 @@ LoggerPtr KeyMetadata::logger() const
     return cache_metadata->log;
 }
 
+size_t KeyMetadata::alignFileSize(size_t file_size) const
+{
+    return cache_metadata->alignFileSize(file_size);
+}
+
+bool KeyMetadata::useRealDiskSize() const
+{
+    return cache_metadata->useRealDiskSize();
+}
+
 CacheMetadata::CacheMetadata(
     const std::string & path_,
     size_t background_download_queue_size_limit_,
     size_t background_download_threads_,
-    bool write_cache_per_user_directory_)
+    bool write_cache_per_user_directory_,
+    bool use_real_disk_size_)
     : path(path_)
     , cleanup_queue(std::make_shared<CleanupQueue>())
     , download_queue(std::make_shared<DownloadQueue>(background_download_queue_size_limit_))
     , write_cache_per_user_directory(write_cache_per_user_directory_)
+    , use_real_disk_size(use_real_disk_size_)
     , log(getLogger("CacheMetadata"))
     , origins(ProfileEvents::FilesystemCacheLockOriginPoolMicroseconds)
     , download_threads_num(background_download_threads_)
 {
+
 }
 
 CacheMetadata::~CacheMetadata() = default;
+
+size_t CacheMetadata::alignFileSize(size_t file_size) const
+{
+    const size_t block_size = fs_block_size.load(std::memory_order_acquire);
+    if (block_size == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Filesystem block size is not initialized for cache path {}", path);
+    return FileCacheUtils::roundUpToMultiple(file_size, block_size);
+}
+
+bool CacheMetadata::useRealDiskSize() const
+{
+    return use_real_disk_size;
+}
+
+void CacheMetadata::fillStatVFS()
+{
+    const auto stat = getStatVFS(path);
+    /// Use `f_frsize` (the fundamental filesystem block/fragment size), not `f_bsize` (the preferred I/O
+    /// block size), because on-disk space is accounted in `f_frsize` units (`f_blocks`, `f_bfree`, `f_bavail`
+    /// are all counted in `f_frsize`), and `FileCacheSettings` already computes total space via `f_frsize`.
+    /// Fall back to `f_bsize` when `f_frsize` is reported as zero.
+    const size_t block_size = stat.f_frsize != 0 ? stat.f_frsize : stat.f_bsize;
+    fs_block_size.store(block_size, std::memory_order_release);
+}
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {

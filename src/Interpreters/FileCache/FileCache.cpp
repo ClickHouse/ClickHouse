@@ -121,6 +121,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsBool use_split_cache;
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
+    extern const FileCacheSettingsBool use_real_disk_size;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
@@ -292,7 +293,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
                settings[FileCacheSetting::background_download_threads],
-               write_cache_per_user_directory)
+               write_cache_per_user_directory, settings[FileCacheSetting::use_real_disk_size])
     , check_cache_probability(settings[FileCacheSetting::check_cache_probability])
 {
     CachePriorityCreatorFunction creator_function;
@@ -387,9 +388,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
-    main_priority->setOnEvictCallback([this](const FileSegment & segment, const String & user_id)
+    main_priority->setOnEvictCallback([this](const FileSegment & segment, size_t disk_accounted_size, const String & user_id)
     {
-        onSegmentEvicted(segment, user_id);
+        onSegmentEvicted(segment, disk_accounted_size, user_id);
     });
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
@@ -481,6 +482,7 @@ void FileCache::initialize()
             if (!need_to_load_metadata)
                 fs::create_directories(getBasePath());
 
+            metadata.fillStatVFS();
             auto fs_info = std::filesystem::space(getBasePath());
             const size_t size_limit = main_priority->getSizeLimit(cache_state_guard.lock());
             if (fs_info.capacity < size_limit)
@@ -1279,6 +1281,15 @@ bool FileCache::doTryReserve(
         chassert(file_segment.getReservedSize() == 0);
 #endif
 
+    /// When `use_real_disk_size` is enabled, priority queue entries are accounted by their
+    /// disk-aligned size, so every priority-queue decision (fit checks, eviction collection and
+    /// the final size increment) must operate on the disk-accounted delta rather than on the raw
+    /// requested `size`. The raw `size` is used only to advance `reserved_size`.
+    /// When `use_real_disk_size` is disabled the delta is equal to `size`, so this is a no-op.
+    /// The delta can be `0` for a sub-block write that stays within an already-accounted block,
+    /// in which case the queue entry is left unchanged.
+    const size_t aligned_delta = file_segment.computeDiskAccountedDelta(size);
+
     /// In case of per query cache limit (by default disabled),
     /// we add/remove entries from both (main_priority and query_priority) priority queues,
     /// but iterate entries in order of query_priority, while checking the limits in both.
@@ -1305,7 +1316,7 @@ bool FileCache::doTryReserve(
             if (query_context)
             {
                 query_priority = &query_context->getPriority();
-                if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
+                if (!query_priority->canFit(aligned_delta, required_elements_num, lock, /* reservee */nullptr, origin_info)
                     && !query_context->recacheOnFileCacheQueryLimitExceeded())
                 {
                     LOG_TEST(
@@ -1317,7 +1328,7 @@ bool FileCache::doTryReserve(
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
-                    size,
+                    aligned_delta,
                     required_elements_num,
                     main_priority_iterator.get(),
                     /* is_total_space_cleanup */false,
@@ -1328,7 +1339,7 @@ bool FileCache::doTryReserve(
 
         /// Check server-wide cache limits.
         main_eviction_info = main_priority->collectEvictionInfo(
-            size,
+            aligned_delta,
             required_elements_num,
             main_priority_iterator.get(),
             /* is_total_space_cleanup */false,
@@ -1340,10 +1351,11 @@ bool FileCache::doTryReserve(
         if (main_priority_iterator && !main_eviction_info->requiresEviction() && !query_context)
         {
             main_eviction_info->releaseHoldSpace(lock);
-            main_priority_iterator->incrementSize(size, lock);
+            if (aligned_delta)
+                main_priority_iterator->incrementSize(aligned_delta, lock);
 
             file_segment.reserved_size += size;
-            chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
+            chassert(file_segment.getDiskAccountedSize() == main_priority_iterator->getEntry()->size);
             return true;
         }
     }
@@ -1405,10 +1417,13 @@ bool FileCache::doTryReserve(
             query_eviction_info->releaseHoldSpace(lock);
 
         eviction_candidates.afterEvictState(lock);
-        main_priority_iterator->incrementSize(size, lock);
+        if (aligned_delta)
+        {
+            main_priority_iterator->incrementSize(aligned_delta, lock);
 
-        if (query_priority_iterator)
-            query_priority_iterator->incrementSize(size, lock);
+            if (query_priority_iterator)
+                query_priority_iterator->incrementSize(aligned_delta, lock);
+        }
     }
     catch (...)
     {
@@ -1425,7 +1440,7 @@ bool FileCache::doTryReserve(
         file_segment.setQueueIterator(main_priority_iterator);
 
     file_segment.reserved_size += size;
-    chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
+    chassert(file_segment.getDiskAccountedSize() == main_priority_iterator->getEntry()->size);
 
     if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
     {
@@ -2288,10 +2303,14 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         auto state_lock = cache_state_guard.lock();
         size_limit = main_priority->getSizeLimit(state_lock);
 
+        const bool use_real_disk_size = key_metadata->useRealDiskSize();
         for (auto & segment : segments)
         {
+            const size_t accounted_size = use_real_disk_size
+                ? key_metadata->alignFileSize(segment.size)
+                : segment.size;
             if (main_priority->canFit(
-                    segment.size,
+                    accounted_size,
                     /* elements */1,
                     state_lock,
                     /* reservee */nullptr,
@@ -2377,15 +2396,23 @@ FileCache::~FileCache()
     assertCacheCorrectness();
 }
 
-void FileCache::onSegmentEvicted(const FileSegment & segment, const String & user_id) const
+void FileCache::onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment.getReservedSize());
+    /// Report the disk-accounted size so that eviction telemetry stays consistent with the
+    /// live cache size. With `use_real_disk_size` the queue entry (and hence `FilesystemCacheSize`)
+    /// is accounted by the filesystem-block-aligned size, so eviction must free the same unit;
+    /// otherwise `FilesystemCacheSize` would drop by the aligned size while the evicted-bytes
+    /// counters only advance by the raw size. `disk_accounted_size` is captured by the caller
+    /// before the segment is detached, because a detached segment loses its key metadata and
+    /// `getDiskAccountedSize` would then fall back to the raw reserved size. Without the mode the
+    /// captured value equals the raw reserved size, so this is a no-op for the default path.
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, disk_accounted_size);
 
     if (!expose_eviction_metrics.load(std::memory_order_relaxed))
         return;
 
-    const size_t bytes = segment.getReservedSize();
+    const size_t bytes = disk_accounted_size;
     const size_t hits = segment.getHitsCount();
     filesystem_cache_evictions_total.withLabels({name}).increment();
     filesystem_cache_evicted_bytes_total.withLabels({name}).increment(static_cast<DimensionalMetrics::Value>(bytes));
@@ -2405,11 +2432,12 @@ IFileCachePriority::OnEvictCallback FileCache::getOnBackgroundEvictCallback() co
     return std::bind_front(&FileCache::onSegmentEvictedInTheBackground, this);
 }
 
-void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const
+void FileCache::onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const
 {
     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedFileSegments);
-    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, segment.getReservedSize());
-    onSegmentEvicted(segment, user_id);
+    /// See `onSegmentEvicted`: report the disk-accounted size to stay consistent with `FilesystemCacheSize`.
+    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundEvictedBytes, disk_accounted_size);
+    onSegmentEvicted(segment, disk_accounted_size, user_id);
 }
 
 void FileCache::deactivateBackgroundOperations()

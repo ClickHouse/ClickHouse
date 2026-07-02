@@ -268,9 +268,9 @@ public:
     const String & getName() const { return name; }
 
 private:
-    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvicted(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
     IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
-    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, size_t disk_accounted_size, const String & user_id) const;
 
     using KeyAndOffset = FileCacheKeyAndOffset;
 

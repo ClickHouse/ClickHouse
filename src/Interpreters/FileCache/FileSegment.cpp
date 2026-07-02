@@ -175,6 +175,26 @@ size_t FileSegment::getReservedSize() const
     return reserved_size;
 }
 
+size_t FileSegment::getDiskAccountedSize() const
+{
+    const auto km = tryGetKeyMetadata();
+    const size_t raw = reserved_size.load();
+    if (km && km->useRealDiskSize())
+        return km->alignFileSize(raw);
+    return raw;
+}
+
+size_t FileSegment::computeDiskAccountedDelta(size_t raw_delta) const
+{
+    const auto km = tryGetKeyMetadata();
+    if (km && km->useRealDiskSize())
+    {
+        const size_t prev_raw = reserved_size.load();
+        return km->alignFileSize(prev_raw + raw_delta) - km->alignFileSize(prev_raw);
+    }
+    return raw_delta;
+}
+
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
 {
     auto lk = lock();
@@ -784,7 +804,12 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const auto km = tryGetKeyMetadata();
+        const size_t aligned_delta = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size) - km->alignFileSize(downloaded_size)
+            : reserved_size - downloaded_size;
+        if (aligned_delta)
+            queue_iterator->decrementSize(aligned_delta);
         reserved_size = downloaded_size.load();
     }
 
@@ -1073,10 +1098,14 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             entry = it->getEntry();
             entry_size = entry->size;
         }
-        if (download_state != State::DOWNLOADING && entry_size != reserved_size)
+        const auto km = tryGetKeyMetadata();
+        const size_t expected_entry_size = (km && km->useRealDiskSize())
+            ? km->alignFileSize(reserved_size)
+            : reserved_size.load();
+        if (download_state != State::DOWNLOADING && entry_size != expected_entry_size)
             throw_logical(
                 fmt::format("Expected entry.size == reserved_size ({} == {}, entry: {})",
-                            entry_size, reserved_size.load(), entry->toString()));
+                            entry_size, expected_entry_size, entry->toString()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -1121,6 +1150,16 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == reserved_size);
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
+
+            /// Note: we deliberately do not cross-check the accounted aligned size against the real
+            /// on-disk allocation (`stat::st_blocks * 512`). When `use_real_disk_size` is on, accounting
+            /// uses `alignFileSize` (i.e. `roundUpToMultiple(size, f_frsize)`), which is a model of the
+            /// physical size, not the exact allocation. The two are not equal in general: transparent
+            /// compression, sparse files, reflinks/CoW, inline-data, preallocation and delayed allocation
+            /// all make `st_blocks` differ from the rounded-up logical size for a perfectly valid cached
+            /// segment, so asserting their equality would trip a spurious `LOGICAL_ERROR` in sampled
+            /// debug/sanitizer builds. The accounting invariant that actually matters
+            /// (`entry.size == alignFileSize(reserved_size)`) is verified by `check_iterator` below.
 
             auto file_size = fs::file_size(getPath());
             UNUSED(file_size);
