@@ -226,6 +226,11 @@ QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
     return DistinctStep::deserialize(ctx, true);
 }
 
+QueryPlanStepPtr DistinctStep::clone() const
+{
+    return std::make_unique<DistinctStep>(*this);
+}
+
 void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {

@@ -86,6 +86,11 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitStep>(ctx.input_headers.front(), limit_v, offset_v);
 }
 
+QueryPlanStepPtr NegativeLimitStep::clone() const
+{
+    return std::make_unique<NegativeLimitStep>(*this);
+}
+
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry)
 {

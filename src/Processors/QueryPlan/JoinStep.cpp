@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -324,6 +325,38 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     if (keep_left_read_in_order)
         join->keepLeftPipelineInOrder();
     updateOutputHeader();
+}
+
+QueryPlanStepPtr JoinStep::clone() const
+{
+    /// Deep-clone the underlying `IJoin`. A shallow copy of `JoinPtr` would let the
+    /// cloned plan and the original share one `IJoin` instance, so executing both
+    /// (e.g. an in-place build followed by a deferred build on silent failure)
+    /// would accumulate join state across runs. For join algorithms that do not
+    /// support clone, throw `NOT_IMPLEMENTED` so callers like
+    /// `FutureSetFromSubquery::buildOrderedSetInplace` take their non-clonable
+    /// fallback (consume `source` directly) instead of running on shared state.
+    if (!join->isCloneSupported())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone is not supported for {}", join->getName());
+
+    auto cloned = std::make_unique<JoinStep>(*this);
+
+    /// When `swap_streams` is set (e.g. after `optimizeJoinLegacy`), the underlying `IJoin` was
+    /// built with reversed sample blocks: the optimizer calls `join->clone(table_join, right_header,
+    /// left_header)` and `updatePipeline` swaps the child pipelines before execution. Reproduce the
+    /// same post-swap header order here, otherwise the cloned join would be rebuilt with the original
+    /// (unswapped) header order and execute against metadata for the wrong build side.
+    const auto & left_sample_header = swap_streams ? input_headers[1] : input_headers[0];
+    const auto & right_sample_header = swap_streams ? input_headers[0] : input_headers[1];
+    cloned->join = join->clone(
+        std::make_shared<TableJoin>(join->getTableJoin()),
+        left_sample_header,
+        right_sample_header);
+    if (keep_left_read_in_order)
+        cloned->join->keepLeftPipelineInOrder();
+    cloned->join_algorithm_header.reset();
+    cloned->updateOutputHeader();
+    return cloned;
 }
 
 void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)

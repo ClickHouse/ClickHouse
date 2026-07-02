@@ -76,6 +76,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -448,20 +449,69 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
+    if (!source)
+        return nullptr;
+
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
-    if (source && hasCorrelatedExpressions(source->getRootNode()))
+    if (hasCorrelatedExpressions(source->getRootNode()))
         return nullptr;
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-    if (!plan)
-        return nullptr;
+    /// Prefer running the in-place pipeline against a clone of the source plan, so the original
+    /// `source` is preserved. If the in-place build fails (e.g. because of subquery timeout with
+    /// `overflow_mode = 'break'`, where the executor stops without throwing and without setting
+    /// `is_created`), `DelayedCreatingSetsStep::makePlansForSets` can still build the set later.
+    /// Otherwise the set would remain permanently unbuilt and `FunctionIn` would throw
+    /// "Not-ready Set is passed as the second argument".
+    ///
+    /// Many `IQueryPlanStep` subclasses do not implement `clone`. If the source plan cannot be
+    /// cloned, fall back to the original behavior: consume `source` directly. This preserves
+    /// the in-place optimization (and primary key analysis) for plans without clone support, at
+    /// the cost of not being able to recover from a silent in-place build failure for those plans.
+    std::unique_ptr<QueryPlan> plan;
+    bool source_preserved = false;
+    try
+    {
+        plan = std::make_unique<QueryPlan>(source->clone());
+        source_preserved = true;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+            throw;
+        plan = std::move(source);
+    }
 
-    set_and_key->set->fillSetElements();
+    /// When the source plan was cloned, `source` is preserved and a silent in-place failure can be
+    /// recovered by a deferred build in `DelayedCreatingSetsStep::makePlansForSets`. In that case do
+    /// not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
+    /// silently (e.g. subquery timeout with `overflow_mode = 'break'`, or the failpoint that skips
+    /// `finishInsert`), the `CreatingSetsTransform` destructor would store an exception into the
+    /// cache for this key, and the later deferred build would rethrow it via `shared_future::get`
+    /// instead of rebuilding from the preserved `source`. The deferred build still uses the cache.
+    /// When the source was consumed (non-clonable fallback), there is no deferred build, so the
+    /// original cache behavior is preserved.
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        set_and_key,
+        network_transfer_limits,
+        source_preserved ? nullptr : prepared_sets_cache);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
+
+    /// `buildOrderedSetInplace` may be called more than once on the same `FutureSetFromSubquery`
+    /// (different call sites: `KeyCondition`, MergeTree skip indexes, `ConditionSelectivityEstimator`,
+    /// etc.). With the cloned-source path above, `source` is preserved on silent in-place failure,
+    /// so a subsequent call would re-enter this code. `Set::fillSetElements` appends empty columns
+    /// to `set_elements` without clearing, so calling it twice would leave `set_elements.size() > keys_size`
+    /// and trip the `LOGICAL_ERROR` check in `Set::appendSetElements`. Match the pattern in
+    /// `FutureSetFromTuple::buildOrderedSetInplace` and only fill once.
+    if (!set_and_key->set->hasExplicitSetElements())
+        set_and_key->set->fillSetElements();
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
@@ -475,10 +525,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
-    /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
-    /// the pipeline without setting `set_and_key->set->is_created` to true.
+    /// `timeout_overflow_mode` set to `break`, no exception is thrown, and the executor just stops executing
+    /// the pipeline without setting `set_and_key->set->is_created` to true. If the source was cloned,
+    /// `DelayedCreatingSetsStep::makePlansForSets` can still build the set later from the preserved `source`.
     if (!set_and_key->set->isCreated())
         return nullptr;
+
+    /// In-place build succeeded; the original `source` is no longer needed for pipeline-based building.
+    source.reset();
 
     logProcessorProfile(context, pipeline.getProcessors());
 

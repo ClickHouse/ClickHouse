@@ -40,6 +40,8 @@ public:
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
 
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
