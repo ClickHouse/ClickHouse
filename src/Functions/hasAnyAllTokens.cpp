@@ -44,10 +44,12 @@ TokensWithPosition initializeSearchTokens(const ColumnsWithTypeAndName & argumen
     if (!column_needles)
         return {};
 
-    /// At plan time, constant columns coming from ActionsDAG nodes are normalized to size 0
-    /// (see ActionsDAG::addColumn). For non-const columns we can only extract a value when
-    /// there's at least one row.
-    if (!isColumnConst(*column_needles) && column_needles->empty())
+    /// When the query plan is serialized and deserialized (e.g. with serialize_query_plan=1),
+    /// ColumnConst is recreated with size 0. A size-0 ColumnConst is still a valid constant
+    /// that holds its value - do not treat it as absent. However, we must still guard against
+    /// a ColumnConst whose underlying data column is itself empty.
+    const auto * column_needles_const = typeid_cast<const ColumnConst *>(column_needles.get());
+    if (column_needles_const ? column_needles_const->getDataColumn().empty() : column_needles->empty())
         return {};
 
     Field needles_field = (*column_needles)[0];
