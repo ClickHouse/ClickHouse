@@ -142,6 +142,15 @@ node18 = cluster.add_instance(
     main_configs=["configs/config_zk_ordinary_yaml_is_literal.xml"],
     with_zookeeper=True,
 )
+# from_zk leaf value that was XML-entity-encoded (`a&amp;b`) for the old parser path: it is now kept
+# as literal text, so it resolves to the literal `a&amp;b`, NOT the decoded `a&b` the old XML-reparse
+# path produced. This locks in the deliberate behaviour change on upgrade: a value needing a literal
+# `&`, `<` or `>` must be stored raw (which the old path rejected), not entity-encoded.
+node19 = cluster.add_instance(
+    "node19",
+    user_configs=["configs/config_zk_leaf_entity_encoded.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -215,6 +224,15 @@ def start_cluster():
             zk.create(
                 path="/leaf_with_crlf",
                 value=b"a\r\nb",
+                makepath=True,
+            )
+            # A leaf value that was XML-entity-encoded (`a&amp;b`) to satisfy the old parser, which
+            # reparsed every from_zk value as XML and would have decoded this to `a&b`. A non-`<` leaf
+            # value is now kept as literal text using its exact original bytes, so it resolves to the
+            # literal `a&amp;b`. This is a deliberate, documented behaviour change on upgrade.
+            zk.create(
+                path="/leaf_entity_encoded",
+                value=b"a&amp;b",
                 makepath=True,
             )
             # An XML fragment (begins with '<'), referenced from an ordinary (non-<include>) element
@@ -611,6 +629,22 @@ def test_config_zk_leaf_crlf_preserved(start_cluster):
     assert (
         node16.query("SELECT hex(value) FROM system.settings WHERE name = 'log_comment'")
         == "610D0A62\n"
+    )
+
+
+def test_config_zk_leaf_entity_encoded_stays_literal(start_cluster):
+    """A from_zk leaf value that was XML-entity-encoded now resolves to its literal bytes.
+
+    Before this change every from_zk value was reparsed as XML, so a leaf scalar stored as
+    `a&amp;b` (the only way to smuggle a `&` past the old parser, which rejected a raw `&` as not
+    well-formed) decoded to `a&b`. A non-`<` leaf value is now kept as literal text using its exact
+    original bytes, so it resolves to the literal `a&amp;b` instead. This is a deliberate behaviour
+    change on upgrade, documented in configuration-files.md: a value needing a literal `&`, `<` or
+    `>` must now be stored raw rather than entity-encoded.
+    """
+    assert (
+        node19.query("SELECT value FROM system.settings WHERE name = 'log_comment'")
+        == "a&amp;b\n"
     )
 
 

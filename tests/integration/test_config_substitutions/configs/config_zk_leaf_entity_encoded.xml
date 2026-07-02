@@ -1,0 +1,20 @@
+<clickhouse>
+  <profiles>
+    <default>
+        <!-- The ZooKeeper node holds a leaf value that was XML-entity-encoded (`a&amp;b`) to smuggle
+             the special character `&` past the old parser, which reparsed every from_zk value as XML.
+             A non-`<` leaf value is now kept as literal text using its exact original bytes, so this
+             value resolves to the literal `a&amp;b` rather than the decoded `a&b`. This is a
+             deliberate, documented behaviour change on upgrade: a value that needs a literal `&`, `<`
+             or `>` must be stored raw (which the old path rejected as not well-formed), not encoded. -->
+        <log_comment from_zk="/leaf_entity_encoded" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</clickhouse>
