@@ -893,6 +893,22 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 env.COMMIT_AUTHORS = list(commit_authors)
                 env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
                 env.dump()
+        else:
+            # Non-PR runs (workflow_dispatch / scheduled, e.g. releases) have no
+            # PR author, so the Slack feed would notify no one and a failure would
+            # be silent. Fall back to the head commit's author so failures still
+            # reach a human.
+            author_email = ""
+            try:
+                author_email = Shell.get_output(
+                    f"git log -1 --format='%ae' {env.SHA}", verbose=True
+                ).strip()
+            except Exception as e:
+                print(f"WARNING: Failed to get head commit author: {e}")
+            if author_email and "@" in author_email and "+" not in author_email:
+                env.COMMIT_AUTHORS = [author_email]
+                env.JOB_KV_DATA["commit_authors"] = [author_email]
+                env.dump()
 
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
