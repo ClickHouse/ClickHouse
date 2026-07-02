@@ -35,9 +35,6 @@ public:
     void addEstimates(const Estimates & external_counts);
     bool hasColumn(const String & column_name) const { return estimates.contains(column_name); }
 
-    void mergeEstimates(const Estimates & external_estimates);
-    static void mergeEstimates(Estimates & estimates, const Estimates & external_estimates);
-
     Estimates getEstimates() const;
 
     /// The accumulated estimates with the exact default counts from the explicit statistics
@@ -50,7 +47,6 @@ public:
     static ISerialization::KindStack chooseKindStack(const Estimate & estimate, const SerializationInfoSettings & settings);
     static void addCounts(Estimate & dst, const Estimate & src);
     static void subtractCounts(Estimate & dst, const Estimate & src);
-    static void addEstimates(Estimates & dst, const Estimates & src);
     static void filterEstimates(Estimates & estimates, const SerializationInfoByName & infos);
 
 private:

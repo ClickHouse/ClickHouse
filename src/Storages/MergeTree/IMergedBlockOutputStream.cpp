@@ -7,45 +7,19 @@
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
-    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
-    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
-    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-}
-
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const NamesAndTypesList & columns_list,
+    GatheredDataPtr gathered_data_,
     bool reset_columns_)
     : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
+    , gathered_data(std::move(gathered_data_))
     , reset_columns(reset_columns_)
-    , info_settings
-    {
-        static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-        false,
-        (*storage_settings)[MergeTreeSetting::serialization_info_version],
-        (*storage_settings)[MergeTreeSetting::string_serialization_version],
-        (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*storage_settings)[MergeTreeSetting::map_serialization_version],
-        (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-    }
-    , estimates_builder(columns_list, info_settings, {})
 {
-}
-
-Estimates IMergedBlockOutputStream::getSerializationEstimates(const Estimates & external_estimates)
-{
-    /// Prefer the default counts from the explicit statistics over the sampled ones.
-    estimates_builder.mergeEstimates(external_estimates);
-    return estimates_builder.getEstimates();
+    chassert(gathered_data);
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

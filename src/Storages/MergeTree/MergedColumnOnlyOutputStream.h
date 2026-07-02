@@ -19,6 +19,7 @@ public:
         const MergeTreeMutableDataPartPtr & data_part,
         MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
+        GatheredDataPtr gathered_data_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & indices_to_recalc,
         CompressionCodecPtr default_codec,

@@ -147,30 +147,6 @@ void EstimatesBuilder::addEstimates(const Estimates & external_counts)
         addCounts(estimates[key], external);
 }
 
-void EstimatesBuilder::mergeEstimates(const Estimates & external_estimates)
-{
-    /// Explicit statistics exist only for top-level columns; override the sampled default count with the
-    /// exact one from the statistics where it is available. The sampled row count is kept (it is exact).
-    for (const auto & [name, external] : external_estimates)
-    {
-        if (!external.num_defaults.has_value())
-            continue;
-        if (auto it = estimates.find(name); it != estimates.end())
-            it->second.num_defaults = external.num_defaults;
-    }
-}
-
-void EstimatesBuilder::mergeEstimates(Estimates & estimates, const Estimates & external_estimates)
-{
-    for (const auto & [name, external] : external_estimates)
-    {
-        if (!external.num_defaults.has_value())
-            continue;
-        if (auto it = estimates.find(name); it != estimates.end())
-            it->second.num_defaults = external.num_defaults;
-    }
-}
-
 Estimates EstimatesBuilder::getEstimates() const
 {
     return {estimates.begin(), estimates.end()};
@@ -244,12 +220,6 @@ void EstimatesBuilder::subtractCounts(Estimate & dst, const Estimate & src)
     /// per-table serialization hints were rebuilt from scratch between adding and removing a part.
     dst.rows_count -= std::min(dst.rows_count, src.rows_count);
     dst.num_defaults = dst.num_defaults.value_or(0) - std::min(dst.num_defaults.value_or(0), src.num_defaults.value_or(0));
-}
-
-void EstimatesBuilder::addEstimates(Estimates & dst, const Estimates & src)
-{
-    for (const auto & [key, src_estimate] : src)
-        addCounts(dst[key], src_estimate);
 }
 
 namespace

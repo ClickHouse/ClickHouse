@@ -66,7 +66,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include "Core/NamesAndTypes.h"
 #include "config.h"
 
 #ifndef NDEBUG
@@ -806,14 +805,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
     {
-        global_ctx->gathered_data.statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
+        global_ctx->gathered_data->statistics = ColumnsStatistics(global_ctx->metadata_snapshot->getColumns());
     }
 
     if (global_ctx->merge_may_reduce_rows)
     {
         /// If merge may reduce rows, we need to build statistics for the new part
         /// at the end of the merge pipeline. See usage of addBuildStatisticsStep.
-        global_ctx->statistics_to_build_by_part[global_ctx->new_data_part->name] = global_ctx->gathered_data.statistics.cloneEmpty();
+        global_ctx->statistics_to_build_by_part[global_ctx->new_data_part->name] = global_ctx->gathered_data->statistics.cloneEmpty();
     }
     else
     {
@@ -827,7 +826,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 continue;
 
             global_ctx->new_data_part->getMinMaxIndex()->merge(*part->getMinMaxIndex());
-            const auto & result_statistics = global_ctx->gathered_data.statistics;
+            const auto & result_statistics = global_ctx->gathered_data->statistics;
 
             if (result_statistics.empty())
                 continue;
@@ -874,6 +873,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
+
+    /// All output streams of the merge (the horizontal one and, in a vertical merge, the per-column
+    /// ones) sample the estimates of the data they write into this shared builder; the accumulated
+    /// counts are persisted in `serialization.json` when the part is finalized.
+    global_ctx->gathered_data->estimates_builder = EstimatesBuilder(global_ctx->storage_columns, info_settings, {});
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -970,6 +974,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part,
         merge_tree_settings,
         global_ctx->metadata_snapshot,
+        global_ctx->gathered_data,
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, global_ctx->merging_skip_indexes, *global_ctx->data_settings),
         global_ctx->compression_codec,
@@ -1866,6 +1871,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->new_data_part,
         global_ctx->data_settings,
         global_ctx->metadata_snapshot,
+        global_ctx->gathered_data,
         columns_list,
         column_pipepline.indexes_to_recalc,
         global_ctx->compression_codec,
@@ -1920,15 +1926,10 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     ctx->column_to->finalizeIndexGranularity();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->new_data_part->checksums);
-    global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
-
-    /// Accumulate the sampled counts of the gathered column: the final `serialization.json` is written
-    /// by the horizontal stream (`global_ctx->to`), whose own builder samples only the merging columns
-    /// (see `MergedBlockOutputStream::finalizePartOnDisk`).
-    EstimatesBuilder::addEstimates(global_ctx->gathered_data.serialization_estimates, ctx->column_to->getSerializationEstimates({}));
+    global_ctx->gathered_data->checksums.add(std::move(changed_checksums));
 
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
-    global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
+    global_ctx->gathered_data->columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data->columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
 
     auto cached_marks = ctx->column_to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
@@ -2140,9 +2141,9 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     }
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, nullptr);
     else
-        global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, &global_ctx->storage_columns);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns);
 
     auto cached_marks = global_ctx->to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
@@ -2336,7 +2337,7 @@ bool MergeTask::MergeTextIndexStage::execute() const
     if (task->executeStep())
         return true;
 
-    task->addToChecksums(global_ctx->gathered_data.checksums);
+    task->addToChecksums(global_ctx->gathered_data->checksums);
     ctx->merge_tasks.pop_back();
     return !ctx->merge_tasks.empty();
 }
@@ -2950,7 +2951,7 @@ void MergeTask::mergeBuiltStatistics(BuildStatisticsTransformMap && build_statis
     for (const auto & [name, transform] : build_statistics_transforms)
     {
         const auto & built_statistics = transform->getStatistics();
-        global_ctx->gathered_data.statistics.merge(built_statistics);
+        global_ctx->gathered_data->statistics.merge(built_statistics);
     }
 }
 

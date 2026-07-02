@@ -240,7 +240,7 @@ private:
         NamesAndTypesList storage_columns_expired_by_ttl{};
         NamesAndTypesList minmax_idx_columns{};
 
-        MergedBlockOutputStream::GatheredData gathered_data{};
+        MergedBlockOutputStream::GatheredDataPtr gathered_data = std::make_shared<MergedBlockOutputStream::GatheredData>();
         std::unordered_map<String, ColumnsStatistics> statistics_to_build_by_part;
 
         IndicesDescription merging_skip_indexes;
