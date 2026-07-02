@@ -361,6 +361,12 @@ size_t ZooKeeperCreateResponse::sizeImpl() const
     return Coordination::size(path_created);
 }
 
+void ZooKeeperCreate2Response::readImpl(ReadBuffer & in)
+{
+    Coordination::read(path_created, in);
+    Coordination::read(zstat, in);
+}
+
 void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path_created, out);

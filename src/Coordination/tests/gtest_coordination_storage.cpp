@@ -2277,4 +2277,31 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
 }
 
+TYPED_TEST(CoordinationTest, TestCreate2ResponseDataLength)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+
+    const std::string data = "hello-create2";
+
+    auto request = std::make_shared<ZooKeeperCreateRequest>();
+    request->path = "/node";
+    request->data = data;
+    request->include_stats = true;
+
+    storage.preprocessRequest(request, 1, 0, ++zxid);
+    auto responses = storage.processRequest(request, 1, zxid);
+
+    ASSERT_EQ(responses.size(), 1u);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    ASSERT_EQ(responses[0].response->getOpNum(), OpNum::Create2);
+
+    const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
+    EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
+}
+
 #endif
