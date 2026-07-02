@@ -987,7 +987,15 @@ void RefreshTask::executeRefresh()
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
     if (execution.znode.attempt_number > 1)
-        log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
+    {
+        Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
+        if (retries < 0)
+            /// Infinite retries: no fixed total to show.
+            log_comment += fmt::format(" (attempt {})", execution.znode.attempt_number);
+        else
+            /// Total attempts = retries + 1. Compute in UInt64 to avoid signed overflow at INT64_MAX.
+            log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, static_cast<UInt64>(retries) + 1);
+    }
 
     std::vector<StorageID> deps = set_handle.getDependencies();
 
