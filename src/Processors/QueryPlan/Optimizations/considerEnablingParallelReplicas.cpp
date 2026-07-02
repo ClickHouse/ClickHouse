@@ -249,18 +249,25 @@ void considerEnablingParallelReplicas(
     // However, currently only relatively simple plans are supported (no JOINs, CreatingSets from subqueries, UNIONs, etc.),
     // since all these steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     bool plan_is_simple_enough = true;
+    String unsupported_steps;
     traverseQueryPlan(
         stack,
         root,
         [&](auto & frame_node)
         {
-            plan_is_simple_enough &= frame_node.step->supportsDataflowStatisticsCollection()
+            const bool step_is_supported = frame_node.step->supportsDataflowStatisticsCollection()
                 || typeid_cast<const DelayedCreatingSetsStep *>(frame_node.step.get())
                 || typeid_cast<const CreatingSetsStep *>(frame_node.step.get());
+            if (!step_is_supported)
+                unsupported_steps += (unsupported_steps.empty() ? "" : ", ") + frame_node.step->getUniqID();
+            plan_is_simple_enough &= step_is_supported;
         });
     if (!plan_is_simple_enough)
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Some steps in the plan don't support dataflow statistics collection. Skipping optimization");
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Some steps in the plan don't support dataflow statistics collection. Skipping optimization. Unsupported steps: {}",
+            unsupported_steps);
         return;
     }
 
