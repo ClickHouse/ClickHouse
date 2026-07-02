@@ -355,6 +355,18 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered), result_file_num_row_groups);
 }
 
+UInt64 ParquetFileBucketInfo::getMinProtocolVersion() const
+{
+    /// Once the file's row-group count is known, the worker must be able to carry it so it can run the
+    /// `checkFileMatchesBucketAssignment` fail-close guard against a concurrent overwrite. A worker that
+    /// only understands `file_bucket_info` but not this field would deserialize it as 0 and silently
+    /// disable the guard, so the task must fail closed instead of being downgraded to such a worker.
+    /// When the count is unknown (0) there is no guard to lose, so the base version is enough.
+    return file_num_row_groups != 0
+        ? DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT
+        : DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO;
+}
+
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {

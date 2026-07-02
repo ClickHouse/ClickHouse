@@ -103,4 +103,20 @@ TEST(ParquetFileBucketInfoSerialization, VersionGateKeepsStreamAligned)
     EXPECT_TRUE(in.eof());
 }
 
+/// A bucket that knows the file's row-group count requires the newer protocol so the worker can run
+/// the `checkFileMatchesBucketAssignment` overwrite guard. This is what makes
+/// `ClusterFunctionReadTaskResponse::serialize` fail closed rather than downgrade the task to an older
+/// worker that would drop the count and silently disable the guard. A bucket with an unknown count (0)
+/// has no guard to lose and only needs the base file-bucket protocol version.
+TEST(ParquetFileBucketInfoSerialization, MinProtocolVersionRequiresRowGroupCountWhenKnown)
+{
+    ParquetFileBucketInfo with_count({0, 1}, /*file_num_row_groups=*/7);
+    EXPECT_EQ(with_count.getMinProtocolVersion(), static_cast<UInt64>(NEW_VERSION));
+
+    ParquetFileBucketInfo without_count({0, 1}, /*file_num_row_groups=*/0);
+    EXPECT_EQ(
+        without_count.getMinProtocolVersion(),
+        static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
+}
+
 #endif

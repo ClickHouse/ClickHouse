@@ -65,6 +65,13 @@ struct FileBucketInfo
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(
         const std::vector<size_t> & matching_row_groups, size_t file_num_row_groups) const = 0;
 
+    /// The minimum negotiated cluster-processing protocol version a worker must support to carry this
+    /// bucket without silently losing a fail-close guard. A worker below this version must not receive
+    /// the task: downgrading it would drop a field the read path relies on (see the override in
+    /// `ParquetFileBucketInfo`, which requires the row-group-count field once it is known). The default
+    /// is the version that introduced `file_bucket_info` itself.
+    virtual UInt64 getMinProtocolVersion() const;
+
     virtual ~FileBucketInfo() = default;
 };
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
