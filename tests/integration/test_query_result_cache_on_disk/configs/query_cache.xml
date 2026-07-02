@@ -1,0 +1,17 @@
+<clickhouse>
+    <query_cache>
+        <max_size_in_bytes>1073741824</max_size_in_bytes>
+        <max_entries>1024</max_entries>
+        <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+        <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+
+        <persist_cache>true</persist_cache>
+
+        <on_disk>
+            <max_size_in_bytes>2147483648</max_size_in_bytes>
+            <max_entries>2048</max_entries>
+            <max_entry_size_in_bytes>2097152</max_entry_size_in_bytes>
+            <max_entry_size_in_rows>60000000</max_entry_size_in_rows>
+        </on_disk>
+    </query_cache>
+</clickhouse>

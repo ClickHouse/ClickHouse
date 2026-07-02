@@ -4970,14 +4970,18 @@ void Context::clearQueryConditionCache() const
 }
 
 
-void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t disk_cache_max_size_in_bytes, size_t disk_cache_max_entries, size_t disk_cache_max_entry_size_in_bytes, size_t disk_cache_max_entry_size_in_rows, bool persist_cache)
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->query_result_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
 
-    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    std::optional<fs::path> query_cache_path;
+    if (persist_cache)
+        query_cache_path = fs::path(shared->path) / "query_cache";
+
+    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes, disk_cache_max_entry_size_in_rows, query_cache_path);
 }
 
 void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
@@ -4991,12 +4995,23 @@ void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConf
     size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
     size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
     size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    size_t disk_cache_max_size_in_bytes = config.getUInt64("query_cache.on_disk.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_SIZE);
+    size_t disk_cache_max_entries = config.getUInt64("query_cache.on_disk.max_entries", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRIES);
+    size_t disk_cache_max_entry_size_in_bytes = config.getUInt64("query_cache.on_disk.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t disk_cache_max_entry_size_in_rows = config.getUInt64("query_cache.on_disk.max_entry_size_in_rows", DEFAULT_QUERY_RESULT_CACHE_ON_DISK_MAX_ENTRY_SIZE_IN_ROWS);
     if (size > max_cache_size)
     {
         size = max_cache_size;
         LOG_DEBUG(shared->log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
     }
-    shared->query_result_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    /// Mirror the startup clamp (see `Server.cpp`) so that `SYSTEM RELOAD CONFIG` cannot let the on-disk
+    /// cache grow past the same `max_cache_size` cap that is applied on boot.
+    if (disk_cache_max_size_in_bytes > max_cache_size)
+    {
+        disk_cache_max_size_in_bytes = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered query result cache size on disk to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(disk_cache_max_size_in_bytes));
+    }
+    shared->query_result_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows, disk_cache_max_size_in_bytes, disk_cache_max_entries, disk_cache_max_entry_size_in_bytes, disk_cache_max_entry_size_in_rows);
 }
 
 QueryResultCachePtr Context::getQueryResultCache() const
