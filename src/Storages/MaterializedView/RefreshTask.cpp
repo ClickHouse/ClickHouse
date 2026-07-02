@@ -1531,9 +1531,9 @@ void RefreshTask::interruptExecution()
 
     /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
     /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
-    /// running, so shutdown()'s deactivate() — and any DROP driving it, including SharedCatalog
-    /// state apply — would block until the I/O returned on its own. Done outside executor_mutex
-    /// because cancelQuery() cancels registered executors, which take their own locks.
+    /// running, so shutdown()'s deactivate() — and any DROP / SYSTEM STOP VIEW driving it — would
+    /// block until the I/O returned on its own. Done outside executor_mutex because cancelQuery()
+    /// cancels registered executors, which take their own locks.
     if (query_status)
         query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
