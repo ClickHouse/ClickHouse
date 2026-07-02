@@ -333,28 +333,47 @@ Field QueryFuzzer::getRandomField(int type)
                 bad_int64_values[fuzz_rand() % std::size(bad_int64_values)], static_cast<UInt32>(scales[fuzz_rand() % std::size(scales)]));
         }
         case 3: {
-            /// Date/Date32 boundary values as strings — stress date parsing and arithmetic
+            /// Date/Date32 boundary values as strings — stress date parsing and arithmetic.
+            /// Date range is [1970-01-01, 2149-06-06], Date32 range is [1900-01-01, 2299-12-31].
             static constexpr const char * date_values[]
-                = {"0000-01-01", "1969-12-31", "1970-01-01", "2000-01-01", "2020-02-29", "2100-01-01", "2149-06-06", "9999-12-31"};
+                = {"0000-01-01",
+                   "1899-12-31",
+                   "1900-01-01",
+                   "1969-12-31",
+                   "1970-01-01",
+                   "2000-01-01",
+                   "2020-02-29",
+                   "2100-01-01",
+                   "2149-06-06",
+                   "2299-12-31",
+                   "2300-01-01",
+                   "9999-12-31"};
             return String(date_values[fuzz_rand() % std::size(date_values)]);
         }
         case 4: {
-            /// Time/Time64 boundary values — stress time parsing, midnight wrap-around, sub-second precision and overflow
+            /// Time/Time64 boundary values — stress time parsing, midnight wrap-around, sub-second precision and overflow.
+            /// The Time/Time64 range is [-999:59:59, 999:59:59]; values beyond it saturate in text round-trips.
             static constexpr const char * time_values[]
                 = {"00:00:00",
                    "00:00:00.000000000",
                    "23:59:59",
                    "23:59:59.999999999",
-                   "-838:59:59",
-                   "-838:59:59.999999999",
-                   "838:59:59",
-                   "838:59:59.999999999"};
+                   "-999:59:59",
+                   "-999:59:59.999999999",
+                   "999:59:59",
+                   "999:59:59.999999999",
+                   "-1000:00:00",
+                   "1000:00:00"};
             return String(time_values[fuzz_rand() % std::size(time_values)]);
         }
         case 5: {
-            /// DateTime/DateTime64 boundary values as strings — stress timestamp parsing, overflow and sub-second precision
+            /// DateTime/DateTime64 boundary values as strings — stress timestamp parsing, overflow and sub-second precision.
+            /// DateTime range is [1970-01-01 00:00:00, 2106-02-07 06:28:15],
+            /// DateTime64 range is [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999].
             static constexpr const char * datetime_values[]
-                = {"1970-01-01 00:00:00",
+                = {"1900-01-01 00:00:00",
+                   "1900-01-01 00:00:00.000000000",
+                   "1970-01-01 00:00:00",
                    "1970-01-01 00:00:00.000000000",
                    "2000-01-01 00:00:00",
                    "2020-02-29 23:59:59",
@@ -362,6 +381,8 @@ Field QueryFuzzer::getRandomField(int type)
                    "2038-01-19 03:14:07",
                    "2038-01-19 03:14:08",
                    "2106-02-07 06:28:15",
+                   "2299-12-31 23:59:59",
+                   "2299-12-31 23:59:59.999999999",
                    "9999-12-31 23:59:59",
                    "9999-12-31 23:59:59.999999999"};
             return String(datetime_values[fuzz_rand() % std::size(datetime_values)]);
