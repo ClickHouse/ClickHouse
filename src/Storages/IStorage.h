@@ -654,6 +654,10 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
+    /// Returns true if Storage has local persistent data which is not replicated by storage engine itself.
+    /// Auxiliary files, like routing queues, do not count.
+    virtual bool hasUnreplicatedLocalDataStorage() const { return storesDataOnDisk() && !supportsReplication(); }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 

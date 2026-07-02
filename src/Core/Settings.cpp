@@ -5969,7 +5969,11 @@ Possible values:
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 )", 0) \
     DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow to create only Replicated tables in database with engine Replicated
+Allow creating tables in databases with the `Replicated` engine only if the table
+does not have unreplicated local data storage.
+
+Tables with replicated engines and metadata-only or routing engines are allowed.
+Engines with unreplicated local data storage are rejected.
 
 Cloud default value: `1`.
 )", 0) \
