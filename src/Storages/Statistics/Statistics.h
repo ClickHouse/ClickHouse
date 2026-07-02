@@ -135,6 +135,13 @@ public:
     bool structureEquals(const ColumnStatistics & other) const;
     std::shared_ptr<ColumnStatistics> cloneEmpty() const;
 
+    /// A clone that contains only the statistics of the required types; a required type missing from
+    /// this object is also missing from the clone. The per-type statistics objects are shared with this
+    /// object, not copied (recreating them would reset their internal state, e.g. the feature flags of
+    /// `Basic` statistics read from an old file), so the clone must be used as a read-only source
+    /// (e.g. an argument of `merge`) and must not be mutated.
+    std::shared_ptr<ColumnStatistics> cloneWithTypes(const std::set<StatisticsType> & types) const;
+
 private:
     friend class MergeTreeStatisticsFactory;
     ColumnStatisticsDescription stats_desc;

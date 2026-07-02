@@ -179,6 +179,21 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
     return MergeTreeStatisticsFactory::instance().get(stats_desc);
 }
 
+std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneWithTypes(const std::set<StatisticsType> & types) const
+{
+    auto res_desc = stats_desc;
+    std::erase_if(res_desc.types_to_desc, [&](const auto & entry) { return !types.contains(entry.first); });
+
+    auto res = std::make_shared<ColumnStatistics>(res_desc);
+    res->rows = rows;
+
+    for (const auto & [type, stat] : stats)
+        if (types.contains(type))
+            res->stats.emplace(type, stat);
+
+    return res;
+}
+
 UInt64 IStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
