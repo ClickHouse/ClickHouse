@@ -469,7 +469,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 </details>
 
 :::info
-The Kafka table engine doesn't support columns with [default value](/sql-reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
+The Kafka table engine doesn't support columns with [default value](/sql-reference/statements/create/table#default-values). If you need columns with default value, you can add them at materialized view level (see below).
 :::
 
 ## Description {#description}

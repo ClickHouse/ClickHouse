@@ -25,7 +25,7 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).                                                |
 | `structure`    | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md). |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 

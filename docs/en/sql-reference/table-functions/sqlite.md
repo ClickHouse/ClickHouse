@@ -20,7 +20,7 @@ sqlite('db_path', 'table_name')
 - `db_path` — Path to a file with an SQLite database. [String](../../sql-reference/data-types/string.md).
 - `table_name` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)). [String](../../sql-reference/data-types/string.md).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 - A table object with the same columns as in the original `SQLite` table.
 

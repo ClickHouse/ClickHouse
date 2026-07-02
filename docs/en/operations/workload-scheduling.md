@@ -13,7 +13,7 @@ When ClickHouse executes multiple queries simultaneously, they use shared resour
 
 By default, workload scheduling is disabled. To enable it you have to create resources that will be used for scheduling and at least one workload. All resources are independent and could be used in any combination.
 
-To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER threads (see [CPU scheduling](#cpu_scheduling) for details):
+To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER threads (see [CPU scheduling](#cpu-scheduling) for details):
 
 ```sql
 CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
@@ -148,7 +148,7 @@ SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
 
 It is possible to assign a `workload` setting for background activities. Merges and mutations use `merge_workload` and `mutation_workload` server settings correspondingly. These values can also be overridden for specific tables using `merge_workload` and `mutation_workload` merge tree settings.
 
-## CPU scheduling {#cpu_scheduling}
+## CPU scheduling {#cpu-scheduling}
 
 To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
@@ -202,7 +202,7 @@ Slot scheduling provides a way to control [query concurrency](/operations/settin
 Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 :::
 
-## Threads vs. CPUs {#threads_vs_cpus}
+## Threads vs. CPUs {#threads-vs-cpus}
 
 There are two ways to control CPU consumption of a workload:
 * Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
@@ -374,7 +374,7 @@ This ensures that all background activities and queries respect the infrastructu
 
 Another use case is different configuration for different nodes in a heterogeneous cluster.
 
-## Strict resource access {#strict_resource_access}
+## Strict resource access {#strict-resource-access}
 
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`. Query setting 'use_concurrency_control = 0' allows query to avoid CPU scheduler and get unlimited access to CPU. To enforce CPU scheduling create a setting constraint to keep 'use_concurrency_control' read-only constant value.
 

@@ -42,7 +42,7 @@ FROM system.dimensional_metrics
 FORMAT Prometheus
 ```
 
-## Metric descriptions {#metric_descriptions}
+## Metric descriptions {#metric-descriptions}
 
 ### merge_failures {#merge_failures}
 Number of all failed merges since startup.

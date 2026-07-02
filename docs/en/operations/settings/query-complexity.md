@@ -30,7 +30,7 @@ when the limit is exceeded, and can take one of two values:
 - `break`: stop executing the query and return the partial result, as if the 
            source data ran out.
 
-## `group_by_overflow_mode` settings {#group_by_overflow_mode_settings}
+## `group_by_overflow_mode` settings {#group_by_overflow_mode-settings}
 
 The `group_by_overflow_mode` setting also has
 the value `any`:

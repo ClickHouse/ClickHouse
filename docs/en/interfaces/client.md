@@ -18,7 +18,7 @@ It supports both interactive mode (for live query execution) and batch mode (for
 Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time.
-It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
+It supports both [command-line options](#command-line-options) and [configuration files](#configuration-files).
 
 ## Install {#install}
 
@@ -64,7 +64,7 @@ Specify additional connection details as necessary:
 | `-s [ --secure ]`                | Whether to use TLS (usually autodetected).                                                                                                                                        |
 | `-u [ --user ] <username>`       | The database user to connect as. Connects as the `default` user by default.                                                                                                       |
 | `--password <password>`          | The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.  |
-| `-c [ --config ] <path-to-file>` | The location of the configuration file for ClickHouse Client, if it is not at one of the default locations. See [Configuration Files](#configuration_files).                      |
+| `-c [ --config ] <path-to-file>` | The location of the configuration file for ClickHouse Client, if it is not at one of the default locations. See [Configuration Files](#configuration-files).                      |
 | `--connection <name>`            | The name of preconfigured connection details from the [configuration file](#connection-credentials).                                                                                                     |
 
 For a complete list of command-line options, see [Command Line Options](#command-line-options).
@@ -89,7 +89,7 @@ Choose **Native**, and the details are shown with an example `clickhouse-client`
 
 ### Storing connections in a configuration file {#connection-credentials}
 
-You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration_files).
+You can store connection details for one or more ClickHouse servers in a [configuration file](#configuration-files).
 
 The format looks like this:
 
@@ -112,7 +112,7 @@ The format looks like this:
 </config>
 ```
 
-See the [section on configuration files](#configuration_files) for more information.
+See the [section on configuration files](#configuration-files) for more information.
 
 :::note
 To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.). Remember to add them when you use the commands.
@@ -207,7 +207,7 @@ You can use the following aliases from within the REPL:
 - `\c <DATABASE>` - USE DATABASE
 - `.` - repeat the last query
 
-### Keyboard shortcuts {#keyboard_shortcuts}
+### Keyboard shortcuts {#keyboard-shortcuts}
 
 - `Alt (Option) + Shift + e` - open editor with the current query. It is possible to specify the editor to use with the environment variable `EDITOR`. By default, `vim` is used.
 - `Alt (Option) + #` - comment line.
@@ -632,7 +632,7 @@ The generated SQL is automatically executed and results are displayed
 - The AI only sees schema information (table/column names and types), not actual data
 - All generated queries respect your existing database permissions
 
-## Connection string {#connection_string}
+## Connection string {#connection-string}
 
 ### Usage {#connection-string-usage}
 
@@ -790,7 +790,7 @@ With the configuration above, the ID of a query is shown in the following format
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
-## Configuration files {#configuration_files}
+## Configuration files {#configuration-files}
 
 ClickHouse Client uses the first existing file of the following:
 
@@ -832,17 +832,17 @@ See the sample configuration file in the ClickHouse repository: [`clickhouse-cli
 ## Environment variable options {#environment-variable-options}
 
 The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
-Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection-string) (if specified) take precedence over environment variables.
 
 ## Command-line options {#command-line-options}
 
-All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration_files).
+All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration-files).
 
 ### General options {#command-line-options-general}
 
 | Option                                              | Description                                                                                                                        | Default                      |
 |-----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|------------------------------|
-| `-c [ -C, --config, --config-file ] <path-to-file>` | The location of the configuration file for the client, if it is not at one of the default locations. See [Configuration Files](#configuration_files). | -                            |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | The location of the configuration file for the client, if it is not at one of the default locations. See [Configuration Files](#configuration-files). | -                            |
 | `--help`                                            | Print usage summary and exit. Combine with `--verbose` to display all possible options including query settings.                  | -                            |
 | `--history_file <path-to-file>`                     | Path to a file containing the command history.                                                                                     | -                            |
 | `--history_max_entries`                             | Maximum number of entries in the history file.                                                                                     | `1000000` (1 million)        |
@@ -863,14 +863,14 @@ All command-line options can be specified directly on the command line or as def
 | `--no-server-client-version-message`                  | Suppress server-client version mismatch message when the client connects to the server.                                                                                                                                                                                                                                            | -                                                                                                                |
 | `--password <password>`          | The password of the database user. You can also specify the password for a connection in the configuration file. If you do not specify the password, the client will ask for it.                                                                                                                                                   | -                                                                                                                |
 | `--port <port>`                  | The port the server is accepting connections on. The default ports are 9440 (TLS) and 9000 (no TLS). <br/><br/>Note: The client uses the native protocol and not HTTP(S).                                                                                                                                                         | `9440` if `--secure` is specified, `9000` otherwise. Always defaults to `9440` if the hostname ends in `.clickhouse.cloud`. |
-| `-s [ --secure ]`                | Whether to use TLS. <br/><br/>Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. <br/><br/>You might need to configure your CA certificates in the [configuration file](#configuration_files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl). | Auto-enabled when connecting to port 9440 or ClickHouse Cloud                                                   |
+| `-s [ --secure ]`                | Whether to use TLS. <br/><br/>Enabled automatically when connecting to port 9440 (the default secure port) or ClickHouse Cloud. <br/><br/>You might need to configure your CA certificates in the [configuration file](#configuration-files). The available configuration settings are the same as for [server-side TLS configuration](../operations/server-configuration-parameters/settings.md#openssl). | Auto-enabled when connecting to port 9440 or ClickHouse Cloud                                                   |
 | `--ssh-key-file <path-to-file>`  | File containing the SSH private key for authenticate with the server.                                                                                                                                                                                                                                                              | -                                                                                                                |
 | `--ssh-key-passphrase <value>`   | Passphrase for the SSH private key specified in `--ssh-key-file`.                                                                                                                                                                                                                                                                 | -                                                                                                                |
 | `--tls-sni-override <server name>`       | If using TLS, the server name (SNI) to pass in the handshake.                                                                                                                                                                                                                                                                                                    | The host provided via `-h` or `--host`.                                                                                                        |
 | `-u [ --user ] <username>`       | The database user to connect as.                                                                                                                                                                                                                                                                                                   | `default`                                                                                                        |
 
 :::note
-Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection_string).
+Instead of the `--host`, `--port`, `--user` and `--password` options, the client also supports [connection strings](#connection-string).
 :::
 
 ### Query options {#command-line-options-query}

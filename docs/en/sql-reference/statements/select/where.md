@@ -25,8 +25,8 @@ It is enabled by default even if `PREWHERE` clause is not specified explicitly
 ## Testing for `NULL` {#testing-for-null}
 
 If you need to test a value for [`NULL`](/sql-reference/syntax#null), use:
-- [`IS NULL`](/sql-reference/operators#is_null) or [`isNull`](../../../sql-reference/functions/functions-for-nulls.md#isNull)
-- [`IS NOT NULL`](/sql-reference/operators#is_not_null)   or [`isNotNull`](../../../sql-reference/functions/functions-for-nulls.md#isNotNull)
+- [`IS NULL`](/sql-reference/operators#is-null) or [`isNull`](../../../sql-reference/functions/functions-for-nulls.md#isNull)
+- [`IS NOT NULL`](/sql-reference/operators#is-not-null)   or [`isNotNull`](../../../sql-reference/functions/functions-for-nulls.md#isNotNull)
 
 An expression with `NULL` will otherwise never pass.
 

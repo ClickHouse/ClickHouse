@@ -32,11 +32,11 @@ clusterAllReplicas(['cluster_name', db, table, sharding_key])
 | `db.table` or `db`, `table` | Name of a database and a table.                                                                                                                   |
 | `sharding_key`              | A sharding key. Optional. Needs to be specified if the cluster has more than one shard.                                                           |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The dataset from clusters.
 
-## Using macros {#using_macros}
+## Using macros {#using-macros}
 
 `cluster_name` can contain macros — substitution in `{}`. The substituted value is taken from the [macros](../../operations/server-configuration-parameters/settings.md#macros) section of the server configuration file.
 
