@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-parallel
+# Tag no-parallel: FileLog -> MV streaming latency depends on `BackgroundSchedulePool`
+# scheduling; under heavy parallel load the detection wait can drift past its timeout even
+# with a bounded backoff. Same precedent as `02968_file_log_multiple_read.sh`.
 
 set -eu
 
@@ -16,21 +19,33 @@ do
 done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
-${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'CSV');"
+# poll_directory_watch_events_backoff_max bounds the watcher/reader idle backoff to ~1s
+# (default 32s), so new files are detected quickly on slow lanes (e.g. WasmEdge+MSan).
+${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/', 'CSV') settings poll_directory_watch_events_backoff_max = 1000;"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order by k as select * from file_log;"
 
 function count()
 {
-	COUNT=$(${CLICKHOUSE_CLIENT} --query "select count() from mv;")
-	echo $COUNT
+	${CLICKHOUSE_CLIENT} --query "select count() from mv;"
 }
 
-while true; do
-	[[ $(count) == 20 ]] && break
-	sleep 1
-done
+function wait_for_count()
+{
+	local target="$1"
+	local timeout=120
+	local start=$EPOCHSECONDS
+	while [[ $(count) != "$target" ]]; do
+		if ((EPOCHSECONDS - start > timeout)); then
+			echo "Timeout (${timeout}s) waiting for count() == ${target}, got $(count)."
+			exit 1
+		fi
+		sleep 1
+	done
+}
+
+wait_for_count 20
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
@@ -47,10 +62,7 @@ do
 	echo $i, $i >> ${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/d.txt
 done
 
-while true; do
-	[[ $(count) == 101 ]] && break
-	sleep 1
-done
+wait_for_count 101
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
