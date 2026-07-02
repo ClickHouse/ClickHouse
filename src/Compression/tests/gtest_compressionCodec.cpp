@@ -12,6 +12,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>
@@ -1528,6 +1529,59 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
 
     auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
+{
+    /// size_compressed (5) is below the 9-byte block header: must throw.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
+{
+    /// Multiple block whose declared size_compressed (10) is below the chain bytes consumed (9B header + 1B count + 2 method bytes).
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// size_compressed = 10
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed
+        0x02, /// 2 codecs
+        0x82, 0x82, /// two LZ4 method bytes (valid, so codec construction succeeds)
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+}
+
+TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqualsHeader)
+{
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x09, 0x00, 0x00, 0x00, /// size_compressed = 9 (== header size, so no payload follows)
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed
+        0x01, /// count byte: belongs to the next block, must NOT be read
+        0x82, /// padding, so an (incorrect) read of the count byte would find real data
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    ASSERT_THROW(getCompressionCodecForFile(in, size_compressed, size_decompressed, /*skip_to_next_block=*/true), Exception);
+    /// The count byte at offset 25 must not have been consumed.
+    EXPECT_EQ(in.count(), 16u + ICompressionCodec::getHeaderSize());
 }
 
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
