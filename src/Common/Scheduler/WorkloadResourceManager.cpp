@@ -23,7 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int RESOURCE_NOT_FOUND;
+    extern const int RESOURCE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -321,11 +321,6 @@ WorkloadResourceManager::~WorkloadResourceManager()
     workloads.clear();
 }
 
-void WorkloadResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration &)
-{
-    // No-op
-}
-
 void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
 {
     std::unique_lock lock{mutex};
@@ -445,7 +440,7 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     else
     {
         if (settings.throw_on_unknown_workload)
-            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Access denied to resource '{}'", resource_name);
+            throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Could not access resource '{}'. Please check `throw_on_unknown_workload` setting", resource_name);
         else
             return ResourceLink{}; // unlimited access
     }

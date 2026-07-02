@@ -10,8 +10,6 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <s3_max_put_rps>10</s3_max_put_rps>
                 <s3_max_get_rps>10</s3_max_get_rps>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
             </s3>
             <s3_no_resource>
                 <type>s3</type>
@@ -32,8 +30,6 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <s3_max_put_rps>10</s3_max_put_rps>
                 <s3_max_get_rps>10</s3_max_get_rps>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
                 <use_fake_transaction>false</use_fake_transaction>
             </s3_no_fake_tx>
             <s3_no_fake_tx_2>
@@ -44,8 +40,6 @@
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <s3_max_put_rps>10</s3_max_put_rps>
                 <s3_max_get_rps>10</s3_max_get_rps>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
                 <use_fake_transaction>false</use_fake_transaction>
             </s3_no_fake_tx_2>
         </disks>
