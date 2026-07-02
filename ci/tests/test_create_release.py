@@ -328,10 +328,98 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["release_branch"] == "26.6"
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["version"] == "26.6.2.1"
-    assert info["previous_release_tag"] == "v26.6.1.1-stable"
     assert info["commit_sha"] == commit_sha
 
     step("--push-release-tag", "--dry-run")
     step("--create-bump-version-pr", "--dry-run")
     final = step("--post-status", "--dry-run")
     assert "New release" in final.stdout
+
+
+def test_prepare_refuses_out_of_order_release(tmp_path):
+    """Creating a release whose predecessor tag is missing must fail.
+
+    The versions file is at patch 3, but the branch only carries the
+    ``v26.6.1.1-stable`` tag — ``v26.6.2.*`` is missing, so releasing
+    ``v26.6.3`` would skip a tag. Passing a plain commit ref means "create a
+    new release" (not recovery), so ``prepare`` must refuse rather than create
+    an out-of-order tag.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    versions = (
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
+        .replace("v26.6.2.1-stable", "v26.6.3.1-stable")
+        .replace("26.6.2.1", "26.6.3.1")
+    )
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(versions, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit")
+    # Only the first patch tag exists; v26.6.2.* is missing.
+    git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Post-release commit")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            commit_sha,
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "out-of-order release should have failed"
+    assert "out-of-order release" in (result.stdout + result.stderr)
