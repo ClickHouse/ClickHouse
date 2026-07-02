@@ -362,6 +362,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -5158,6 +5159,30 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
                     part->name, part->rows_count, std::numeric_limits<UInt32>::max());
             }
+        }
+    }
+
+    /// An explicit MATERIALIZE INDEX of an inert index (a removed index type, e.g. legacy
+    /// `hypothesis`, kept only for attach compatibility) cannot be honored: the index has no data
+    /// and cannot be recomputed. Background merge/delete/insert paths carry it forward untouched,
+    /// but a user asking to rebuild it must be told it is impossible rather than get a silent no-op.
+    /// Reject it here, synchronously, before the mutation is queued -- throwing inside the
+    /// background mutation instead would leave the mutation retrying forever and wedge the table.
+    {
+        const auto index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & indices = index_metadata_snapshot->getSecondaryIndices();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::MATERIALIZE_INDEX)
+                continue;
+            if (!indices.has(command.index_name))
+                continue;
+            auto index_ptr = MergeTreeIndexFactory::instance().get(
+                index_metadata_snapshot, indices.getByName(command.index_name), *getSettings());
+            if (index_ptr->isInert())
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "Index of type '{}' is no longer supported. Please drop the index",
+                    indices.getByName(command.index_name).type);
         }
     }
 }

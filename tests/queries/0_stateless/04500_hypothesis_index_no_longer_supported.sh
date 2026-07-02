@@ -65,6 +65,11 @@ $CLICKHOUSE_CLIENT --mutations_sync 1 --query "ALTER TABLE t_attach DELETE WHERE
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM t_attach;"
 # No mutation is stuck (numbering-independent: asserts the wedge is gone regardless of versions).
 $CLICKHOUSE_CLIENT --query "SELECT countIf(is_done = 0) FROM system.mutations WHERE database = currentDatabase() AND table = 't_attach';"
+# An explicit MATERIALIZE INDEX cannot rebuild the dead index: it must be rejected up front with
+# ILLEGAL_INDEX (not silently succeed as a no-op). Rejected synchronously so no mutation is queued.
+$CLICKHOUSE_CLIENT --mutations_sync 1 --query "SET send_logs_level = 'fatal'; ALTER TABLE t_attach MATERIALIZE INDEX i0;" 2>&1 | grep -oE "no longer supported|ILLEGAL_INDEX"
+# The rejected MATERIALIZE INDEX queued no mutation (the table is not wedged by it).
+$CLICKHOUSE_CLIENT --query "SELECT countIf(is_done = 0) FROM system.mutations WHERE database = currentDatabase() AND table = 't_attach';"
 # The user can still drop the dead index.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE t_attach DROP INDEX i0;"
 $CLICKHOUSE_CLIENT --query "
