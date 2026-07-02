@@ -34,6 +34,11 @@ namespace CurrentMetrics
     extern const Metric GlobalThreadScheduled;
 }
 
+/// Server-level setting `additional_memory_tracking_per_thread`.
+/// Updated from the server configuration in programs/server/Server.cpp.
+/// The default mirrors the default of `max_untracked_memory`: 4 MiB.
+std::atomic<int64_t> additional_memory_tracking_per_thread = 4 * 1024 * 1024;
+
 namespace ProfileEvents
 {
     extern const Event GlobalThreadPoolExpansions;
@@ -936,6 +941,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Run the job.
         try
         {
+            /// The speculative per-thread memory reservation that compensates for
+            /// `max_untracked_memory` (see `additional_memory_tracking_per_thread`)
+            /// is performed inside each pipeline-executor worker, not here:
+            /// a `MEMORY_LIMIT_EXCEEDED` thrown at this level could not be routed back
+            /// through the job's own error handling, so the job's owner (for example
+            /// a pipeline consumer waiting on an output queue) would block indefinitely.
+
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD

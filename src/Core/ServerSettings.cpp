@@ -51,6 +51,11 @@ extern const Metric BackgroundMessageBrokerSchedulePoolSize;
 extern const Metric PointInPolygonCacheSizeLimit;
 }
 
+/// Defined in Common/ThreadPool.cpp and hot-reloaded from the server configuration.
+/// Forward-declared here (instead of including Common/ThreadPool.h) to surface the live
+/// value in `system.server_settings` without pulling the heavy header into this translation unit.
+extern std::atomic<int64_t> additional_memory_tracking_per_thread;
+
 namespace DB
 {
 
@@ -411,6 +416,20 @@ The default `merges_mutations_memory_usage_soft_limit` value is calculated as `m
 
 - [max_memory_usage](/operations/settings/settings#max_memory_usage)
 - [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
+)", 0) \
+    DECLARE(UInt64, additional_memory_tracking_per_thread, 4 * 1024 * 1024, R"(
+The amount of memory that is speculatively reserved on the server-wide `MemoryTracker` on behalf of every worker thread of a pipeline executor (`PipelineExecutor`).
+
+Each thread accumulates up to `max_untracked_memory` of allocations before reporting them to the server-wide `MemoryTracker`.
+With many query threads, this unreported memory can sum to a large amount, causing the server's tracked memory usage to under-count actual memory consumption and leading to OOM.
+
+By charging this amount to the server-wide `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries. If a reservation would exceed the server memory limit, the corresponding query or pipeline fails with `MEMORY_LIMIT_EXCEEDED` — the same behavior as if the worker itself had allocated this amount.
+
+The reservation is charged to the server-wide tracker only. Query-level and user-level memory accounting (`max_memory_usage`, `memory_usage` in `system.processes`, and memory-based heuristics such as the conversion of aggregation hash tables to two-level or spilling to disk) is not affected.
+
+Note: the reservation is currently only applied to pipeline-executor threads, not to all `ThreadPool` users (e.g. background merges and fetches), so it covers the query-execution memory but not every job that runs in a `ThreadPool`.
+
+The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting. A value larger than the total server memory is clamped to it, because a per-thread reservation can never sensibly exceed the total RAM.
 )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
     DECLARE(Bool, use_separate_cache_arena, true, R"(
@@ -2045,6 +2064,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
+
+            {"additional_memory_tracking_per_thread",
+             {std::to_string(additional_memory_tracking_per_thread.load(std::memory_order_relaxed)), ChangeableWithoutRestart::Yes}},
 
             {"dns_allow_resolve_names_to_ipv4", {std::to_string(DNSResolver::instance().getFilterIPv4()), ChangeableWithoutRestart::Yes}},
             {"dns_allow_resolve_names_to_ipv6", {std::to_string(DNSResolver::instance().getFilterIPv6()), ChangeableWithoutRestart::Yes}},

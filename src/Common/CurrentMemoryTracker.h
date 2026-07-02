@@ -20,6 +20,15 @@ struct CurrentMemoryTracker
     [[nodiscard]] static AllocationTrace free(Int64 size);
     static void check();
 
+    /// Charge/release an amount directly on the server-wide (total) memory tracker,
+    /// bypassing the current thread's tracker chain and its `untracked_memory` buffer.
+    /// Used for speculative reservations (see `additional_memory_tracking_per_thread`)
+    /// that compensate for unreported per-thread allocations at the server level
+    /// without distorting query-level and user-level accounting.
+    /// `allocGlobal` throws MEMORY_LIMIT_EXCEEDED if the server-wide hard limit would be exceeded.
+    static void allocGlobal(Int64 size);
+    static void freeGlobal(Int64 size);
+
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
     static void injectFault();
 

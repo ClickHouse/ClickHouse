@@ -1,5 +1,6 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
@@ -48,6 +49,44 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    /// Speculatively reserves `additional_memory_tracking_per_thread` on the server-wide
+    /// memory tracker for the lifetime of a pipeline worker. Each thread accumulates up to
+    /// `max_untracked_memory` of allocations before reporting them to its tracker chain,
+    /// so with many threads the server's tracked memory under-counts actual consumption;
+    /// the reservation restores a safe upper bound at the server level.
+    ///
+    /// The reservation is deliberately charged on the total (server-wide) tracker only and
+    /// not through the current thread's tracker chain: query-level and user-level accounting
+    /// must stay exact, because heuristics compare query memory deltas against byte
+    /// thresholds — e.g. the `Aggregator` conversion to two-level hash tables
+    /// (`group_by_two_level_threshold_bytes`) and spill-to-disk decisions. Phantom
+    /// reservations of `num_threads * 4 MiB` would trip those thresholds immediately and
+    /// were observed as slowdowns of small GROUP BY queries in performance tests.
+    ///
+    /// The constructor may throw `MEMORY_LIMIT_EXCEEDED` (the throwing path is intentional);
+    /// it must be invoked inside the worker's `try` block so the error propagates through
+    /// the pipeline like any other job failure.
+    struct SpeculativeMemoryReservation
+    {
+        Int64 size;
+
+        SpeculativeMemoryReservation()
+            : size(additional_memory_tracking_per_thread.load(std::memory_order_relaxed))
+        {
+            if (size > 0)
+                CurrentMemoryTracker::allocGlobal(size);
+        }
+
+        ~SpeculativeMemoryReservation()
+        {
+            if (size > 0)
+                CurrentMemoryTracker::freeGlobal(size);
+        }
+    };
 }
 
 
@@ -686,6 +725,11 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
 
             try
             {
+                /// If the reservation does not fit the server memory limit, the surrounding
+                /// `catch` propagates `MEMORY_LIMIT_EXCEEDED` through the pipeline
+                /// (calling `finish()` so consumers unblock).
+                SpeculativeMemoryReservation speculative_memory_reservation;
+
                 executeSingleThread(thread_num, WorkloadResources(my_slot.get(), process_list_element));
             }
             catch (...)
@@ -723,6 +767,14 @@ void PipelineExecutor::executeImpl(size_t num_threads, bool concurrency_control)
         {
             auto slot = cpu_slots->acquire();
             tasks.upscale(slot->slot_id);
+
+            /// In single-threaded execution the calling thread is the only pipeline worker,
+            /// so it carries the speculative reservation itself. In multi-threaded execution
+            /// each spawned worker job carries its own (see `spawnThreads`) while the calling
+            /// thread only waits. A throw lands in the surrounding `catch`, which cancels the
+            /// pipeline and rethrows to the caller.
+            SpeculativeMemoryReservation speculative_memory_reservation;
+
             executeSingleThread(slot->slot_id, WorkloadResources(slot.get(), process_list_element));
         }
     }
