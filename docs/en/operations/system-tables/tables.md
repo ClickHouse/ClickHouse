@@ -59,6 +59,7 @@ Contains metadata of each table that the server knows about.
 - `target_database` ([String](/sql-reference/data-types/string)) — For a materialized view, the database of the destination table the view writes to (the `TO` target, or the implicit `.inner.*` table). Empty for other engines.
 - `target_table` ([String](/sql-reference/data-types/string)) — For a materialized view, the name of the destination table the view writes to (the `TO` target, or the implicit `.inner.*` table). Empty for other engines.
 - `definer` ([String](/sql-reference/data-types/string)) — SQL security definer's name used for the table.
+- `skipping_indices_types` ([Array(String)](/sql-reference/data-types/array)) — An array of the distinct types of data skipping indices defined on the table (for example `minmax`, `set`, `bloom_filter`, `ngrambf_v1`, `tokenbf_v1`, `text`, `vector_similarity`). Empty for tables without skip indices.
 
 **Aliases:**
 
