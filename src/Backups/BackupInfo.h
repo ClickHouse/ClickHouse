@@ -16,6 +16,7 @@ struct BackupInfo
     std::vector<Field> args;
     ASTPtr function_arg;
     ASTs kv_args;
+    NamedCollectionPtr frozen_named_collection;
 
     String toString() const;
     static BackupInfo fromString(const String & str);
@@ -24,6 +25,12 @@ struct BackupInfo
     static BackupInfo fromAST(const IAST & ast);
 
     String toStringForLogging() const;
+
+    /// Returns a deterministic, credential-free identity string for the backup destination.
+    String toNormalizedString() const;
+
+    /// Returns the identity of the effective destination after resolving named collections.
+    String toNormalizedString(ContextPtr context) const;
 
     void copyS3CredentialsTo(BackupInfo & dest) const;
 
@@ -45,6 +52,9 @@ struct BackupInfo
     /// and applies any key-value overrides from kv_args.
     /// Returns nullptr if id_arg is empty (i.e., no named collection is used).
     NamedCollectionPtr getNamedCollection(ContextPtr context) const;
+
+    /// Stores a private copy of the resolved named collection.
+    BackupInfo freezeNamedCollection(ContextPtr context) const;
 };
 
 }

@@ -1,10 +1,17 @@
+#include <Backups/BackupEnginesFileAndDiskUtils.h>
 #include <Backups/BackupInfo.h>
+
+#include "config.h"
 
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <IO/Archives/hasRegisteredArchiveFileExtension.h>
+#if USE_AWS_S3
+#include <IO/S3/URI.h>
+#endif
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -12,11 +19,16 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#if USE_AZURE_BLOB_STORAGE
+#include <Storages/ObjectStorage/Azure/Configuration.h>
+#endif
 
 #include <Poco/URI.h>
-
 #include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -43,6 +55,8 @@ BackupInfo BackupInfo::fromString(const String & str)
 
 namespace
 {
+    namespace fs = std::filesystem;
+
     /// Check if an AST node is a key-value assignment (e.g., url='...' parsed as equals(url, '...'))
     bool isKeyValueArg(const ASTPtr & ast)
     {
@@ -151,6 +165,280 @@ namespace
         uri.setQueryParameters(kept_params);
         return uri.toString();
     }
+
+    String toLower(String s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    }
+
+    String trimWhitespace(const String & s)
+    {
+        size_t begin = 0;
+        while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])))
+            ++begin;
+
+        size_t end = s.size();
+        while (end > begin && std::isspace(static_cast<unsigned char>(s[end - 1])))
+            --end;
+
+        return s.substr(begin, end - begin);
+    }
+
+    String stripTrailingSlashes(String s)
+    {
+        bool had_trailing_slash = !s.empty() && s.back() == '/';
+
+        while (s.size() > 1 && s.back() == '/')
+            s.pop_back();
+
+        if (had_trailing_slash && s != "/" && hasRegisteredArchiveFileExtension(s))
+            s += '/';
+
+        return s;
+    }
+
+    String stripURLQuery(String s)
+    {
+        size_t query_pos = s.find_first_of("?#");
+        if (query_pos != String::npos)
+            s.resize(query_pos);
+        return s;
+    }
+
+    String stripURLUserInfo(String s)
+    {
+        size_t scheme_pos = s.find("://");
+        if (scheme_pos == String::npos)
+            return s;
+
+        size_t authority_start = scheme_pos + 3;
+        size_t authority_end = s.find('/', authority_start);
+        if (authority_end == String::npos)
+            authority_end = s.size();
+
+        size_t userinfo_end = s.find('@', authority_start);
+        if (userinfo_end != String::npos && userinfo_end < authority_end)
+            s.erase(authority_start, userinfo_end - authority_start + 1);
+        return s;
+    }
+
+#if USE_AWS_S3
+    String stripS3QueryExceptVersionId(String s)
+    {
+        size_t fragment_pos = s.find('#');
+        if (fragment_pos != String::npos)
+            s.resize(fragment_pos);
+
+        size_t query_pos = s.find('?');
+        if (query_pos == String::npos)
+            return s;
+
+        String base = s.substr(0, query_pos);
+        String version_id;
+        size_t start = query_pos + 1;
+        while (start <= s.size())
+        {
+            size_t end = s.find('&', start);
+            String param = s.substr(start, end == String::npos ? String::npos : end - start);
+            size_t separator = param.find('=');
+            String key = separator == String::npos ? param : param.substr(0, separator);
+            if (key == "versionId")
+                version_id = separator == String::npos ? String{} : param.substr(separator + 1);
+
+            if (end == String::npos)
+                break;
+            start = end + 1;
+        }
+
+        if (!version_id.empty())
+            return base + "?versionId=" + version_id;
+        return base;
+    }
+#endif
+
+    String getStringArgForNormalizedIdentity(const Field & arg, const String & backup_engine_name, size_t index)
+    {
+        if (arg.getType() != Field::Types::Which::String)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Backup engine '{}' argument {} must be a string for normalized backup identity, got {}",
+                backup_engine_name,
+                index + 1,
+                arg.getTypeName());
+        return arg.safeGet<String>();
+    }
+
+    String normalizeS3URL(String s)
+    {
+#if USE_AWS_S3
+        S3::URI uri(stripS3QueryExceptVersionId(stripURLUserInfo(s)), /* allow_archive_path_syntax = */ false);
+        return "endpoint=" + uri.endpoint
+            + ";bucket=" + uri.bucket
+            + ";key=" + stripTrailingSlashes(uri.key)
+            + ";version_id=" + uri.version_id;
+#else
+        /// Without AWS support the `S3` backup engine cannot be used. Strip the
+        /// whole query because exact presigned-parameter parsing is unavailable.
+        return stripTrailingSlashes(stripURLUserInfo(stripURLQuery(s)));
+#endif
+    }
+
+    String normalizeS3Path(String s)
+    {
+#if USE_AWS_S3
+        S3::URI uri("s3://bucket/" + stripS3QueryExceptVersionId(s), /* allow_archive_path_syntax = */ false);
+        String result = stripTrailingSlashes(uri.key);
+        if (!uri.version_id.empty())
+        {
+            result += "?versionId=";
+            result += uri.version_id;
+        }
+        return result;
+#else
+        return stripTrailingSlashes(stripURLQuery(s));
+#endif
+    }
+
+    String normalizeAzureConnection(String s)
+    {
+        if (s.find(';') == String::npos)
+            return stripTrailingSlashes(stripURLQuery(s));
+
+        std::unordered_map<String, String> parts;
+        Strings redacted_parts;
+        size_t start = 0;
+        while (start <= s.size())
+        {
+            size_t end = s.find(';', start);
+            String part = s.substr(start, end == String::npos ? String::npos : end - start);
+            if (!part.empty())
+            {
+                size_t separator = part.find('=');
+                String key = toLower(trimWhitespace(separator == String::npos ? part : part.substr(0, separator)));
+                String value;
+                if (separator != String::npos)
+                {
+                    value = trimWhitespace(part.substr(separator + 1));
+                    parts[key] = value;
+                }
+
+                if (key != "accountkey" && key != "sharedaccesssignature" && key != "sig")
+                    redacted_parts.push_back(separator == String::npos ? key : key + "=" + value);
+            }
+
+            if (end == String::npos)
+                break;
+            start = end + 1;
+        }
+
+        auto blob_endpoint = parts.find("blobendpoint");
+        if (blob_endpoint != parts.end())
+            return stripTrailingSlashes(stripURLQuery(blob_endpoint->second));
+
+        auto protocol = parts.find("defaultendpointsprotocol");
+        auto account_name = parts.find("accountname");
+        auto endpoint_suffix = parts.find("endpointsuffix");
+        if (account_name != parts.end() && endpoint_suffix != parts.end())
+        {
+            String result = protocol == parts.end() ? "https" : protocol->second;
+            result += "://";
+            result += account_name->second;
+            result += ".blob.";
+            result += endpoint_suffix->second;
+            return stripTrailingSlashes(result);
+        }
+
+        std::sort(redacted_parts.begin(), redacted_parts.end());
+
+        String result;
+        for (const auto & part : redacted_parts)
+        {
+            if (!result.empty())
+                result += ';';
+            result += part;
+        }
+        return result;
+    }
+
+    bool isCredentialArgForNormalizedIdentity(const String & backup_engine_name, bool has_named_collection, size_t index)
+    {
+        if (backup_engine_name == "S3")
+            return index == 1 || index == 2;
+        if (backup_engine_name == "AzureBlobStorage")
+            return has_named_collection ? (index == 1 || index == 2) : (index == 3 || index == 4);
+        return false;
+    }
+
+    bool isCredentialKeyForNormalizedIdentity(const String & backup_engine_name, const String & key)
+    {
+        String lower_key = toLower(key);
+        if (backup_engine_name == "S3")
+            return lower_key == "access_key_id"
+                || lower_key == "secret_access_key"
+                || lower_key == "session_token"
+                || lower_key == "use_environment_credentials"
+                || lower_key == "no_sign_request"
+                || lower_key == "expiration_window_seconds"
+                || lower_key == "role_arn"
+                || lower_key == "role_session_name"
+                || lower_key == "http_client"
+                || lower_key == "service_account"
+                || lower_key == "metadata_service"
+                || lower_key == "external_id"
+                || lower_key == "request_token_path";
+
+        if (backup_engine_name == "AzureBlobStorage")
+            return lower_key == "account_name"
+                || lower_key == "account_key"
+                || lower_key == "client_id"
+                || lower_key == "tenant_id"
+                || lower_key == "shared_access_signature";
+
+        return false;
+    }
+
+    String normalizeArgForIdentity(const String & backup_engine_name, bool has_named_collection, size_t index, String arg)
+    {
+        if (backup_engine_name == "S3" && has_named_collection && index == 0)
+            return normalizeS3Path(arg);
+        if (backup_engine_name == "S3" && !has_named_collection && index == 0)
+            return normalizeS3URL(arg);
+        if (backup_engine_name == "AzureBlobStorage" && !has_named_collection && index == 0)
+            return normalizeAzureConnection(arg);
+        if (backup_engine_name == "Disk" && index == 1)
+            return stripTrailingSlashes(fs::path(arg).lexically_normal().string());
+        if (backup_engine_name == "File" && index == 0)
+            return stripTrailingSlashes(fs::path(arg).lexically_normal().string());
+        return stripTrailingSlashes(arg);
+    }
+
+    String normalizeKeyValueArgForIdentity(const String & backup_engine_name, const String & key, const String & value)
+    {
+        String lower_key = toLower(key);
+        if (backup_engine_name == "S3" && lower_key == "url")
+            return normalizeS3URL(value);
+        if (backup_engine_name == "S3" && lower_key == "filename")
+            return normalizeS3Path(value);
+        if (backup_engine_name == "AzureBlobStorage" && (lower_key == "connection_string" || lower_key == "storage_account_url"))
+            return normalizeAzureConnection(value);
+        return stripTrailingSlashes(value);
+    }
+
+    void appendNormalizedIdentityComponent(String & result, bool & first, const String & component)
+    {
+        if (!first)
+            result += ',';
+        first = false;
+        result += std::to_string(component.size());
+        result += ':';
+        result += component;
+    }
+
+    String appendPath(String base, const String & path)
+    {
+        return (fs::path(base) / path).string();
+    }
 }
 
 ASTPtr BackupInfo::toAST() const
@@ -241,6 +529,169 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 String BackupInfo::toStringForLogging() const
 {
     return toAST()->formatForLogging();
+}
+
+String BackupInfo::toNormalizedString() const
+{
+    String result = backup_engine_name + "(";
+    bool first = true;
+    const bool has_named_collection = !id_arg.empty();
+
+    if (has_named_collection)
+        appendNormalizedIdentityComponent(result, first, id_arg);
+
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        if (isCredentialArgForNormalizedIdentity(backup_engine_name, has_named_collection, i))
+            continue;
+
+        appendNormalizedIdentityComponent(
+            result,
+            first,
+            normalizeArgForIdentity(
+                backup_engine_name,
+                has_named_collection,
+                i,
+                getStringArgForNormalizedIdentity(args[i], backup_engine_name, i)));
+    }
+
+    /// Direct backup engines ignore key-value arguments. Include overrides only
+    /// with named collections, where they can change the effective destination.
+    if (has_named_collection && !kv_args.empty())
+    {
+        Strings kv_strings;
+        kv_strings.reserve(kv_args.size());
+        for (const auto & kv : kv_args)
+        {
+            auto key = getKeyValueArgName(kv);
+            if (!key)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Backup engine '{}' key-value argument {} must have a string key for normalized backup identity",
+                    backup_engine_name,
+                    kv->formatForErrorMessage());
+
+            if (isCredentialKeyForNormalizedIdentity(backup_engine_name, *key))
+                continue;
+
+            auto value = getKeyValueArgStringValue(kv);
+            if (!value)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Backup engine '{}' key-value argument {} must have a string value for normalized backup identity",
+                    backup_engine_name,
+                    kv->formatForErrorMessage());
+
+            String lower_key = toLower(*key);
+            kv_strings.push_back(
+                lower_key + "=" + normalizeKeyValueArgForIdentity(backup_engine_name, lower_key, *value));
+        }
+
+        std::sort(kv_strings.begin(), kv_strings.end());
+        for (const auto & kv_str : kv_strings)
+            appendNormalizedIdentityComponent(result, first, kv_str);
+    }
+
+    result += ')';
+    return result;
+}
+
+String BackupInfo::toNormalizedString(ContextPtr context) const
+{
+    auto normalize_with_context = [&](BackupInfo info)
+    {
+        if (!context)
+            return info.toNormalizedString();
+
+        if (info.backup_engine_name == "Disk" && info.args.size() == 2)
+        {
+            const String disk_name = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
+            checkBackupDiskName(disk_name, context->getConfigRef());
+            auto disk = context->getDisk(disk_name);
+            fs::path path = getStringArgForNormalizedIdentity(info.args[1], info.backup_engine_name, 1);
+            checkBackupDiskPath(disk_name, disk, path);
+            info.args[1] = path.string();
+            return info.toNormalizedString();
+        }
+
+        if (info.backup_engine_name == "File" && info.args.size() == 1)
+        {
+            fs::path path = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
+            checkBackupFilePath(path, context->getConfigRef(), context->getPath());
+            info.args[0] = path.string();
+            return info.toNormalizedString();
+        }
+
+#if USE_AZURE_BLOB_STORAGE
+        if (info.backup_engine_name == "AzureBlobStorage" && (info.args.size() == 3 || info.args.size() == 5))
+        {
+            const String connection_url = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
+            const String container_name = getStringArgForNormalizedIdentity(info.args[1], info.backup_engine_name, 1);
+            const String blob_path = getStringArgForNormalizedIdentity(info.args[2], info.backup_engine_name, 2);
+            std::optional<String> account_name;
+            std::optional<String> account_key;
+            if (info.args.size() == 5)
+            {
+                account_name = getStringArgForNormalizedIdentity(info.args[3], info.backup_engine_name, 3);
+                account_key = getStringArgForNormalizedIdentity(info.args[4], info.backup_engine_name, 4);
+            }
+
+            auto connection_params = getAzureConnectionParams(
+                connection_url,
+                container_name,
+                account_name,
+                account_key,
+                std::nullopt,
+                std::nullopt,
+                context);
+
+            info.args.clear();
+            info.args.emplace_back(connection_params.getConnectionURL());
+            info.args.emplace_back(connection_params.getContainer());
+            info.args.emplace_back(blob_path);
+            return info.toNormalizedString();
+        }
+#endif
+
+        return info.toNormalizedString();
+    };
+
+    if (id_arg.empty())
+        return normalize_with_context(*this);
+
+    auto collection = getNamedCollection(context);
+    BackupInfo resolved = *this;
+    resolved.id_arg.clear();
+    resolved.kv_args.clear();
+    resolved.args.clear();
+
+    if (backup_engine_name == "S3")
+    {
+        String url = collection->get<String>("url");
+        if (collection->has("filename"))
+            url = appendPath(url, collection->get<String>("filename"));
+        if (!args.empty())
+            url = appendPath(url, getStringArgForNormalizedIdentity(args[0], backup_engine_name, 0));
+
+        resolved.args.emplace_back(url);
+        return normalize_with_context(resolved);
+    }
+
+    if (backup_engine_name == "AzureBlobStorage")
+    {
+        String connection_url = collection->getAnyOrDefault<String>({"connection_string", "storage_account_url"}, "");
+        String container_name = collection->get<String>("container");
+        String blob_path = collection->getOrDefault<String>("blob_path", "");
+        if (!args.empty())
+            blob_path = getStringArgForNormalizedIdentity(args[0], backup_engine_name, 0);
+
+        resolved.args.emplace_back(connection_url);
+        resolved.args.emplace_back(container_name);
+        resolved.args.emplace_back(blob_path);
+        return normalize_with_context(resolved);
+    }
+
+    return normalize_with_context(*this);
 }
 
 bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest) const
@@ -348,6 +799,15 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     if (id_arg.empty())
         return nullptr;
 
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to resolve named collection `{}`", id_arg);
+
+    if (frozen_named_collection)
+    {
+        context->checkAccess(AccessType::NAMED_COLLECTION, id_arg);
+        return frozen_named_collection;
+    }
+
     /// Load named collections (both from config and SQL-defined)
     NamedCollectionFactory::instance().loadIfNot();
 
@@ -369,6 +829,16 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     }
 
     return collection;
+}
+
+BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
+{
+    if (id_arg.empty())
+        return *this;
+
+    BackupInfo res = *this;
+    res.frozen_named_collection = getNamedCollection(context)->duplicate();
+    return res;
 }
 
 }

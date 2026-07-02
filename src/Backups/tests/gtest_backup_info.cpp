@@ -1,8 +1,13 @@
 #include <Backups/BackupInfo.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollections.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+
+#include <Poco/Util/MapConfiguration.h>
 
 #include <gtest/gtest.h>
 
@@ -86,6 +91,42 @@ namespace
         requireContains(str, "host/bucket/backup");
         requireNotContains(str, "URLPASSWORD");
         std::_Exit(0);
+    }
+
+    NamedCollectionPtr makeNamedCollection(std::initializer_list<std::pair<String, String>> values)
+    {
+        Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+        NamedCollection::Keys keys;
+        for (const auto & [key, value] : values)
+        {
+            config->setString("collection." + key, value);
+            keys.insert(key);
+        }
+
+        return NamedCollectionFromConfig::create(*config, "collection", "collection", keys);
+    }
+
+    ContextMutablePtr makeContextWithBackupAllowedPaths()
+    {
+        auto context = Context::createCopy(getContext().context);
+
+        Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+        config->setString("backups.allowed_path", "/allowed");
+        config->setString("backups.allowed_path[1]", "/also_allowed");
+        context->setConfig(config);
+
+        return context;
+    }
+
+    ContextMutablePtr makeContextWithBackupAllowedDisks()
+    {
+        auto context = Context::createCopy(getContext().context);
+
+        Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+        config->setString("backups.allowed_disk", "other_disk");
+        context->setConfig(config);
+
+        return context;
     }
 }
 
@@ -220,4 +261,216 @@ TEST(BackupInfo, CanCopyS3CredentialsToMatchesCopyS3CredentialsTo)
     checkCanCopyS3CredentialsInvariant("Disk('backups', 'path')", "S3('https://s3.example.com/base')");
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "Disk('backups', 'path')");
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')");
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresS3Credentials)
+{
+    auto first = BackupInfo::fromString("S3('s3://bucket/backup/', 'key1', 'secret1')");
+    auto second = BackupInfo::fromString("S3('s3://bucket/backup', 'key2', 'secret2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringRedactsS3UrlCredentials)
+{
+    auto first = BackupInfo::fromString(
+        "S3('https://user1:password1@s3.example.com/bucket/backup?X-Amz-Signature=signature1', 'key1', 'secret1')");
+    auto second = BackupInfo::fromString(
+        "S3('https://user2:password2@s3.example.com/bucket/backup?X-Amz-Signature=signature2', 'key2', 'secret2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("password1"), String::npos);
+    EXPECT_EQ(first.toNormalizedString().find("signature1"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("password2"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("signature2"), String::npos);
+}
+
+#if USE_AWS_S3
+TEST(BackupInfo, NormalizedStringPreservesS3VersionIdOnly)
+{
+    auto first = BackupInfo::fromString("S3('s3://bucket/backup?part=1&versionId=v1')");
+    auto second = BackupInfo::fromString("S3('s3://bucket/backup?part=2&versionId=v1')");
+    auto third = BackupInfo::fromString("S3('s3://bucket/backup?part=1&versionId=v2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString(), third.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("part=1"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("part=2"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresS3UrlQueryExceptVersionId)
+{
+    auto first = BackupInfo::fromString("S3('s3://bucket/backup?secret=one&versionId=v1')");
+    auto second = BackupInfo::fromString("S3('s3://bucket/backup?secret=two&versionId=v1')");
+    auto third = BackupInfo::fromString("S3('s3://bucket/backup?secret=one&versionId=v2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString(), third.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("secret"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("two"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresS3PathQueryExceptVersionId)
+{
+    auto first = BackupInfo::fromString("S3(collection, 'backup?secret=one&versionId=v1')");
+    auto second = BackupInfo::fromString("S3(collection, 'backup?secret=two&versionId=v1')");
+    auto third = BackupInfo::fromString("S3(collection, 'backup?secret=one&versionId=v2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString(), third.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("secret"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("two"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
+{
+    auto s3 = BackupInfo::fromString("S3('s3://bucket/backup')");
+    auto virtual_hosted = BackupInfo::fromString("S3('https://bucket.s3.amazonaws.com/backup')");
+    auto path_style = BackupInfo::fromString("S3('https://s3.amazonaws.com/bucket/backup')");
+
+    EXPECT_EQ(s3.toNormalizedString(), virtual_hosted.toNormalizedString());
+    EXPECT_EQ(s3.toNormalizedString(), path_style.toNormalizedString());
+}
+#endif
+
+TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollection)
+{
+    auto context = getContext().context;
+    auto first = BackupInfo::fromString("S3(collection, 'backup')");
+    auto second = BackupInfo::fromString("S3(collection, 'backup/')");
+    auto third = BackupInfo::fromString("S3(collection, 'other')");
+
+    first.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+    second.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+    third.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+
+    EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
+    EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
+}
+
+#if USE_AWS_S3
+TEST(BackupInfo, NormalizedStringUsesS3BackupPathJoinSemantics)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(collection, '/absolute')");
+    info.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
+}
+#endif
+
+TEST(BackupInfo, NormalizedStringRejectsUnresolvedNamedCollectionWithoutContext)
+{
+    auto info = BackupInfo::fromString("S3(collection)");
+
+    EXPECT_THROW((void)info.toNormalizedString(ContextPtr{}), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringCanonicalizesDiskPath)
+{
+    auto first = BackupInfo::fromString("Disk('backups', 'dir/../backup/')");
+    auto second = BackupInfo::fromString("Disk('backups', 'backup')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringRejectsDisallowedDiskWithContext)
+{
+    auto context = makeContextWithBackupAllowedDisks();
+    auto info = BackupInfo::fromString("Disk('default', 'backup')");
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringCanonicalizesFilePath)
+{
+    auto first = BackupInfo::fromString("File('dir/../backup/')");
+    auto second = BackupInfo::fromString("File('backup')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringPreservesArchiveDirectoryPath)
+{
+    auto archive_file = BackupInfo::fromString("File('backup.zip')");
+    auto archive_directory = BackupInfo::fromString("File('backup.zip/')");
+
+    EXPECT_NE(archive_file.toNormalizedString(), archive_directory.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringRejectsNonStringPath)
+{
+    auto info = BackupInfo::fromString("Disk('backups', 1)");
+
+    EXPECT_THROW((void)info.toNormalizedString(), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringValidatesFilePathWithContext)
+{
+    auto context = makeContextWithBackupAllowedPaths();
+    auto disallowed = BackupInfo::fromString("File('/not_allowed/backup')");
+    auto allowed = BackupInfo::fromString("File('/also_allowed/backup')");
+
+    EXPECT_THROW((void)disallowed.toNormalizedString(context), Exception);
+    EXPECT_NE(allowed.toNormalizedString(context).find("/also_allowed/backup"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringCanonicalizesKeyValueArgNames)
+{
+    auto first = BackupInfo::fromString("S3(collection, url='s3://bucket/backup')");
+    auto second = BackupInfo::fromString("S3(collection, URL='s3://bucket/backup')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringRejectsNonStringKeyValueArg)
+{
+    auto info = BackupInfo::fromString("S3(collection, url=concat('s3://bucket/', 'backup'))");
+
+    EXPECT_THROW((void)info.toNormalizedString(), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresAzureCredentials)
+{
+    auto first = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup/', 'account', 'key1')");
+    auto second = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup', 'account', 'key2')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+}
+
+TEST(BackupInfo, NormalizedStringRedactsAzureConnectionStringCredentials)
+{
+    auto first = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;"
+        "AccountKey=key1;EndpointSuffix=core.windows.net', 'container', 'backup')");
+    auto second = BackupInfo::fromString(
+        "AzureBlobStorage('EndpointSuffix=core.windows.net;AccountKey=key2;"
+        "AccountName=account;DefaultEndpointsProtocol=https', 'container', 'backup')");
+
+    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_EQ(first.toNormalizedString().find("key1"), String::npos);
+    EXPECT_EQ(second.toNormalizedString().find("key2"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringUsesFrozenAzureNamedCollection)
+{
+    auto context = getContext().context;
+    auto first = BackupInfo::fromString("AzureBlobStorage(collection, 'backup')");
+    auto second = BackupInfo::fromString("AzureBlobStorage(collection, 'backup/')");
+    auto third = BackupInfo::fromString("AzureBlobStorage(collection, 'other')");
+
+    auto collection = makeNamedCollection(
+        {
+            {"storage_account_url", "https://account.blob.core.windows.net"},
+            {"container", "container"},
+            {"blob_path", "base"},
+        });
+    first.frozen_named_collection = collection;
+    second.frozen_named_collection = collection;
+    third.frozen_named_collection = collection;
+
+    EXPECT_EQ(first.toNormalizedString(context), second.toNormalizedString(context));
+    EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
 }
