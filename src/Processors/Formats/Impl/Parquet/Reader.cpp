@@ -976,7 +976,9 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
         return false;
     /// We assume that the dictionary page is immediately followed by the first data page.
     size_t dict_page_length = size_t(column_meta.meta_data.data_page_offset) - size_t(column_meta.meta_data.dictionary_page_offset);
-    if (dict_page_length >= options.dictionary_filter_limit_bytes)
+    /// The limit is the maximum dictionary page size for which pruning applies, so the boundary is
+    /// inclusive: a dictionary page of exactly `dictionary_filter_limit_bytes` is still eligible.
+    if (dict_page_length > options.dictionary_filter_limit_bytes)
         return false;
     /// We can only use the dictionary if it holds the complete set of column values, i.e. all data
     /// pages are dictionary-encoded. Without encoding stats we can't tell, so we don't risk it.
