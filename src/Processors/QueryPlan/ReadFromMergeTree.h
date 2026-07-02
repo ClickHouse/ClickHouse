@@ -424,6 +424,9 @@ public:
 
     void deferFiltersAfterFinalIfNeeded();
 
+    /// Whether PREWHERE (present or moved from WHERE later) would be applied after FINAL instead of during reading.
+    bool isPrewhereDeferredAfterFinal() const;
+
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
@@ -547,6 +550,8 @@ private:
         const InputOrderInfoPtr & input_order_info);
 
     bool doNotMergePartsAcrossPartitionsFinal() const;
+
+    bool isRowPolicyDeferredAfterFinal() const;
 
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
