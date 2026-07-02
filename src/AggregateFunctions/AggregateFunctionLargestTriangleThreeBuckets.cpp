@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_DATA;
 }
 
 struct Settings;
@@ -52,8 +53,15 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         if (size >= MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in largestTriangleThreeBuckets, max: {}", MAX_ARRAY_SIZE);
 
-        /// Sort the data
-        chassert(size == this->y.size());
+        /// x and y are filled together by add, so they are equal in length for any state built
+        /// by aggregation. A state deserialized from raw bytes can break that, and the loops below
+        /// index y by positions taken from the x permutation, so unequal lengths read out of bounds.
+        if (size != this->y.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Sizes of nested arrays in largestTriangleThreeBuckets state do not match: {} (x) vs {} (y)",
+                size,
+                this->y.size());
 
         // sort the this->x and this->y in ascending order of this->x using index
         PODArray<UInt32> index(size);
