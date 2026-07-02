@@ -129,6 +129,24 @@ void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
         column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
+
+/// Whether the single-dictionary fast path in executeWithoutSparseColumns is applicable: at most
+/// one LowCardinality column and every other column constant. That path strips one LowCardinality
+/// column to its nested dictionary and shares its indexes for the result, resizing only the
+/// constant arguments to the dictionary size. A non-constant ordinary column or a second
+/// LowCardinality column cannot share those indexes, so the path must be skipped for it.
+bool canShareLowCardinalityDictionary(const ColumnsWithTypeAndName & args)
+{
+    size_t num_low_cardinality = 0;
+    for (const auto & column : args)
+    {
+        if (checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
+            ++num_low_cardinality;
+        else if (!isColumnConst(*column.column))
+            return false;
+    }
+    return num_low_cardinality <= 1;
+}
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
@@ -471,11 +489,31 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
 
             const auto & dictionary_type = res_low_cardinality_type->getDictionaryType();
-            ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
 
-            size_t new_input_rows_count
-                = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            /// getReturnType() chose a LowCardinality result type assuming the single-dictionary
+            /// fast path applies, but a constant argument can arrive as a non-constant column at
+            /// runtime and break that assumption. Fall back to full materialization when it no
+            /// longer holds.
+            ColumnPtr indexes;
+            size_t new_input_rows_count = 0;
+            if (!canShareLowCardinalityDictionary(columns_without_low_cardinality))
+            {
+                /// Full-materialization fallback: arguments keep their original row counts (constants
+                /// are not resized), so the row count is the original input_rows_count, just like the
+                /// non-LowCardinality result branch below.
+                convertLowCardinalityColumnsToFull(columns_without_low_cardinality);
+                new_input_rows_count = input_rows_count;
+            }
+            else
+            {
+                /// Fast path: the single LowCardinality column is replaced by its nested dictionary
+                /// and the constants are resized to the dictionary size, so the row count is taken
+                /// from a resulting (resized) column rather than input_rows_count.
+                indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments, input_rows_count);
+                new_input_rows_count
+                    = columns_without_low_cardinality.empty() ? input_rows_count : columns_without_low_cardinality.front().column->size();
+            }
             checkFunctionArgumentSizes(columns_without_low_cardinality, new_input_rows_count);
 
             auto res = executeWithoutLowCardinalityColumns(columns_without_low_cardinality, dictionary_type, new_input_rows_count, dry_run);
