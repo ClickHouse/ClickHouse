@@ -1,0 +1,21 @@
+The explicitly declared generated column is kept:
+a	Nullable(Int64)					
+b	Nullable(Int64)					
+Insert without a column list, and an explicit base-column list, both target only the base column; SQLite computes the generated column:
+a	b
+1	2
+2	3
+The generated column is MATERIALIZED, so SELECT * returns only the base column:
+a
+1
+2
+Explicitly writing into the generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column
+The rejected insert wrote nothing:
+a	b
+1	2
+2	3
+SHOW CREATE TABLE round-trips the generated column as an ordinary column (no MATERIALIZED keyword):
+`b` Nullable(Int64)
+Recreating the table from that round-tripped definition keeps the generated column non-insertable:
+Cannot insert column b, because it is MATERIALIZED column

@@ -81,6 +81,10 @@ void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
+#if USE_SQLITE
+void registerInputFormatSQLite(FormatFactory & factory);
+void registerOutputFormatSQLite(FormatFactory & factory);
+#endif
 
 /// Output only (presentational) formats.
 
@@ -154,6 +158,9 @@ void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
+#if USE_SQLITE
+void registerSQLiteSchemaReader(FormatFactory & factory);
+#endif
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
 void registerOutputFormatGeoJSON(FormatFactory & factory);
@@ -237,6 +244,10 @@ void registerFormats()
     registerOutputFormatArrow(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
+#if USE_SQLITE
+    registerInputFormatSQLite(factory);
+    registerOutputFormatSQLite(factory);
+#endif
 
     registerOutputFormatPretty(factory);
     registerOutputFormatVertical(factory);
@@ -311,6 +322,9 @@ void registerFormats()
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
     registerFormSchemaReader(factory);
+#if USE_SQLITE
+    registerSQLiteSchemaReader(factory);
+#endif
 }
 
 }

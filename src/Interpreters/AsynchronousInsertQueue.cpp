@@ -416,6 +416,12 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
+    /// Refresh any external dynamic metadata before taking the snapshot used to parse the incoming data,
+    /// mirroring the synchronous insert path (`InterpreterInsertQuery::execute`). Otherwise a storage whose
+    /// schema is derived from an external source (e.g. a `SQLite` table repairing a generated-column
+    /// classification on the first open, or a data lake table) would parse the async batch against a stale
+    /// snapshot here, and the later flush - which does refresh the metadata - would reject the parsed block.
+    table->updateExternalDynamicMetadataIfExists(query_context);
     const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,

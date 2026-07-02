@@ -75,8 +75,12 @@ NameSet DatabaseSQLite::fetchTablesList() const
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
     std::unordered_set<String> tables;
+    /// Escape the `_` in the `sqlite_` prefix so that `LIKE` treats it as a literal underscore
+    /// rather than a single-character wildcard. Otherwise a genuine user table such as `sqliteX`
+    /// would be excluded together with the internal `sqlite_*` tables and stay hidden from
+    /// `SHOW TABLES`, `DatabaseSQLite::empty` and table discovery.
     std::string query = "SELECT name FROM sqlite_master "
-                        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'";
+                        "WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'";
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int
     {
@@ -161,7 +165,7 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         sqlite_db,
         database_path,
         TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
-        ColumnsDescription{*columns},
+        std::move(*columns),
         ConstraintsDescription{},
         /* comment = */ "",
         local_context);

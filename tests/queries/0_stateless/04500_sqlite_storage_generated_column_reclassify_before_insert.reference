@@ -1,0 +1,10 @@
+The first operation after recovery is the insert; it targets only the base column and SQLite computes the generated one:
+a	b
+5	6
+10	11
+SELECT * returns only the base column, confirming the generated column stays MATERIALIZED:
+a
+5
+10
+Explicitly writing into the generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column

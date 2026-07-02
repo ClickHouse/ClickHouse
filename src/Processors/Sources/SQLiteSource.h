@@ -3,9 +3,8 @@
 #include "config.h"
 
 #if USE_SQLITE
-#include <Core/ExternalResultDescription.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/ISource.h>
+#include <Processors/Sources/SQLiteStatementReader.h>
 
 #include <sqlite3.h>
 
@@ -24,9 +23,6 @@ public:
     String getName() const override { return "SQLite"; }
 
 private:
-
-    using ValueType = ExternalResultDescription::ValueType;
-
     struct StatementDeleter
     {
         void operator()(sqlite3_stmt * stmt) { sqlite3_finalize(stmt); }
@@ -36,12 +32,10 @@ private:
 
     void onCancel() noexcept override;
 
-    void insertValue(IColumn & column, ExternalResultDescription::ValueType type, int idx, const IDataType & data_type);
-
     String query_str;
     UInt64 max_block_size;
 
-    ExternalResultDescription description;
+    SQLiteStatementReader statement_reader;
     SQLitePtr sqlite_db;
     std::unique_ptr<sqlite3_stmt, StatementDeleter> compiled_statement;
 };

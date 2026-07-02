@@ -1,0 +1,7 @@
+Read requested columns only
+1	hello
+2	world
+Read rejected column
+UNEXPECTED_DATA_AFTER_PARSED_VALUE
+Read missing column
+SQLITE_ENGINE_ERROR
