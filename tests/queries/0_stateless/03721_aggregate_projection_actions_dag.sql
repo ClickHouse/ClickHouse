@@ -1,4 +1,5 @@
 SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 CREATE TABLE test
 (
     `key` UInt64,
