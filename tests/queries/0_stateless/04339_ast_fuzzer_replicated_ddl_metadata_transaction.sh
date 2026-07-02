@@ -11,8 +11,7 @@
 # DatabaseReplicated::commit* -> ZooKeeperMetadataTransaction::addOp on an already-executed
 # transaction and throws "Cannot add ZooKeeper operation because query is executed" (a LOGICAL_ERROR
 # that aborts debug/sanitizer builds). The fuzzer now detaches metadata_transaction from the fuzz
-# context copies, so the fuzzed queries no longer inherit the in-flight DDL transaction and the
-# server stays up. Without the fix this test crashes the server (the runner then reports it dead).
+# context copies, so the fuzzed queries no longer inherit the in-flight DDL transaction.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,12 +31,33 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${db}.t (a UInt64) ENGINE = ReplicatedMerg
 
 # The fuzzed replicated DDL: ast_fuzzer_any_query = 1 makes the fuzzer mutate this non-read-only
 # query, and the setting is serialized into the ZK DDL entry so it re-fuzzes inside DDLWorker on
-# the entry's live metadata transaction. Fuzzed follow-up queries log their own internal errors
-# (fatal-level silences that noise); the outer ALTER itself succeeds, so stdout stays empty here.
-${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "ALTER TABLE ${db}.t ADD COLUMN IF NOT EXISTS b UInt64 SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1"
+# the entry's live metadata transaction. A unique query id lets us attribute the ProfileEvent
+# below to exactly this statement, so the test is safe to run in parallel with itself. Fuzzed
+# follow-up queries log their own internal errors (fatal-level silences that noise); the outer
+# ALTER itself succeeds, so stdout stays empty here.
+qid="04339_${CLICKHOUSE_DATABASE}_$$"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --query_id="${qid}" -q "ALTER TABLE ${db}.t ADD COLUMN IF NOT EXISTS b UInt64 SETTINGS ast_fuzzer_runs = 5, ast_fuzzer_any_query = 1"
 
 # The server must still be alive after the fuzzed replicated DDL.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'alive'"
+
+# Build-mode-independent proof of the fix. 'alive' above only proves the server survived, which a
+# release build does even without the fix (the LOGICAL_ERROR is caught inside the fuzzer). Instead
+# assert the strip fired: ASTFuzzerClearedMetadataTransaction is bumped only when
+# resetZooKeeperMetadataTransaction() detaches a live transaction. It is attributed to this ALTER
+# by initial_query_id (client statement + DDLWorker re-execution; fuzzed sub-queries get fresh ids
+# and are excluded). Without the fix the counter stays 0 and this assertion flips to 0.
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+# enable_parallel_replicas = 0: single-node introspection of system.query_log; keep the CI
+# randomizer from turning it into a distributed read over the parallel_replicas cluster.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT 'metadata_transaction_detached',
+           sum(ProfileEvents['ASTFuzzerClearedMetadataTransaction']) > 0
+    FROM system.query_log
+    WHERE event_date >= today() - 1
+      AND initial_query_id = '${qid}'
+      AND type = 'QueryFinish'
+    SETTINGS enable_parallel_replicas = 0"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${db}.t SYNC"
 if [[ "${db}" != "${CLICKHOUSE_DATABASE}" ]]; then
