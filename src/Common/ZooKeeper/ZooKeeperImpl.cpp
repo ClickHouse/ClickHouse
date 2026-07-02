@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <ranges>
 
 #include <Common/OpenTelemetryTracingContext.h>
@@ -523,6 +524,7 @@ ZooKeeper::ZooKeeper(
 
         initFeatureFlags();
         keeper_feature_flags.logFlags(log, DB::LogsLevel::debug);
+        initMaxRequestSize();
 
         ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
     }
@@ -842,6 +844,24 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
                         static_cast<int32_t>(err), err);
 }
 
+namespace
+{
+
+/// Shared by the pre-check in `pushRequest` (lower-bound size) and the exact check in `sendThread` (wire size).
+void assertRequestSizeIsValid(size_t request_size, size_t max_request_size, const ZooKeeperRequest & request)
+{
+    constexpr size_t hard_limit = std::numeric_limits<int32_t>::max();
+    const size_t limit = (max_request_size == 0 || max_request_size > hard_limit) ? hard_limit : max_request_size;
+    if (request_size <= limit)
+        return;
+
+    throw Exception(Error::ZBADARGUMENTS,
+        "Request size {} exceeds limit {} (max_request_size = {}), request: {}",
+        request_size, limit, max_request_size, request.toString(/*short_format=*/true));
+}
+
+}
+
 void ZooKeeper::sendThread()
 {
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
@@ -855,6 +875,9 @@ void ZooKeeper::sendThread()
     }
 
     auto prev_heartbeat_time = clock::now();
+
+    /// tmp buffer to assert actual request sizes; reused across requests, never shrinks
+    std::string serialized;
 
     try
     {
@@ -924,6 +947,30 @@ void ZooKeeper::sendThread()
                     if (info.request->add_root_path)
                         info.request->addRootPath(args.chroot);
 
+                    /// Exact wire-size check before registering: rejection fails only this request, session intact.
+                    try
+                    {
+                        const size_t request_size = info.request->requestSize(use_xid_64);
+                        serialized.resize(sizeof(int32_t) + request_size + (pass_opentelemetry_tracing_context ? 256 : 0));
+                        DB::WriteBufferFromString buf(serialized);
+                        info.request->write(buf, use_xid_64, pass_opentelemetry_tracing_context);
+                        buf.finalize();
+                        assertRequestSizeIsValid(serialized.size(), getMaxRequestSize(), *info.request);
+                    }
+                    catch (const Exception & e)
+                    {
+                        callback_registered = true;
+                        if (info.callback)
+                        {
+                            ZooKeeperResponsePtr response = info.request->makeResponse();
+                            response->error = e.code;
+                            response->xid = info.request->xid;
+                            info.callback(*response);
+                        }
+                        serialized.clear();
+                        continue;
+                    }
+
                     /// Insert into operations AFTER mutating the request (has_watch, addRootPath)
                     /// to avoid a data race: receiveThread reads from operations concurrently,
                     /// and the request object is shared via shared_ptr.
@@ -951,7 +998,8 @@ void ZooKeeper::sendThread()
                     }
 
                     info.request->probably_sent = true;
-                    info.request->write(getWriteBuffer(), use_xid_64, pass_opentelemetry_tracing_context);
+                    getWriteBuffer().write(serialized.data(), serialized.size());
+                    serialized.clear();
                     flushWriteBuffer();
 
                     logOperationIfNeeded(info.request);
@@ -1588,6 +1636,9 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
 
 void ZooKeeper::pushRequest(RequestInfo && info)
 {
+    /// Lower-bound pre-check (chroot/tracing bytes added later); exact check runs in `sendThread`.
+    assertRequestSizeIsValid(info.request->requestSize(use_xid_64), getMaxRequestSize(), *info.request);
+
     try
     {
         info.request->create_ts = clock::now();
@@ -1726,6 +1777,29 @@ void ZooKeeper::initFeatureFlags()
     keeper_api_version = static_cast<DB::KeeperApiVersion>(keeper_version);
     LOG_TRACE(log, "Detected server's API version: {}", keeper_api_version);
     keeper_feature_flags.fromApiVersion(keeper_api_version);
+}
+
+void ZooKeeper::initMaxRequestSize()
+{
+    // Best-effort: an absent node (old Keeper / third-party ZooKeeper) keeps the default; a genuine read failure propagates and the connect path reconnects.
+    auto value = tryGetSystemZnode(keeper_max_request_size_path, "max request size");
+    if (!value.has_value())
+        return;
+
+    UInt64 parsed = 0;
+    /// On third-party ZooKeeper this node is ordinary user data; never fail the session over it.
+    if (!DB::tryParse(parsed, *value))
+    {
+        LOG_WARNING(log, "Cannot parse server-advertised max_request_size '{}', ignoring it", value->substr(0, 64));
+        return;
+    }
+    if (parsed != 0 && (parsed < 1024 || parsed > static_cast<UInt64>(std::numeric_limits<int32_t>::max())))
+    {
+        LOG_WARNING(log, "Server-advertised max_request_size {} is out of sane bounds, ignoring it", parsed);
+        return;
+    }
+    keeper_max_request_size = parsed;
+    LOG_TRACE(log, "Server advertised max_request_size = {}", keeper_max_request_size);
 }
 
 String ZooKeeper::tryGetAvailabilityZone()

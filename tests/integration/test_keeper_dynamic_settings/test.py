@@ -118,9 +118,20 @@ def test_max_request_size_hot_reload(started_cluster):
                 f"current value: {settings.get('max_request_size')}"
             )
 
-        # 3. A large write should now be rejected. Connection loss and Operation
-        # timeout are both valid client surfaces of the connection-level rejection.
-        with pytest.raises(Exception, match=r"Connection loss|Operation timeout"):
+        # 3. A large write should now be rejected. `Connection loss`, `Operation timeout`
+        # and `exceeds limit` are valid client surfaces of the connection-level rejection.
+        with pytest.raises(Exception, match=r"exceeds limit|Connection loss|Operation timeout"):
+            node.query(
+                "INSERT INTO system.zookeeper (name, path, value) "
+                "SELECT number::String, '/test_max_req', repeat('x', 3000) "
+                "FROM numbers(100)"
+            )
+
+        # 4. A fresh session learns the advertised limit at connect, so after a
+        # restart the rejection is client-side and deterministic (`exceeds limit`).
+        node.restart_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node)
+        with pytest.raises(Exception, match="exceeds limit"):
             node.query(
                 "INSERT INTO system.zookeeper (name, path, value) "
                 "SELECT number::String, '/test_max_req', repeat('x', 3000) "

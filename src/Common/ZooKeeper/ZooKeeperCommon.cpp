@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context_fwd.h>
+#include <limits>
 
 namespace Coordination
 {
@@ -53,16 +54,19 @@ std::string ZooKeeperRequest::toString(bool short_format) const
         toStringImpl(short_format));
 }
 
+size_t ZooKeeperRequest::requestSize(bool use_xid_64) const
+{
+    return (use_xid_64 ? sizeof(int64_t) : sizeof(int32_t)) + Coordination::size(getOpNum()) + sizeImpl();
+}
+
 void ZooKeeperRequest::write(WriteBuffer & out, bool use_xid_64, bool supports_tracing) const
 {
-    size_t request_size = 0;
-    if (use_xid_64)
-        request_size += sizeof(int64_t);
-    else
-        request_size += sizeof(int32_t);
-
-    request_size += Coordination::size(getOpNum()) + sizeImpl();
-
+    size_t request_size = requestSize(use_xid_64);
+    // Last stand: the length prefix is serialized as int32, so the request must fit into it.
+    if (request_size > static_cast<size_t>(std::numeric_limits<int32_t>::max()))
+        throw Exception(Error::ZBADARGUMENTS,
+            "Request size {} does not fit into the int32 length prefix, request: {}",
+            request_size, toString(true));
     Coordination::write(static_cast<int32_t>(request_size), out);
     if (use_xid_64)
         Coordination::write(static_cast<int64_t>(xid), out);
@@ -1218,7 +1222,24 @@ void ZooKeeperMultiRequest::writeImpl(WriteBuffer & out) const
     Coordination::write(error, out);
 }
 
+void ZooKeeperMultiRequest::addRootPath(const String & root_path)
+{
+    cached_size_impl.reset();
+    MultiRequest<ZooKeeperRequestPtr>::addRootPath(root_path);
+}
+
 size_t ZooKeeperMultiRequest::sizeImpl() const
+{
+    if (cached_size_impl)
+    {
+        chassert(*cached_size_impl == computeSizeImpl());
+        return *cached_size_impl;
+    }
+    cached_size_impl = computeSizeImpl();
+    return *cached_size_impl;
+}
+
+size_t ZooKeeperMultiRequest::computeSizeImpl() const
 {
     size_t total_size = 0;
     for (const auto & zk_request : requests)
@@ -1244,6 +1265,7 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
 {
+    cached_size_impl.reset();
     while (true)
     {
         OpNum op_num = {};

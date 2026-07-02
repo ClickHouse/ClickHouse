@@ -56,6 +56,7 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
     extern const CoordinationSettingsBool check_node_acl_on_remove;
+    extern const CoordinationSettingsUInt64 max_request_size;
 }
 
 namespace ErrorCodes
@@ -441,6 +442,16 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & sto
         return response;
     }
 
+    if (zk_request.path == Coordination::keeper_max_request_size_path)
+    {
+        // Served from the live setting so hot-reloads are reflected; 0 == unlimited.
+        const size_t max_request_size
+            = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_size];
+        response->data = std::to_string(max_request_size);
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
     auto node_holder = storage.nodes.getCommittedNode(zk_request.path);
     const auto * node = node_holder.get();
     if (node == nullptr)
@@ -800,6 +811,13 @@ processLocal(const Coordination::ZooKeeperExistsRequest & zk_request, Storage & 
 {
     ProfileEvents::increment(ProfileEvents::KeeperExistsRequest);
     auto response = std::make_shared<Coordination::ZooKeeperExistsResponse>();
+
+    if (zk_request.path == Coordination::keeper_max_request_size_path)
+    {
+        /// Virtual node served by the Get handler; report it as existing (stat stays zeroed, same as Get returns).
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
 
     auto node_holder = storage.nodes.getCommittedNode(zk_request.path);
     const auto * node = node_holder.get();

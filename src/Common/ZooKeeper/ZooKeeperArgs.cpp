@@ -123,6 +123,10 @@ void ZooKeeperArgs::initFromKeeperServerSection(const Poco::Util::AbstractConfig
             config.has(use_xid_64_key))
             use_xid_64 = config.getBool(use_xid_64_key);
 
+        // Co-located client: mirror the server's own limit from `coordination_settings`.
+        if (auto max_request_size_key = coordination_key + ".max_request_size";
+            config.has(max_request_size_key))
+            max_request_size = config.getUInt64(max_request_size_key);
     }
 
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -190,6 +194,10 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         else if (key == "operation_timeout_ms")
         {
             operation_timeout_ms = config.getInt(config_name + "." + key);
+        }
+        else if (key == "max_request_size")
+        {
+            max_request_size = config.getUInt64(config_name + "." + key);
         }
         else if (key == "connection_timeout_ms")
         {
