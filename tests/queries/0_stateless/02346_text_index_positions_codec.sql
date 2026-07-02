@@ -142,6 +142,7 @@ SELECT count() >= 2 FROM system.parts WHERE database = currentDatabase() AND tab
 SELECT (SELECT arraySort(groupArray(id)) FROM tab_none WHERE hasPhrase(message, 'abc def'))   = (SELECT arraySort(groupArray(id)) FROM tab_pfor WHERE hasPhrase(message, 'abc def'));
 SELECT (SELECT count() FROM tab_none WHERE hasPhrase(message, 'hello clickhouse'))            = (SELECT count() FROM tab_pfor WHERE hasPhrase(message, 'hello clickhouse'));
 
+SYSTEM START MERGES tab_pfor;
 OPTIMIZE TABLE tab_pfor FINAL;
 
 -- Merged into a single part; the merge decoded and re-encoded the pfor positions.
