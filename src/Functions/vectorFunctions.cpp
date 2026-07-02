@@ -2417,9 +2417,9 @@ SELECT cosineDistance((1, 2), (2, 3));
     FunctionDocumentation::Description description_l2_distance_transposed = R"(
 Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     )";
-    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2451,14 +2451,19 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     FunctionDocumentation::Description description_cosine_distance_transposed = R"(
 Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
     )";
-    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_cosine_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}},
            {"reference", "Reference vector.", {"Array(T)"}},
            {"p",
             "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
             "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
             "using more bits increases accuracy at the cost of performance.",
+            {"UInt"}},
+           {"used_dims",
+            "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
@@ -2492,14 +2497,19 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     FunctionDocumentation::Description description_dot_product_transposed = R"(
 Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product) of two vectors (the values of the vectors are the coordinates). Unlike the distance functions, this is a similarity measure: the larger the returned value, the more similar the vectors are.
     )";
-    FunctionDocumentation::Syntax syntax_dot_product_transposed = "dotProductTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Syntax syntax_dot_product_transposed = "dotProductTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_dot_product_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}},
            {"reference", "Reference vector.", {"Array(T)"}},
            {"p",
             "Number of bits from each vector element to use in the calculation (1 to element bit-width). The quantization level controls "
             "the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more "
             "bits increases accuracy at the cost of performance.",
+            {"UInt"}},
+           {"used_dims",
+            "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed
         = {"Returns the approximate dot product of the two vectors. Always returns `Float64`.", {"Float64"}};
