@@ -13,6 +13,12 @@
 # exercises only the `DistributedSink` path). This test exercises the two `parallel_distributed_insert_select`
 # `RemoteQueryExecutor` paths and the `IStorageCluster` SELECT read path (`ReadFromCluster`, which also sends
 # the query via `formatWithSecretsOneLine()`), and checks the shard-side queries no longer carry those settings.
+#
+# All the exercised queries run first and the query log is flushed exactly once at the end, right before
+# the assertions. `SYSTEM FLUSH LOGS query_log` is expensive on object storage (it materializes a
+# `system.query_log` part per call), so flushing once instead of once per case keeps the test well under
+# the per-test time limit on the s3 / SharedCatalog configurations. Each query carries a unique `query_id`,
+# so a single flush before the checks captures every initial and shard-side row unambiguously.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -28,13 +34,112 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO src SELECT number FROM numbers(10)"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_src AS src ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, src, x)"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dist_dst AS dst ENGINE = Distributed(test_cluster_two_shards_localhost, ${CLICKHOUSE_DATABASE}, dst, x)"
 
+mkdir -p "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+DATA_FILE="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv"
+${CLICKHOUSE_CLIENT} -q "SELECT number FROM numbers(10) FORMAT CSV" > "${DATA_FILE}"
+
+# Initiator-only settings to set on the INSERT. `prefer_localhost_replica = 0` forces every shard
+# (both localhost) through the remote-connection path that forwards the settings packet.
+# `implicit_table_at_top_level` is set to an existing table (`src`) so it would resolve even if it
+# were applied; it is a no-op here because the source SELECT already has a FROM, and we only assert it
+# does not reach the shards. (`offset` / `limit` and `compression` are omitted: the former are
+# construction settings that materialize into the AST rather than ride along as plain settings, the
+# latter is rejected in an in-query `SETTINGS` clause — `04424` covers them for the sink path.)
+#
+# `http_allow_database_as_path` / `http_allow_table_as_file` / `http_allow_filters_as_path` are
+# force-enabled to `1` in the shard's own `<default>` profile (tests/config/users.d/http_paths.xml),
+# so the shard-side query carries them via that profile regardless of any leak — "is the setting
+# present" cannot distinguish a leak from the profile baseline. We therefore set them to `0` here (a
+# real change, since the profile baseline is `1`) and assert below that the shard did NOT receive
+# `'0'`: a working strip leaves the shard at its profile value `1`, while a regression that drops the
+# strip forwards `0` and overrides the profile. The remaining settings are in no profile, so the
+# plain "present at all" check stays valid for them.
+LEAK_SETTINGS="parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, \
+    input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', \
+    http_allow_database_as_path = 0, http_allow_table_as_file = 0, http_allow_filters_as_path = 0, \
+    http_allow_filters_as_unrecognized_url_parameters = 1, implicit_table_at_top_level = 'src'"
+
+# --- Run every exercised query up front; the query log is flushed once, below, before the assertions. ---
+
+# distributedWriteBetweenDistributedTables (Distributed source)
+QID_BETWEEN="04492-between-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_BETWEEN}" -q "
+    INSERT INTO dist_dst
+    SETTINGS ${LEAK_SETTINGS}
+    SELECT * FROM dist_src"
+
+# distributedWriteFromClusterStorage (fileCluster source)
+QID_CLUSTER="04492-cluster-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_CLUSTER}" -q "
+    INSERT INTO dist_dst
+    SETTINGS ${LEAK_SETTINGS}
+    SELECT * FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')"
+
+# initiator-only setting reset to DEFAULT must not ride along in the forwarded query text.
+# A `name = DEFAULT` entry lives in `ASTSetQuery::default_settings` (a list separate from `changes`) and is
+# serialized by `formatImpl`, so the query-text strip has to clear it too. The reset is applied with
+# `changed = false`, so it never travels in the settings packet — it is observable only in the forwarded SQL
+# text (`system.query_log.query`), which is precisely what an older shard would reject on parse. Hence this
+# case asserts on the query text rather than on the `Settings` map.
+QID_DEFAULT="04492-default-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DEFAULT}" -q "
+    INSERT INTO dist_dst
+    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1,
+        http_allow_table_as_file = DEFAULT, input_format = DEFAULT
+    SELECT * FROM dist_src"
+
+# ReadFromCluster (a SELECT via the fileCluster IStorageCluster) does not forward initiator-only settings.
+# IStorageCluster::read strips the inter-server settings packet (ReadFromCluster::updateSettings) but also
+# sends the query via formatWithSecretsOneLine(); an initiator-only setting in the SELECT's own SETTINGS
+# clause must not ride along in that forwarded text. Asserted on system.query_log.query, as for the DEFAULT
+# case above. (`cluster()` / `clusterAllReplicas()` are StorageDistributed, not IStorageCluster — the
+# file/data-lake `*Cluster` functions like `fileCluster` are the ones that go through ReadFromCluster.)
+QID_READ="04492-read-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_READ}" -q "
+    SELECT count() FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'TSV'" > /dev/null
+
+# an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text.
+# `ParserInsertQuery` copies the source SELECT's SETTINGS onto the INSERT (so the optimized path still
+# triggers) but leaves the SELECT's own SETTINGS node in place, and `formatImpl` serializes it — so the
+# strip has to reach the SELECT too. (Asserted on the forwarded query text.)
+QID_SELECT="04492-select-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_SELECT}" -q "
+    INSERT INTO dist_dst
+    SELECT * FROM dist_src
+    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, input_format = 'CSV', http_allow_table_as_file = 1"
+
+# an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text.
+# The strip must recurse through the rebuilt arm's subtree, not just its top-level SETTINGS, so a nested
+# source subquery (WHERE x IN (SELECT ... SETTINGS ...)) does not forward the name either.
+QID_NESTED="04492-nested-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_NESTED}" -q "
+    INSERT INTO dist_dst
+    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1
+    SELECT * FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)"
+
+# the regular Distributed SELECT fan-out does not forward initiator-only settings (analyzer + nested).
+# A top-level SETTINGS clause becomes QueryNode::settings_changes, which QueryNode::toAST materializes into
+# the AST SelectStreamFactory forwards to shards; a nested subquery carries its own SETTINGS too. Neither
+# must reach shards. (Asserted on the forwarded secondary SELECT text.)
+QID_DSEL="04492-dsel-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL}" -q "
+    SELECT count() FROM dist_src
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'CSV'" > /dev/null
+QID_DSEL_NESTED="04492-dseln-${CLICKHOUSE_DATABASE}-$$"
+${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL_NESTED}" -q "
+    SELECT count() FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)
+    SETTINGS prefer_localhost_replica = 0, log_queries = 1" > /dev/null
+
+# Flush the query log once for every query above (a per-case flush is too slow on object storage).
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+
 # The secondary (shard-side) INSERTs run as the `default` user, so their `current_database` is
 # `default`, not the test database — they cannot be filtered by `current_database = currentDatabase()`
 # directly. Match them by `initial_query_id`, and apply the (style-check-required)
 # `current_database = currentDatabase()` filter to the initial INSERT, which does run in the test db.
 check_no_leak() {
     local query_id="$1"
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} -q "
         WITH initial AS
         (
@@ -66,60 +171,13 @@ check_no_leak() {
           AND event_date >= today() - 1"
 }
 
-# Initiator-only settings to set on the INSERT. `prefer_localhost_replica = 0` forces every shard
-# (both localhost) through the remote-connection path that forwards the settings packet.
-# `implicit_table_at_top_level` is set to an existing table (`src`) so it would resolve even if it
-# were applied; it is a no-op here because the source SELECT already has a FROM, and we only assert it
-# does not reach the shards. (`offset` / `limit` and `compression` are omitted: the former are
-# construction settings that materialize into the AST rather than ride along as plain settings, the
-# latter is rejected in an in-query `SETTINGS` clause — `04424` covers them for the sink path.)
-#
-# `http_allow_database_as_path` / `http_allow_table_as_file` / `http_allow_filters_as_path` are
-# force-enabled to `1` in the shard's own `<default>` profile (tests/config/users.d/http_paths.xml),
-# so the shard-side query carries them via that profile regardless of any leak — "is the setting
-# present" cannot distinguish a leak from the profile baseline. We therefore set them to `0` here (a
-# real change, since the profile baseline is `1`) and assert above that the shard did NOT receive
-# `'0'`: a working strip leaves the shard at its profile value `1`, while a regression that drops the
-# strip forwards `0` and overrides the profile. The remaining settings are in no profile, so the
-# plain "present at all" check stays valid for them.
-LEAK_SETTINGS="parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, \
-    input_format = 'CSV', output_format = 'CSV', default_format = 'CSV', \
-    http_allow_database_as_path = 0, http_allow_table_as_file = 0, http_allow_filters_as_path = 0, \
-    http_allow_filters_as_unrecognized_url_parameters = 1, implicit_table_at_top_level = 'src'"
-
 echo "-- distributedWriteBetweenDistributedTables (Distributed source)"
-QID_BETWEEN="04492-between-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_BETWEEN}" -q "
-    INSERT INTO dist_dst
-    SETTINGS ${LEAK_SETTINGS}
-    SELECT * FROM dist_src"
 check_no_leak "${QID_BETWEEN}"
 
 echo "-- distributedWriteFromClusterStorage (fileCluster source)"
-mkdir -p "${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
-DATA_FILE="${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv"
-${CLICKHOUSE_CLIENT} -q "SELECT number FROM numbers(10) FORMAT CSV" > "${DATA_FILE}"
-
-QID_CLUSTER="04492-cluster-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_CLUSTER}" -q "
-    INSERT INTO dist_dst
-    SETTINGS ${LEAK_SETTINGS}
-    SELECT * FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')"
 check_no_leak "${QID_CLUSTER}"
 
 echo "-- initiator-only setting reset to DEFAULT must not ride along in the forwarded query text"
-# A `name = DEFAULT` entry lives in `ASTSetQuery::default_settings` (a list separate from `changes`) and is
-# serialized by `formatImpl`, so the query-text strip has to clear it too. The reset is applied with
-# `changed = false`, so it never travels in the settings packet — it is observable only in the forwarded SQL
-# text (`system.query_log.query`), which is precisely what an older shard would reject on parse. Hence this
-# case asserts on the query text rather than on the `Settings` map.
-QID_DEFAULT="04492-default-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_DEFAULT}" -q "
-    INSERT INTO dist_dst
-    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1,
-        http_allow_table_as_file = DEFAULT, input_format = DEFAULT
-    SELECT * FROM dist_src"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
     (
@@ -143,16 +201,6 @@ ${CLICKHOUSE_CLIENT} -q "
       AND event_date >= today() - 1"
 
 echo "-- ReadFromCluster (a SELECT via the fileCluster IStorageCluster) does not forward initiator-only settings in the query text"
-# IStorageCluster::read strips the inter-server settings packet (ReadFromCluster::updateSettings) but also
-# sends the query via formatWithSecretsOneLine(); an initiator-only setting in the SELECT's own SETTINGS
-# clause must not ride along in that forwarded text. Asserted on system.query_log.query, as for the DEFAULT
-# case above. (`cluster()` / `clusterAllReplicas()` are StorageDistributed, not IStorageCluster — the
-# file/data-lake `*Cluster` functions like `fileCluster` are the ones that go through ReadFromCluster.)
-QID_READ="04492-read-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_READ}" -q "
-    SELECT count() FROM fileCluster('test_cluster_two_shards_localhost', '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.csv', 'CSV', 'x UInt64')
-    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'TSV'" > /dev/null
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
     (
@@ -176,15 +224,6 @@ ${CLICKHOUSE_CLIENT} -q "
       AND event_date >= today() - 1"
 
 echo "-- an initiator-only setting on the source SELECT (not the INSERT) is stripped from the forwarded query text"
-# `ParserInsertQuery` copies the source SELECT's SETTINGS onto the INSERT (so the optimized path still
-# triggers) but leaves the SELECT's own SETTINGS node in place, and `formatImpl` serializes it — so the
-# strip has to reach the SELECT too. (Asserted on the forwarded query text.)
-QID_SELECT="04492-select-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_SELECT}" -q "
-    INSERT INTO dist_dst
-    SELECT * FROM dist_src
-    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1, input_format = 'CSV', http_allow_table_as_file = 1"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
     (
@@ -208,14 +247,6 @@ ${CLICKHOUSE_CLIENT} -q "
       AND event_date >= today() - 1"
 
 echo "-- an initiator-only setting in a NESTED source subquery is stripped from the forwarded query text"
-# The strip must recurse through the rebuilt arm's subtree, not just its top-level SETTINGS, so a nested
-# source subquery (WHERE x IN (SELECT ... SETTINGS ...)) does not forward the name either.
-QID_NESTED="04492-nested-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_NESTED}" -q "
-    INSERT INTO dist_dst
-    SETTINGS parallel_distributed_insert_select = 2, prefer_localhost_replica = 0, log_queries = 1
-    SELECT * FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
     (
@@ -238,18 +269,6 @@ ${CLICKHOUSE_CLIENT} -q "
       AND event_date >= today() - 1"
 
 echo "-- the regular Distributed SELECT fan-out does not forward initiator-only settings (analyzer + nested)"
-# A top-level SETTINGS clause becomes QueryNode::settings_changes, which QueryNode::toAST materializes into
-# the AST SelectStreamFactory forwards to shards; a nested subquery carries its own SETTINGS too. Neither
-# must reach shards. (Asserted on the forwarded secondary SELECT text.)
-QID_DSEL="04492-dsel-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL}" -q "
-    SELECT count() FROM dist_src
-    SETTINGS prefer_localhost_replica = 0, log_queries = 1, http_allow_table_as_file = 1, input_format = 'CSV'" > /dev/null
-QID_DSEL_NESTED="04492-dseln-${CLICKHOUSE_DATABASE}-$$"
-${CLICKHOUSE_CLIENT} --query_id="${QID_DSEL_NESTED}" -q "
-    SELECT count() FROM dist_src WHERE x IN (SELECT number FROM numbers(10) SETTINGS http_allow_table_as_file = 1)
-    SETTINGS prefer_localhost_replica = 0, log_queries = 1" > /dev/null
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
     WITH initial AS
     (
