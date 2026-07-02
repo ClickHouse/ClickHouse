@@ -568,8 +568,8 @@ QueryPlan buildLogicalJoin(
 Planner buildPlannerForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     const CorrelatedSubquery & correlated_subquery,
-    const SelectQueryOptions & select_query_options
-)
+    const SelectQueryOptions & select_query_options,
+    const SharedHeader & outer_query_header)
 {
     auto subquery_options = select_query_options.subquery();
     auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
@@ -577,6 +577,7 @@ Planner buildPlannerForCorrelatedSubquery(
     /// Table expression data would be reused because it can't be initialized
     /// during plan construction for correlated subquery.
     global_planner_context->collectTableExpressionDataForCorrelatedColumns(correlated_subquery.query_tree, planner_context);
+    global_planner_context->setOuterQueryHeader(outer_query_header);
 
     Planner subquery_planner(
         correlated_subquery.query_tree,
@@ -654,7 +655,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
-    const SelectQueryOptions & select_query_options)
+    const SelectQueryOptions & select_query_options,
+    const SharedHeader & outer_header)
 {
     auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
@@ -664,7 +666,7 @@ void buildQueryPlanForCorrelatedSubquery(
     {
         case DB::CorrelatedSubqueryKind::SCALAR:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
@@ -703,7 +705,7 @@ void buildQueryPlanForCorrelatedSubquery(
         }
         case CorrelatedSubqueryKind::EXISTS:
         {
-            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options, outer_header);
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 

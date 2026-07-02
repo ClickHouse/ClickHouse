@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include <Core/Block_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
@@ -57,6 +58,7 @@ void buildQueryPlanForCorrelatedSubquery(
     const PlannerContextPtr & planner_context,
     QueryPlan & query_plan,
     const CorrelatedSubquery & correlated_subquery,
-    const SelectQueryOptions & select_query_options);
+    const SelectQueryOptions & select_query_options,
+    const SharedHeader & outer_header);
 
 }

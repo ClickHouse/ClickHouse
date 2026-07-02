@@ -918,13 +918,25 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
 
+    /// When `group_by_use_nulls` wraps GROUP BY key columns in Nullable after aggregation,
+    /// the QueryTree ColumnNode type is not updated — only the ActionsDAG is. Use the
+    /// actual post-aggregation type from the outer query's plan header if available.
+    auto column_type = node->getColumnType();
+    const auto & outer_header = planner_context->getGlobalPlannerContext()->getOuterQueryHeader();
+    if (outer_header && outer_header->has(column_node_name))
+    {
+        auto actual_type = outer_header->getByName(column_node_name).type;
+        if (!actual_type->equals(*column_type))
+            column_type = actual_type;
+    }
+
     /// Add PLACEHOLDER only to the outermost scope (will be decorrelated later).
     /// Inner scopes (e.g. lambda scopes) get INPUT so the lambda capture mechanism
     /// can properly capture the correlated column value from the outer scope.
-    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, node->getColumnType());
+    actions_stack[0].addPlaceholderColumnIfNecessary(column_node_name, column_type);
 
     for (size_t i = 1; i < actions_stack.size(); ++i)
-        actions_stack[i].addInputColumnIfNecessary(column_node_name, node->getColumnType());
+        actions_stack[i].addInputColumnIfNecessary(column_node_name, column_type);
 
     return {column_node_name, Levels(0)};
 }

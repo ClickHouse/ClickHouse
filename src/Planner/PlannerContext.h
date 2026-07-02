@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 
@@ -75,6 +76,9 @@ public:
     RawTableExpressionDataMap & getTableExpressionDataMap() noexcept { return shared_table_expression_data; }
     const RawTableExpressionDataMap & getTableExpressionDataMap() const noexcept { return shared_table_expression_data; }
 
+    void setOuterQueryHeader(SharedHeader header) { outer_query_header = std::move(header); }
+    const SharedHeader & getOuterQueryHeader() const { return outer_query_header; }
+
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
@@ -96,6 +100,10 @@ private:
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;
+
+    /// Outer query's plan header for correlated subqueries, used to get actual
+    /// post-aggregation column types (e.g. when `group_by_use_nulls` wraps keys in Nullable).
+    SharedHeader outer_query_header;
 };
 
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
