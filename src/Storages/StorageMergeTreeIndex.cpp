@@ -19,6 +19,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -64,6 +65,8 @@ protected:
     {
         if (part_index >= data_parts.size())
             return {};
+
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeIndexSource::generate");
 
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
@@ -289,7 +292,8 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
+    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {

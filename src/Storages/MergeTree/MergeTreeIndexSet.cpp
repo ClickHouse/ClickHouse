@@ -4,6 +4,7 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
@@ -49,7 +50,7 @@ MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const Block & index_sample_block_,
     size_t max_rows_,
     MutableColumns && mutable_columns_,
-    std::vector<Range> && set_hyperrectangle_)
+    Ranges && set_hyperrectangle_)
     : index_name(index_name_)
     , max_rows(max_rows_)
     , block(index_sample_block_.cloneWithColumns(std::move(mutable_columns_)))
@@ -584,7 +585,11 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
-            if (WhichDataType(removeNullable(atom_node_ptr->result_type)).isInteger())
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
@@ -618,7 +623,16 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::atomFromDAG(const ActionsDA
         node_to_check = node_to_check->children[0];
 
     if (node_to_check->column)
+    {
+        /// A function folded to a constant still keeps its argument subtree, which may
+        /// reference columns absent from this index's granule block. Re-add it as a leaf
+        /// constant so cloneSubDAG does not pull those foreign inputs into `actions`. Reuse the
+        /// node's existing constant column (a COW pointer) instead of rebuilding one; addColumn
+        /// normalizes its row count.
+        if (node_to_check->type == ActionsDAG::ActionType::FUNCTION)
+            return &result_dag.addColumn(node_to_check->column, node_to_check->result_type, node_to_check->result_name);
         return &node;
+    }
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode tree_node(node_to_check, tree_context);
@@ -810,10 +824,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexSet::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionSet>(max_rows, filter_dag, context, index);
 }
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     size_t max_rows = getFieldFromIndexArgumentAST(index.arguments->children[0]).safeGet<size_t>();
-    return std::make_shared<MergeTreeIndexSet>(index, max_rows);
+    return std::make_shared<MergeTreeIndexSet>(std::move(metadata_snapshot), index, max_rows);
 }
 
 void setIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)

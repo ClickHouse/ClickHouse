@@ -36,6 +36,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -760,9 +761,9 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
     if (info.isPatch())
         return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
-        return metadata_snapshot;
+        return StorageMetadataPtr(metadata_snapshot);
 
     return metadata_snapshot->projections.get(getProjectionName()).metadata;
 }
@@ -817,7 +818,7 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
@@ -867,7 +868,7 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
         auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
@@ -1138,6 +1139,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
 
+    /// The reader holds only the index; resolve the archive's current location here so a part
+    /// that has since been renamed or moved still reads from the right place.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
+    const auto disk = disk_storage->getDisk();
+    const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+
     for (const auto & filename : reader.getFileNames())
     {
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
@@ -1148,7 +1157,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
             continue;
 
         size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(filename, read_settings, file_size);
+        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
         try
@@ -1563,6 +1572,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     return result;
 }
 
+std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
+{
+    if (uuid == UUIDHelpers::Nil)
+        return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    return toString(uuid);
+}
+
 void IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
@@ -1966,7 +1982,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     NamesAndTypesList cols;
     cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
@@ -2660,7 +2676,8 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     /// for those requests like the other Keeper-touching paths in this class.
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk");
 
-    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr(storage.getContext(), false)->secondary_indices;
+    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
     /// For packed-archive substreams the per-virtual-file entry is intentionally absent from
@@ -2672,7 +2689,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 
     for (auto & index_description : secondary_indices_descriptions)
     {
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description, *storage.getSettings());
+        auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
         auto index_substreams = index_ptr->getSubstreams();
 
@@ -3068,7 +3085,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

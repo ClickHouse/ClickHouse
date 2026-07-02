@@ -34,7 +34,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
     const Block & index_sample_block_,
-    std::vector<Range> && hyperrectangle_)
+    Ranges && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , hyperrectangle(std::move(hyperrectangle_))
@@ -466,9 +466,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
-    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
-    return std::make_shared<MergeTreeIndexMinMax>(index);
+    return std::make_shared<MergeTreeIndexMinMax>(std::move(metadata_snapshot), index);
 }
 
 void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)

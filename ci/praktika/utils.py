@@ -304,7 +304,7 @@ class Shell:
 
         # Force kill if still running
         if process.poll() is None:
-            print(f"WARNING: Process still running after SIGTERM, sending SIGKILL")
+            print("WARNING: Process still running after SIGTERM, sending SIGKILL")
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -417,7 +417,7 @@ class Shell:
                     err in err_line for err_line in err_output for err in retry_errors
                 ):
                     if verbose:
-                        print(f"No retryable errors found, stopping retries")
+                        print("No retryable errors found, stopping retries")
                     break
 
                 if verbose:
@@ -439,7 +439,7 @@ class Shell:
                     else:
                         print(f"Retry {retry+1}/{retries}: exception {e}")
                         if retry == retries - 1:
-                            print(f"ERROR: Final attempt failed, no more retries left.")
+                            print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
                 if retry == retries - 1:
@@ -939,9 +939,9 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 print("ERROR: zstd is not installed. Cannot decompress artifact.")
                 return False
 
-            # Perform decompression
+            # Perform decompression (--no-progress suppresses per-MB stderr noise)
             res = Shell.check(
-                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
+                f"zstd --decompress --force --no-progress -o {quote(path_to)} {quote(path)}",
                 verbose=True,
                 strict=not no_strict,
             )

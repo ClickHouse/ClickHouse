@@ -100,10 +100,12 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -316,6 +318,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
     extern const MergeTreeSettingsUInt64 max_uncompressed_bytes_in_patches;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -371,6 +374,16 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int FAULT_INJECTED;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+}
+
+namespace FailPoints
+{
+    /// Throws once from the background data-parts refresh of a read-only table to emulate a
+    /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
+    /// reschedules itself after such an error instead of stopping permanently.
+    extern const char merge_tree_refresh_parts_throw_once[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -381,7 +394,7 @@ static String getPartNameFromAST(const ASTPtr & partition)
     return literal->value.safeGet<String>();
 }
 
-static void checkSuspiciousIndices(const ASTFunction * index_function)
+void checkSuspiciousIndices(const ASTFunction * index_function)
 {
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
@@ -1088,8 +1101,29 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Vector similarity index can only be used with MergeTree setting 'index_granularity_bytes' != 0");
 
+    /// TTL on a UNIQUE KEY table cannot be honored: TTL delete / recompression /
+    /// GROUP BY are enforced during merges, and merges are disabled on UNIQUE KEY
+    /// tables until merge-side bitmap reconciliation lands. Reject at CREATE so the
+    /// combination cannot exist (`ALTER MODIFY TTL` is rejected in
+    /// `checkAlterIsPossible`); ATTACH must still load existing tables. Mirrors the
+    /// projection reject below.
+    /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+    if (new_metadata.hasAnyTTL() && new_metadata.hasUniqueKey() && !attach)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "TTL is not supported on tables with UNIQUE KEY");
+
     if (!new_metadata.projections.empty())
     {
+        /// Projections on a UNIQUE KEY table would read through the projection
+        /// part, bypassing the delete-bitmap filter and exposing logically-
+        /// deleted rows. ALTER ADD PROJECTION is already rejected (see
+        /// `checkAlterIsPossible`); reject CREATE-with-projection too so the
+        /// combination cannot exist. CREATE only — ATTACH must still load.
+        /// TODO(unique-key): support projections on UNIQUE KEY tables.
+        if (new_metadata.hasUniqueKey() && !attach)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projections are not supported on tables with UNIQUE KEY");
+
         std::unordered_set<String> projections_names;
 
         for (const auto & projection : new_metadata.projections)
@@ -2693,6 +2727,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
+    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
+    /// reschedule that refreshStatistics performs in its own catch block.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 /// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
@@ -2703,6 +2741,11 @@ catch (...)
 void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 {
     std::lock_guard refresh_lock(refresh_parts_mutex);
+
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
+    });
 
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -4354,8 +4397,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
+    const StorageInMemoryMetadata & old_metadata = *storage_metadata_snapshot;
 
     const auto & settings = local_context->getSettingsRef();
     const auto & settings_from_storage = getSettings();
@@ -4412,6 +4456,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "MODIFY ORDER BY is not supported on tables with UNIQUE KEY. "
                     "The dense-index SSTs produced at write time depend on the sort order.");
+
+            /// TTL is enforced during merges, which are disabled on UNIQUE KEY tables
+            /// until merge-side reconciliation lands (mirrors the CREATE-time reject in
+            /// `checkProperties`). Covers table TTL (MODIFY_TTL) and per-column TTL added
+            /// via ADD/MODIFY COLUMN (`command.ttl`). REMOVE TTL is allowed — it only
+            /// clears an expression, and a column ALTER with no TTL clause leaves
+            /// `command.ttl` null.
+            /// TODO(unique-key): support TTL on UNIQUE KEY tables (lands with PR-14 merges).
+            if (command.type == AlterCommand::MODIFY_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY TTL is not supported on tables with UNIQUE KEY");
+            if ((command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::MODIFY_COLUMN)
+                && command.ttl)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Column TTL is not supported on tables with UNIQUE KEY");
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -4809,7 +4868,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                                     reset_setting);
             }
         }
-        else if (command.isRequireMutationStage(*getInMemoryMetadataPtr(local_context, false), local_context))
+        else if (command.isRequireMutationStage(*storage_metadata_snapshot, local_context))
         {
             /// This alter will override data on disk. Let's check that it doesn't
             /// modify immutable column.
@@ -5027,6 +5086,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
 
+            /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
+            /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
+            /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
+            /// materialize it.
+            if (command.type == MutationCommand::MATERIALIZE_TTL)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
+
             if (command.type == MutationCommand::MATERIALIZE_COLUMN && is_uk_column(command.column_name))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported: the column is part of the UNIQUE KEY, "
@@ -5040,11 +5107,32 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            /// These commands rebuild whole parts (the full read+rewrite mutation path) and
+            /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
+            /// DELETE lands. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same path via
+            /// MutateAllPartColumnsTask for compact or non-full parts (which only hardlinks
+            /// checksummed entries, not the sidecars). Reject the whole destructive-rewrite family.
+            if (command.type == MutationCommand::REWRITE_PARTS
+                || command.type == MutationCommand::APPLY_DELETED_MASK
+                || command.type == MutationCommand::APPLY_PATCHES
+                || command.type == MutationCommand::MATERIALIZE_INDEX
+                || command.type == MutationCommand::MATERIALIZE_STATISTICS
+                || command.type == MutationCommand::MATERIALIZE_PROJECTION)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
+                    command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
+                        : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
+                        : command.type == MutationCommand::APPLY_PATCHES ? "APPLY PATCHES"
+                        : command.type == MutationCommand::MATERIALIZE_INDEX ? "MATERIALIZE INDEX"
+                        : command.type == MutationCommand::MATERIALIZE_STATISTICS ? "MATERIALIZE STATISTICS"
+                        : "MATERIALIZE PROJECTION");
         }
     }
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
-    if (index_mode == AlterColumnSecondaryIndexMode::THROW && getInMemoryMetadataPtr(getContext(), false)->hasSecondaryIndices())
+    auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
+    if (index_mode == AlterColumnSecondaryIndexMode::THROW && secondary_indices_metadata->hasSecondaryIndices())
     {
         for (const auto & command : commands)
         {
@@ -5057,7 +5145,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    if (hasTextIndexMaterialization(commands, getInMemoryMetadataPtr(getContext(), false)))
+    const auto text_index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasTextIndexMaterialization(commands, text_index_metadata_snapshot))
     {
         auto data_parts = getDataPartsVectorForInternalUsage();
 
@@ -5182,7 +5271,8 @@ void MergeTreeData::changeSettings(
         /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-        StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(getContext(), false);
+        auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
         new_metadata.setSettingsChanges(new_settings);
 
         if (has_escape_index_filenames_changed)
@@ -5852,7 +5942,8 @@ void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part)
 void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & part_to_detach)
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
-    part_to_detach->makeCloneInDetached("unexpected", getInMemoryMetadataPtr(getContext(), false), /*disk_transaction*/ {});
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
     part_to_detach->is_unexpected_local_part = true;
@@ -5886,8 +5977,47 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         removePartContributionToUncompressedBytesInPatches(part);
     }
 
+    /// A PreActive part can be discarded here by the failed-quorum cleanup while an INSERT is still
+    /// committing it (it has a ZooKeeper node but is not Active locally yet). `waitForPreActivePartsInRange`
+    /// blocks on `preactive_parts_cv` until no such part remains in range, so we must wake it up.
+    const bool was_preactive = part->getState() == DataPartState::PreActive;
+
     modifyPartState(it_part, DataPartState::Deleting, lock);
+
+    /// Leaving PreActive can flip the `waitForPreActivePartsInRange` predicate (it only counts PreActive
+    /// parts), so any waiter must be woken to re-check. Guarantee the notification on every exit path
+    /// below: both `commitTransaction` and `renameToDetached` can throw, and skipping the wake-up would
+    /// leave a waiter sleeping forever on a lost notification even though the part is already out of
+    /// PreActive. On the `commitTransaction` failure path the part is restored to PreActive, so nothing
+    /// changed for waiters and no notification is owed.
+    SCOPE_EXIT({
+        if (was_preactive && part->getState() != DataPartState::PreActive)
+            preactive_parts_cv.notify_all();
+    });
+
+    /// A PreActive part discarded mid-insert still owns an uncommitted part storage transaction: on
+    /// object-storage disks its writes and renames are only buffered and are normally materialized by
+    /// `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves the working set
+    /// without that commit ever happening, so commit the part storage transaction now; otherwise the
+    /// detached part is never materialized and its blobs are orphaned. The commit is done before
+    /// `renameToDetached` (so the rename below executes directly instead of being buffered), and if it
+    /// throws, the part state is restored: the part stays PreActive, indexed and with its storage
+    /// transaction still active, so the recovering INSERT can commit or roll it back normally.
+    if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
+    {
+        try
+        {
+            asMutableDeletingPart(part)->getDataPartStorage().commitTransaction();
+        }
+        catch (...)
+        {
+            modifyPartState(it_part, DataPartState::PreActive, lock);
+            throw;
+        }
+    }
+
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
+
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 }
@@ -6487,7 +6617,8 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     ///
     /// Note, the result will be still correct, since it is guarded by the
     /// columns_and_secondary_indices_sizes_mutex.
-    if (hasColumnsWithDynamicSubcolumns(getInMemoryMetadataPtr(getContext(), false)->getSampleBlock()))
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (hasColumnsWithDynamicSubcolumns(storage_metadata_snapshot->getSampleBlock()))
     {
         DataParts data_parts(committed_parts_range.begin(), committed_parts_range.end());
         parts_lock.unlock();
@@ -6621,6 +6752,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     break;
                 }
                 case MetadataStorageType::StaticWeb:
+                case MetadataStorageType::WebIndex:
                 {
                     can_execute_alter_on_disk = false;
                     break;
@@ -6929,6 +7061,32 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
+    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
+    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
+    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
+    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
+    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    {
+        for (const PartitionCommand & command : commands)
+        {
+            switch (command.type)
+            {
+                case PartitionCommand::ATTACH_PARTITION:
+                case PartitionCommand::MOVE_PARTITION:
+                case PartitionCommand::DROP_PARTITION:
+                case PartitionCommand::DROP_DETACHED_PARTITION:
+                case PartitionCommand::FETCH_PARTITION:
+                case PartitionCommand::REPLACE_PARTITION:
+                    throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
+                default:
+                    break;
+            }
+        }
+    }
+
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
     /// must be applied to all parts on disk.
@@ -7190,6 +7348,15 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
+
+    /// TODO(unique-key): sidecar-aware backup/restore. Delete-bitmap sidecars
+    /// are not preserved across backup/restore, so restoring data parts would
+    /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
+    /// restore path too for backups produced by older builds.
+    if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
+            "sidecars are not preserved across backup/restore.");
 
     if (!restorer.isNonEmptyTableAllowed() && getTotalActiveSizeInBytes() && backup->hasFiles(data_path_in_backup))
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
@@ -8081,6 +8248,12 @@ void MergeTreeData::optimizeDryRun(
     bool cleanup,
     ContextPtr local_context)
 {
+    /// DRY RUN PARTS executes a real merge task, bypassing StorageMergeTree::optimize's guard.
+    if (metadata_snapshot->hasUniqueKey())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "OPTIMIZE is not supported for UNIQUE KEY tables: merges are currently disabled "
+                        "to preserve DELETE correctness. Parts will not be compacted.");
+
     if (part_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN requires at least one part name");
 
@@ -8591,9 +8764,20 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     if (best_ttl_entry)
         return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
 
-    return getContext()->chooseCompressionCodec(
-        part_size_compressed,
-        static_cast<double>(part_size_compressed) / static_cast<double>(getTotalActiveSizeInBytes()));
+    auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;
+    if (!codec_setting.empty())
+        return CompressionCodecFactory::instance().get(codec_setting);
+
+    /// On the first write into an empty table `getTotalActiveSizeInBytes()` is `0`, which would
+    /// turn `part_size / total` into `NaN` and make every `<compression>` case fail the
+    /// `part_size_ratio >= min_part_size_ratio` check inside `CompressionCodecSelector`.
+    /// Use a ratio of `0` in that case so the configuration with `min_part_size_ratio = 0` still applies.
+    auto total_active_size = getTotalActiveSizeInBytes();
+    double part_size_ratio = total_active_size > 0
+        ? static_cast<double>(part_size_compressed) / static_cast<double>(total_active_size)
+        : 0.0;
+
+    return getContext()->chooseCompressionCodec(part_size_compressed, part_size_ratio);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds) const
@@ -9375,8 +9559,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+    if (query_to_string(my_snapshot->getPrimaryKey().expression_list_ast)
+        != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
     {
         bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
@@ -9980,6 +10166,17 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
+    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
+    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
+    /// the automatic background moves. The setting is sampled here, immediately before move selection and
+    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
+    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
+    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+        return false;
+
     if (parts_mover.moves_blocker.isCancelled())
         return false;
 
@@ -10420,8 +10617,9 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     MutationsInterpreter interpreter(
-        shared_from_this(), getInMemoryMetadataPtr(query_context, false),
+        shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
 
     auto pipeline_builder = interpreter.execute();
@@ -10849,23 +11047,34 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     return data_settings;
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle MergeTreeData::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
 {
-    if (bypass_metadata_cache)
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    auto base = [&]() -> StorageMetadataHandle
+    {
+        if (bypass_metadata_cache)
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        if (!query_context || !query_context->hasQueryContext() || !query_context->getQueryMetadataCache())
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        if (!query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
+            return IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
 
-    auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
-    auto it = cache->find(this);
-    if (it != cache->end())
-        return it->second;
+        auto [cache, lock] = query_context->getQueryMetadataCache()->getStorageMetadataCache();
+        auto it = cache->find(this);
+        if (it != cache->end())
+            return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache)).first->second;
+        const StorageMetadataHandle metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+        return cache->emplace(this, metadata).first->second;
+    }();
+
+    /// Let's return copy of storage metadata to catch lifetime bugs where reference to underlying metadata field was stored without pointer to metadata.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    return std::make_shared<StorageInMemoryMetadata>(*base);
+#else
+    return base;
+#endif
 }
 
 StorageSnapshotPtr
@@ -10966,7 +11175,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn)
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn) const
 {
     auto settings = getSettings();
 
@@ -11036,9 +11245,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     if ((*getSettings())[MergeTreeSetting::fsync_part_directory])
         sync_guard = new_data_part_storage->getDirectorySyncGuard();
 
-    /// This effectively chooses minimal compression method:
-    ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
+    /// An empty part has zero size, so this chooses the minimal compression method:
+    /// either the table-level `default_compression_codec` setting, or the default lz4 / a
+    /// compression method with zero thresholds on absolute and relative part size.
+    /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
+    auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(
@@ -11046,7 +11257,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices(), *getSettings()),
+        index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings()),
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,
@@ -11082,11 +11293,11 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     if (subscription_manager.isEmpty())
         return false;
 
-    auto promoters = buildPromoters();
-
     LocalPartsByPartition local_parts;
     for (const auto & part : getDataPartsVectorForInternalUsage())
         local_parts[part->info.getPartitionId()].push_back(part->info);
+
+    auto promoters = buildPromoters();
 
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
