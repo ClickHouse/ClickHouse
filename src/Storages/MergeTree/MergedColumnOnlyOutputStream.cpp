@@ -12,7 +12,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
     const StorageMetadataPtr & metadata_snapshot_,
-    GatheredDataPtr gathered_data_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & indices_to_recalc,
     CompressionCodecPtr default_codec,
@@ -24,7 +23,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
           metadata_snapshot_,
-          std::move(gathered_data_),
           /*reset_columns=*/true)
 {
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
@@ -69,8 +67,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr, nullptr);
-    if (gathered_data->sample_written_blocks)
-        gathered_data->estimates_builder.add(block);
 }
 
 void MergedColumnOnlyOutputStream::finalizeIndexGranularity()

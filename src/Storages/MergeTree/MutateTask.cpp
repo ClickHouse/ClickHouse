@@ -1561,7 +1561,7 @@ struct MutationContext
     NameSet materialized_statistics;
     NameSet indices_to_drop_names;
 
-    IMergedBlockOutputStream::GatheredDataPtr all_gathered_data = std::make_shared<IMergedBlockOutputStream::GatheredData>();
+    IMergedBlockOutputStream::GatheredData all_gathered_data;
     /// The counts (per column and subcolumn) carried over from the source part for the columns whose
     /// data files a column-only mutation hardlinks; the rewritten columns' counts are sampled by the
     /// output stream into the disjoint keys of the same builder (see `MutateSomePartColumnsTask::finalize`).
@@ -1810,13 +1810,14 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             return false;
         }
 
+        ctx->all_gathered_data.estimates_builder.add(cur_block);
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
 
-        if (!ctx->all_gathered_data->statistics.empty())
-            ctx->all_gathered_data->statistics.buildIfExists(cur_block);
+        if (!ctx->all_gathered_data.statistics.empty())
+            ctx->all_gathered_data.statistics.buildIfExists(cur_block);
 
         /// TODO: move this calculation to DELETE FROM mutation
         if (ctx->count_lightweight_deleted_rows)
@@ -2367,12 +2368,12 @@ private:
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
-        ctx->all_gathered_data->statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
+        ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
-            ctx->all_gathered_data->statistics,
+            ctx->all_gathered_data.statistics,
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
@@ -2380,7 +2381,7 @@ private:
 
         /// The stream samples the estimates of all written columns into the shared builder, which is
         /// consumed by `finalizePart` when writing `serialization.json`.
-        ctx->all_gathered_data->estimates_builder = EstimatesBuilder(
+        ctx->all_gathered_data.estimates_builder = EstimatesBuilder(
             ctx->new_data_part->getColumns(),
             ctx->new_data_part->getSerializationInfos().getSettings(),
             {});
@@ -2389,7 +2390,6 @@ private:
             ctx->new_data_part,
             ctx->data->getSettings(),
             ctx->metadata_snapshot,
-            ctx->all_gathered_data,
             ctx->new_data_part->getColumns(),
             skip_indices,
             ctx->compression_codec,
@@ -2420,7 +2420,7 @@ private:
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
-        out_mut->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr);
+        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr);
         ctx->out.reset();
     }
 
@@ -2495,12 +2495,12 @@ public:
 private:
     void prepare()
     {
-        ctx->all_gathered_data->statistics = ctx->source_part->loadStatistics();
+        ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics();
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
-            ctx->all_gathered_data->statistics,
+            ctx->all_gathered_data.statistics,
             ctx->stats_to_recalc,
             ctx->for_file_renames,
             *ctx->source_part,
@@ -2737,7 +2737,7 @@ private:
             /// The builder must span only the columns actually written: the pipeline blocks may also
             /// carry hardlinked columns (read for projection/index recalculation), whose counts are
             /// carried over from the source part instead (see `finalize`).
-            ctx->all_gathered_data->estimates_builder = EstimatesBuilder(
+            ctx->all_gathered_data.estimates_builder = EstimatesBuilder(
                 columns_for_writer,
                 ctx->new_data_part->getSerializationInfos().getSettings(),
                 {});
@@ -2746,7 +2746,6 @@ private:
                 ctx->new_data_part,
                 ctx->data->getSettings(),
                 ctx->metadata_snapshot,
-                ctx->all_gathered_data,
                 columns_for_writer,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 ctx->compression_codec,
@@ -2786,7 +2785,7 @@ private:
         /// `serialization.json` (written by `finalizeMutatedPart`) keeps them across the mutation.
         /// Their keys are disjoint from the rewritten columns', which the output stream sampled:
         /// a column is either hardlinked or rewritten, never both.
-        ctx->all_gathered_data->estimates_builder.addEstimates(ctx->new_serialization_estimates);
+        ctx->all_gathered_data.estimates_builder.addEstimates(ctx->new_serialization_estimates);
 
         if (ctx->mutating_executor)
         {
@@ -2856,7 +2855,7 @@ private:
         MutationHelpers::finalizeMutatedPart(
             ctx->source_part,
             ctx->new_data_part,
-            *ctx->all_gathered_data,
+            ctx->all_gathered_data,
             ctx->execute_ttl_type,
             ctx->compression_codec,
             ctx->context,

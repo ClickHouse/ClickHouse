@@ -20,13 +20,6 @@ namespace DB
 
 using SubcolumnCallback = std::function<void(const String &, const ColumnPtr &)>;
 
-/// Calls back with the key of the column and, for a `Tuple`, of every element, recursively: only
-/// `Tuple` has per-element serialization infos (mirrors `DataTypeTuple::createSerializationInfo`),
-/// all other types are leaves whose elements (if any) are serialized as a whole. The keys are the
-/// same `subcolumnEstimateKey` paths the consumers of the estimates (`chooseKinds`,
-/// `copyColumnEstimate`) build when walking the serialization infos. `column` is null on the paths
-/// that do not sample data. Deliberately does not enumerate the serialization's subcolumns: that
-/// would materialize every virtual subcolumn of the sampled column (e.g. the sizes of a `String`).
 static void forEachSubcolumnWithEstimates(const String & column_name, const SubcolumnCallback & callback, const IDataType & type, const ColumnPtr & column)
 {
     callback(column_name, column);

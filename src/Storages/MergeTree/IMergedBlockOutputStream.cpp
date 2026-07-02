@@ -11,15 +11,12 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    GatheredDataPtr gathered_data_,
     bool reset_columns_)
     : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
     , data_part_storage(std::move(data_part_storage_))
-    , gathered_data(std::move(gathered_data_))
     , reset_columns(reset_columns_)
 {
-    chassert(gathered_data);
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(

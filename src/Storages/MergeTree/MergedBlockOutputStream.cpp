@@ -30,7 +30,6 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeMutableDataPartPtr & data_part,
     MergeTreeSettingsPtr data_settings,
     const StorageMetadataPtr & metadata_snapshot_,
-    GatheredDataPtr gathered_data_,
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
@@ -42,7 +41,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
-          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, std::move(gathered_data_), reset_columns_)
+          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
@@ -190,10 +189,11 @@ MergedBlockOutputStream::Finalizer::~Finalizer()
 
 void MergedBlockOutputStream::finalizePart(
     const MergeTreeMutableDataPartPtr & new_part,
+    const GatheredData & gathered_data,
     bool sync,
     const NamesAndTypesList * total_columns_list)
 {
-    finalizePartAsync(new_part, sync, total_columns_list).finish();
+    finalizePartAsync(new_part, gathered_data, sync, total_columns_list).finish();
 }
 
 void MergedBlockOutputStream::finalizeIndexGranularity()
@@ -203,11 +203,12 @@ void MergedBlockOutputStream::finalizeIndexGranularity()
 
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
+    const GatheredData & gathered_data,
     bool sync,
     const NamesAndTypesList * total_columns_list)
 {
     /// Finish write and get checksums.
-    MergeTreeData::DataPart::Checksums checksums = gathered_data->checksums;
+    MergeTreeData::DataPart::Checksums checksums = gathered_data.checksums;
     NameSet checksums_to_remove;
 
     /// Finish columns serialization.
@@ -239,7 +240,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     }
 
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
-    written_files = finalizePartOnDisk(new_part, checksums);
+    written_files = finalizePartOnDisk(new_part, checksums, gathered_data);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -283,7 +284,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeMutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & checksums)
+    MergeTreeData::DataPart::Checksums & checksums,
+    const GatheredData & gathered_data)
 {
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
@@ -362,14 +364,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
-    const auto & statistics = gathered_data->statistics;
+    const auto & statistics = gathered_data.statistics;
     auto statistics_estimates = statistics.getEstimates();
 
     /// All columns of the part were sampled into the shared builder — by this stream and, in a
     /// vertical merge, by the column-only streams of the gathered columns. The exact default counts
     /// from the explicit statistics take precedence over the sampled ones. Persist the result inline
     /// (num_rows/num_defaults per column and subcolumn).
-    auto serialization_counts = gathered_data->estimates_builder.getEstimates(statistics_estimates);
+    auto serialization_counts = gathered_data.estimates_builder.getEstimates(statistics_estimates);
 
     /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
     /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
@@ -417,7 +419,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     /// from writer because of expired TTL.
     auto columns_substreams = ColumnsSubstreams::merge(
         writer->getColumnsSubstreams(),
-        gathered_data->columns_substreams,
+        gathered_data.columns_substreams,
         new_part->getColumns().getNames());
 
     if (!columns_substreams.empty())
@@ -466,11 +468,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation, permuted_columns_cache);
-    /// Sample the estimates of the written data so the counts persisted in `serialization.json`
-    /// reflect what was actually written — unless an upstream builder already sampled it (inserts).
-    if (gathered_data->sample_written_blocks)
-        gathered_data->estimates_builder.add(block);
-
     rows_count += rows;
 }
 

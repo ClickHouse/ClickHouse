@@ -11182,15 +11182,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected for an empty part.
     auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
-    auto gathered_data = std::make_shared<IMergedBlockOutputStream::GatheredData>();
-    gathered_data->estimates_builder = EstimatesBuilder(columns, info_settings, {});
+    IMergedBlockOutputStream::GatheredData gathered_data;
+    gathered_data.estimates_builder = EstimatesBuilder(columns, info_settings, {});
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(
         new_data_part,
         getSettings(),
         metadata_snapshot,
-        gathered_data,
         columns,
         index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings()),
         compression_codec,
@@ -11207,7 +11206,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.write(block);
     /// Here is no projections as no data inside
     out.finalizeIndexGranularity();
-    out.finalizePart(new_data_part, sync_on_insert);
+    out.finalizePart(new_data_part, gathered_data, sync_on_insert);
 
     new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));

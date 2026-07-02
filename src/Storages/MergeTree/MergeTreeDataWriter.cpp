@@ -882,16 +882,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     SerializationInfoByName infos(columns, settings);
 
-    auto & gathered_data = *temp_part->gathered_data;
+    IMergedBlockOutputStream::GatheredData gathered_data;
 
     /// Sample the whole block upfront to choose the serialization kinds; the same counts are then
-    /// persisted in `serialization.json`, so the output stream must not sample the block again.
-    /// Columns whose default counts are provided by the explicit statistics built above are not
-    /// sampled: the builder takes their exact counts from the statistics and samples only the rest.
+    /// persisted in `serialization.json`. Columns whose default counts are provided by the explicit
+    /// statistics built above are not sampled: the builder takes their exact counts from the
+    /// statistics and samples only the rest.
     gathered_data.estimates_builder = EstimatesBuilder(columns, settings, statistics.getEstimates());
     gathered_data.estimates_builder.add(block);
     gathered_data.estimates_builder.chooseKinds(infos);
-    gathered_data.sample_written_blocks = false;
 
     for (const auto & [column_name, _] : columns)
     {
@@ -966,7 +965,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         new_data_part,
         data_settings,
         metadata_snapshot,
-        temp_part->gathered_data,
         columns,
         indices,
         compression_codec,
@@ -1027,6 +1025,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
+        gathered_data,
         (*data_settings)[MergeTreeSetting::fsync_after_insert]);
 
     temp_part->part = new_data_part;
@@ -1082,14 +1081,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     };
     SerializationInfoByName infos(columns, settings);
 
-    auto & gathered_data = *temp_part->gathered_data;
+    IMergedBlockOutputStream::GatheredData gathered_data;
 
     /// Sample the whole block upfront to choose the serialization kinds; the same counts are then
-    /// persisted in `serialization.json`, so the output stream must not sample the block again.
+    /// persisted in `serialization.json`.
     gathered_data.estimates_builder = EstimatesBuilder(columns, settings, {});
     gathered_data.estimates_builder.add(block);
     gathered_data.estimates_builder.chooseKinds(infos);
-    gathered_data.sample_written_blocks = false;
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
@@ -1172,7 +1170,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         new_data_part,
         data_settings,
         metadata_snapshot,
-        temp_part->gathered_data,
         columns,
         indices,
         compression_codec,
@@ -1187,7 +1184,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, gathered_data, false);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

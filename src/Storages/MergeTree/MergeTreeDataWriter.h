@@ -40,9 +40,6 @@ struct MergeTreeTemporaryPart
 
     MergeTreeData::MutableDataPartPtr part;
 
-    /// Shared with the streams below.
-    IMergedBlockOutputStream::GatheredDataPtr gathered_data = std::make_shared<IMergedBlockOutputStream::GatheredData>();
-
     struct Stream
     {
         std::unique_ptr<MergedBlockOutputStream> stream;
