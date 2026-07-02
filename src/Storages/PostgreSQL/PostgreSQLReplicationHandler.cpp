@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -100,7 +101,64 @@ namespace
     /// There can be several replication slots per publication, but one publication per table/database replication.
     /// Replication slot might be unique (contain uuid) to allow have multiple replicas for the same PostgreSQL table/database.
 
-    String getPublicationName(const String & postgres_database, const String & postgres_table)
+    /// A standalone MaterializedPostgreSQL table that targets PostgreSQL's default schema — either
+    /// implicitly (the `materialized_postgresql_schema` setting is left empty) or explicitly (set to
+    /// `public`) — must keep the legacy, schema-unaware publication and default replication-slot names,
+    /// derived from the database and the bare table name only. Only a genuinely non-default schema is
+    /// included in the generated name. Otherwise the generated default object names would change for
+    /// tables created before the identity became schema-aware, and their `ATTACH` would look for a
+    /// slot/publication that does not exist, run an initial sync, and reload a snapshot into the
+    /// already-existing nested table (duplicating data).
+    bool isDefaultPostgreSQLSchema(const String & postgres_schema)
+    {
+        return postgres_schema.empty() || postgres_schema == "public";
+    }
+
+    /// A collision-resistant, fixed-length identity derived from the full (database, schema, table) triple.
+    /// It is used in place of a plain `database_schema_table` concatenation in the schema-aware
+    /// single-table names below. A plain concatenation with `_` is not injective: `schema = a_b`,
+    /// `table = c` and `schema = a`, `table = b_c` both produce `..._a_b_c_...`. The replication slot name
+    /// is additionally folded by normalizeReplicationSlot() (lower-cased, `-` mapped to `_`), so even
+    /// names PostgreSQL keeps distinct — the schemas `"Foo"` and `"foo"`, or `"a-b"` and `"a_b"` — would
+    /// otherwise map to one slot. In either case two distinct source tables would share one publication or
+    /// one replication slot and their consumers would cross-talk, the very failure this schema-aware
+    /// identity is meant to remove. Hashing a length-prefixed (hence unambiguous) serialization of the
+    /// triple keeps the generated name injective in practice, of a fixed 16-character length independent
+    /// of the database, schema and table lengths, and inside the `[a-z0-9_]` slot character set.
+    String getSchemaAwareIdentityHash(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        SipHash hash;
+        hash.update(static_cast<UInt64>(postgres_database.size()));
+        hash.update(postgres_database.data(), postgres_database.size());
+        hash.update(static_cast<UInt64>(postgres_schema.size()));
+        hash.update(postgres_schema.data(), postgres_schema.size());
+        hash.update(static_cast<UInt64>(postgres_table.size()));
+        hash.update(postgres_table.data(), postgres_table.size());
+        return fmt::format("{:016x}", hash.get64());
+    }
+
+    /// The base name of the schema-aware single-table publication and default replication slot. It keeps a
+    /// short, human-readable prefix taken from the PostgreSQL database name purely for recognizability in
+    /// `pg_replication_slots`/`pg_publication`, followed by the fixed-length identity hash. Only the prefix
+    /// length is bounded here: the full (database, schema, table) identity is carried by the hash, so the
+    /// prefix is cosmetic and capping it cannot reintroduce a collision. Bounding the whole base name keeps
+    /// the generated publication and replication-slot names within PostgreSQL's identifier length limit
+    /// regardless of how long the database name is — otherwise a moderately long database name would push
+    /// the slot name over the limit and checkReplicationSlot() would reject the table before replication
+    /// starts. The longest fixed suffix appended to this base name is the replication slot's
+    /// `_ch_replication_slot` (20 bytes), to which a temporary slot adds `_tmp` (4 bytes); a 16-byte prefix
+    /// plus the `_` separator and 16-byte hash therefore yields at most 57 bytes, comfortably inside the
+    /// 63-byte limit. The publication's `_ch_publication` suffix is shorter, so it is covered too.
+    String getSchemaAwareIdentityName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        static constexpr size_t schema_aware_database_prefix_max_size = 16;
+        return fmt::format(
+            "{}_{}",
+            postgres_database.substr(0, schema_aware_database_prefix_max_size),
+            getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
+    }
+
+    String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
     {
         /// The publication name preserves the case of the database/table name. It is created via
         /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
@@ -109,9 +167,22 @@ namespace
         /// name when it hands it to the `pgoutput` plugin via the `publication_names` option (which
         /// PostgreSQL parses with `SplitIdentifierString`, folding unquoted identifiers to lower
         /// case), so both sides agree even for names with upper-case letters.
-        return fmt::format(
-            "{}_ch_publication",
-            postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
+        String name;
+        if (postgres_table.empty())
+            /// MaterializedPostgreSQL database engine: one publication per database.
+            name = postgres_database;
+        else if (isDefaultPostgreSQLSchema(postgres_schema))
+            name = fmt::format("{}_{}", postgres_database, postgres_table);
+        else
+            /// Single-table MaterializedPostgreSQL engine with a non-default schema: include the schema
+            /// so that two standalone tables replicating the same table name from different schemas of
+            /// the same PostgreSQL database do not collide on a single publication (which would make
+            /// their consumers cross-talk, because the publication carries only the bare relation name).
+            /// A plain `database_schema_table` concatenation is not injective, so a collision-resistant
+            /// hash of the full identity is used instead, with a bounded database prefix
+            /// (see getSchemaAwareIdentityName()).
+            name = getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table);
+        return fmt::format("{}_ch_publication", name);
     }
 
     void checkReplicationSlot(String name)
@@ -143,6 +214,7 @@ namespace
 
     String getReplicationSlotName(
         const String & postgres_database,
+        const String & postgres_schema,
         const String & postgres_table,
         const String & clickhouse_uuid,
         const MaterializedPostgreSQLSettings & replication_settings)
@@ -152,8 +224,18 @@ namespace
         {
             if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
+            else if (postgres_table.empty())
+                /// MaterializedPostgreSQL database engine.
+                slot_name = postgres_database;
+            else if (isDefaultPostgreSQLSchema(postgres_schema))
+                slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
             else
-                slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
+                /// Include the schema for the same reason as in getPublicationName(), via the same
+                /// collision-resistant and length-bounded identity: otherwise two standalone tables
+                /// replicating the same table name from different schemas of the same PostgreSQL database
+                /// would share the default replication slot (and normalizeReplicationSlot() would
+                /// additionally fold case- or hyphen-distinct schema names together).
+                slot_name = fmt::format("{}_ch_replication_slot", getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table));
 
             slot_name = normalizeReplicationSlot(slot_name);
         }
@@ -186,9 +268,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
     , user_managed_slot(!replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
     , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
-    , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
+    , replication_slot(getReplicationSlotName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings))
     , tmp_replication_slot(replication_slot + "_tmp")
-    , publication_name(getPublicationName(postgres_database_, postgres_table_))
+    , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_))
     , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
