@@ -36,6 +36,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Substrait/SubstraitSerializer.h>
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
@@ -54,6 +55,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_substrait;
+    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
@@ -932,6 +935,42 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             break;
         }
+        case ASTExplainQuery::Substrait:
+        {
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_substrait])
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "EXPLAIN SUBSTRAIT is experimental. Set 'allow_experimental_substrait = 1' to enable it.");
+
+            if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN SUBSTRAIT query");
+
+            QueryPlan plan;
+            ContextPtr context;
+
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                context = interpreter.getContext();
+                plan = std::move(interpreter).extractQueryPlan();
+            }
+            else
+            {
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                interpreter.buildQueryPlan(plan);
+                context = interpreter.getContext();
+            }
+
+            // Optimize the plan before converting to Substrait
+            auto optimization_settings = QueryPlanOptimizationSettings(context);
+            optimization_settings.is_explain = true;
+            optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+            plan.optimize(optimization_settings);
+
+            // Convert to Substrait JSON
+            SubstraitSerializer serializer;
+            String substrait_json = serializer.serializePlanToJSON(plan);
+            buf.write(substrait_json.data(), substrait_json.size());
+            single_line = true;
         case ASTExplainQuery::WhatIf:
         {
             const auto & query_ast = ast.getExplainedQuery();

@@ -475,6 +475,10 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" AND ARCH_AMD64)
 endif()
 add_object_library(clickhouse_user_defined_functions Functions/UserDefined)
 
+if (TARGET ch_contrib::substrait)
+    add_object_library(clickhouse_processors_substrait Processors/Substrait)
+endif()
+
 # Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
 # TUs where libcxx hardening needs to be disabled are specified here.
 set_property(SOURCE
@@ -498,6 +502,11 @@ target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
 if (TARGET ch_contrib::jemalloc)
     target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
+endif()
+
+if (TARGET ch_contrib::substrait)
+    target_link_libraries(dbms PRIVATE ch_contrib::substrait)
+    target_include_directories(dbms SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src)
 endif()
 
 target_include_directories (dbms PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
