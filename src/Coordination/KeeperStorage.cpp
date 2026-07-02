@@ -3815,9 +3815,13 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage::collectExpiredTTLPaths
     return result;
 }
 
-std::vector<std::pair<std::string, Int32>> KeeperStorage::collectContainerCandidates(size_t batch_size) const
+std::vector<std::pair<std::string, Int32>> KeeperStorage::collectContainerCandidates(size_t batch_size, UInt64 max_never_used_interval_ms) const
 {
     std::vector<std::pair<std::string, Int32>> result;
+
+    const int64_t now_ms = max_never_used_interval_ms > 0
+        ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
+        : 0;
 
     {
         /// `container_paths` and `container` are mutated by commit under exclusive
@@ -3830,10 +3834,17 @@ std::vector<std::pair<std::string, Int32>> KeeperStorage::collectContainerCandid
             if (node_it == container.end())
                 continue;
             const Node & node = node_it->value;
-            /// A container is eligible for deletion when it has had at least one child (cversion > 0)
-            /// but currently has no children — matching ZooKeeper's ContainerManager semantics.
-            if (node.stats.isContainer() && node.stats.cversion > 0 && node.numChildren() == 0)
+
+            if (!node.stats.isContainer() || node.numChildren() != 0)
+                continue;
+
+            /// Standard case: had children at some point but now empty.
+            if (node.stats.cversion > 0)
                 result.emplace_back(container_path, node.stats.version);
+            /// Never-used case: created empty and still empty after the configured grace period.
+            else if (max_never_used_interval_ms > 0 && now_ms - node.stats.ctime() > static_cast<int64_t>(max_never_used_interval_ms))
+                result.emplace_back(container_path, node.stats.version);
+
             if (result.size() >= batch_size)
                 break;
         }

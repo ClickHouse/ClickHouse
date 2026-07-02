@@ -216,3 +216,41 @@ def test_container_preserved_after_restart():
     finally:
         cluster.shutdown()
         stop_zk(node_zk)
+
+
+def test_gc_never_used_container():
+    """
+    A container node that was created empty and never received any children must
+    be GC'd after container_gc_max_never_used_interval_ms (2 s in the test config).
+    """
+    run_uuid = uuid.uuid4()
+    cluster = ClickHouseCluster(__file__, str(run_uuid))
+    cluster.add_instance(
+        "node",
+        main_configs=["configs/enable_keeper_never_used_gc.xml"],
+        stay_alive=True,
+        with_remote_database_disk=False,
+    )
+
+    node_zk = None
+    cluster.start()
+    try:
+        node_zk = get_fake_zk(cluster, "node")
+
+        # Create a container node but deliberately add no children.
+        node_zk.create("/never_used", b"", container=True)
+        wait_nodes_exist([node_zk], ["/never_used"])
+
+        # The container must be GC'd after the grace period.
+        wait_nodes_gone([node_zk], ["/never_used"])
+
+        # A container that did have children (and then lost them) must still be
+        # cleaned up via the standard path, unaffected by the never-used setting.
+        node_zk.create("/used_then_emptied", b"", container=True)
+        node_zk.create("/used_then_emptied/child", b"data")
+        wait_nodes_exist([node_zk], ["/used_then_emptied", "/used_then_emptied/child"])
+        node_zk.delete("/used_then_emptied/child")
+        wait_nodes_gone([node_zk], ["/used_then_emptied"])
+    finally:
+        cluster.shutdown()
+        stop_zk(node_zk)

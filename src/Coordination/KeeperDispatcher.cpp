@@ -200,7 +200,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
     {
         size_t container_batch_size = keeper_coordination_settings[CoordinationSetting::container_gc_batch_size];
-        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size] { containerGarbageCollectorThread(container_batch_size); });
+        UInt64 container_max_never_used_ms = keeper_coordination_settings[CoordinationSetting::container_gc_max_never_used_interval_ms].totalMilliseconds();
+        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
     }
 
     update_configuration_thread = reconfigEnabled()
@@ -346,7 +347,7 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
 
 }
 
-void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size)
+void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms)
 {
     DB::setThreadName(ThreadName::KEEPER_CONTAINER_GARBAGE_COLLECTOR);
 
@@ -362,7 +363,7 @@ void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size)
         {
             if (server->checkInit() && isLeader())
             {
-                auto paths = server->getContainerCandidatesForGarbageCollector(batch_size);
+                auto paths = server->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
                 for (auto & [path, version] : paths)
                 {
                     auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);

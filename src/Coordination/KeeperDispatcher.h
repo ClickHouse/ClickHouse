@@ -95,7 +95,7 @@ private:
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
     void garbageCollectorThread(size_t batch_size);
-    void containerGarbageCollectorThread(size_t batch_size);
+    void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 

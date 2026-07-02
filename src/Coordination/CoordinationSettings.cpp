@@ -29,6 +29,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, ttl_gc_batch_size, 256, "The size of the batch of nodes to be removed by the garbage collector", 0) \
     DECLARE(Milliseconds, container_gc_period_ms, 60000, "How often leader scans container nodes and enqueues TryRemove for childless ones", 0) \
     DECLARE(NonZeroUInt64, container_gc_batch_size, 256, "The size of the batch of container nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_max_never_used_interval_ms, 0, "How long an empty container node that never had any children is kept before GC deletes it. 0 = disabled (default, container is kept indefinitely).", 0) \
     DECLARE(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     DECLARE(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \

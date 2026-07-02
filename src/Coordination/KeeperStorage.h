@@ -692,8 +692,9 @@ public:
 
     std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
 
-    /// Collect container nodes that are eligible for deletion (had children but now have none).
-    std::vector<std::pair<std::string, Int32>> collectContainerCandidates(size_t batch_size) const;
+    /// Collect container nodes that are eligible for deletion (had children but now have none,
+    /// or were never populated and have been empty longer than max_never_used_interval_ms).
+    std::vector<std::pair<std::string, Int32>> collectContainerCandidates(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     /// Used by tests.
     bool containsTTLPath(const std::string & path) const;
