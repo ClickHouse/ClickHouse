@@ -725,6 +725,9 @@
         #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
         #query-backdrop .q-op  { color: var(--syntax-operator); }
         #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
+        /* The token where the server reported a syntax error is painted with a red
+           background. It is cleared as soon as the user returns focus to the editor. */
+        #query-backdrop .q-err-pos { background-color: color-mix(in srgb, var(--syntax-error) 40%, transparent); border-radius: 2px; }
 
         /* Off-screen mirror used to measure the pixel coordinates of the caret inside the
            textarea. Its typography and box model MUST match the textarea exactly (same as
@@ -3876,6 +3879,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 targetResultEl.renderError(reply);
             }
 
+            /// If the error message points at a position in the query (e.g. a syntax error),
+            /// highlight that position in the editor.
+            highlightQueryError(reply, query);
+
             return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
         } else if (content_type.startsWith('image/')) {
             is_image = true;
@@ -4383,6 +4390,8 @@ function beginFlight() {
     document.getElementById('run-all').style.display = 'none';
     /// Hide any open autocompletion when a query starts running.
     closeCompletions();
+    /// Drop any previous syntax-error highlight; a fresh error (if any) will be set on failure.
+    clearQueryError();
 }
 
 function endFlight() {
@@ -5086,6 +5095,67 @@ function tokenClass(tokens, i) {
 let currentTokens = [];
 let currentBoundaries = [];
 let currentBackdropText = '';
+
+/// Absolute character offset (into the textarea) of the position the server reported a syntax
+/// error at, or -1 when there is no error to highlight. The token containing this offset is
+/// painted with a red background in the backdrop until the user returns focus to the editor.
+let queryErrorPos = -1;
+
+/// Clear the syntax-error highlight and repaint. Called when the user returns to the editor
+/// (focus, typing, cursor movement) or when a new query run starts.
+function clearQueryError() {
+    if (queryErrorPos < 0) return;
+    queryErrorPos = -1;
+    renderQueryBackdrop();
+}
+
+/// Convert a 0-based UTF-8 byte offset into a JS (UTF-16) string index. ClickHouse reports the
+/// syntax-error position as a byte offset; for ASCII queries it coincides with the character
+/// index, but non-ASCII text needs this conversion so the highlight lands on the right token.
+function byteOffsetToCharIndex(str, byteOffset) {
+    if (byteOffset <= 0) return 0;
+    let bytes = 0;
+    let i = 0;
+    while (i < str.length) {
+        const cp = str.codePointAt(i);
+        const units = cp > 0xFFFF ? 2 : 1;
+        let b;
+        if (cp <= 0x7F) b = 1;
+        else if (cp <= 0x7FF) b = 2;
+        else if (cp <= 0xFFFF) b = 3;
+        else b = 4;
+        bytes += b;
+        i += units;
+        if (bytes >= byteOffset) return i;
+    }
+    return str.length;
+}
+
+/// Parse the server's error message for a "failed at position N" hint (see
+/// `writeCommonErrorMessage` in `src/Parsers/parseQuery.cpp`) and, if found, highlight that
+/// position in the editor. `query` is the exact text that was sent to the server; the reported
+/// position is a 1-based byte offset into it, which we map back to the full textarea contents.
+function highlightQueryError(errorText, query) {
+    if (typeof errorText !== 'string' || typeof query !== 'string') return;
+
+    const match = errorText.match(/failed at position (\d+)/);
+    if (!match) return;
+
+    /// 1-based byte offset -> 0-based.
+    const byteOffset = parseInt(match[1], 10) - 1;
+    if (!(byteOffset >= 0)) return;
+
+    const charIndex = byteOffsetToCharIndex(query, byteOffset);
+
+    /// Locate the sent query within the textarea. In multi-query mode the sent query is a
+    /// substring, so we offset the position by where it starts. `indexOf` is enough because the
+    /// text has not changed since the run started.
+    const base = query_area.value.indexOf(query);
+    const absolute = (base >= 0 ? base : 0) + charIndex;
+
+    queryErrorPos = Math.min(absolute, query_area.value.length);
+    renderQueryBackdrop();
+}
 /// Guard so that the backdrop re-renders triggered by the completion code (to update the
 /// reserved spacer) do not recurse back into `updateCompletions`.
 let inRenderBackdrop = false;
@@ -5157,9 +5227,11 @@ function renderQueryBackdrop() {
         }
 
         const cls = tokenClass(tokens, i);
+        const isErrPos = queryErrorPos >= 0 && queryErrorPos >= tokStart && queryErrorPos < tokEnd;
+        const classes = (cls ? cls : '') + (isErrPos ? (cls ? ' ' : '') + 'q-err-pos' : '');
         const escaped = escapeHTML(elem.token);
-        if (cls) {
-            html += '<span class="' + cls + '">' + escaped + '</span>';
+        if (classes) {
+            html += '<span class="' + classes + '">' + escaped + '</span>';
         } else {
             html += escaped;
         }
@@ -5178,6 +5250,12 @@ function renderQueryBackdrop() {
     /// is shown with the error style.
     if (offset < text.length) {
         html += '<span class="q-err">' + escapeHTML(text.substring(offset)) + '</span>';
+    }
+
+    /// An error reported at the very end of the query (e.g. "failed at position N (end of
+    /// query)") has no token to attach to, so we append a red marker at the end.
+    if (queryErrorPos >= text.length) {
+        html += '<span class="q-err-pos"> </span>';
     }
 
     /// Trailing newline fix: browsers collapse a trailing \n in a div.
@@ -5209,6 +5287,13 @@ query_area.addEventListener('focus', renderQueryBackdrop);
 query_area.addEventListener('blur', renderQueryBackdrop);
 /// Hide autocompletion when the textarea loses focus.
 query_area.addEventListener('blur', closeCompletions);
+
+/// Clear the syntax-error highlight as soon as the user returns to the editor: refocusing it,
+/// typing, moving the cursor with the keyboard, or clicking inside it.
+query_area.addEventListener('focus', clearQueryError);
+query_area.addEventListener('keydown', clearQueryError);
+query_area.addEventListener('pointerdown', clearQueryError);
+query_area.addEventListener('input', clearQueryError);
 
 /// Keep backdrop scroll in sync with textarea.
 query_area.addEventListener('scroll', () => {
