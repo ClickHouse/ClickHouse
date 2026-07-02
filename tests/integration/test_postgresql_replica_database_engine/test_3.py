@@ -1261,6 +1261,54 @@ def test_backup_table_partitions(started_cluster):
     pg_manager.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
 
+def test_backup_database_fails_closed_on_unsynchronized_table(started_cluster):
+    # Regression for an AI-review finding: BACKUP DATABASE of a MaterializedPostgreSQL database used to
+    # succeed while silently omitting a table whose nested ReplacingMergeTree was never created. The
+    # database backup path enumerates tables through getTablesIterator (in the nested context), which only
+    # sees the already-created nested tables, so the fail-closed guard in
+    # StorageMaterializedPostgreSQL::backupData (which the database path bypasses, backing up the nested
+    # tables directly) never ran for such a table. DatabaseMaterializedPostgreSQL::getTablesForBackup now
+    # walks the configured tables and fails the whole backup when any of them still lacks its nested table.
+    #
+    # A PostgreSQL table with no primary key and no replica identity index deterministically fails to create
+    # its nested table (createNestedIfNeeded throws "has no primary key and no replica identity index"; in the
+    # database engine that failure is logged and swallowed, so its wrapper stays with no nested table), while a
+    # normal table listed alongside it synchronizes fine.
+    good = "backup_fail_closed_good"
+    bad = "backup_fail_closed_bad"
+    pg_manager.execute(f"DROP TABLE IF EXISTS {good}")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {bad}")
+    pg_manager.execute(f"CREATE TABLE {good} (key integer PRIMARY KEY, value integer)")
+    # No primary key and no replica identity index -> its nested table is never created.
+    pg_manager.execute(f"CREATE TABLE {bad} (a integer, b integer)")
+    instance.query(
+        f"INSERT INTO postgres_database.{good} SELECT number, number FROM numbers(10)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{good},{bad}'"],
+    )
+    # The good table synchronizes; the bad one never gets a nested table.
+    check_tables_are_synchronized(instance, good)
+    assert "0" == instance.query(
+        f"SELECT count() FROM system.tables WHERE database = 'test_database' AND name = '{bad}'"
+    ).strip(), "the table with no primary key must have no nested table"
+
+    backup_name = "Disk('backups', 'mpg_fail_closed_backup')"
+    error = instance.query_and_get_error(
+        f"BACKUP DATABASE test_database TO {backup_name}"
+    )
+    # Fail closed: the whole backup must be refused rather than silently omitting the unsynchronized table.
+    assert "nested ReplacingMergeTree table does not exist" in error, error
+    assert bad in error, error
+
+    pg_manager.drop_materialized_db()
+    pg_manager.execute(f"DROP TABLE IF EXISTS {good}")
+    pg_manager.execute(f"DROP TABLE IF EXISTS {bad}")
+
+
 def test_table_schema_changed_while_server_down(started_cluster):
     # Regression test for https://github.com/ClickHouse/ClickHouse/issues/66273:
     # when the structure of a replicated PostgreSQL table changes while it is not observed
