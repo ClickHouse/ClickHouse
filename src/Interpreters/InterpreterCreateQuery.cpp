@@ -18,6 +18,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -27,6 +28,9 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
+
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -1694,17 +1698,35 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
-        fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
+        /// `ATTACH TABLE ... FROM '/path'` resolves `data_path` through `fs::exists`
+        /// and copies the attached data via local-filesystem APIs in the storage
+        /// engine that opens it. With `user_files_policy` configured on a non-local
+        /// disk (e.g. `s3_plain`), those local APIs cannot reach the disk root.
+        /// Reject up front instead of silently producing wrong results.
+        if (auto user_files_volume = getContext()->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "ATTACH TABLE ... FROM is not supported "
+                                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    disk->getName());
+            }
+        }
+
+        const auto user_files_path = getContext()->getUserFilesPath();
         fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
 
         if (!getContext()->isDDLOrOnClusterInternal())
         {
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
-                data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+                data_path = (fs::path(user_files_path).lexically_normal() / data_path).lexically_normal();
+
+            if (!pathStartsWith(data_path.string(), user_files_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside user files path to attach it", String(data_path));
 
             /// Data path must be relative to root_path
             create.attach_from_path = fs::relative(data_path, root_path) / "";
@@ -1712,9 +1734,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!pathStartsWith(data_path.string(), user_files_path))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
-                                "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
+                                "Data directory {} must be inside user files path to attach it", String(data_path));
         }
     }
     else if (create.attach && !create.attach_short_syntax && !getContext()->isDDLOrOnClusterInternal())

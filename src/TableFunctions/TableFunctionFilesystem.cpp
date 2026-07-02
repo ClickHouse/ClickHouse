@@ -6,6 +6,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageFilesystem.h>
@@ -23,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 void registerTableFunctionFilesystem(TableFunctionFactory & factory)
@@ -152,6 +155,25 @@ ColumnsDescription TableFunctionFilesystem::getActualTableStructure(ContextPtr /
 StoragePtr TableFunctionFilesystem::executeImpl(const ASTPtr &, ContextPtr context, const std::string & table_name, ColumnsDescription, bool is_insert_query) const
 {
     bool local_mode = context->getApplicationType() == Context::ApplicationType::LOCAL;
+
+    /// `StorageFilesystem` performs all access via local filesystem APIs (`fs::directory_iterator`,
+    /// `fileOrSymlinkPathStartsWith`). With `user_files_policy` configured on a non-local disk
+    /// such as `s3_plain`, the disk root is not usable through local APIs. Reject up front rather
+    /// than failing later with an opaque I/O error.
+    if (!local_mode)
+    {
+        if (auto user_files_volume = context->getUserFilesVolume())
+        {
+            for (const auto & disk : user_files_volume->getDisks())
+            {
+                if (!isPlainLocalDisk(*disk))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "`filesystem` table function is not supported with non-local "
+                                    "`user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                    disk->getName());
+            }
+        }
+    }
 
     /// Keep `user_files_path` in the same lexical namespace as user input: `fileOrSymlinkPathStartsWith`
     /// compares lexically-normalized absolute paths, so canonicalizing the prefix would reject otherwise

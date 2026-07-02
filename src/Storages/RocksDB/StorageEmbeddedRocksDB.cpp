@@ -43,6 +43,8 @@
 #include <Common/logger_useful.h>
 
 #include <Disks/DiskLocal.h>
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <IO/SharedThreadPools.h>
 #include <base/sort.h>
 
@@ -256,13 +258,38 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     else
     {
         bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-        fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
-        if (fs::path(rocksdb_dir).is_relative())
-            rocksdb_dir = user_files_path / rocksdb_dir;
-        rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
 
-        if (!is_local && !fileOrSymlinkPathStartsWith(fs::path(rocksdb_dir), user_files_path))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
+        /// `rocksdb::DB::Open` and `fs::create_directories` require a plain local
+        /// filesystem path. With `user_files_policy` configured on a disk that is not
+        /// plain local - a remote disk (e.g. `s3_plain`), or a local `DiskEncrypted` /
+        /// cached disk - `user_files_path` resolves to a disk root that is not usable
+        /// via local APIs. Testing only `isRemote` would let a local `DiskEncrypted`
+        /// through and operate directly on its ciphertext backing files instead of
+        /// going through `IDisk`, so reject any non-plain-local disk up front instead
+        /// of failing later with an opaque I/O error.
+        if (!is_local)
+        {
+            if (auto user_files_volume = context_->getUserFilesVolume())
+            {
+                for (const auto & disk : user_files_volume->getDisks())
+                {
+                    if (!isPlainLocalDisk(*disk))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                        "EmbeddedRocksDB engine is not supported "
+                                        "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                                        disk->getName());
+                }
+            }
+        }
+
+        const String user_files_path = is_local ? "" : getContext()->getUserFilesPath();
+        if (fs::path(rocksdb_dir).is_relative())
+            rocksdb_dir = fs::absolute(fs::path(user_files_path) / rocksdb_dir).lexically_normal().string();
+        else
+            rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
+
+        if (!is_local && !fileOrSymlinkPathStartsWith(rocksdb_dir, user_files_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path");
     }
 
     if (mode < LoadingStrictnessLevel::ATTACH)

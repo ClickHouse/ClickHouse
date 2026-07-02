@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Disks/IDisk.h>
+#include <Disks/IVolume.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Archives/IArchiveReader.h>
@@ -28,6 +30,21 @@ class PullingPipelineExecutor;
 
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
+
+/// Splits an absolute user-files path into (disk, disk-relative-path) by matching the
+/// configured disk path prefix with the longest matching root. Returns {nullptr, ""}
+/// if no disk matches.
+std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks);
+
+/// Returns true if the given absolute user-files path resolves to an existing file
+/// or directory on one of the disks of the user-files volume.
+bool userFilesPathExists(const String & absolute_path, const Disks & disks);
+
+/// Returns whether the disk-relative path stays inside the disk root after symlink
+/// resolution. For object-storage disks (no user-visible symlinks) this trivially
+/// returns true. Use as a symlink-aware access boundary check before reading or
+/// writing through `IDisk` when the absolute path was supplied by the user.
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path);
 
 class StorageFile final : public IStorage
 {
@@ -64,6 +81,7 @@ public:
         String path_for_partitioned_write;
         std::optional<String> format_from_filenames; /// Set if we managed to figure out which file format is used from the names of the file(s).
         std::optional<ArchiveInfo> archive_info; /// Set if the archive syntax is used.
+        VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
         static FileSource parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax = {});
     };
@@ -183,6 +201,7 @@ private:
 
     std::string base_path;
     std::vector<std::string> paths;
+    VolumePtr user_files_volume; /// When set, `paths` holds absolute paths of the form `<disk_path>/<relative>` and I/O goes through the volume's disks.
 
     std::optional<ArchiveInfo> archive_info;
 

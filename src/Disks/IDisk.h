@@ -675,6 +675,23 @@ inline String directoryPath(const String & path)
     return fs::path(path).parent_path() / "";
 }
 
+/// A "plain local" disk is a local filesystem disk (`DiskLocal`) with no encryption or caching
+/// layer, so the bytes at `disk.getPath()` are exactly the logical file contents and can be
+/// accessed safely through `std::filesystem` / `ReadBufferFromFile`. Remote disks, `DiskEncrypted`
+/// (ciphertext at the backing path), and cached disks are NOT plain local.
+///
+/// Consumers that access `user_files` through local POSIX APIs instead of the `IDisk` interface
+/// must fail closed on any disk that is not plain local: testing only `isRemote` is a fail-open bug,
+/// because a local `DiskEncrypted` is not remote yet `getPath()` points at the encrypted backing
+/// directory, so such callers would read or write ciphertext / backing files instead of the
+/// logical disk contents.
+inline bool isPlainLocalDisk(const IDisk & disk)
+{
+    if (disk.isRemote())
+        return false;
+    const auto description = disk.getDataSourceDescription();
+    return description.type == DataSourceType::Local && !description.is_encrypted && !description.is_cached;
+}
 
 }
 

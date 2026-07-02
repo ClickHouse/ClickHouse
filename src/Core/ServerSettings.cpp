@@ -1483,6 +1483,38 @@ The directory with user files. Used in the table function [file()](/sql-referenc
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 )", 0) \
+    DECLARE(String, user_files_policy, "", R"(
+Storage policy for user files directory. When set, user files reside on the disk configured in the specified policy.
+The policy must have exactly one volume containing exactly one disk. If set, this takes precedence over `user_files_path`.
+
+**Example**
+
+```xml
+<clickhouse>
+<storage_configuration>
+    <disks>
+        <user_files_s3>
+            <type>s3_plain</type>
+            <endpoint>https://example.s3.amazonaws.com/user_files/</endpoint>
+            <access_key_id>...</access_key_id>
+            <secret_access_key>...</secret_access_key>
+        </user_files_s3>
+    </disks>
+    <policies>
+        <user_files_remote>
+            <volumes>
+                <main>
+                    <disk>user_files_s3</disk>
+                </main>
+            </volumes>
+        </user_files_remote>
+    </policies>
+</storage_configuration>
+
+<user_files_policy>user_files_remote</user_files_policy>
+</clickhouse>
+```
+)", 0) \
     DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
 The directory with dictionaries lib.
 

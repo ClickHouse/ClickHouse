@@ -36,6 +36,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/getIOUringReader.h>
+#include <Disks/IVolume.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -328,15 +329,365 @@ std::vector<std::string> listFilesWithRegexpMatching(
     return result;
 }
 
+/// Disk-based version of listFilesWithRegexpMatchingImpl.
+/// Paths are disk-relative (no leading slash).
+void listFilesWithRegexpMatchingOnDisk(
+    const DiskPtr & disk,
+    const std::string & dir_path,
+    const std::string & for_match,
+    size_t & total_bytes_to_read,
+    std::vector<std::string> & result,
+    std::unordered_set<std::string> & matched_paths,
+    bool recursive,
+    size_t depth)
+{
+    /// Mirror the bound enforced by the local-filesystem walker
+    /// `listFilesWithRegexpMatchingImpl`: a deeply nested directory tree under a
+    /// `user_files_policy` disk must surface `TOO_DEEP_RECURSION` rather than
+    /// exhaust the stack while resolving a `**` glob.
+    if (depth > MAX_LIST_FILES_RECURSION_DEPTH)
+        throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+            "Maximum recursion depth ({}) exceeded while listing files for pattern '{}'.",
+            MAX_LIST_FILES_RECURSION_DEPTH, for_match);
+
+    /// On systems with small stacks (e.g., Musl) the depth cap above is not enough on its own,
+    /// because each recursion frame can be large. Probe the remaining stack periodically.
+    if (depth % 16 == 0)
+        checkStackSize();
+
+    /// Appends a matched disk-relative path to the result and counts its bytes, deduplicating by
+    /// its normalized form. Mirrors `add_matched_path` in `listFilesWithRegexpMatchingImpl`:
+    /// adjacent globstars (e.g. `**/**/*.tsv`) can reach the same entry through both the
+    /// zero-level branch and the recursive descent, so without this guard the query would return
+    /// duplicate rows and double-count `total_bytes_to_read`.
+    auto add_matched_path = [&](const std::string & path)
+    {
+        const std::string key = fs::path(path).lexically_normal().string();
+        if (!matched_paths.emplace(key).second)
+            return;
+        try
+        {
+            total_bytes_to_read += disk->getFileSize(path);
+            result.push_back(path);
+        }
+        catch (const Exception & e)
+        {
+            /// The entry can disappear between the existence check and `getFileSize` under
+            /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+            matched_paths.erase(key);
+        }
+    };
+
+    const size_t first_glob_pos = for_match.find_first_of("*?{");
+
+    if (first_glob_pos == std::string::npos)
+    {
+        String full_path = dir_path + for_match;
+        /// Reject paths that resolve outside the disk root via a symlink
+        /// (e.g. `<disk_root>/link -> /etc`) before any disk-side metadata
+        /// access. This branch is reached only from a recursive call where
+        /// `dir_path` was already verified to be inside the root and
+        /// `for_match` is the user-supplied glob remainder (the non-glob
+        /// case in `getPathsListOnDisk` does not call into here), so a
+        /// failure here means the user-supplied path crosses the boundary
+        /// and must surface as `DATABASE_ACCESS_DENIED` rather than an
+        /// empty result.
+        if (!isDiskRelativePathInsideRoot(disk, full_path))
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+                full_path, disk->getPath());
+        /// This exact-match branch is reached for suffixes without globs, including the
+        /// zero-level `**/` case (e.g. `dir/**/data.csv` matching `dir/data.csv`).
+        if (disk->existsFile(full_path))
+            add_matched_path(full_path);
+        return;
+    }
+
+    const size_t end_of_path_without_globs = for_match.substr(0, first_glob_pos).rfind('/');
+
+    /// When there is no directory separator before the glob (e.g. "glob_test_*.csv"),
+    /// the entire for_match is the glob at the top level. We prepend '/' to match
+    /// the format expected by the regex matching below (file_name = "/" + entry_name).
+    const std::string suffix_with_globs = end_of_path_without_globs == std::string::npos
+        ? "/" + for_match
+        : for_match.substr(end_of_path_without_globs);
+
+    const size_t next_slash_after_glob_pos = suffix_with_globs.find('/', 1);
+    const std::string current_glob = suffix_with_globs.substr(0, next_slash_after_glob_pos);
+
+    auto regexp = makeRegexpPatternFromGlobs(current_glob);
+    re2::RE2 matcher(regexp);
+    if (!matcher.ok())
+        throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
+            "Cannot compile regex from glob ({}): {}", for_match, matcher.error());
+
+    bool skip_regex = current_glob == "/*";
+    if (!recursive)
+        recursive = current_glob == "/**";
+
+    const std::string prefix_without_globs = end_of_path_without_globs == std::string::npos
+        ? dir_path
+        : dir_path + for_match.substr(0, end_of_path_without_globs + 1);
+
+    /// Enforce the disk-root boundary on the literal prefix before any
+    /// `existsDirectory` / `iterateDirectory` / `getFileSize` call: without this,
+    /// `file('escape_link/*', ...)` on an in-root symlink `escape_link -> /etc`
+    /// would iterate `/etc` and read metadata for `/etc/*` before the post-filter
+    /// at the call site drops the matches. The literal prefix comes from the
+    /// user-supplied glob (the iteration-discovered portion is checked entry by
+    /// entry inside the loop below), so an out-of-root prefix is surfaced as
+    /// `DATABASE_ACCESS_DENIED` rather than a silently empty result.
+    if (!isDiskRelativePathInsideRoot(disk, prefix_without_globs))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+            prefix_without_globs, disk->getPath());
+
+    if (!disk->existsDirectory(prefix_without_globs))
+        return;
+
+    const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
+
+    /// `**/` matches zero or more directory components, so it must also match the current
+    /// directory (zero levels): apply the remaining suffix to `prefix_without_globs` itself, in
+    /// addition to the recursive descent into subdirectories performed by the loop below. This
+    /// mirrors the zero-level branch in `listFilesWithRegexpMatchingImpl`; without it a
+    /// policy-backed disk returns different rows from the local `user_files_path` walker for
+    /// ordinary recursive globs (`file('dir/**/data.csv', ...)` would skip `dir/data.csv`).
+    /// The descent below covers one or more directory levels, so this call must not recurse
+    /// (`recursive` is `false`) to avoid producing the same results twice.
+    if (current_glob == "/**" && looking_for_directory)
+    {
+        /// The post-`**` suffix always begins with '/'; the recursion joins it as
+        /// `dir_path + for_match`. `prefix_without_globs` ends with '/' (or is empty at the disk
+        /// root), so pass its trailing-slash-stripped form as `dir_path` to avoid a `//` key that
+        /// object-storage disks treat as distinct. At the disk root (`prefix_without_globs == ""`)
+        /// there is no trailing slash to strip, so drop the suffix's leading '/' instead to keep
+        /// the child path relative.
+        const std::string zero_level_suffix = suffix_with_globs.substr(next_slash_after_glob_pos);
+        if (prefix_without_globs.empty())
+            listFilesWithRegexpMatchingOnDisk(disk, "", zero_level_suffix.substr(1),
+                total_bytes_to_read, result, matched_paths, false, depth + 1);
+        else
+            listFilesWithRegexpMatchingOnDisk(disk, prefix_without_globs.substr(0, prefix_without_globs.size() - 1), zero_level_suffix,
+                total_bytes_to_read, result, matched_paths, false, depth + 1);
+    }
+
+    for (auto it = disk->iterateDirectory(prefix_without_globs); it->isValid(); it->next())
+    {
+        const String entry_name = it->name();
+        const String full_entry_path = prefix_without_globs + entry_name;
+        const String file_name = "/" + entry_name;
+
+        /// An iterated entry can itself be an in-root symlink pointing outside
+        /// the disk root. Skip such entries before any metadata access so the
+        /// regex match / `getFileSize` / recursion below never touches a path
+        /// that resolves outside the configured user files disk.
+        if (!isDiskRelativePathInsideRoot(disk, full_entry_path))
+            continue;
+
+        bool is_dir = disk->existsDirectory(full_entry_path);
+
+        if (!is_dir && !looking_for_directory)
+        {
+            if (skip_regex || re2::RE2::FullMatch(file_name, matcher))
+                add_matched_path(full_entry_path);
+        }
+        else if (is_dir)
+        {
+            /// Recurse into the matched directory. The remaining glob suffix
+            /// (`suffix_with_globs.substr(...)` and `current_glob`) always begins
+            /// with '/', so the parent directory is passed WITHOUT a trailing
+            /// separator. Appending one would join as `dirA/` + `/data.csv` =
+            /// `dirA//data.csv`: harmless on POSIX local disks (which collapse the
+            /// `//`), but object-storage disks treat that as a key distinct from
+            /// `dirA/data.csv` and would silently miss the matching object.
+            if (recursive)
+            {
+                /// When the current segment is the globstar `**` followed by a suffix (e.g.
+                /// `**/data.csv`), descend into subdirectories keeping the whole `**/...` pattern,
+                /// so the globstar keeps matching at every deeper level. The zero-level branch
+                /// above applies the post-`**` suffix at the current level, so the combination
+                /// matches zero, one, or more directory components. Without this, a literal suffix
+                /// (e.g. `data.csv`) would short-circuit at the no-glob exact-match branch after a
+                /// single level, and only a glob suffix (e.g. `*.csv`) would keep descending. For a
+                /// trailing `**` (no suffix), keep re-applying `current_glob` (`/**`) to list all
+                /// files recursively. Mirrors the `descent_pattern` in `listFilesWithRegexpMatchingImpl`.
+                const std::string descent_pattern = (current_glob == "/**" && looking_for_directory)
+                    ? suffix_with_globs
+                    : (looking_for_directory ? suffix_with_globs.substr(next_slash_after_glob_pos) : current_glob);
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
+                    descent_pattern,
+                    total_bytes_to_read, result, matched_paths, recursive, depth + 1);
+            }
+            else if (looking_for_directory && re2::RE2::FullMatch(file_name, matcher))
+            {
+                listFilesWithRegexpMatchingOnDisk(disk, full_entry_path,
+                    suffix_with_globs.substr(next_slash_after_glob_pos),
+                    total_bytes_to_read, result, matched_paths, false, depth + 1);
+            }
+        }
+    }
+}
+
+/// Returns disk path with a trailing slash. `disk->getPath()` is not required to
+/// end with a slash, so normalize it so that `prefix + relative` produces a valid
+/// absolute path and `absolute.starts_with(prefix)` tests are unambiguous.
+String getDiskPathWithSlash(const DiskPtr & disk)
+{
+    String p = disk->getPath();
+    if (p.empty() || p.back() != '/')
+        p += '/';
+    return p;
+}
+
+/// Normalizes a disk-relative path and rejects paths that escape the disk root
+/// via '..' segments. The input must not be absolute.
+String normalizeDiskRelativePath(const String & input)
+{
+    if (!input.empty() && input[0] == '/')
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` must be relative to user files disk", input);
+
+    String result = fs::path(input).lexically_normal().generic_string();
+    if (result == ".")
+        return "";
+
+    if (result == ".." || result.starts_with("../"))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` escapes user files directory", input);
+
+    /// `lexically_normal` preserves a trailing separator (e.g. `dir/` -> `dir/`).
+    /// Strip it so disk-relative paths are always in canonical no-trailing-slash form.
+    /// Otherwise a directory expansion joins `dir/` + `/` + name into `dir//name`, and
+    /// object-storage disks (e.g. `s3_plain`) treat that as a distinct, non-existent key,
+    /// so `file('dir/', ...)` would silently miss objects that `file('dir', ...)` finds.
+    if (result.size() > 1 && result.back() == '/')
+        result.pop_back();
+
+    return result;
+}
+
+}
+
+/// After lexical normalization, returns whether a disk-relative path stays
+/// inside the disk root once symlinks are resolved. This is the symlink-aware
+/// counterpart to `normalizeDiskRelativePath`: the lexical pass blocks `..`
+/// segments, but cannot detect an in-root symlink (e.g. `<disk_root>/link -> /etc`)
+/// being used as `link/passwd` to escape the disk root.
+///
+/// For object-storage disks there is no symlink concept in the user-visible
+/// namespace, so the check trivially passes.
+bool isDiskRelativePathInsideRoot(const DiskPtr & disk, const String & relative_path)
+{
+    if (disk->getDataSourceDescription().type != DataSourceType::Local)
+        return true;
+
+    /// `fs::weakly_canonical` resolves symlinks for the longest existing prefix of the
+    /// path and lexically appends the rest. We invoke it explicitly here (rather than
+    /// relying on `pathStartsWith` calling `fs::relative` internally) so the
+    /// symlink-resolution step is visible at the call site - the security property
+    /// of this check should not depend on subtle library behavior of `fs::relative`.
+    std::error_code ec;
+    const fs::path disk_path(disk->getPath());
+    const fs::path resolved_root = fs::weakly_canonical(disk_path, ec);
+    if (ec)
+        return false;
+    const fs::path resolved = fs::weakly_canonical(disk_path / relative_path, ec);
+    if (ec)
+        return false;
+    /// Both paths are now in canonical form (symlinks resolved); a string-prefix
+    /// containment check on the canonical paths is sufficient and unambiguous.
+    return pathStartsWith(resolved, resolved_root);
+}
+
+namespace
+{
+
+/// Same containment check but throws when the path would escape. Use when the
+/// disk is already known to be the one that should serve the request.
+void validateDiskRelativePathBoundary(const DiskPtr & disk, const String & relative_path)
+{
+    if (!isDiskRelativePathInsideRoot(disk, relative_path))
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+            "Path `{}` resolves outside user files disk root `{}` after symlink resolution",
+            relative_path, getDiskPathWithSlash(disk));
+}
+
+}
+
+/// Splits an absolute path into (disk, disk-relative-path) by matching the
+/// configured disk path prefix. Returns {nullptr, ""} if no disk matches.
+///
+/// When multiple configured disks have overlapping roots (e.g. `/mnt/user_files/`
+/// and `/mnt/user_files/archive/`), the most specific (longest) matching prefix
+/// wins, so an absolute path under the nested root is routed to the nested disk
+/// instead of being captured by the parent.
+std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_path, const Disks & disks)
+{
+    DiskPtr best_disk;
+    size_t best_prefix_size = 0;
+    String best_relative;
+    for (const auto & disk : disks)
+    {
+        const String disk_prefix = getDiskPathWithSlash(disk);
+        /// `disk_prefix` always ends with '/'. Accept either the strict prefix form
+        /// (path is under the disk root) or an exact match with the root path
+        /// without the trailing slash, mapping the latter to an empty relative.
+        String relative;
+        if (absolute_path.starts_with(disk_prefix))
+        {
+            relative = absolute_path.substr(disk_prefix.size());
+        }
+        else if (absolute_path.size() + 1 == disk_prefix.size()
+                 && disk_prefix.starts_with(absolute_path))
+        {
+            relative.clear();
+        }
+        else
+        {
+            continue;
+        }
+        if (disk_prefix.size() > best_prefix_size)
+        {
+            best_disk = disk;
+            best_prefix_size = disk_prefix.size();
+            best_relative = std::move(relative);
+        }
+    }
+    if (!best_disk)
+        return {nullptr, {}};
+    return {best_disk, best_relative};
+}
+
+/// Returns true if the given absolute user-files path points to an existing file
+/// or directory on the volume.
+bool userFilesPathExists(const String & absolute_path, const Disks & disks)
+{
+    auto [disk, relative] = splitUserFilesAbsolutePath(absolute_path, disks);
+    if (!disk)
+        return false;
+    /// Treat symlink escape as "not present" rather than throwing here: this is an
+    /// existence probe, and the contained read/write paths will reject the access
+    /// explicitly via `validateDiskRelativePathBoundary`.
+    if (!isDiskRelativePathInsideRoot(disk, relative))
+        return false;
+    return disk->existsFile(relative) || disk->existsDirectory(relative);
+}
+
+namespace
+{
+
 std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
-/// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
+/// Both db_dir_paths and table_path must be converted to absolute paths (in particular, path cannot contain '..').
 void checkCreationIsAllowed(
     ContextPtr context_global,
-    const std::string & db_dir_path,
+    const String & db_dir_path,
     const std::string & table_path,
     bool can_be_directory)
 {
@@ -345,7 +696,7 @@ void checkCreationIsAllowed(
 
     /// "/dev/null" is allowed for perf testing
     if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside user files path", table_path);
 
     if (can_be_directory)
     {
@@ -384,56 +735,243 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
     return {String{path_to_archive_view}, String{filename_view}};
 }
 
-/// Finds files matching a specified pattern with globs.
+/// Finds files matching a specified pattern with globs under `user_files_path`.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
-    fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
-    fs::path fs_pattern(path_with_globs);
-    if (fs_pattern.is_relative())
-        fs_pattern = user_files_absolute_path / fs_pattern;
+    Strings all_paths;
+    bool can_be_directory = true;
 
-    Strings paths;
+    fs::path fs_pattern(path_with_globs);
+    const String user_files_absolute_path = fs::weakly_canonical(user_files_path);
+
+    fs::path resolved_pattern = fs_pattern.is_relative()
+        ? (fs::path(user_files_absolute_path) / fs_pattern)
+        : fs_pattern;
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String pattern = fs::absolute(fs_pattern).lexically_normal(); /// Normalize path.
-    bool can_be_directory = true;
+    String pattern = fs::absolute(resolved_pattern).lexically_normal();
 
     if (pattern.contains(PartitionedSink::PARTITION_ID_WILDCARD))
     {
-        /// Patterns containing "{_partition_id}" are not used for reading and require special handling for writing
-        /// so we don't make a list of files here.
-        paths.push_back(pattern);
+        all_paths.push_back(pattern);
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!fs::exists(pattern) || !fs::is_directory(pattern))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
             if (!error)
                 total_bytes_to_read += size;
 
-            paths.push_back(pattern);
+            all_paths.push_back(pattern);
         }
         else
         {
-            /// We list non-directory files under that directory.
-            paths = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            auto listed = listFilesWithRegexpMatching(pattern / fs::path("*"), total_bytes_to_read);
+            all_paths.insert(all_paths.end(), listed.begin(), listed.end());
             can_be_directory = false;
         }
     }
     else
     {
-        /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        auto listed = listFilesWithRegexpMatching(pattern, total_bytes_to_read);
+        all_paths.insert(all_paths.end(), listed.begin(), listed.end());
         can_be_directory = false;
     }
 
-    for (const auto & path : paths)
-        checkCreationIsAllowed(context, user_files_absolute_path, path, can_be_directory);
+    for (const auto & path : all_paths)
+        checkCreationIsAllowed(context, user_files_path, path, can_be_directory);
 
-    return paths;
+    return all_paths;
+}
+
+/// Finds files matching a specified pattern on a user-files volume.
+///
+/// Returns full absolute paths of the form `disk->getPath() + relative`. Keeping
+/// the disk path prefix in each returned path preserves disk identity for later
+/// read/write operations — otherwise the same relative path can refer to files
+/// on different disks (e.g. `abs_test.csv` living on both disk1 and disk2) and
+/// later lookups would pick the wrong one.
+Strings getPathsListOnDisk(
+    const String & path_with_globs,
+    const VolumePtr & volume,
+    size_t & total_bytes_to_read)
+{
+    const Disks disks = volume->getDisks();
+
+    /// A `{_partition_id}` wildcard denotes a partitioned write, not a glob to expand.
+    /// It must never be expanded by `expandSelectionGlob`: that would turn `{_partition_id}`
+    /// into an ordinary `{...}` enum glob matching the literal `_partition_id`, and if a file
+    /// matching that expansion (e.g. `part__partition_id.csv`) already existed on disk, the
+    /// pattern would resolve to that single file, drop the wildcard, bypass the "partitioned
+    /// writes are not supported with user_files_policy" rejection, and write all data into the
+    /// wrong file. The path is resolved against the disk below but the wildcard is kept verbatim.
+    const bool has_partition_wildcard = path_with_globs.contains(PartitionedSink::PARTITION_ID_WILDCARD);
+
+    /// `{_partition_id}` also matches `find_first_of("*?{")`, so exclude it explicitly.
+    const bool has_globs = !has_partition_wildcard && path_with_globs.find_first_of("*?{") != std::string::npos;
+
+    /// A path is treated as "disk-qualified" (already carrying a configured disk's
+    /// root prefix) only when it is host-absolute. For local disks the root is
+    /// host-absolute, so a user-supplied absolute path under it - or a host-absolute
+    /// path produced by `DatabaseFilesystem` on a local disk - is matched here and
+    /// the prefix is stripped.
+    ///
+    /// We deliberately do NOT try to recognize a disk-qualified path among *relative*
+    /// inputs. For object-storage disks (e.g. `s3_plain`) `disk->getPath()` is itself
+    /// a relative object-key prefix, so a relative user path can legitimately begin
+    /// with that prefix (e.g. `file('root/data/disks/user_files/x.csv')`). Stripping
+    /// it would silently retarget the read/write to a different object at the disk
+    /// root and could overwrite unrelated data. A relative path is therefore always
+    /// resolved against the disk root and never mistaken for an already-qualified one.
+    /// `DatabaseFilesystem` passes a disk-relative path for object-storage disks for
+    /// the same reason, so nothing here needs to strip a relative prefix.
+    DiskPtr assigned_disk;
+    String relative_pattern;
+    if (fs::path(path_with_globs).is_absolute())
+    {
+        auto [qualified_disk, qualified_relative] = splitUserFilesAbsolutePath(path_with_globs, disks);
+        if (qualified_disk)
+        {
+            assigned_disk = qualified_disk;
+            relative_pattern = normalizeDiskRelativePath(qualified_relative);
+        }
+        else
+        {
+            /// Host-absolute but outside every user-files disk: reject.
+            /// `normalizeDiskRelativePath` throws on the leading '/'.
+            relative_pattern = normalizeDiskRelativePath(path_with_globs);
+        }
+    }
+    else
+    {
+        /// Relative path: always resolved against the disk root below.
+        relative_pattern = normalizeDiskRelativePath(path_with_globs);
+    }
+
+    if (has_partition_wildcard)
+    {
+        /// Mirror the local `getPathsList`, which pushes the resolved absolute path (not the
+        /// raw user input) for a `{_partition_id}` pattern. Return a disk-qualified path
+        /// (`<disk_path>/<relative>`) with the wildcard preserved verbatim: `path_for_partitioned_write`
+        /// keeps the wildcard so the partitioned-write rejection fires, while a literal,
+        /// non-partitioned file name containing `{_partition_id}` can still be split back to its
+        /// disk by `splitUserFilesAbsolutePath` on the read/write path (returning the raw relative
+        /// name here would leave no disk prefix to recover, and the file would look missing).
+        const DiskPtr partition_disk = assigned_disk ? assigned_disk : disks.front();
+        return {getDiskPathWithSlash(partition_disk) + relative_pattern};
+    }
+
+    Strings absolute_paths;
+
+    if (has_globs)
+    {
+        const Disks disks_to_search = assigned_disk ? Disks{assigned_disk} : disks;
+        for (const auto & disk : disks_to_search)
+        {
+            const Strings expanded_patterns = expandSelectionGlob(relative_pattern);
+            Strings relative_matches;
+            for (const auto & pattern : expanded_patterns)
+            {
+                /// Deduplicate matches within a single expanded pattern so adjacent globstars
+                /// (`**/**/*.csv`) do not emit the same entry twice. Scoped per expanded pattern
+                /// on purpose: brace-expanded alternatives keep their pre-existing behavior of
+                /// reading the same concrete file once per alternative. Mirrors
+                /// `listFilesWithRegexpMatching`.
+                std::unordered_set<std::string> matched_paths;
+                listFilesWithRegexpMatchingOnDisk(disk, "", pattern, total_bytes_to_read, relative_matches, matched_paths, false, 0);
+            }
+
+            const String disk_prefix = getDiskPathWithSlash(disk);
+            for (const auto & rel : relative_matches)
+            {
+                /// Defense in depth: a matched entry may still be an in-root symlink
+                /// pointing outside (e.g. admin-owned `link -> /etc` matched by the
+                /// regex). Drop such entries; surfacing them would expose files
+                /// outside the disk root.
+                if (!isDiskRelativePathInsideRoot(disk, rel))
+                    continue;
+                absolute_paths.push_back(disk_prefix + rel);
+            }
+        }
+
+        return absolute_paths;
+    }
+
+    /// Non-glob: find the disk holding the file (or, for writes, default to the assigned/first disk).
+    DiskPtr target_disk = assigned_disk;
+    if (!target_disk)
+    {
+        for (const auto & disk : disks)
+        {
+            /// Skip disks where the relative path would escape via an in-root symlink.
+            /// Other disks may still serve the same relative path safely.
+            if (!isDiskRelativePathInsideRoot(disk, relative_pattern))
+                continue;
+            if (disk->existsFile(relative_pattern) || disk->existsDirectory(relative_pattern))
+            {
+                target_disk = disk;
+                break;
+            }
+        }
+        /// Fall back to the first disk (for writes of new files, or to surface a missing-file error at read time).
+        if (!target_disk)
+            target_disk = disks.front();
+    }
+    /// At this point the user explicitly addressed `target_disk` (either via an
+    /// absolute path or as the only viable read/write target); reject if it would
+    /// escape through a symlink.
+    validateDiskRelativePathBoundary(target_disk, relative_pattern);
+
+    const String disk_prefix = getDiskPathWithSlash(target_disk);
+    if (target_disk->existsDirectory(relative_pattern))
+    {
+        /// Expand directory into its files.
+        for (auto it = target_disk->iterateDirectory(relative_pattern); it->isValid(); it->next())
+        {
+            const String entry_rel = relative_pattern.empty()
+                ? String(it->name())
+                : (relative_pattern + "/" + it->name());
+            /// Skip entries that resolve outside the disk root via a symlink.
+            if (!isDiskRelativePathInsideRoot(target_disk, entry_rel))
+                continue;
+            if (target_disk->existsFile(entry_rel))
+            {
+                try
+                {
+                    total_bytes_to_read += target_disk->getFileSize(entry_rel);
+                    absolute_paths.push_back(disk_prefix + entry_rel);
+                }
+                catch (const Exception & e)
+                {
+                    /// File can disappear between `existsFile` and `getFileSize` under
+                    /// concurrent rotation/deletion. Skip vanished entries; rethrow other errors.
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                }
+            }
+        }
+        return absolute_paths;
+    }
+
+    if (target_disk->existsFile(relative_pattern))
+    {
+        try
+        {
+            total_bytes_to_read += target_disk->getFileSize(relative_pattern);
+        }
+        catch (const Exception & e)
+        {
+            /// Tolerate a concurrent deletion between `existsFile` and `getFileSize`;
+            /// the path is still returned so the caller surfaces any read error.
+            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
+        }
+    }
+    absolute_paths.push_back(disk_prefix + relative_pattern);
+    return absolute_paths;
 }
 
 /// Gathers information about one or multiple files located in one or multiple archives.
@@ -441,7 +979,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
 StorageFile::ArchiveInfo getArchiveInfo(
     const std::string & path_to_archive,
     const std::string & file_in_archive,
-    const std::string & user_files_path,
+    const String & user_files_path,
     const ContextPtr & context,
     size_t & total_bytes_to_read
 )
@@ -583,6 +1121,22 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
 }
 
+/// Create a read buffer that reads from a disk (supports S3, local, etc.)
+std::unique_ptr<ReadBuffer> createReadBufferFromDisk(
+    const DiskPtr & disk,
+    const String & current_path,
+    const String & compression_method,
+    ContextPtr context)
+{
+    CompressionMethod method = chooseCompressionMethod(current_path, compression_method);
+
+    ReadSettings read_settings = context->getReadSettings();
+    std::unique_ptr<ReadBuffer> nested_buffer = disk->readFile(current_path, read_settings);
+
+    int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    return wrapReadBufferWithCompressionMethod(std::move(nested_buffer), method, zstd_window_log_max);
+}
+
 }
 
 namespace
@@ -635,9 +1189,10 @@ namespace
             }
 
             String path;
-            struct stat file_stat{};
+            const auto user_files_volume = getContext()->getUserFilesVolume();
+            const bool skip_empty = getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files];
 
-            do
+            while (true)
             {
                 if (current_index == paths.size())
                 {
@@ -657,17 +1212,40 @@ namespace
                 }
 
                 path = paths[current_index++];
-                file_stat = getFileStat(path, false, -1, "File");
-            } while (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0);
 
-            /// For union mode, check cached columns only for current path, because schema can be different for different files.
-            if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
-            {
-                if (auto cached_columns = tryGetColumnsFromCache({path}))
-                    return {nullptr, cached_columns, format};
+                if (user_files_volume)
+                {
+                    /// `paths` were produced by `getPathsListOnDisk` as `<disk_path>/<relative>`;
+                    /// recover the disk so we read through `IDisk` (works for non-local backends like `s3_plain`).
+                    auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                    if (!disk)
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", path);
+                    validateDiskRelativePathBoundary(disk, relative_path);
+                    if (skip_empty && disk->getFileSize(relative_path) == 0)
+                        continue;
+
+                    if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
+                    {
+                        if (auto cached_columns = tryGetColumnsFromCache({path}))
+                            return {nullptr, cached_columns, format};
+                    }
+
+                    return {createReadBufferFromDisk(disk, relative_path, compression_method, getContext()), std::nullopt, format};
+                }
+
+                struct stat file_stat = getFileStat(path, false, -1, "File");
+                if (skip_empty && file_stat.st_size == 0)
+                    continue;
+
+                /// For union mode, check cached columns only for current path, because schema can be different for different files.
+                if (getContext()->getSettingsRef()[Setting::schema_inference_mode] == SchemaInferenceMode::UNION)
+                {
+                    if (auto cached_columns = tryGetColumnsFromCache({path}))
+                        return {nullptr, cached_columns, format};
+                }
+
+                return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
             }
-
-            return {createReadBuffer(path, file_stat, false, -1, compression_method, getContext()), std::nullopt, format};
         }
 
         void setNumRowsToLastFile(size_t num_rows) override
@@ -708,6 +1286,16 @@ namespace
         {
             chassert(current_index > 0 && current_index <= paths.size());
             auto path = paths[current_index - 1];
+
+            if (auto user_files_volume = getContext()->getUserFilesVolume())
+            {
+                auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                if (!disk)
+                    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", path);
+                validateDiskRelativePathBoundary(disk, relative_path);
+                return createReadBufferFromDisk(disk, relative_path, compression_method, getContext());
+            }
+
             auto file_stat = getFileStat(path, false, -1, "File");
             return createReadBuffer(path, file_stat, false, -1, compression_method, getContext());
         }
@@ -721,11 +1309,27 @@ namespace
 
             /// Check if the cache contains one of the paths.
             auto & schema_cache = StorageFile::getSchemaCache(context);
+            const auto user_files_volume = context->getUserFilesVolume();
             struct stat file_stat{};
             for (const auto & path : paths_)
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
+                    if (user_files_volume)
+                    {
+                        auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+                        if (!disk)
+                            return std::nullopt;
+                        try
+                        {
+                            return disk->getLastModified(relative_path).epochTime();
+                        }
+                        catch (...) // NOLINT(bugprone-empty-catch) Ok
+                        {
+                            return std::nullopt;
+                        }
+                    }
+
                     if (0 != stat(path.c_str(), &file_stat))
                         return std::nullopt;
 
@@ -1049,12 +1653,27 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
         filename = source;
 
     FileSource res;
-    String user_files_path = context->getUserFilesPath();
+    VolumePtr user_files_volume = context->getUserFilesVolume();
 
-    if (!path_to_archive.empty())
-        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
+    if (user_files_volume)
+    {
+        /// Use disk-based I/O when user_files_policy is configured.
+        /// Archive syntax is not supported with disk-based user files.
+        if (!path_to_archive.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive syntax is not supported with user_files_policy");
+
+        res.paths = getPathsListOnDisk(filename, user_files_volume, res.total_bytes_to_read);
+        res.user_files_volume = user_files_volume;
+    }
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+    {
+        const String user_files_path = context->getUserFilesPath();
+
+        if (!path_to_archive.empty())
+            res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
+        else
+            res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+    }
 
     res.with_globs = res.paths.size() > 1;
 
@@ -1256,8 +1875,27 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    user_files_volume = std::move(file_source_.user_files_volume);
 
     is_db_table = false;
+
+    /// `rename_files_after_processing` relies on local-filesystem `fs::rename` in
+    /// `StorageFileSource::beforeDestroy`. With `user_files_policy` configured on a
+    /// non-local disk (for example `s3_plain`), `paths` are entries on that disk,
+    /// not local files, so the local rename would target a metadata path instead of
+    /// the configured backend (and the failure is swallowed in the destructor).
+    /// Reject up front, mirroring other call sites that gate features on disk type.
+    if (!args.rename_after_processing.empty() && user_files_volume)
+    {
+        for (const auto & disk : user_files_volume->getDisks())
+        {
+            if (!isPlainLocalDisk(*disk))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`rename_files_after_processing` is not supported "
+                    "with non-local `user_files_policy` disks (disk `{}` is not a plain local filesystem disk)",
+                    disk->getName());
+        }
+    }
 
     file_renamer = FileRenamer(args.rename_after_processing);
 
@@ -1661,43 +2299,73 @@ Chunk StorageFileSource::generate()
                 }
             }
 
+            bool current_file_is_remote = false;
             if (!read_buf)
             {
-                struct stat file_stat{};
-                file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
-                current_file_size = file_stat.st_size;
-                current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-
-                /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
-
-                if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
-                    continue;
-
-                if (need_only_count && tryGetCountFromCache(file_stat))
-                    continue;
-
-                if (is_one_format)
+                if (storage->user_files_volume)
                 {
-                    /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
-                    read_buf = std::make_unique<EmptyReadBuffer>();
+                    /// `current_path` is an absolute path `<disk_path>/<relative>`; split it back
+                    /// to recover the disk and the disk-relative form used by disk-side APIs.
+                    auto [disk, relative_path] = splitUserFilesAbsolutePath(current_path, storage->user_files_volume->getDisks());
+                    if (!disk)
+                        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", current_path);
+                    /// Defense in depth: refuse to read through an in-root symlink that
+                    /// would escape the disk root.
+                    validateDiskRelativePathBoundary(disk, relative_path);
+
+                    current_file_size = disk->getFileSize(relative_path);
+                    current_file_last_modified = disk->getLastModified(relative_path);
+                    current_file_is_remote = disk->isRemote();
+
+                    if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
+                        continue;
+
+                    if (is_one_format)
+                    {
+                        /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                        read_buf = std::make_unique<EmptyReadBuffer>();
+                    }
+                    else
+                        read_buf = createReadBufferFromDisk(disk, relative_path, storage->compression_method, getContext());
                 }
                 else
-                    read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                {
+                    struct stat file_stat{};
+                    file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
+                    current_file_size = file_stat.st_size;
+                    current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
+
+                    /// Build a sub-second-precision version token for the format metadata cache key.
+                    /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
+                    /// second that keeps the file size unchanged would otherwise reuse a stale entry.
+#if defined(OS_DARWIN)
+                    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+                    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
+#else
+                    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+                    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
+#endif
+                    current_file_cache_version = fmt::format(
+                        "{}.{:09}_{}_{}",
+                        static_cast<Int64>(mtim_sec),
+                        static_cast<Int64>(mtim_nsec),
+                        static_cast<Int64>(file_stat.st_ino),
+                        file_stat.st_size);
+
+                    if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
+                        continue;
+
+                    if (need_only_count && tryGetCountFromCache(file_stat))
+                        continue;
+
+                    if (is_one_format)
+                    {
+                        /// `One` produces a single row per file without consuming the underlying `ReadBuffer`.
+                        read_buf = std::make_unique<EmptyReadBuffer>();
+                    }
+                    else
+                        read_buf = createReadBuffer(current_path, file_stat, storage->use_table_fd, storage->table_fd, storage->compression_method, getContext());
+                }
             }
 
             size_t file_num = 0;
@@ -1739,7 +2407,7 @@ Chunk StorageFileSource::generate()
                     storage->format_settings,
                     parser_shared_resources,
                     format_filter_info,
-                    /*is_remote_fs=*/false,
+                    /*is_remote_fs=*/current_file_is_remote,
                     CompressionMethod::None,
                     need_only_count);
             }
@@ -1758,7 +2426,7 @@ Chunk StorageFileSource::generate()
                     storage->format_settings,
                     parser_shared_resources,
                     format_filter_info,
-                    /*is_remote_fs=*/false,
+                    /*is_remote_fs=*/current_file_is_remote,
                     CompressionMethod::None,
                     need_only_count);
             }
@@ -1974,7 +2642,9 @@ void StorageFile::read(
         else
             p = &paths;
 
-        if (p->size() == 1 && !fs::exists(p->at(0)))
+        if (p->size() == 1 && !(user_files_volume
+            ? userFilesPathExists(p->at(0), user_files_volume->getDisks())
+            : fs::exists(p->at(0))))
         {
             if (!context->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} doesn't exist", p->at(0));
@@ -2142,7 +2812,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        DiskPtr user_files_disk_ = nullptr,
+        String user_files_disk_relative_path_ = {})
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock())), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -2155,6 +2827,8 @@ public:
         , format_settings(format_settings_)
         , flags(flags_)
         , lock(std::move(lock_))
+        , user_files_disk(std::move(user_files_disk_))
+        , user_files_disk_relative_path(std::move(user_files_disk_relative_path_))
     {
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
@@ -2169,19 +2843,73 @@ public:
 
     void initialize()
     {
-        std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
+        bool do_not_write_prefix = false;
+
+        std::unique_ptr<WriteBuffer> naked_buffer;
         if (use_table_fd)
         {
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            auto fd_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            /// In case of formats with prefixes if file is not empty we have already written prefix.
+            do_not_write_prefix = fd_buffer->size();
+            naked_buffer = std::move(fd_buffer);
+        }
+        else if (user_files_disk)
+        {
+            /// Use disk-based write (supports S3, etc.). `path` is the absolute display path
+            /// of the form `<disk_path>/<relative>`; disk APIs expect the disk-relative form.
+            ///
+            /// Mirror the semantics of the local-filesystem path (which uses `O_APPEND`):
+            /// when truncation is not requested and the target file exists, append rather
+            /// than overwrite. The upstream guard in `StorageFile::write` rejects appends
+            /// for formats that do not support append, so reaching here in append mode means
+            /// the format is append-capable. Disks that do not implement `WriteMode::Append`
+            /// (e.g. `s3_plain`) will throw `NOT_IMPLEMENTED` from `writeFile`, which is the
+            /// correct, visible failure mode (instead of silently overwriting existing data).
+            const bool truncate = (flags & O_TRUNC) != 0;
+            UInt64 existing_size = 0;
+            WriteMode mode = WriteMode::Rewrite;
+            if (!truncate)
+            {
+                /// Resolve append-mode and the existing-prefix flag from an existence
+                /// check followed by a size lookup. The two operations are not atomic,
+                /// so a concurrent removal between them would otherwise turn into a
+                /// spurious insert failure. Tolerate that single race here by
+                /// catching `FILE_DOESNT_EXIST` from `getFileSize`; rethrow everything
+                /// else so transient backend errors do not silently overwrite data.
+                if (user_files_disk->existsFile(user_files_disk_relative_path))
+                {
+                    try
+                    {
+                        existing_size = user_files_disk->getFileSize(user_files_disk_relative_path);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                            throw;
+                        existing_size = 0;
+                    }
+
+                    /// Append only when there is existing content whose format prefix must
+                    /// be preserved. A zero-byte object has no prefix, so rewrite it instead.
+                    /// This also keeps `INSERT` working after `TRUNCATE TABLE` on disks that
+                    /// emulate truncation by leaving an empty object and reject
+                    /// `WriteMode::Append` (e.g. `s3_plain`).
+                    if (existing_size != 0)
+                        mode = WriteMode::Append;
+                }
+            }
+            do_not_write_prefix = (mode == WriteMode::Append) && existing_size != 0;
+            naked_buffer = user_files_disk->writeFile(
+                user_files_disk_relative_path, DBMS_DEFAULT_BUFFER_SIZE, mode);
         }
         else
         {
             flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
+            auto file_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
+            /// In case of formats with prefixes if file is not empty we have already written prefix.
+            do_not_write_prefix = file_buffer->size();
+            naked_buffer = std::move(file_buffer);
         }
-
-        /// In case of formats with prefixes if file is not empty we have already written prefix.
-        bool do_not_write_prefix = naked_buffer->size();
         const auto & settings = getContext()->getSettingsRef();
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::move(naked_buffer),
@@ -2263,6 +2991,8 @@ private:
 
     int flags;
     std::unique_lock<std::shared_timed_mutex> lock;
+    DiskPtr user_files_disk; /// When set, write through this disk.
+    String user_files_disk_relative_path; /// Disk-relative form of `path`, used for disk I/O.
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -2355,6 +3085,16 @@ SinkToStoragePtr StorageFile::write(
 
     if (is_partitioned_implementation)
     {
+        /// Partitioned writes still go through `PartitionedStorageFileSink`, which uses
+        /// local filesystem APIs (`fs::create_directories`) and constructs the inner
+        /// `StorageFileSink` without disk parameters. With `user_files_policy` configured,
+        /// this would bypass the `IDisk` abstraction entirely and write to local paths
+        /// (or fail) instead of the configured backend (e.g. S3). Reject explicitly until
+        /// disk-aware partitioned writes are implemented, to avoid silent data corruption.
+        if (user_files_volume)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT ... PARTITION BY into file() is not supported with user_files_policy");
+
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
@@ -2383,6 +3123,12 @@ SinkToStoragePtr StorageFile::write(
     }
 
     String path;
+    /// For user_files_volume writes, split the absolute path stored in `paths` into its
+    /// disk and relative portions. The disk is the one matched during path resolution —
+    /// unconditionally picking the first disk would route writes to the wrong backend
+    /// when the user supplied an absolute path to a non-first disk (e.g. S3 vs local).
+    DiskPtr write_disk;
+    String write_relative_path;
     if (!paths.empty())
     {
         if (is_path_with_globs)
@@ -2391,26 +3137,91 @@ SinkToStoragePtr StorageFile::write(
                             getStorageID().getNameForLogs());
 
         path = paths.front();
-        fs::create_directories(fs::path(path).parent_path());
+        if (user_files_volume)
+        {
+            auto [disk, relative] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+            if (!disk)
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "Path `{}` is not inside any user files disk", path);
+            /// Refuse writes that would escape the disk root through a symlink.
+            validateDiskRelativePathBoundary(disk, relative);
+            write_disk = disk;
+            write_relative_path = relative;
+        }
 
-        std::error_code error_code;
+        if (write_disk)
+        {
+            /// Create parent directories on disk
+            auto parent_path = fs::path(write_relative_path).parent_path().string();
+            if (!parent_path.empty() && !write_disk->existsDirectory(parent_path))
+                write_disk->createDirectories(parent_path);
+        }
+        else
+        {
+            fs::create_directories(fs::path(path).parent_path());
+        }
+
+        size_t existing_file_size = 0;
+        bool got_file_size = false;
+        if (write_disk)
+        {
+            /// `existsFile` and `getFileSize` are not atomic; tolerate a concurrent removal
+            /// between them by catching `FILE_DOESNT_EXIST` and treating the file as absent,
+            /// matching the pattern in `StorageFileSink::initialize`. Rethrow everything else
+            /// so transient backend errors do not turn into spurious insert decisions.
+            if (write_disk->existsFile(write_relative_path))
+            {
+                try
+                {
+                    existing_file_size = write_disk->getFileSize(write_relative_path);
+                    got_file_size = true;
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                        throw;
+                }
+            }
+        }
+        else
+        {
+            std::error_code error_code;
+            existing_file_size = fs::file_size(path, error_code);
+            got_file_size = !error_code;
+        }
+
         if (!context->getSettingsRef()[Setting::engine_file_truncate_on_insert] && !is_path_with_globs
             && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings)
-            && fs::file_size(path, error_code) != 0 && !error_code)
+            && got_file_size && existing_file_size != 0)
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
                 auto pos = path.find_first_of('.', path.find_last_of('/'));
                 size_t index = paths.size();
                 String new_path;
+                String new_relative_path;
                 do
                 {
                     new_path = path.substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : path.substr(pos));
+                    if (write_disk)
+                    {
+                        /// For a disk-relative path the last `/` may be absent (file directly
+                        /// at the disk root). In that case start the extension search at the
+                        /// beginning of the string - otherwise `find_first_of('.', npos)`
+                        /// also returns `npos` and the numeric suffix lands after the
+                        /// extension (e.g. `data.csv.0` instead of `data.0.csv`).
+                        auto rel_slash = write_relative_path.find_last_of('/');
+                        auto rel_pos = write_relative_path.find_first_of('.', rel_slash == std::string::npos ? 0 : rel_slash);
+                        new_relative_path = write_relative_path.substr(0, rel_pos) + "." + std::to_string(index)
+                            + (rel_pos == std::string::npos ? "" : write_relative_path.substr(rel_pos));
+                    }
                     ++index;
                 }
-                while (fs::exists(new_path));
+                while (write_disk ? write_disk->existsFileOrDirectory(new_relative_path) : fs::exists(new_path));
                 paths.push_back(new_path);
                 path = new_path;
+                if (write_disk)
+                    write_relative_path = new_relative_path;
             }
             else
                 throw Exception(
@@ -2435,7 +3246,9 @@ SinkToStoragePtr StorageFile::write(
         format_settings,
         format_name,
         context,
-        flags);
+        flags,
+        write_disk,
+        write_relative_path);
 }
 
 bool StorageFile::storesDataOnDisk() const
@@ -2483,10 +3296,34 @@ void StorageFile::truncate(
     {
         if (0 != ::ftruncate(table_fd, 0))
             throw ErrnoException(ErrorCodes::CANNOT_TRUNCATE_FILE, "Cannot truncate file at fd {}", toString(table_fd));
+        return;
     }
-    else
+
+    for (const auto & path : paths)
     {
-        for (const auto & path : paths)
+        if (user_files_volume)
+        {
+            /// `paths` hold absolute display paths `<disk_path>/<relative>`. Route truncation
+            /// through `IDisk` so it works for non-local backends (e.g. `s3_plain`); using
+            /// local `fs::exists`/`::truncate` would silently no-op there because the
+            /// absolute disk path does not exist on the local filesystem.
+            auto [disk, relative] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
+            if (!disk)
+                throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                    "Path `{}` is not inside any user files disk", path);
+            validateDiskRelativePathBoundary(disk, relative);
+
+            if (!disk->existsFile(relative))
+                continue;
+
+            /// Re-create as an empty file rather than removing it, to mirror the local
+            /// `::truncate(path, 0)` semantics: subsequent reads see an empty file
+            /// (zero rows), not `FILE_DOESNT_EXIST`. Backends that do not support
+            /// `WriteMode::Rewrite` (e.g. truly read-only object stores) will throw a
+            /// visible `NOT_IMPLEMENTED` instead of silently dropping the truncate.
+            disk->writeFile(relative, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite)->finalize();
+        }
+        else
         {
             if (!fs::exists(path))
                 continue;

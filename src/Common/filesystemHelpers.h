@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 
 #include <filesystem>
+#include <vector>
 #include <memory>
 #include <string>
 #include <sys/statvfs.h>

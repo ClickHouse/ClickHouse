@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Disks/IVolume.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -13,6 +14,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageFile.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/FormatFactory.h>
@@ -43,22 +45,56 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
-    fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+    const String user_files_path = is_local ? "" : getContext()->getUserFilesPath();
+
+    /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
+    /// `fs::exists` only checks the local filesystem and would reject valid paths
+    /// that exist on the configured `IDisk`. Use disk-aware existence checks that
+    /// fall back to `fs::exists` when no volume is configured.
+    auto user_files_volume = is_local ? VolumePtr{} : getContext()->getUserFilesVolume();
+    auto path_exists = [&](const fs::path & p)
+    {
+        if (user_files_volume)
+            return userFilesPathExists(p.string(), user_files_volume->getDisks());
+        return fs::exists(p);
+    };
 
     if (fs::path(path).is_relative())
     {
-        path = user_files_path / path;
+        /// For a disk-backed `user_files_policy`, `user_files_path` is the disk root
+        /// (`disk->getPath()`), which is not necessarily a host-absolute directory -
+        /// for `s3_plain` it is an object-key prefix. Calling `fs::absolute` here would
+        /// prepend the server working directory and break the later disk-prefix match
+        /// in `splitUserFilesAbsolutePath` (so valid directories on the disk would be
+        /// reported as missing). Normalize only lexically in that case, preserving the
+        /// disk-root prefix so the path stays resolvable through `IDisk`.
+        ///
+        /// `getCreateDatabaseQueryImpl` serializes the already-normalized `path` (which
+        /// carries the disk-root prefix) back into metadata. For an object-storage disk
+        /// the root is itself relative, so on reload `path` is relative again - prepending
+        /// the disk root a second time would produce `<disk_root>/<disk_root>/...` and the
+        /// database would fail to load. Only prepend when the path is not already inside
+        /// the disk root, keeping normalization idempotent across restarts.
+        if (user_files_volume)
+        {
+            if (pathStartsWith(path, user_files_path))
+                path = fs::path(path).lexically_normal().string();
+            else
+                path = (fs::path(user_files_path) / path).lexically_normal().string();
+        }
+        else
+            path = fs::absolute(fs::path(user_files_path) / path).lexically_normal().string();
     }
+    else
+        path = fs::absolute(path).lexically_normal();
 
-    path = fs::absolute(path).lexically_normal();
-
-    if (!is_local && !pathStartsWith(fs::path(path), user_files_path))
+    if (!is_local && !pathStartsWith(path, user_files_path))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Path must be inside user-files path: {}", user_files_path.string());
+                        "Path must be inside user-files path");
     }
 
-    if (!fs::exists(path))
+    if (!path_exists(path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
 }
 
@@ -83,26 +119,42 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto & user_files_path = context_->getUserFilesPath();
+    const auto user_files_path = context_->getUserFilesPath();
+    auto user_files_volume = check_path ? context_->getUserFilesVolume() : VolumePtr{};
 
-    /// Check access for file before checking its existence.
-    if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
+    /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
+    /// `fs::exists` only checks the local filesystem and would reject valid paths
+    /// that exist on the configured `IDisk`. Resolve the disk + relative path once
+    /// and route existence checks through `IDisk` when a volume is configured.
+    DiskPtr disk;
+    String disk_relative_path;
+    if (user_files_volume)
+    {
+        std::tie(disk, disk_relative_path) = splitUserFilesAbsolutePath(table_path, user_files_volume->getDisks());
+        if (!disk || !isDiskRelativePathInsideRoot(disk, disk_relative_path))
+        {
+            /// Access denied is thrown regardless of 'throw_on_error'
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
+        }
+    }
+    else if (check_path && !fileOrSymlinkPathStartsWith(table_path, user_files_path))
     {
         /// Access denied is thrown regardless of 'throw_on_error'
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside {}", user_files_path);
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File is not inside user files path");
     }
 
     if (!containsGlobs(table_path))
     {
-        /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        const bool exists = disk ? disk->existsFileOrDirectory(disk_relative_path) : fs::exists(table_path);
+        if (!exists)
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        const bool is_regular_file = disk ? disk->existsFile(disk_relative_path) : fs::is_regular_file(table_path);
+        if (!is_regular_file)
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
@@ -123,12 +175,22 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
             table = it->second;
     }
 
-    /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    /// Invalidate cache if file no longer exists. Route through `IDisk` when
+    /// `user_files_policy` is configured so the existence probe matches the
+    /// disk that backs the storage.
+    if (table)
     {
-        std::lock_guard lock(mutex);
-        loaded_tables.erase(name);
-        return nullptr;
+        const auto table_path = getTablePath(name);
+        const auto user_files_volume = getContext()->getUserFilesVolume();
+        const bool exists = user_files_volume
+            ? userFilesPathExists(table_path, user_files_volume->getDisks())
+            : fs::exists(table_path);
+        if (!exists)
+        {
+            std::lock_guard lock(mutex);
+            loaded_tables.erase(name);
+            return nullptr;
+        }
     }
 
     return table;
@@ -152,7 +214,23 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(table_path));
+    /// Choose the path passed to the `file` table function so that
+    /// `getPathsListOnDisk` resolves it unambiguously. For local disks `table_path`
+    /// is host-absolute and is recognized by its disk-root prefix. For object-storage
+    /// disks (e.g. `s3_plain`) the disk root is a relative object-key prefix, so a
+    /// qualified path is itself relative and indistinguishable from raw user input;
+    /// `file()` no longer strips a relative prefix (that would mis-target a different
+    /// object). Pass the disk-relative path explicitly, which `file()` resolves
+    /// against the disk root.
+    String file_path = table_path;
+    if (auto user_files_volume = context_->getUserFilesVolume())
+    {
+        auto [disk, relative] = splitUserFilesAbsolutePath(table_path, user_files_volume->getDisks());
+        if (disk && !fs::path(disk->getPath()).is_absolute())
+            file_path = relative;
+    }
+
+    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(file_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
