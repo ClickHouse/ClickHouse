@@ -11,22 +11,8 @@
 namespace DB
 {
 
-DECLARE_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS)
-
-struct StorageObjectStorageSettingsImpl : public BaseSettings<StorageObjectStorageSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    StorageObjectStorageSettings##TYPE NAME = &StorageObjectStorageSettingsImpl ::NAME;
-
-namespace StorageObjectStorageSetting
-{
-LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS, STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(StorageObjectStorageSettingsTraits, LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS, StorageObjectStorageSettings, StorageObjectStorageSetting)
 
 StorageObjectStorageSettings::StorageObjectStorageSettings() : impl(std::make_unique<StorageObjectStorageSettingsImpl>())
 {
@@ -37,10 +23,7 @@ StorageObjectStorageSettings::StorageObjectStorageSettings(const StorageObjectSt
 {
 }
 
-StorageObjectStorageSettings::StorageObjectStorageSettings(StorageObjectStorageSettings && settings) noexcept
-    : impl(std::make_unique<StorageObjectStorageSettingsImpl>(std::move(*settings.impl)))
-{
-}
+StorageObjectStorageSettings::StorageObjectStorageSettings(StorageObjectStorageSettings && settings) noexcept = default;
 
 
 StorageObjectStorageSettings::~StorageObjectStorageSettings() = default;

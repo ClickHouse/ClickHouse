@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPrimes.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -21,8 +22,8 @@ StorageSystemPrimes::StorageSystemPrimes(
     /// This column doesn't have a comment, because otherwise it will be added to all the tables which were created via
     /// CREATE TABLE test as primes(5)
     storage_metadata.setColumns(ColumnsDescription({{column_name_, std::make_shared<DataTypeUInt64>()}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemPrimes::createVirtuals()
@@ -49,3 +50,6 @@ void StorageSystemPrimes::readImpl(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrimes) }

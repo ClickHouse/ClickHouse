@@ -1,7 +1,6 @@
-add_subdirectory(divide)
-
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
+add_headers_and_sources(clickhouse_functions AI)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
@@ -54,6 +53,7 @@ set(DBMS_FUNCTIONS
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
+    FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
@@ -90,7 +90,7 @@ list (APPEND PUBLIC_LIBS
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
         boost::filesystem
-        divide_impl
+        ch_contrib::libdivide
         ch_contrib::xxHash
         ch_contrib::stringzilla
 )
@@ -135,6 +135,10 @@ if (TARGET ch_contrib::h3)
     list (APPEND PRIVATE_LIBS ch_contrib::h3)
 endif()
 
+if (TARGET ch_contrib::wagyu)
+    list (APPEND PRIVATE_LIBS ch_contrib::wagyu)
+endif()
+
 if (TARGET ch_contrib::vectorscan)
     list (APPEND PRIVATE_LIBS ch_contrib::vectorscan)
 endif()
@@ -164,9 +168,6 @@ list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_url>)
 add_subdirectory(array)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_array>)
 
-add_subdirectory(Kusto)
-list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_kusto>)
-
 add_subdirectory(TimeSeries)
 list (APPEND OBJECT_LIBS $<TARGET_OBJECTS:clickhouse_functions_time_series>)
 
@@ -183,6 +184,17 @@ add_subdirectory(keyvaluepair)
 # Signed integer overflow on user-provided data inside boost::geometry - ignore.
 set_source_files_properties("pointInPolygon.cpp" PROPERTIES COMPILE_FLAGS -fno-sanitize=signed-integer-overflow)
 
+# TODO: at v3 these wrapper TUs regress because the SLP vectorizer / SIMD-aware codegen
+# fires inside the per-row dispatch (YMM scratch zero-init in `stringJaccardIndex`,
+# YMM `ColumnString` prologue forcing `vzeroupper` around `randomString`'s `getUInt`,
+# longer BMI2 encodings in `XXH3`'s short-input fast path crossing a 16-byte fetch boundary).
+# Compiling at v2 restores master codegen; the actual AVX2 kernels they call live in other TUs.
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 3)
+    set_source_files_properties(FunctionsStringDistance.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+    set_source_files_properties(randomString.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+    set_source_files_properties(FunctionsHashingMisc.cpp PROPERTIES COMPILE_FLAGS "-march=x86-64-v2")
+endif()
+
 if (USE_GPERF)
     # Only for regenerating
     add_custom_target(generate-html-char-ref-gperf ./HTMLCharacterReference.sh
@@ -194,6 +206,8 @@ if (USE_GPERF)
             && clang-format -i HTMLCharacterReference.generated.cpp
             # for clang-tidy, since string.h is deprecated
             && sed -i 's/\#include <string.h>/\#include <cstring>/g' HTMLCharacterReference.generated.cpp
+            # the table must be constexpr for the compile-time entity-expansion static_assert in the .gperf
+            && sed -i 's/static const struct NameAndGlyph wordlist/static constexpr struct NameAndGlyph wordlist/g' HTMLCharacterReference.generated.cpp
             SOURCES HTMLCharacterReference.gperf
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             )

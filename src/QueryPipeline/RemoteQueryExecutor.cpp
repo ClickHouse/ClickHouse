@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
@@ -25,7 +26,6 @@
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/StorageMemory.h>
 
@@ -60,8 +60,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
-    extern const int DUPLICATED_PART_UUIDS;
     extern const int SYSTEM_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+    extern const char remote_query_executor_cancel_before_send[];
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
@@ -125,13 +130,42 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             connection_establisher.run(result, fail_message, /*force_connected=*/true);
         }
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         if (!result.entry.isNull() && result.is_usable)
         {
-            if (extension_ && extension_->parallel_reading_coordinator)
-                ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+            chassert(result.entry->isConnected());
 
-            connection_entries.emplace_back(std::move(result.entry));
+            const auto protocol_version = result.entry->getServerRevision(ConnectionTimeouts{});
+            const auto parallel_replicas_version = result.entry->getParallelReplicasProtocolVersion();
+
+            if (extension_ && extension_->parallel_reading_coordinator)
+            {
+                // consider only replicas with support of stream id, otherwise we can get incorrect result
+                // replicas with older version considered as unavailable
+                if (protocol_version >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS
+                    && parallel_replicas_version >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID)
+                {
+                    ProfileEvents::increment(ProfileEvents::ParallelReplicasAvailableCount);
+
+                    connection_entries.emplace_back(std::move(result.entry));
+                }
+                else
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Disconnecting replica {} (protocol_version={}, parallel_replicas_version={}): "
+                        "no stream_id support (requires parallel_replicas_version >= {})",
+                        result.entry->getDescription(),
+                        protocol_version,
+                        parallel_replicas_version,
+                        DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID);
+                    result.entry->disconnect();
+                }
+            }
+            else
+            {
+                connection_entries.emplace_back(std::move(result.entry));
+            }
         }
         else
         {
@@ -176,7 +210,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::vector<IConnectionPool::Entry> && connections_,
+    ConnectionPoolEntries && connections_,
     const String & query_,
     SharedHeader header_,
     ContextPtr context_,
@@ -236,7 +270,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         }
 #endif
 
-        std::vector<IConnectionPool::Entry> connection_entries;
+        ConnectionPoolEntries connection_entries;
         std::optional<bool> skip_unavailable_endpoints;
         if (extension && extension->parallel_reading_coordinator)
             skip_unavailable_endpoints = true;
@@ -287,7 +321,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 
@@ -304,7 +338,7 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
-            tryLogCurrentException(log ? log : getLogger("RemoteQueryExecutor"));
+            tryLogCurrentException(log);
         }
     }
 }
@@ -386,6 +420,9 @@ void RemoteQueryExecutor::sendQuery(ClientInfo::QueryKind query_kind, AsyncCallb
 
 void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, AsyncCallback async_callback)
 {
+    /// Emulate a concurrent cancel() landing right before the query is sent.
+    fiu_do_on(FailPoints::remote_query_executor_cancel_before_send, { was_cancelled = true; });
+
     if (sent_query || was_cancelled)
         return;
 
@@ -419,11 +456,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
 
-    if (!duplicated_part_uuids.empty())
-        connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
-
     // Collect all roles granted on this node and pass those to the remote node
-    std::vector<String> local_granted_roles;
+    Strings local_granted_roles;
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
     {
         auto user = context->getAccessControl().read<User>(modified_client_info.initial_user, false);
@@ -459,7 +493,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
 
 int RemoteQueryExecutor::sendQueryAsync()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     LockAndBlocker lock(was_cancelled_mutex);
     if (was_cancelled)
         return -1;
@@ -506,6 +540,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
     {
         sendQuery();
 
+        /// `connections` stays null if sendQuery() was cancelled before sending,
+        /// so guard the dereference below (as every other use of it does).
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            if (was_cancelled)
+                return ReadResult(Block());
+        }
+
         if (context->getSettingsRef()[Setting::skip_unavailable_shards] && (0 == connections->size()))
             return ReadResult(Block());
     }
@@ -521,18 +563,13 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
         if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
             return anything;
-
-        if (got_duplicated_part_uuids)
-            break;
     }
-
-    return restartQueryWithoutDuplicatedUUIDs();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 {
-#if defined(OS_LINUX)
-    if (!read_context || (resent_query && recreate_read_context))
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    if (!read_context)
     {
         LockAndBlocker lock(was_cancelled_mutex);
         if (was_cancelled)
@@ -542,7 +579,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             *this,
             /*suspend_when_query_sent*/ false,
             read_packet_type_separately);
-        recreate_read_context = false;
     }
 
     while (true)
@@ -564,9 +600,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
             auto read_result = processPacket(read_context->getPacket());
             if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
                 return read_result;
-
-            if (got_duplicated_part_uuids)
-                break;
         }
 
         read_context->resume();
@@ -596,47 +629,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         auto read_result = processPacket(read_context->getPacket());
         if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
             return read_result;
-
-        if (got_duplicated_part_uuids)
-            break;
     }
-
-    return restartQueryWithoutDuplicatedUUIDs();
 #else
     return read();
 #endif
-}
-
-
-RemoteQueryExecutor::ReadResult RemoteQueryExecutor::restartQueryWithoutDuplicatedUUIDs()
-{
-    {
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
-
-        /// Cancel previous query and disconnect before retry.
-        cancelUnlocked();
-        connections->disconnect();
-
-        /// Only resend once, otherwise throw an exception
-        if (resent_query)
-            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate uuids while processing query");
-
-        if (log)
-            LOG_DEBUG(log, "Found duplicate UUIDs, will retry query without those parts");
-
-        resent_query = true;
-        recreate_read_context = true;
-        sent_query = false;
-        got_duplicated_part_uuids = false;
-        was_cancelled = false;
-    }
-
-    /// Consecutive read will implicitly send query first.
-    if (!read_context)
-        return read();
-    return readAsync();
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -657,8 +653,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             processReadTaskRequest();
             break;
         case Protocol::Server::PartUUIDs:
-            if (!setPartUUIDs(packet.part_uuids))
-                got_duplicated_part_uuids = true;
+            LOG_WARNING(
+                log,
+                "The remote server has sent no longer supported packet (Server::PartUUIDs). allow_experimental_query_deduplication feature "
+                "has been deprecated. Consider upgrading the remote server ({})",
+                connections->dumpAddresses());
             break;
         case Protocol::Server::Data:
             /// Note: `packet.block.rows() > 0` means it's a header block.
@@ -739,23 +738,30 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
     return ReadResult(ReadResult::Type::Nothing);
 }
 
-bool RemoteQueryExecutor::setPartUUIDs(const std::vector<UUID> & uuids)
-{
-    auto query_context = context->getQueryContext();
-    auto duplicates = query_context->getPartUUIDs()->add(uuids);
-
-    if (!duplicates.empty())
-    {
-        duplicated_part_uuids.insert(duplicated_part_uuids.begin(), duplicates.begin(), duplicates.end());
-        return false;
-    }
-    return true;
-}
-
 void RemoteQueryExecutor::processReadTaskRequest()
 {
-    if (!extension || !extension->task_iterator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
+    /// A ReadTaskRequest arrives only from a worker running a cluster table function or object storage
+    /// source with distributed reads. Serving it needs a task iterator, which only the legitimate
+    /// dispatch paths install; its absence means the source was reached through an outer distribution.
+    if (!extension)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "A cluster table function (s3Cluster, urlCluster, fileCluster, ...) cannot be nested inside "
+            "another distributed query");
+
+    if (!extension->task_iterator)
+    {
+        if (extension->parallel_reading_coordinator)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "A cluster table function or object storage cluster source cannot use distributed "
+                "processing inside a query that runs with parallel replicas");
+
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Received a cluster function read task request, but the query executor has neither a task "
+            "iterator nor a parallel replicas coordinator");
+    }
 
     if (!extension->replica_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica info is not initialized");
@@ -781,7 +787,14 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
     if (!extension || !extension->parallel_reading_coordinator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Coordinator for parallel reading from replicas is not initialized");
 
-    extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    /// Followers only block on the response when they actually need it (in-order modes pin
+    /// per-split parts via the response). In `Default` mode the caller discards the response,
+    /// so the round-trip would be pure overhead — skip it on both sides.
+    const bool send_response = announcement.mode != CoordinationMode::Default;
+
+    auto response = extension->parallel_reading_coordinator->handleInitialAllRangesAnnouncement(std::move(announcement));
+    if (send_response)
+        connections->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 void RemoteQueryExecutor::finish()
@@ -796,7 +809,35 @@ void RemoteQueryExecutor::finish()
       * then you do not need to read anything.
       */
     if (!isQueryPending() || hasThrownException() || was_cancelled)
+    {
+        /// If the query was never sent there is nothing to drain, but we must still mark the
+        /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
+        /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
+        /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
+        /// never becomes true. On Linux the async startup path always sends the query before this
+        /// point, so only the synchronous (non-Linux) send path is affected.
+        if (!sent_query)
+        {
+            finished = true;
+        }
+        else if (was_cancelled && !finished && connections)
+        {
+            /// The query was already cancelled (e.g. concurrently from the pipeline) but its
+            /// connections may still hold undelivered packets - the server keeps sending the data,
+            /// `ProfileInfo` and `EndOfStream` that were produced before it observed the cancel.
+            /// We do not drain them here after cancellation, because the read side may already be
+            /// torn down and reading from it could throw or crash (see #95466). But such connections
+            /// must not be returned to the connection pool in this out-of-sync state - otherwise the
+            /// next user of the connection would read a stale packet during establishment, failing
+            /// with "Unexpected packet from server (expected TablesStatusResponse, got ProfileInfo)"
+            /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
+            /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
+            /// `finished` later becomes true through another path.
+            connections->disconnect();
+            finished = true;
+        }
         return;
+    }
 
     /// To make sure finish is only called once
     SCOPE_EXIT({ finished = true; });
@@ -921,7 +962,7 @@ void RemoteQueryExecutor::sendExternalTables()
                 /// It is required to be able CTE materialization plan with parallel replicas (avoiding
                 /// circular dependency between CTE materialization and parallel replicas external tables.
                 auto materialized_cte = storage_memory->getMaterializedCTE();
-                if (materialized_cte != nullptr && !materialized_cte->is_built)
+                if (materialized_cte != nullptr && !materialized_cte->isBuilt())
                 {
                     LOG_DEBUG(log, "Skipping sending CTE '{}' because it has not been materialized yet", materialized_cte->cte_name);
                     continue;
@@ -978,8 +1019,7 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (connections && sent_query && !finished)
     {
         connections->sendCancel();
-        if (log)
-            LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
     }
 }
 
@@ -1024,7 +1064,7 @@ bool RemoteQueryExecutor::needToSkipUnavailableShard()
 
 bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
     if (!read_context->readPacketTypeSeparately())
         return false;

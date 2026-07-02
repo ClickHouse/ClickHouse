@@ -48,6 +48,12 @@ class CIDBCluster:
             self._session.close()
             self._session = None
 
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
+
     def is_ready(self):
         if not self.url:
             self.url, self.user, self.pwd = (
@@ -67,7 +73,7 @@ class CIDBCluster:
                 "X-ClickHouse-Key": self.pwd,
             }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -149,7 +155,7 @@ class CIDBCluster:
                 response = self._session.post(
                     url=self.url,
                     params=params,
-                    data=data,
+                    data=self._prepare_request_body(data),
                     headers=self._auth,
                     timeout=timeout,
                 )
@@ -172,7 +178,7 @@ class CIDBCluster:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
                 break
-        print(f"ERROR: Failed to query CIDB")
+        print("ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):
@@ -216,7 +222,7 @@ class CIDBCluster:
                 response = requests.post(
                     url=self.url,
                     params=insert_params,
-                    data=body,
+                    data=self._prepare_request_body(body),
                     headers=self._auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

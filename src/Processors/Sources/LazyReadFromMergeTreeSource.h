@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -34,8 +35,8 @@ public:
     ~LazyReadFromMergeTreeSource() override;
 
     String getName() const override { return "LazyReadFromMergeTreeSource"; }
-    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers & /*updated_output_ports*/) override;
-    Processors expandPipeline() override;
+    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_block_size;
@@ -51,6 +52,7 @@ private:
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     std::vector<std::list<Chunk>> chunks;
+    std::unordered_map<const InputPort *, size_t> input_port_to_index;
     size_t next_chunk_to_process = 0;
     InputPorts::iterator next_input_to_process;
 

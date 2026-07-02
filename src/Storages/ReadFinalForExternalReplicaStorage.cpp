@@ -27,7 +27,7 @@ namespace Setting
 
 bool needRewriteQueryWithFinalForStorage(const Names & column_names, const StoragePtr & storage)
 {
-    const StorageMetadataPtr & metadata = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto metadata = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     Block header = metadata->getSampleBlock();
     ColumnWithTypeAndName & version_column = header.getByPosition(header.columns() - 1);
     return std::find(column_names.begin(), column_names.end(), version_column.name) == column_names.end();
@@ -45,7 +45,7 @@ void readFinalFromNestedStorage(
 {
     NameSet column_names_set = NameSet(column_names.begin(), column_names.end());
     auto lock = nested_storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    const auto & nested_metadata = nested_storage->getInMemoryMetadataPtr(context, false);
+    const auto nested_metadata = nested_storage->getInMemoryMetadataPtr(context, false);
 
     Block nested_header = nested_metadata->getSampleBlock();
     ColumnWithTypeAndName & sign_column = nested_header.getByPosition(nested_header.columns() - 2);

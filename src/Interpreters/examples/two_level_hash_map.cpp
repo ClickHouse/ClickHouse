@@ -17,13 +17,18 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/HashTable/HashMap.h>
+#include <Examples/clickhouse_examples.h>
 
+
+namespace
+{
 
 using Key = UInt64;
 using Value = UInt64;
 
+} /// anonymous namespace
 
-int main(int argc, char ** argv)
+int mainEntryExampleTwoLevelHashMap(int argc, char ** argv)
 {
     if (argc < 2)
     {
@@ -60,8 +65,8 @@ int main(int argc, char ** argv)
         using Map = TwoLevelHashTable<Key, HashMapCell<Key, Value, DefaultHash<Key>>, DefaultHash<Key>, HashTableGrower<8>, HashTableAllocator>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -96,8 +101,8 @@ int main(int argc, char ** argv)
         //using Map = HashMap<Key, Value, UniquesHashSetDefaultHash>;
 
         Map map;
-        Map::LookupResult it;
-        bool inserted;
+        Map::LookupResult it = {};
+        bool inserted = {};
 
         for (size_t i = 0; i < n; ++i)
         {

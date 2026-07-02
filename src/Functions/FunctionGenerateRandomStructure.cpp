@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Common/randomSeed.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
@@ -138,7 +139,7 @@ namespace
     {
         constexpr size_t complex_types_size = complex_types.size() * allow_complex_types;
         constexpr size_t result_size = simple_types.size() + complex_types_size;
-        std::array<TypeIndex, result_size> result;
+        std::array<TypeIndex, result_size> result{};
         size_t index = 0;
 
         for (size_t i = 0; i != simple_types.size(); ++i, ++index)
@@ -189,7 +190,7 @@ namespace
         /// and slowness of this function, and it can lead to `Max query size exceeded`
         /// while using this function with generateRandom.
         size_t num_values = rng() % 16 + 1;
-        std::vector<Int16> values(num_values);
+        VectorWithMemoryTracking<Int16> values(num_values);
 
         /// Generate random numbers from range [-(max_value + 1), max_value - num_values + 1].
         for (Int16 & x : values)

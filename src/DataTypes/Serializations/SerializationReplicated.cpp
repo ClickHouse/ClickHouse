@@ -208,13 +208,13 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         return;
 
-    size_t num_rows;
+    size_t num_rows = 0;
     readVarUInt(num_rows, *indexes_stream);
     /// In Native format we always read the whole serialized column.
     if (num_rows != limit)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
 
-    UInt8 size_of_indexes_type;
+    UInt8 size_of_indexes_type = 0;
     readBinary(size_of_indexes_type, *indexes_stream);
 
     MutableColumnPtr indexes;
@@ -250,7 +250,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     if (!elements_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for SerializationReplicated elements.");
 
-    size_t num_elements;
+    size_t num_elements = 0;
     readVarUInt(num_elements, *elements_stream);
     nested->deserializeBinaryBulkWithMultipleStreams(column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
 }
@@ -362,6 +362,20 @@ void SerializationReplicated::serializeTextXML(const IColumn & column, size_t ro
 {
     const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
     nested->serializeTextXML(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
+}
+
+void SerializationReplicated::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto & column_replicated = assert_cast<const ColumnReplicated &>(column);
+    nested->serializeTextRaw(*column_replicated.getNestedColumn(), column_replicated.getIndexes().getIndexAt(row_num), ostr, settings);
+}
+
+void SerializationReplicated::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserialize(column, [&](auto & nested_column)
+    {
+        nested->deserializeTextRaw(nested_column, istr, settings);
+    });
 }
 
 }

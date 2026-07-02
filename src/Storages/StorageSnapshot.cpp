@@ -1,6 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 
@@ -23,17 +24,6 @@ StorageSnapshot::StorageSnapshot(
     StorageMetadataPtr metadata_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    VirtualsDescriptionPtr virtual_columns_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(std::move(virtual_columns_))
 {
 }
 
@@ -43,30 +33,13 @@ StorageSnapshot::StorageSnapshot(
     DataPtr data_)
     : storage(storage_)
     , metadata(std::move(metadata_))
-    , virtual_columns(storage_.getVirtualsPtr())
-    , data(std::move(data_))
-{
-}
-
-StorageSnapshot::StorageSnapshot(
-    const IStorage & storage_,
-    StorageMetadataPtr metadata_,
-    VirtualsDescriptionPtr virtual_columns_,
-    DataPtr data_)
-    : storage(storage_)
-    , metadata(std::move(metadata_))
-    , virtual_columns(std::move(virtual_columns_))
     , data(std::move(data_))
 {
 }
 
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
-    auto res = std::make_shared<StorageSnapshot>(storage, metadata, virtual_columns);
-
-    res->data = std::move(data_);
-
-    return res;
+    return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
 }
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
@@ -81,20 +54,27 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
 {
     auto all_columns = metadata->getColumns().get(options);
 
-    if (options.virtuals_kind != VirtualsKind::None)
+    if (options.virtuals_kind == VirtualsKind::None || metadata->virtuals.empty())
+        return all_columns;
+
+    /// Iterate virtuals directly: skip the `Block` round-trip in `getSampleBlock` and
+    /// the throwaway `NameSet` over every column of the table. There are typically a
+    /// handful of virtuals and many regular columns, so a linear `find` per virtual is
+    /// cheaper than hashing all regular columns up front.
+    auto virtuals_list = metadata->virtuals.getNamesAndTypes(options.virtuals_kind, options.virtuals_place);
+    for (const auto & virtual_column : virtuals_list)
     {
-        NameSet column_names;
-        for (const auto & column : all_columns)
-            column_names.insert(column.name);
-
-        auto virtuals_list = virtual_columns->getSampleBlock(options.virtuals_kind, options.virtuals_place).getNamesAndTypesList();
-        for (const auto & column : virtuals_list)
+        bool already_present = false;
+        for (const auto & existing : all_columns)
         {
-            if (column_names.contains(column.name))
-                continue;
-
-            all_columns.emplace_back(column.name, column.type);
+            if (existing.name == virtual_column.name)
+            {
+                already_present = true;
+                break;
+            }
         }
+        if (!already_present)
+            all_columns.push_back(virtual_column);
     }
 
     return all_columns;
@@ -116,7 +96,7 @@ std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOpt
 
     if (options.virtuals_kind != VirtualsKind::None)
     {
-        auto virtual_column = virtual_columns->tryGet(column_name, options.virtuals_kind, options.virtuals_place);
+        auto virtual_column = metadata->virtuals.tryGet(column_name, options.virtuals_kind, options.virtuals_place);
         if (virtual_column)
             return NameAndTypePair{virtual_column->name, virtual_column->type};
     }
@@ -145,7 +125,7 @@ Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) cons
         {
             res.insert({column->type->createColumn(), column->type, column_name});
         }
-        else if (auto virtual_column = virtual_columns->tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+        else if (auto virtual_column = metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
@@ -172,7 +152,7 @@ ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & colum
         {
             res.add(*column, "", false, false);
         }
-        else if (auto virtual_column = virtual_columns->tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+        else if (auto virtual_column = metadata->virtuals.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
         {
             /// Virtual columns must be appended after ordinary, because user can
             /// override them.
@@ -210,7 +190,7 @@ void StorageSnapshot::check(const Names & column_names) const
 
     for (const auto & name : column_names)
     {
-        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || virtual_columns->has(name);
+        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
 
         if (!has_column)
         {
@@ -232,10 +212,7 @@ std::optional<ColumnDefault> StorageSnapshot::getDefault(const String & column_n
     if (auto column_default = metadata->getColumns().getDefault(column_name))
         return column_default;
 
-    if (virtual_columns)
-        return virtual_columns->getDefault(column_name);
-
-    return std::nullopt;
+    return metadata->virtuals.getDefault(column_name);
 }
 
 }

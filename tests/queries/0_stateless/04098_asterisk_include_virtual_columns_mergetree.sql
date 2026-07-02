@@ -8,7 +8,7 @@ SET enable_analyzer = 1;
 DROP TABLE IF EXISTS test_virtuals_mt;
 
 CREATE TABLE test_virtuals_mt (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a
-SETTINGS disk = 'local_disk';
+SETTINGS disk = 'local_disk', index_granularity=1;
 
 INSERT INTO test_virtuals_mt SELECT number, number FROM numbers(10);
 

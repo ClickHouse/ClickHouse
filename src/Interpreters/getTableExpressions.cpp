@@ -110,7 +110,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = function_storage->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
+        virtuals = function_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
     }
     else if (table_expression.database_and_table_name)
     {
@@ -121,7 +121,7 @@ static NamesAndTypesList getColumnsFromTableExpression(
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = table->getVirtualsPtr()->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
+        virtuals = table_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
     }
 
     return names_and_type_list;

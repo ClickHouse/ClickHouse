@@ -1,0 +1,6 @@
+number1	5
+--- with LIMIT (pushdown blocker) ---
+number1	5
+--- filter on aggregate value ---
+number3	3
+--- no match returns empty ---

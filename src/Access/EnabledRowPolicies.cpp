@@ -9,13 +9,13 @@ namespace DB
 
 bool RowPolicyFilter::isAlwaysTrue() const
 {
-    bool value;
+    bool value = false;
     return !expression || (tryGetLiteralBool(expression.get(), value) && value);
 }
 
 bool RowPolicyFilter::isAlwaysFalse() const
 {
-    bool value;
+    bool value = false;
     return expression && (tryGetLiteralBool(expression.get(), value) && !value);
 }
 

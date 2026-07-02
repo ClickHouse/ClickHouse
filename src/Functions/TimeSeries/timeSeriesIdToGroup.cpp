@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
-class FunctionTimeSeriesIdToGroup : public IFunction
+class FunctionTimeSeriesIdToGroup final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToGroup";
@@ -31,6 +31,12 @@ public:
     /// Function timeSeriesIdToGroup returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

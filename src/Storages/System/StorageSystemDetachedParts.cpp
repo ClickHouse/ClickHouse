@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDetachedParts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -87,7 +88,7 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource : public ISource
+class DetachedPartsSource final : public ISource
 {
 public:
     DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)
@@ -274,8 +275,8 @@ StorageSystemDetachedParts::StorageSystemDetachedParts(const StorageID & table_i
         {"max_block_number", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "The maximum number of data parts that make up the current part after merging."},
         {"level",            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
     }});
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemDetachedParts::createVirtuals()
@@ -385,3 +386,6 @@ void ReadFromSystemDetachedParts::initializePipeline(QueryPipelineBuilder & pipe
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDetachedParts) }

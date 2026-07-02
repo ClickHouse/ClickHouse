@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
@@ -54,8 +55,8 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
             {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>()), "Policy for disk balancing, `round_robin` or `least_used`."}
     }));
     // TODO: Add string column with custom volume-type-specific options
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemStoragePolicies::createVirtuals()
@@ -129,3 +130,6 @@ Pipe StorageSystemStoragePolicies::read(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStoragePolicies) }
