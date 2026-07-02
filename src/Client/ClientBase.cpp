@@ -2827,6 +2827,7 @@ void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
     echo_queries = config.getBool("echo", echo_default);
     echo_query_formatted = config.getBool("echo-formatted", is_interactive);
     echo_query_id = config.getBool("echo-query-id", is_interactive);
+    echo_query_separator = config.getString("echo-query-separator", "");
     highlight_queries = config.getBool("highlight", true);
 }
 
@@ -2859,6 +2860,13 @@ void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_qu
     {
         /// Surround the formatted query with blank lines, as in interactive mode.
         writeChar('\n', *std_out);
+        /// Optionally print a separator so the formatted query is easy to tell apart from the
+        /// user-typed query that the terminal echoes directly above it in interactive mode.
+        if (!echo_query_separator.empty())
+        {
+            writeString(echo_query_separator, *std_out);
+            writeChar('\n', *std_out);
+        }
         writeString(text, *std_out);
         writeString("\n\n", *std_out);
     }
@@ -3843,6 +3851,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-query-id", po::value<bool>()->implicit_value(true), "Print the query_id before execution. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo-query-separator", po::value<std::string>(), "Print this separator before the formatted echoed query (requires --echo-formatted). Empty by default (disabled).")
 
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
@@ -3981,6 +3990,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("echo-formatted", options["echo-formatted"].as<bool>());
     if (options.contains("echo-query-id"))
         getClientConfiguration().setBool("echo-query-id", options["echo-query-id"].as<bool>());
+    if (options.contains("echo-query-separator"))
+        getClientConfiguration().setString("echo-query-separator", options["echo-query-separator"].as<std::string>());
     if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
