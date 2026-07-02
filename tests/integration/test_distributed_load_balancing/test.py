@@ -220,6 +220,9 @@ def test_load_balancing_least_request_avoids_busy_replica():
         "max_parallel_replicas": 1,
         # do not let a hedged connection to another replica steal the query from n1
         "use_hedged_requests": 0,
+        # sleepEachRow(1) over a whole block exceeds the default 3s per-block
+        # sleep cap and would throw TOO_SLOW immediately; 0 disables the cap
+        "function_sleep_max_microseconds_per_block": 0,
     }
 
     def run_busy_query():

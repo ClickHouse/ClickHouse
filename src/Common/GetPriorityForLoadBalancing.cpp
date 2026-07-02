@@ -3,6 +3,7 @@
 #include <Common/Priority.h>
 #include <Common/thread_local_rng.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 
