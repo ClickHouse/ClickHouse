@@ -874,10 +874,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
+    /// The columns whose explicit statistics were merged from the source parts above already have
+    /// exact counts: the builder takes them as-is and does not sample these columns. This requires
+    /// the source data to be written unchanged (`!merge_may_reduce_rows`) and the whole statistic to
+    /// be merged at this point — a statistic that is (even partially) rebuilt by the merge pipeline
+    /// does not have final counts here, so its column is sampled as usual.
+    Estimates statistics_estimates;
+    if (!global_ctx->merge_may_reduce_rows)
+    {
+        statistics_estimates = global_ctx->gathered_data.statistics.getEstimates();
+
+        for (const auto & [part_name, part_statistics] : global_ctx->statistics_to_build_by_part)
+            for (const auto & [column_name, column_statistics] : part_statistics)
+                statistics_estimates.erase(column_name);
+    }
+
     /// All data written for the merged part (the merging columns in the horizontal stage and, in a
     /// vertical merge, each gathered column) is sampled into this shared builder at the write call
     /// sites; the accumulated counts are persisted in `serialization.json` when the part is finalized.
-    global_ctx->gathered_data.estimates_builder = EstimatesBuilder(global_ctx->storage_columns, info_settings, {});
+    global_ctx->gathered_data.estimates_builder = EstimatesBuilder(global_ctx->storage_columns, info_settings, statistics_estimates);
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
