@@ -53,6 +53,8 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
+The same parameters can be used with the `Remote` and `RemoteSecure` table engines to create a persistent table instead of an ad-hoc one, see [Remote and RemoteSecure engines](../../engines/table-engines/special/distributed.md#distributed-remote-engines).
+
 ### Addresses {#addresses}
 
 ```text
