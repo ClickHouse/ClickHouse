@@ -16,6 +16,7 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/ComparisonNames.h>
@@ -617,21 +618,36 @@ void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optim
 /// boolean conversion behavior as if they were still part of the original AND expression.
 static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 {
-    auto output_type = removeNullable(condition.getType());
+    const auto & condition_type = condition.getType();
+    auto output_type = removeNullable(condition_type);
     WhichDataType which_type(output_type);
-    if (!which_type.isUInt8())
+    if (which_type.isUInt8())
+        return condition;
+
+    /// A `Nothing`-typed condition (e.g. a non-equi predicate over a column of type Nothing, such as
+    /// the result of `ARRAY JOIN []`) cannot be coerced by `AND`: `and(Nothing, true)` stays `Nothing`
+    /// because Nothing is the bottom type. Cast it to a boolean instead. The column has no values, so the
+    /// predicate matches no rows. removeNullable folds Nullable(Nothing) into Nothing as well.
+    if (which_type.isNothing())
     {
-        return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes)
+        DataTypePtr bool_ty = std::make_shared<DataTypeUInt8>();
+        if (isNullableOrLowCardinalityNullable(condition_type))
+            bool_ty = makeNullable(bool_ty);
+        return JoinActionRef::transform({condition}, [&bool_ty](auto & dag, auto && nodes)
         {
-            JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
-            DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            auto rhs_column = uint8_ty->createColumnConst(0, 1);
-            const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
-            nodes.push_back(&rhs_node);
-            return function_and(dag, nodes);
+            return &dag.addCast(*nodes.at(0), bool_ty, {}, nullptr);
         });
     }
-    return condition;
+
+    return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes)
+    {
+        JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
+        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
+        auto rhs_column = uint8_ty->createColumnConst(0, 1);
+        const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
+        nodes.push_back(&rhs_node);
+        return function_and(dag, nodes);
+    });
 }
 
 /// If side is not specified, check if filter can be executed after JOIN itself.
@@ -842,7 +858,7 @@ static JoinActionRef concatConditions(
     if (matching.size() == 1)
         result = toBoolIfNeeded(matching.front());
     else if (matching.size() > 1)
-        result = JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And));
+        result = toBoolIfNeeded(JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And)));
 
     conditions.erase(conditions.begin(), matching_point.begin());
     return result;
