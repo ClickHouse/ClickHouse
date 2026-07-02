@@ -1,0 +1,40 @@
+<clickhouse>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- Service-bind credentials. `user_dn_detection` is mandatory in the
+                 forced-lookup path and runs before role search, so by the time the
+                 role-mapping filter is evaluated `{user_dn}` resolves to the DN
+                 returned by `user_dn_detection`. The filter below uses `{user_dn}`,
+                 the documented AD-style mapping path, exercising the
+                 user-DN-substitution route through the forced lookup. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <user_directories>
+        <ldap>
+            <server>openldap</server>
+            <role_mapping>
+                <base_dn>dc=example,dc=org</base_dn>
+                <scope>subtree</scope>
+                <!-- AD-style filter using `{user_dn}` rather than `{bind_dn}`. The
+                     value of `{user_dn}` defaults to `final_bind_dn` and is
+                     overwritten by the result of `user_dn_detection`, so this only
+                     resolves correctly when the lookup actually runs the user-DN
+                     search — exercising the path the simpler `{bind_dn}` mapping
+                     does not. -->
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={user_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse-</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>

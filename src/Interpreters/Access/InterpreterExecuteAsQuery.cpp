@@ -1,6 +1,7 @@
 #include <Interpreters/Access/InterpreterExecuteAsQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/LDAPAccessStorage.h>
 #include <Access/User.h>
 #include <Core/Settings.h>
 #include <Parsers/Access/ASTExecuteAsQuery.h>
@@ -21,6 +22,38 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Resolves the target user name to a UUID, preserving the pre-PR `getID<User>`
+    /// storage precedence: the first storage in `user_directories` order that has the
+    /// name cached in memory wins (including an LDAP storage ordered before `users_xml`).
+    ///
+    ///   1. In-memory `find<User>`. If it hits an LDAP-owned entry, refresh possibly-stale
+    ///      role mapping by re-running `find` on THAT storage with `force_external_lookup`
+    ///      (see `LDAPAccessStorage::findImpl`); never globally, which could materialize a
+    ///      same-named user in an earlier LDAP storage and change which directory wins.
+    ///   2. On a miss, `force_external_lookup=true` lets `LDAPAccessStorage` service-bind
+    ///      the directory to resolve users not yet cached here. No-op for other storages.
+    ///   3. Still nothing -> `getID` for the canonical `UNKNOWN_USER` error.
+    ///
+    /// The two-pass logic does NOT override storage order; it only stops the forced
+    /// lookup from materializing an LDAP entry that would shadow a local user on a miss.
+    UUID resolveImpersonationTargetUser(const ContextPtr & context, const String & target_user_name)
+    {
+        const auto & access_control = context->getAccessControl();
+        if (auto id = access_control.find<User>(target_user_name))
+        {
+            const auto storage = access_control.findStorage(*id);
+            if (storage && storage->getStorageType() == LDAPAccessStorage::STORAGE_TYPE)
+            {
+                if (auto refreshed_id = storage->find<User>(target_user_name, /* force_external_lookup = */ true))
+                    return *refreshed_id;
+            }
+            return *id;
+        }
+        if (auto id = access_control.find<User>(target_user_name, /* force_external_lookup = */ true))
+            return *id;
+        return access_control.getID<User>(target_user_name);
+    }
+
     /// Creates another query context to execute a query as another user.
     ContextMutablePtr impersonateQueryContext(ContextPtr context, const String & target_user_name)
     {
@@ -43,7 +76,7 @@ namespace
         if (context->getZooKeeperMetadataTransaction())
             new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
-        new_context->setUser(context->getAccessControl().getID<User>(target_user_name));
+        new_context->setUser(resolveImpersonationTargetUser(context, target_user_name));
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         new_context->setCurrentUserName(target_user_name);
@@ -62,7 +95,7 @@ namespace
         auto database = context->getCurrentDatabase();
         auto changed_settings = context->getSettingsRef().changes();
 
-        context->setUser(context->getAccessControl().getID<User>(target_user_name));
+        context->setUser(resolveImpersonationTargetUser(context, target_user_name));
 
         /// We need to update the client info to make currentUser() return `target_user_name`.
         context->setCurrentUserName(target_user_name);

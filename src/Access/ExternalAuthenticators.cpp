@@ -71,6 +71,8 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
     const bool has_auth_dn_prefix = config.has(ldap_server_config + ".auth_dn_prefix");
     const bool has_auth_dn_suffix = config.has(ldap_server_config + ".auth_dn_suffix");
     const bool has_user_dn_detection = config.has(ldap_server_config + ".user_dn_detection");
+    const bool has_lookup_bind_dn = config.has(ldap_server_config + ".lookup_bind_dn");
+    const bool has_lookup_password = config.has(ldap_server_config + ".lookup_password");
     const bool has_verification_cooldown = config.has(ldap_server_config + ".verification_cooldown");
     const bool has_enable_tls = config.has(ldap_server_config + ".enable_tls");
     const bool has_tls_minimum_protocol_version = config.has(ldap_server_config + ".tls_minimum_protocol_version");
@@ -114,6 +116,58 @@ void parseLDAPServer(LDAPClient::Params & params, const Poco::Util::AbstractConf
         }
 
         parseLDAPSearchParams(*params.user_dn_detection, config, ldap_server_config + ".user_dn_detection");
+    }
+
+    /// Optional service-account credentials used by
+    /// `IAccessStorage::find(..., force_external_lookup=true)` to resolve a user name
+    /// without the user's own password. Both must be provided together, and the lookup
+    /// path also requires `user_dn_detection` to confirm the user exists.
+    if (has_lookup_bind_dn != has_lookup_password)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Both 'lookup_bind_dn' and 'lookup_password' must be specified together");
+
+    if (has_lookup_bind_dn)
+    {
+        params.lookup_bind_dn = config.getString(ldap_server_config + ".lookup_bind_dn");
+        params.lookup_password = config.getString(ldap_server_config + ".lookup_password");
+
+        if (params.lookup_bind_dn.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_bind_dn' entry");
+
+        /// Fail closed: an empty `lookup_password` with a non-empty `lookup_bind_dn` would
+        /// issue an LDAP unauthenticated simple bind, which directories may accept as an
+        /// anonymous bind. That would let the service-bind path resolve users without
+        /// actually authenticating the lookup service account, defeating the purpose of
+        /// the service credentials and silently widening who can be impersonated. Mirror
+        /// the same fail-closed check that the user-mode bind already applies to
+        /// `params.password`.
+        if (params.lookup_password.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'lookup_password' entry");
+
+        if (!params.user_dn_detection)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to be configured");
+
+        /// `user_dn_detection` must depend on the requested user name; otherwise a static
+        /// query (e.g. `search_filter=(cn=janedoe)`) returning a single entry would let
+        /// `EXECUTE AS some_other_name` resolve to that entry's DN.
+        const auto contains = [](const String & s, const std::string_view needle)
+        {
+            return s.find(needle) != String::npos;
+        };
+        const String & udd_base_dn = params.user_dn_detection->base_dn;
+        const String & udd_search_filter = params.user_dn_detection->search_filter;
+        const bool depends_on_user_name =
+            contains(udd_base_dn, "{user_name}") || contains(udd_search_filter, "{user_name}");
+        const bool bind_dn_carries_user_name = contains(params.bind_dn, "{user_name}");
+        const bool depends_via_bind_dn = bind_dn_carries_user_name &&
+            (contains(udd_base_dn, "{bind_dn}") || contains(udd_search_filter, "{bind_dn}") ||
+             contains(udd_base_dn, "{user_dn}") || contains(udd_search_filter, "{user_dn}"));
+        if (!depends_on_user_name && !depends_via_bind_dn)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'lookup_bind_dn' requires 'user_dn_detection' to depend on the requested user name; "
+                "use '{{user_name}}' in 'user_dn_detection.base_dn' or '.search_filter', "
+                "or use '{{bind_dn}}'/'{{user_dn}}' with a 'bind_dn' template that contains '{{user_name}}'");
     }
 
     if (has_verification_cooldown)
@@ -283,6 +337,7 @@ void parseLDAPRoleSearchParams(LDAPClient::RoleSearchParams & params, const Poco
 void ExternalAuthenticators::resetImpl()
 {
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     ldap_caches.clear();
     kerberos_params.reset();
 }
@@ -348,6 +403,7 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
     ldap_client_params_blueprint.clear();
+    ldap_server_parse_errors.clear();
     for (auto ldap_server_name : ldap_server_names)
     {
         try
@@ -366,6 +422,11 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         catch (...)
         {
             tryLogCurrentException(log, "Could not parse LDAP server " + backQuote(ldap_server_name));
+            /// Remember the error so that `findLDAPUser` can surface it as a
+            /// query-time exception. Without this the parsed-out server is
+            /// dropped silently and `EXECUTE AS` collapses to `UNKNOWN_USER`,
+            /// hiding a real operator misconfiguration.
+            ldap_server_parse_errors[ldap_server_name] = getCurrentExceptionMessage(/* with_stacktrace = */ false);
         }
     }
 
@@ -517,6 +578,75 @@ bool ExternalAuthenticators::checkLDAPCredentials(const String & server, const B
             // Somehow a newer check with different params/password succeeded, so the current result is obsolete and we discard it.
             return false;
         }
+    }
+
+    return result;
+}
+
+bool ExternalAuthenticators::findLDAPUser(const String & server, const String & user_name,
+    const LDAPClient::RoleSearchParamsList * role_search_params, LDAPClient::SearchResultsList * role_search_results) const
+{
+    if (user_name.empty())
+        return false;
+
+    std::optional<LDAPClient::Params> params;
+    UInt128 params_hash = 0;
+
+    {
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+        {
+            /// Mirror `checkLDAPCredentials`: an unknown server name is a configuration
+            /// error, not a user miss. If the server failed to parse, attach the saved
+            /// reason; otherwise the directory references a name with no `<ldap_servers>`
+            /// block at all (e.g. a typo).
+            const auto eit = ldap_server_parse_errors.find(server);
+            if (eit != ldap_server_parse_errors.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "LDAP server '{}' is misconfigured and cannot be used for forced "
+                    "user lookup: {}", server, eit->second);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "LDAP server '{}' is not configured", server);
+        }
+
+        /// The service-bind path is opt-in: a server without `lookup_bind_dn` configured does
+        /// not participate in forced lookups. Returning false here lets the caller fall through
+        /// to other access storages.
+        if (pit->second.lookup_bind_dn.empty())
+            return false;
+
+        params = pit->second;
+        params->user = user_name;
+        /// The user's own password is not used in service-bind mode; clear it so it cannot
+        /// accidentally bleed into the LDAP exchange via cached state.
+        params->password.clear();
+
+        params_hash = computeParamsHash(*params, role_search_params);
+    }
+
+    LDAPSimpleAuthClient client(params.value());
+    const auto result = client.find(role_search_params, role_search_results);
+
+    if (result)
+    {
+        /// `SYSTEM RELOAD CONFIG` can mutate `ldap_client_params_blueprint` between
+        /// the snapshot above and the bind/search round-trip. If the server is gone
+        /// or its lookup parameters have changed, discard the result so the caller
+        /// does not materialize a user against stale lookup semantics. Mirrors the
+        /// post-check in `checkLDAPCredentials`.
+        std::lock_guard lock(mutex);
+
+        const auto pit = ldap_client_params_blueprint.find(server);
+        if (pit == ldap_client_params_blueprint.end())
+            return false;
+
+        auto new_params = pit->second;
+        new_params.user = user_name;
+        new_params.password.clear();
+
+        if (params_hash != computeParamsHash(new_params, role_search_params))
+            return false;
     }
 
     return result;
