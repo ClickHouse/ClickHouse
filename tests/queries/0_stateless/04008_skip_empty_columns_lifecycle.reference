@@ -1,0 +1,57 @@
+case22_pre_detach
+1	100	0
+case22_post_attach
+1	100	0
+case23_pre_detach
+1	100	0
+case23_post_attach
+1	100	0
+case24_pre_backup
+1	100	0
+case24_post_restore
+1	100	0
+case25_post_freeze
+1	100	0
+case26_check_table
+1
+case31_columns_in_dst
+a
+key
+case31_data
+1	100	0
+case32_data
+1	100	0
+case32_post_alter
+1	100	0
+case33_data
+1	100	0
+case33_post_alter
+1	100	0
+case34_data
+1	100	0	42
+case35_post_drop
+1	100
+case36_data
+1	100	0
+case36_projection
+1	100	0
+case37_columns_in_part
+key
+case37_data
+1	00000000
+case38_columns_in_part
+key
+case38_data
+1	{}
+case39_pre_merge
+1	10	0
+2	20	100
+3	30	0
+case39_post_merge
+1	10	0
+2	20	100
+3	30	0
+case40_columns_in_part
+key
+case40_data
+1	1970-01-01	1970-01-01 00:00:00
