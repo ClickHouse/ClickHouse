@@ -5704,9 +5704,50 @@ function tryOpenCompletions() {
     return true;
 }
 
+/// Indent (or, with `dedent`, unindent) every line touched by the current selection by 4
+/// spaces. Uses `execCommand('insertText')` on the whole line block so the change is a single
+/// undo step and fires an `input` event (which refreshes the backdrop and completions).
+function indentSelection(elem, dedent) {
+    const INDENT = '    ';
+    const value = elem.value;
+
+    /// Expand the selection to whole lines (same line semantics as the comment shortcut).
+    const blockStart = value.lastIndexOf('\n', elem.selectionStart - 1) + 1;
+    let blockEnd = value.indexOf('\n', elem.selectionEnd);
+    if (blockEnd === -1) blockEnd = value.length;
+
+    const block = value.substring(blockStart, blockEnd);
+    const newBlock = block.split('\n').map((line) => {
+        if (dedent) {
+            /// Remove up to 4 leading spaces, or a single leading tab.
+            const m = line.match(/^( {1,4}|\t)/);
+            return m ? line.substring(m[0].length) : line;
+        }
+        /// Do not add trailing whitespace to blank lines.
+        return line.length === 0 ? line : INDENT + line;
+    }).join('\n');
+
+    if (newBlock === block) return; /// Nothing to unindent — leave the selection untouched.
+
+    elem.setSelectionRange(blockStart, blockEnd);
+    document.execCommand('insertText', false, newBlock);
+    /// Reselect the whole (re)indented block so repeated Tab / Shift+Tab keeps working.
+    elem.setSelectionRange(blockStart, blockStart + newBlock.length);
+}
+
 /// Capture-phase key handling so it runs before the textarea's own `onkeydown` (which would
 /// otherwise treat Tab as "insert spaces").
 query_area.addEventListener('keydown', (e) => {
+    /// Tab / Shift+Tab with a non-empty selection indents / unindents the selected lines by 4
+    /// spaces. Handled here (before the completion logic and the space-insert `onkeydown`) so a
+    /// selection takes priority.
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !user_prefers_tab_navigation
+        && query_area.selectionStart !== query_area.selectionEnd) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        indentSelection(query_area, e.shiftKey);
+        return;
+    }
     if (!completionCandidates.length) {
         /// Completions are closed: Tab at the end of a word manually opens them if a
         /// continuation is possible; otherwise let the default Tab (indentation) happen.
