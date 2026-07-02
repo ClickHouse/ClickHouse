@@ -8,6 +8,8 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -18,7 +20,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
+using FieldVector = VectorWithMemoryTracking<Field>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -41,7 +43,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
+using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
@@ -320,12 +322,12 @@ public:
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs)
+    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept
+    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
     {
         create(std::move(rhs));
     }
@@ -346,7 +348,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size)
+    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
     {
         create(data, size);
     }
@@ -521,9 +523,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage;
+        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
-    Types::Which which;
+    Types::Which which{};
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -735,7 +737,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs)
+Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));

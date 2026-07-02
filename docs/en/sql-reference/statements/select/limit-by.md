@@ -6,8 +6,6 @@ title: 'LIMIT BY Clause'
 doc_type: 'reference'
 ---
 
-# LIMIT BY Clause
-
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](/sql-reference/syntax#expressions).
 
 ClickHouse supports the following syntax variants:

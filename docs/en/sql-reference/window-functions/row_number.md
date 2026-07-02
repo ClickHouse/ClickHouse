@@ -7,8 +7,6 @@ title: 'row_number'
 doc_type: 'reference'
 ---
 
-# row_number
-
 Numbers the current row within its partition starting from 1.
 
 **Syntax**
@@ -31,9 +29,7 @@ For more detail on window function syntax see: [Window Functions - Syntax](./ind
 
 The following example is based on the example provided in the video instructional [Ranking window functions in ClickHouse](https://youtu.be/Yku9mmBYm_4?si=XIMu1jpYucCQEoXA).
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE salaries
 (
     `team` String,
@@ -51,15 +47,13 @@ INSERT INTO salaries FORMAT Values
     ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
 ```
 
-```sql
+```sql title="Query"
 SELECT player, salary, 
        row_number() OVER (ORDER BY salary DESC) AS row_number
 FROM salaries;
 ```
 
-Result:
-
-```response
+```response title="Response"
    ┌─player──────────┬─salary─┬─row_number─┐
 1. │ Gary Chen       │ 195000 │          1 │
 2. │ Robert George   │ 195000 │          2 │

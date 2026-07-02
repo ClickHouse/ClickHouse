@@ -4,6 +4,8 @@
 #include <IO/Operators.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <array>
+
 
 namespace DB
 {
@@ -30,6 +32,20 @@ public:
     ASTPtr settings_ast;
     ASTPtr compression;
     ASTPtr compression_level;
+
+    /// The output-option members in their canonical order, which matches the order in
+    /// which `formatImpl` writes them: INTO OUTFILE (with COMPRESSION and LEVEL), then
+    /// FORMAT, then SETTINGS. The parser canonicalizes the output-option children into
+    /// this order, and `cloneOutputOptions` clones them in this order, so that a freshly
+    /// parsed AST, its clone, and a format+reparse roundtrip all share the same child
+    /// order (and therefore the same tree hash). Keep this in sync with `formatImpl`.
+    static constexpr std::array<ASTPtr ASTQueryWithOutput::*, 5> output_option_members{
+        &ASTQueryWithOutput::out_file,
+        &ASTQueryWithOutput::compression,
+        &ASTQueryWithOutput::compression_level,
+        &ASTQueryWithOutput::format_ast,
+        &ASTQueryWithOutput::settings_ast,
+    };
 
     /// Note that flags are initialized to zero (false) by default
     ASTQueryWithOutput() = default;

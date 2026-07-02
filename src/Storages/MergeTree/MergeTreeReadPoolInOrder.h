@@ -8,7 +8,8 @@ class MergeTreeReadPoolInOrder : public MergeTreeReadPoolBase
 {
 public:
     MergeTreeReadPoolInOrder(
-        bool has_limit_below_one_block_,
+        bool has_hard_limit_below_one_block_,
+        bool has_soft_limit_below_one_block_,
         MergeTreeReadType read_type_,
         RangesInDataParts parts_,
         MutationsSnapshotPtr mutations_snapshot_,
@@ -31,7 +32,15 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
 
 private:
-    const bool has_limit_below_one_block;
+    /// Hard limit case (no filter): we will stop reading exactly at the limit, so always emit
+    /// single-range tasks to avoid reading more rows than necessary.
+    const bool has_hard_limit_below_one_block;
+
+    /// Soft limit case (WHERE + LIMIT): the limit is only an estimation since the filter may
+    /// drop rows. Emit a single-range task only for the first call per part - if it didn't fill
+    /// the limit, the filter is likely selective and we should switch to regular block size.
+    const bool has_soft_limit_below_one_block;
+
     const MergeTreeReadType read_type;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 

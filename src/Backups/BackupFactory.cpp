@@ -57,6 +57,8 @@ void registerBackupEngineNull(BackupFactory &);
 void registerBackupEngineS3(BackupFactory &);
 void registerBackupEngineAzureBlobStorage(BackupFactory &);
 
+void registerBackupEngines(BackupFactory & factory);
+
 void registerBackupEngines(BackupFactory & factory)
 {
     registerBackupEnginesFileAndDisk(factory);

@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionToLowCardinality: public IFunction
+class FunctionToLowCardinality final : public IFunction
 {
 public:
     static constexpr auto name = "toLowCardinality";

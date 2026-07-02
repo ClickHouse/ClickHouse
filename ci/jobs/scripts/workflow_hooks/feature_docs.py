@@ -20,8 +20,11 @@ inline_doc_paths = [
 
 # File name suffixes that indicate embedded documentation
 # (e.g. settings files with DECLARE macros containing description strings)
+# Settings.cpp files declare the per-setting DECLARE(...) macros for Settings/ServerSettings,
+# whereas the format settings put DECLARE(...) blocks in FormatFactorySettings.h.
 embedded_doc_suffixes = [
     "Settings.cpp",
+    "Settings.h",
 ]
 
 
@@ -39,6 +42,11 @@ def check_docs():
     info = Info()
     if Labels.PR_FEATURE in info.pr_labels:
         changed_files = info.get_kv_data("changed_files")
+        assert changed_files is not None, (
+            "changed_files is not populated in JOB_KV_DATA: the store_data pre-hook "
+            "most likely failed to fetch the PR file list from the GitHub API. "
+            "See the Config Workflow logs for the underlying error."
+        )
         has_doc_changes = any(
             file.startswith("docs/")
             or file in embedded_doc_files
@@ -48,7 +56,10 @@ def check_docs():
             )
             or (
                 any(file.endswith(suffix) for suffix in embedded_doc_suffixes)
-                and file_contains_marker(file, "DECLARE_SETTING")
+                and (
+                    file_contains_marker(file, "DECLARE_SETTING")
+                    or file_contains_marker(file, "DECLARE(")
+                )
             )
             for file in changed_files
         )

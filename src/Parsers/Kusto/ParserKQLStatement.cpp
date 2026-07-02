@@ -50,7 +50,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 String value;
                 {
                     Tokens val_tokens(raw_value.data(), raw_value.data() + raw_value.size(), 0, true);
-                    IParser::Pos val_pos(val_tokens, pos.max_depth, pos.max_backtracks);
+                    IParser::Pos val_pos(val_tokens, pos);
                     value = ParserKQLBase::getExprFromToken(val_pos);
                 }
                 if (value.empty())
@@ -60,7 +60,7 @@ bool ParserKQLStatement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// Generate a no-op SELECT to consume the statement
                 String noop_query = "SELECT 'ok' WHERE 0";
                 Tokens noop_tokens(noop_query.data(), noop_query.data() + noop_query.size(), 0, true);
-                IParser::Pos noop_pos(noop_tokens, pos.max_depth, pos.max_backtracks);
+                IParser::Pos noop_pos(noop_tokens, pos);
                 ParserSelectWithUnionQuery select_p;
                 return select_p.parse(noop_pos, node, expected);
             }
@@ -137,7 +137,7 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserKQLParenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// TODO: This code is idiotic, see https://github.com/ClickHouse/ClickHouse/issues/61742
 
@@ -161,6 +161,19 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         auto pos_start = pos;
         while (isValidKQLPos(pos))
         {
+            /// A `Semicolon` token in the outer lexer is always a statement boundary
+            /// from the surrounding SQL parser's point of view. Crossing it here would
+            /// advance the outer `Tokens` high-water mark past the end of the current
+            /// SQL statement, leaving `last_token.begin > this_query_end_pos->end` in
+            /// `tryParseQuery` and tripping a heap-buffer-overflow in
+            /// `writeQueryAroundTheError` (the SSE2 ASCII fast path in
+            /// `UTF8::computeWidthImpl` reads past the buffer when the `size_t`
+            /// underflows). Unquoted `kql(...)` cannot legitimately contain a `;` at
+            /// the SQL-lexer level: callers that need KQL `let` statements must quote
+            /// the argument with `'...'` or `$$...$$` (issue #61742). Fail here so
+            /// the outer parser surfaces a clean syntax error pointing at the `;`.
+            if (pos->type == TokenType::Semicolon)
+                return false;
             if (pos->type == TokenType::ClosingRoundBracket)
                 --paren_count;
             if (pos->type == TokenType::OpeningRoundBracket)
@@ -180,7 +193,7 @@ bool ParserKQLTableFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     }
 
     Tokens tokens_kql(kql_statement.data(), kql_statement.data() + kql_statement.size(), 0, true);
-    IParser::Pos pos_kql(tokens_kql, pos.max_depth, pos.max_backtracks);
+    IParser::Pos pos_kql(tokens_kql, pos);
 
     Expected kql_expected;
     kql_expected.enable_highlighting = false;

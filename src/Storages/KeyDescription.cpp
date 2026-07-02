@@ -115,7 +115,7 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 }
 
 /// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
-std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
+static std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
     const ASTPtr & key_expression_list,
     const NamesAndTypesList & additional_columns)
 {

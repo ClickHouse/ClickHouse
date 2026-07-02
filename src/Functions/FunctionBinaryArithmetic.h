@@ -64,7 +64,6 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
-#include <cassert>
 #include <ranges>
 
 namespace DB
@@ -292,27 +291,72 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
     {
+        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
+        /// The compiler "vectorizes" by extracting each element, doing scalar div,
+        /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
+        /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
+        /// don't define the member are treated as opting in to vectorization.
+        static constexpr bool disable_vectorization = []
+        {
+            if constexpr (requires { Op::no_vectorize; })
+                return bool(Op::no_vectorize);
+            else
+                return false;
+        }();
+
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i], *b);
+            if constexpr (disable_vectorization)
+            {
+                #pragma clang loop vectorize(disable)
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = Op::template apply<ResultType>(a[i], *b);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = Op::template apply<ResultType>(a[i], *b);
+            }
         }
         else
         {
             if (right_nullmap)
             {
-                for (size_t i = 0; i < size; ++i)
-                    if ((*right_nullmap)[i])
-                        c[i] = ResultType();
-                    else
-                        apply<op_case>(a, b, c, i);
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        if ((*right_nullmap)[i])
+                            c[i] = ResultType();
+                        else
+                            apply<op_case>(a, b, c, i);
+                }
             }
             else
-                for (size_t i = 0; i < size; ++i)
-                    apply<op_case>(a, b, c, i);
+            {
+                if constexpr (disable_vectorization)
+                {
+                    #pragma clang loop vectorize(disable)
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+                else
+                {
+                    for (size_t i = 0; i < size; ++i)
+                        apply<op_case>(a, b, c, i);
+                }
+            }
         }
     }
 
@@ -590,7 +634,7 @@ public:
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
 
-        size_t size;
+        size_t size = 0;
 
         if constexpr (op_case == OpCase::LeftConstant)
             size = b.size();
@@ -827,6 +871,8 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
+    static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
+    static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
     ContextPtr context;
 
@@ -1223,6 +1269,21 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+        ///
+        /// The squaring step computes vec_from[i] := vec_from[i] + vec_from[i].
+        /// Calling `function->merge(state, state)` directly is undefined behaviour:
+        /// many aggregate function `merge` implementations append the source's
+        /// internal storage to the destination's. When `src == dst` and the
+        /// destination reallocates, the source iterators (pointing to the freed
+        /// buffer) are dereferenced, producing a heap-use-after-free. We avoid
+        /// the alias by copying `vec_from` into an independent column first.
+        ///
+        /// The temporary column is constructed inside the squaring branch so
+        /// that its arena is released at the end of each iteration. Re-using a
+        /// single column across iterations would leak per-iteration state
+        /// memory into the column's monotonic arena (`popBack` decrements the
+        /// row count but does not free arena allocations), causing the
+        /// temporary footprint to grow with the multiplier.
         while (m)
         {
             if (m % 2)
@@ -1233,8 +1294,15 @@ class FunctionBinaryArithmetic : public IFunction
             }
             else
             {
+                auto column_temp = ColumnAggregateFunction::create(function);
+                column_temp->reserve(size);
                 for (size_t i = 0; i < size; ++i)
-                    function->merge(vec_from[i], vec_from[i], arena.get());
+                    column_temp->insertFrom(vec_from[i]);
+                auto & vec_temp = column_temp->getData();
+
+                for (size_t i = 0; i < size; ++i)
+                    function->merge(vec_from[i], vec_temp[i], arena.get());
+
                 m /= 2;
             }
         }
@@ -1288,11 +1356,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnDateTime64 * col;
+            const ColumnDateTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val;
-            bool is_const;
-            UInt64 scale;
+            UInt64 const_val{};
+            bool is_const{};
+            UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -1387,11 +1455,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnTime64 * col;
+            const ColumnTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val;
-            bool is_const;
-            UInt64 scale;
+            UInt64 const_val{};
+            bool is_const{};
+            UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -1989,6 +2057,8 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    bool isNameInsensitive() const override { return true; }
 
     bool useDefaultImplementationForNulls() const override
     {
@@ -2660,8 +2730,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return col_res;
     }
 
+    /// Decides whether a division-or-null operation must return NULL for the given operands.
+    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
+    ///    overflow is a valid floating-point result, not an FPE);
+    ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
+    ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
+    ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
+    ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
+    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
+    ///    raises just like division); for floating modulo, only division by zero, because the float
+    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap) const
+    static bool divisionOrNullLeadsToNull(A a, B b)
+    {
+        if constexpr (is_div_floating_or_null)
+            return b == 0;
+        else if constexpr (is_int_div_or_null)
+            return integerDivisionLeadsToFPE(a, b);
+        else
+            return moduloLeadsToFPE(a, b);
+    }
+
+    template <typename A, typename B>
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -2766,6 +2858,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_left_const->template getValue<T0>(),
                         col_right_const->template getValue<T1>());
 
+                    if constexpr (is_division_or_null)
+                    {
+                        if (result_nullmap)
+                            result_nullmap->resize_fill(col_left_const->size(),
+                                divisionOrNullLeadsToNull(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
+                    }
+
                     return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
@@ -2803,6 +2902,20 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else
                     return nullptr;
+
+                if constexpr (is_division_or_null)
+                {
+                    if (result_nullmap)
+                    {
+                        result_nullmap->resize_fill(col_left_size, false);
+                        for (size_t i = 0; i < col_left_size; ++i)
+                        {
+                            auto a = col_left ? col_left->getData()[i] : col_left_const->template getValue<T0>();
+                            auto b = col_right ? col_right->getData()[i] : col_right_const->template getValue<T1>();
+                            (*result_nullmap)[i] = divisionOrNullLeadsToNull(a, b);
+                        }
+                    }
+                }
 
                 return col_res;
             }
@@ -2873,7 +2986,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr, NullMap * result_nullmap = nullptr) const
     {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
@@ -2913,12 +3026,17 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             }
             else if (result_type->isNullable())
             {
+                /// Compute null map at the typed level using divisionLeadsToFPE, which handles b==0 and INT_MIN/-1 cases
+                NullMap fpe_nullmap;
+                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap, &fpe_nullmap);
+
+                /// merge null maps
                 auto null_map_col = ColumnUInt8::create(input_rows_count, false);
-                PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
+                auto & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
-                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
-                return !null_map_col->empty() ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
+                    null_map_data[i] = fpe_nullmap[i] || left_argument.column->isNullAt(i) || right_argument.column->isNullAt(i);
+
+                return wrapInNullable(res, std::move(null_map_col));
             }
         }
 
@@ -2938,7 +3056,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - one or both arguments are IPv6
@@ -2957,7 +3075,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
@@ -2980,7 +3098,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
                     {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
                 };
-                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
             }
         }
 
@@ -3031,7 +3149,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 return false;
             }
             else
-                return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
+                return (res = executeNumeric(arguments, left, right, right_nullmap, result_nullmap)) != nullptr;
         });
 
         if (isArray(result_type))
@@ -3099,7 +3217,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        assert(2 == arguments.size());
+        chassert(2 == arguments.size());
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);
@@ -3141,7 +3259,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3453,7 +3571,7 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;

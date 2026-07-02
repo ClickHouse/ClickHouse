@@ -7,8 +7,6 @@ title: 'merge'
 doc_type: 'reference'
 ---
 
-# merge Table Function
-
 Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table.
 The table schema is derived from underlying tables by using a union of their columns and by deriving common types.
 The same virtual columns are available as for the [Merge](../../engines/table-engines/special/merge.md) table engine.
