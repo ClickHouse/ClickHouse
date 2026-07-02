@@ -363,6 +363,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             case DataDestinationType::VOLUME:
                 ostr << "VOLUME ";
                 break;
+            case DataDestinationType::SHARD:
+                ostr << "SHARD ";
+                break;
             case DataDestinationType::TABLE:
                 ostr << "TABLE ";
                 if (!to_database.empty())
