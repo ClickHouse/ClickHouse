@@ -62,6 +62,13 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_count;
 
     bool build_logical_plan = false;
+
+    /// Together with build_logical_plan: build a logical plan suitable for the query plan
+    /// cache. Views are expanded at plan time (recursively, in logical mode) instead of
+    /// becoming `ReadFromTable` placeholders, and key-value direct-join lookup steps (which
+    /// bind live storages into the plan) are not used. Distributed and parallel-replicas
+    /// logical plans do not set this flag and are unaffected.
+    bool cacheable_logical_plan = false;
     bool ignore_rename_columns = false;
 
     size_t max_step_description_length = 0;
