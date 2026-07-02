@@ -382,29 +382,32 @@ message ExprList {
     repeated Expr extra_exprs = 2;
 }
 
+message ExprInType {
+    oneof in_oneof {
+        Expr single_expr = 1;
+        ExprList array = 2;
+        ExprList tuple = 3;
+        ExplainQuery sel = 4;
+    }
+}
+
 message ExprIn {
     required ExprList expr = 1;
     required bool global = 2;
     required bool not = 3;
-    oneof in_oneof {
-        Expr single_expr = 4;
-        ExprList array = 5;
-        ExprList tuple = 6;
-        ExplainQuery sel = 7;
-    }
-}
-
-enum AnyAllSome {
-    AAS_ANY = 1;
-    AAS_ALL = 2;
-    AAS_SOME = 3;
+    required ExprInType in_type = 4;
 }
 
 message ExprAny {
+    enum AnyAllSome {
+        AAS_ANY = 1;
+        AAS_ALL = 2;
+        AAS_SOME = 3;
+    }
     required Expr expr = 1;
     required BinaryOperator op = 2;
     required AnyAllSome anyall = 3;
-    required ExplainQuery sel = 4;
+    required ExprInType in_type = 4;
 }
 
 message ExprTruthTests {
@@ -644,9 +647,12 @@ message IntervalExpr {
         CENTURY = 17;
         DECADE = 18;
         MILLENNIUM = 19;
+        TIMEZONE_HOUR = 20;
+        TIMEZONE_MINUTE = 21;
     }
     required Interval interval = 1;
     required Expr expr = 2;
+    required bool use_extract = 3;
 }
 
 /// Separate this out to inflate the probability of having a literal value
@@ -758,16 +764,17 @@ enum InFormat {
     IN_RowBinaryWithDefaults = 52;
     IN_RowBinaryWithNames = 53;
     IN_RowBinaryWithNamesAndTypes = 54;
-    IN_TabSeparated = 55;
-    IN_TabSeparatedRaw = 56;
-    IN_TabSeparatedRawWithNames = 57;
-    IN_TabSeparatedRawWithNamesAndTypes = 58;
-    IN_TabSeparatedWithNames = 59;
-    IN_TabSeparatedWithNamesAndTypes = 60;
-    IN_Template = 61;
-    IN_TemplateIgnoreSpaces = 62;
-    IN_TSKV = 63;
-    IN_Values = 64;
+    IN_RowBinaryWithNamesAndTypesAndDefaults = 55;
+    IN_TabSeparated = 56;
+    IN_TabSeparatedRaw = 57;
+    IN_TabSeparatedRawWithNames = 58;
+    IN_TabSeparatedRawWithNamesAndTypes = 59;
+    IN_TabSeparatedWithNames = 60;
+    IN_TabSeparatedWithNamesAndTypes = 61;
+    IN_Template = 62;
+    IN_TemplateIgnoreSpaces = 63;
+    IN_TSKV = 64;
+    IN_Values = 65;
 }
 
 enum OutFormat {
@@ -1107,8 +1114,6 @@ message ObjectStoreFunc {
     optional Cluster cluster = 3;
     required string credential = 4;
     repeated KeyValuePair params = 5;
-    optional SettingValues setting_values = 6;
-    repeated HTTPHeader http_headers = 7;
 }
 
 message URLFunc {
@@ -1125,7 +1130,6 @@ message URLFunc {
         InOutFormat inoutformat = 6;
     }
     optional Expr structure = 7;
-    repeated HTTPHeader http_headers = 8;
 }
 
 message SQLTableFuncCall {
@@ -1215,6 +1219,8 @@ message TableFunction {
         MergeTreeAnalyzeIndexesFunc mtanindex = 23;
         SQLTableFuncCall func = 24;
     }
+    optional SettingValues setting_values = 25;
+    repeated HTTPHeader http_headers = 26;
 }
 
 message SampleClause {
@@ -1535,6 +1541,7 @@ message Dynamic {
 message QBit {
     required FloatingPoints subtype = 1;
     required uint32 dimension = 2;
+    optional uint32 stride = 3;
 }
 
 message AggregateParam {
@@ -1638,6 +1645,7 @@ enum ColumnStat {
     STAT_TDigest = 2;
     STAT_Uniq = 3;
     STAT_CountMin = 4;
+    STAT_Basic = 5;
 }
 
 message ColumnStatistics {
@@ -2666,6 +2674,7 @@ message SystemCommand {
         string wait_blobs_cleanup = 105;
         ExprSchemaTable pause_view = 106;
         bool pause_views = 107;
+        string restart_disk = 108;
     }
 }
 

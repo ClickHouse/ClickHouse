@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>

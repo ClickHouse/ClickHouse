@@ -31,9 +31,10 @@ namespace ErrorCodes
 }
 
 /// Bounds the handshake thread pool: enough threads to absorb bursts of concurrent connections
-/// without serializing on the accept thread, while staying bounded.
+/// without serializing on the accept thread, while staying bounded. Handshakes are short-lived,
+/// so idle threads are not retained.
 static constexpr size_t HANDSHAKE_POOL_MAX_THREADS = 64;
-static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 8;
+static constexpr size_t HANDSHAKE_POOL_MAX_FREE_THREADS = 0;
 static constexpr size_t HANDSHAKE_POOL_QUEUE_SIZE = 10000;
 
 ExchangeServer::ExchangeServer(const String & listen_host, UInt16 port, ExchangeConnectionsPtr connections_)

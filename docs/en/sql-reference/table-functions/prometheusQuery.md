@@ -35,6 +35,38 @@ The function can returns different columns depending on the result type of the q
 | scalar      | scalar ValueType | prometheusQuery(mytable, '1h30m') |
 | string      | string String | prometheusQuery(mytable, '"abc"') |
 
+## Supported PromQL Features {#supported-promql-features}
+
+### Selectors {#selectors}
+
+Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offset modifiers, `@` timestamp modifiers, and subqueries.
+
+### Functions {#functions}
+
+| Category | Functions |
+|----------|-----------|
+| Range    | `rate`, `irate`, `delta`, `idelta`, `last_over_time` |
+| Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
+| Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
+| DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| Type     | `scalar`, `vector` |
+| Histogram | `histogram_quantile` |
+| Other    | `time`, `pi` |
+
+**Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
+
+### Operators {#operators}
+
+All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
+
+Unary operators `+` and `-`.
+
+### Aggregation Operators {#aggregation-operators}
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
+
+Not yet supported: `count_values`.
+
 ## Example {#example}
 
 ```sql

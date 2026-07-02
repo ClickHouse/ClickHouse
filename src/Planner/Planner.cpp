@@ -10,8 +10,10 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitors.h>
 #include <Common/MemoryTrackerUtils.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
@@ -97,6 +99,7 @@ namespace ProfileEvents
 {
     extern const Event SelectQueriesWithSubqueries;
     extern const Event QueriesWithSubqueries;
+    extern const Event QueryPlanBuildMicroseconds;
 }
 
 namespace DB
@@ -530,13 +533,6 @@ public:
 
             if (fractional_limitby_limit > 0 || fractional_limitby_offset > 0)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
-        }
-
-
-        if (query_node.isLimitWithTies())
-        {
-            if (is_limit_length_negative)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT WITH TIES is not supported yet");
         }
     }
 
@@ -1497,7 +1493,11 @@ void addLimitStep(
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
     {
-        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, limit_offset);
+        auto limit = std::make_unique<NegativeLimitStep>(
+            query_plan.getCurrentHeader(), limit_length, limit_offset, limit_with_ties, limit_with_ties_sort_description);
+
+        if (limit_with_ties)
+            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
 
         query_plan.addStep(std::move(limit));
     }
@@ -1507,7 +1507,12 @@ void addLimitStep(
 
         query_plan.addStep(std::move(offset));
 
-        auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), limit_length, 0);
+        auto limit = std::make_unique<NegativeLimitStep>(
+            query_plan.getCurrentHeader(), limit_length, 0, limit_with_ties, limit_with_ties_sort_description);
+
+        if (limit_with_ties)
+            limit->setStepDescription("NEGATIVE LIMIT WITH TIES");
+
         query_plan.addStep(std::move(limit));
     }
     else if (!is_limit_length_negative && is_limit_offset_negative)
@@ -1667,6 +1672,15 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     const OrderedMaterializedCTEs & materialized_ctes
 )
 {
+    /// Logical plans are built for serialization to a remote node. `DelayedMaterializingCTEsStep`
+    /// is stripped on the way out (`Serialization.cpp`), and the only surviving side effect of
+    /// building it here would be to populate the shared `MaterializedCTE::plan` with a logical
+    /// (serialize-only) version that the non-logical planner pass would then reuse for local
+    /// execution and crash on. The materialization is owned by the non-logical pass; remote
+    /// nodes read from the temp storage by name.
+    if (select_query_options.build_logical_plan)
+        return;
+
     if (materialized_ctes.empty())
         return;
 
@@ -1917,6 +1931,17 @@ void Planner::buildQueryPlanIfNeeded()
     if (query_plan.isInitialized())
         return;
 
+    /// Measure only the outermost plan build. buildQueryPlanIfNeeded recurses through
+    /// nested planners (union branches, subqueries, CTEs) on the same thread, so without
+    /// a guard each nested build would add its own time to the same event and double-count
+    /// subplans (the event could then exceed the real plan-build wall time).
+    static thread_local size_t query_plan_build_depth = 0;
+    std::optional<ProfileEventTimeIncrement<Microseconds>> plan_build_time_watch;
+    if (query_plan_build_depth == 0)
+        plan_build_time_watch.emplace(ProfileEvents::QueryPlanBuildMicroseconds);
+    ++query_plan_build_depth;
+    SCOPE_EXIT({ --query_plan_build_depth; });
+
     LOG_TRACE(
         log,
         "Query to stage {}{}",
@@ -1989,7 +2014,7 @@ void Planner::buildPlanForUnionNode()
 
     if (union_mode == SelectUnionMode::UNION_ALL || union_mode == SelectUnionMode::UNION_DISTINCT)
     {
-        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* is_sql_union = */ true);
+        auto union_step = std::make_unique<UnionStep>(std::move(query_plans_headers), max_threads, /* allow_narrowing = */ true);
         query_plan.unitePlans(std::move(union_step), std::move(query_plans));
     }
     else if (union_mode == SelectUnionMode::INTERSECT_ALL || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -2034,7 +2059,7 @@ void Planner::buildPlanForUnionNode()
     /// Fix: add a DelayedMaterializingCTEsStep at the UNION level so that resolveMaterializingCTEs
     /// (which walks pre-order) claims the CTE here first, ensuring materialization completes before
     /// any child starts reading.
-    if (!select_query_options.only_analyze)
+    if (!select_query_options.only_analyze && !select_query_options.build_logical_plan)
     {
         auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
@@ -2301,7 +2326,8 @@ void Planner::buildPlanForQueryNode()
     auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
         query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
         planner_context,
-        query_processing_info);
+        query_processing_info,
+        join_tree_query_plan.source_constants);
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
