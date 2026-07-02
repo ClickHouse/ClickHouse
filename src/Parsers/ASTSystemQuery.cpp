@@ -234,14 +234,22 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_keyword(" FROM TABLE ");
             print_database_table();
         }
-        else if (!full_replica_zk_path.empty())
-        {
-            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
-        }
         else if (database)
         {
             print_keyword(" FROM DATABASE ");
             print_identifier(getDatabase());
+        }
+        else if ((type == Type::DROP_REPLICA || type == Type::DROP_DATABASE_REPLICA) && !is_drop_whole_replica)
+        {
+            /// A `FROM ZKPATH` clause was parsed, so `is_drop_whole_replica` stayed false. Its path
+            /// may be empty — e.g. the invalid `SYSTEM DROP REPLICA 'r1' FROM ZKPATH ''`, which parses
+            /// successfully and is only rejected later by the interpreter with `BAD_ARGUMENTS`. Emit
+            /// the clause unconditionally: without it the formatted query loses `FROM`, re-parses with
+            /// `is_drop_whole_replica = true`, and — now that the flag is folded into the tree hash —
+            /// the original and re-parsed AST hashes differ, breaking the debug-build tree-hash
+            /// consistency check. `DROP CATALOG REPLICA` never has a `FROM` clause, so it is excluded
+            /// (its `is_drop_whole_replica` is always the default false).
+            print_keyword(" FROM ZKPATH ") << quoteString(full_replica_zk_path);
         }
 
         /// `WITH TABLES` (only parsed for `DROP DATABASE REPLICA`) must be emitted, otherwise it is
