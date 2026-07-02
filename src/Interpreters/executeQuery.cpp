@@ -121,7 +121,7 @@ namespace ProfileEvents
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
     extern const Event ASTFuzzerSkippedBackupRestore;
-    extern const Event ASTFuzzerClearedMetadataTransaction;
+    extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2064,6 +2064,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (!any_query && !isReadOnlyQuery(ast))
         return;
 
+    /// Do not fuzz while an internal replicated-DDL execution is in flight on `context`.
+    /// DatabaseReplicatedDDLWorker re-executes a committed DDL entry whose serialized settings still
+    /// carry ast_fuzzer_runs, so the fuzzer would fire again on the entry's live, single-shot
+    /// ZooKeeperMetadataTransaction. A fuzzed follow-up DDL then either adds ops to the already-executed
+    /// txn (ZooKeeperMetadataTransaction::addOp throws "Cannot add ZooKeeper operation because query is
+    /// executed") or, because is_replicated_database_internal makes shouldReplicateQuery() route it to a
+    /// local commit, reaches DatabaseReplicated::commit* with no txn while the DDL worker is active and
+    /// trips the `!ddl_worker->isCurrentlyActive() || txn` assertion. Both are LOGICAL_ERRORs that abort
+    /// debug/sanitizer builds. The initiating client query is fuzzed normally; only this redundant
+    /// re-fuzz during log replay is skipped.
+    if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -2192,18 +2208,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// the shared `Context::mutex`), and it also has the surprising side effect of
             /// silently clearing the user's active transaction on the caller session.
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
-            /// Also detach the distributed-DDL transaction. When the fuzzer runs inside a
-            /// replicated-DDL execution (DDLWorker re-executes an entry whose serialized settings
-            /// include ast_fuzzer_runs), `context` holds a live `ZooKeeperMetadataTransaction` that
-            /// the fuzzed follow-up DDL would then add ops to via `DatabaseReplicated::commit*` ->
-            /// `ZooKeeperMetadataTransaction::addOp`. Once the outer DDL has executed the txn, that
-            /// throws `Cannot add ZooKeeper operation because query is executed` (a LOGICAL_ERROR
-            /// that aborts debug/sanitizer builds). Detaching the pointer on the copy leaves the
-            /// caller's txn untouched (the copy only referenced it), so the fuzzed query runs with
-            /// no inherited DDL state.
-            if (fuzz_session_context->resetZooKeeperMetadataTransaction())
-                ProfileEvents::increment(ProfileEvents::ASTFuzzerClearedMetadataTransaction);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();

@@ -7618,13 +7618,6 @@ ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
     return metadata_transaction;
 }
 
-bool Context::resetZooKeeperMetadataTransaction()
-{
-    bool had_transaction = metadata_transaction != nullptr;
-    metadata_transaction = nullptr;
-    return had_transaction;
-}
-
 void Context::setParentTable(UUID uuid)
 {
     chassert(!parent_table_uuid.has_value());

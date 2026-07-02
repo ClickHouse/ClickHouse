@@ -1757,10 +1757,6 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
-    /// Detach the distributed DDL transaction from this context without touching the transaction
-    /// object itself (it stays owned by whoever is executing the replicated DDL). Returns whether a
-    /// transaction was present. Used to isolate a context copy from the caller's in-flight DDL state.
-    bool resetZooKeeperMetadataTransaction();
 
     /// Tells DatabaseReplicated to make this query conditional: it'll only succeed if table with the given UUID exists.
     /// Used by refreshable materialized views to prevent creating inner tables after the MV is dropped.

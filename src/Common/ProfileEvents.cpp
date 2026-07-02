@@ -44,7 +44,7 @@
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
-    M(ASTFuzzerClearedMetadataTransaction, "Number of times the server-side AST fuzzer detached a distributed-DDL ZooKeeperMetadataTransaction from the fuzz context to isolate fuzzed queries from the caller's in-flight replicated DDL.", ValueType::Number) \
+    M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
