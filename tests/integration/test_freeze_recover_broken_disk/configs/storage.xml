@@ -1,0 +1,21 @@
+<clickhouse>
+    <!-- Short period so the disk checker marks a vanished disk broken quickly. -->
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <storage_configuration>
+        <disks>
+            <cold>
+                <type>local</type>
+                <path>/var/lib/clickhouse/cold/</path>
+            </cold>
+        </disks>
+        <policies>
+            <cold_policy>
+                <volumes>
+                    <main>
+                        <disk>cold</disk>
+                    </main>
+                </volumes>
+            </cold_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

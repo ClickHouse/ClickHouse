@@ -1,0 +1,7 @@
+Scenario A FREEZE succeeded
+Scenario B FREEZE succeeded
+Scenario C unnamed FREEZE allocated next id
+Scenario D unnamed FREEZE did not reuse numeric named backup
+Scenario E unnamed FREEZE ignored oversized numeric backup
+Scenario F unnamed FREEZE scanned the non-default disk
+increment.txt is non-empty
