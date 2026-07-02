@@ -115,20 +115,7 @@ void EstimatesBuilder::add(const Block & block)
             sampleColumn(column.name, *column.column, *column.type);
 }
 
-void EstimatesBuilder::addDefaults(const String & name, size_t length)
-{
-    if (columns_with_exact_counts.contains(name))
-        return;
-
-    auto end = estimates.lower_bound(subtreeEndKey(name));
-    for (auto it = estimates.lower_bound(name); it != end; ++it)
-    {
-        it->second.rows_count += length;
-        addDefaultCount(it->second, length);
-    }
-}
-
-void EstimatesBuilder::add(const Estimates & part_estimates)
+void EstimatesBuilder::addPart(const Estimates & part_estimates, const NameSet & absent_default_columns, UInt64 part_rows_count)
 {
     /// The entries of one column are contiguous, so the loop visits each top-level column and then
     /// consumes its whole key range.
@@ -138,26 +125,44 @@ void EstimatesBuilder::add(const Estimates & part_estimates)
         const auto & name = it->first;
         auto subtree_end = estimates.lower_bound(subtreeEndKey(name));
 
-        auto part_it = part_estimates.find(name);
-        if (part_it == part_estimates.end() || columns_with_exact_counts.contains(name))
+        if (columns_with_exact_counts.contains(name))
         {
             it = subtree_end;
             continue;
         }
 
-        /// Every entry of one column in a part has the part's row count for that column, so a tracked
-        /// (sub)column missing from the source part contributes that many all-default rows.
-        UInt64 part_rows_count = part_it->second.rows_count;
-
-        for (; it != subtree_end; ++it)
+        if (auto part_it = part_estimates.find(name); part_it != part_estimates.end())
         {
-            if (auto entry_it = part_estimates.find(it->first); entry_it != part_estimates.end())
-                addCounts(it->second, entry_it->second);
-            else
+            /// Every entry of one column in a part has the part's row count for that column, so a
+            /// tracked (sub)column missing from the part's estimates contributes that many all-default
+            /// rows.
+            UInt64 column_rows_count = part_it->second.rows_count;
+
+            for (; it != subtree_end; ++it)
+            {
+                if (auto entry_it = part_estimates.find(it->first); entry_it != part_estimates.end())
+                    addCounts(it->second, entry_it->second);
+                else
+                {
+                    it->second.rows_count += column_rows_count;
+                    addDefaultCount(it->second, column_rows_count);
+                }
+            }
+        }
+        else if (absent_default_columns.contains(name))
+        {
+            /// The column is absent from the part, so all of its rows are default.
+            for (; it != subtree_end; ++it)
             {
                 it->second.rows_count += part_rows_count;
                 addDefaultCount(it->second, part_rows_count);
             }
+        }
+        else
+        {
+            /// The column has no estimates in this part (e.g. the part predates them or the column was
+            /// not sparse-capable when the part was written): it contributes nothing.
+            it = subtree_end;
         }
     }
 }

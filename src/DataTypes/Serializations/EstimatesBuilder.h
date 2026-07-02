@@ -46,13 +46,15 @@ public:
 
     /// Sample estimates from the (tracked) columns of a block.
     void add(const Block & block);
-    /// Account for `length` rows of a column that is entirely default (e.g. a column missing from a
-    /// source part during a merge). No-op for columns that are not tracked.
-    void addDefaults(const String & name, size_t length);
-    /// Combine the estimates of a source part (additive). Used during merges to choose the output kind
-    /// from the summed counts of all source parts. `part_estimates` is keyed by subcolumn path; a tracked
-    /// (sub)column missing from it contributes all-default rows.
-    void add(const Estimates & part_estimates);
+
+    /// Combine the estimates of a source part (additive). Used during merges to choose the output kinds
+    /// from the combined counts of all source parts. `part_estimates` is keyed by subcolumn path. For a
+    /// tracked column absent from them: if it is listed in `absent_default_columns` (columns physically
+    /// absent from the part whose values are implicitly default), it contributes `part_rows_count`
+    /// all-default rows; otherwise (e.g. the part predates the estimates) it contributes nothing rather
+    /// than made-up counts. A tracked subcolumn of a present column that is missing from the estimates
+    /// contributes all-default rows of the column's own row count.
+    void addPart(const Estimates & part_estimates, const NameSet & absent_default_columns, UInt64 part_rows_count);
 
     /// Override the sampled counts with the exact counts from the explicit column statistics where they
     /// are available (`Estimate::num_defaults`). Only top-level columns have explicit statistics.

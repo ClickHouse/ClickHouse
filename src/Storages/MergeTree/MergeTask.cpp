@@ -316,29 +316,39 @@ private:
     size_t final_size = 0;
 };
 
-static void addMissedColumnsToEstimatesBuilder(
-    size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
-    EstimatesBuilder & estimates_builder)
+static SerializationInfoByName chooseSerializationInfosForMerge(
+    const MergeTreeData::DataPartsVector & parts,
+    const NamesAndTypesList & columns,
+    const ColumnsDescription & metadata_columns,
+    const SerializationInfo::Settings & info_settings)
 {
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+    SerializationInfoByName infos(columns, info_settings);
+    if (info_settings.isAlwaysDefault())
+        return infos;
 
-    for (const auto & column : storage_columns)
+    EstimatesBuilder estimates_builder(columns, info_settings, {});
+
+    for (const auto & part : parts)
     {
-        if (part_columns_set.contains(column.name))
-            continue;
+        const auto part_columns = part->getColumns().getNameSet();
 
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
+        NameSet absent_default_columns;
+        for (const auto & column : metadata_columns)
+        {
+            if (part_columns.contains(column.name))
+                continue;
 
-        if (column.default_desc.expression)
-            continue;
+            if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.expression)
+                continue;
 
-        /// The column is absent from this part, so all of its rows are default. This is a no-op for
-        /// columns the builder does not track (e.g. types that cannot use sparse serialization).
-        estimates_builder.addDefaults(column.name, num_rows_in_parts);
+            absent_default_columns.insert(column.name);
+        }
+
+        estimates_builder.addPart(part->getEstimates(), absent_default_columns, part->rows_count);
     }
+
+    estimates_builder.chooseKinds(infos);
+    return infos;
 }
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
@@ -834,30 +844,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
-    SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
-    EstimatesBuilder estimates_builder(global_ctx->storage_columns, info_settings, {});
+    auto infos = chooseSerializationInfosForMerge(
+        global_ctx->future_part->parts,
+        global_ctx->storage_columns,
+        global_ctx->metadata_snapshot->getColumns(),
+        info_settings);
+
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
-
     for (const auto & part : global_ctx->future_part->parts)
-    {
-        if (!info_settings.isAlwaysDefault())
-        {
-            estimates_builder.add(part->getEstimates());
-
-            addMissedColumnsToEstimatesBuilder(
-                part->rows_count,
-                part->getColumns().getNames(),
-                global_ctx->metadata_snapshot->getColumns(),
-                estimates_builder);
-        }
-
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
-    }
-
-    /// Choose the serialization kind of the new part from the combined counts of all source parts.
-    /// The actual counts written to `serialization.json` are recomputed from the merged data by the
-    /// builder inside `MergedBlockOutputStream` (kept consistent with the kinds chosen here).
-    estimates_builder.chooseKinds(infos);
 
     if (global_ctx->new_data_part->info.isPatch())
     {
