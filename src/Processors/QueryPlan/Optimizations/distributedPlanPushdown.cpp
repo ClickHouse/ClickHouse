@@ -1,5 +1,8 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
+#include <Functions/FunctionHelpers.h>
+#include <Interpreters/PreparedSets.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -27,20 +30,26 @@ namespace Setting
 namespace QueryPlanOptimizations
 {
 
-bool planReadsFromRemote(const QueryPlan::Node & root)
+bool planReadsFromRemote(QueryPlan::Node & root)
 {
-    std::vector<const QueryPlan::Node *> stack = {&root};
+    std::vector<QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
     {
-        const auto * node = stack.back();
+        auto * node = stack.back();
         stack.pop_back();
 
-        const auto * step = node->step.get();
+        auto * step = node->step.get();
         if (typeid_cast<const ReadFromRemotePlanStep *>(step) || typeid_cast<const ReadFromRemote *>(step))
             return true;
 
-        for (const auto * child : node->children)
+        for (auto * child : node->children)
             stack.push_back(child);
+
+        /// Steps like `ReadFromMerge` hold whole child plans instead of plan children; a remote
+        /// read nested there decides the distributed split just the same (e.g. a `Merge` table
+        /// over a `Distributed` one), so the MPP conversion must be skipped for it too.
+        for (auto * child_plan : step->getChildPlans())
+            stack.push_back(child_plan->getRootNode());
     }
     return false;
 }
@@ -157,6 +166,33 @@ static void tryCopyLimitToRemotePlan(
     placeholder.absorbLimitCopy(limit);
 }
 
+/// A step may be executed on the shards only if every set referenced by its actions travels with
+/// the serialized plan. Literal `IN` sets (`FutureSetFromTuple`) are serialized with their values
+/// and are self-contained. A set from a subquery cannot go: the initiator builds it via
+/// `DelayedCreatingSetsStep` in the third optimization pass — after this rule — which consumes the
+/// subquery's source plan, so a later serialization of the shard plan would throw a logical error
+/// (`Cannot serialize FutureSetFromSubquery with no query plan`); and shipping the subquery plan
+/// instead would make every shard re-execute it, changing semantics. A set from a `Set` storage is
+/// serialized as a table name that the shard would resolve against its own catalog — also a
+/// semantics change. Keep steps referencing such sets on the initiator.
+static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag)
+{
+    for (const auto & dag_node : dag.getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::COLUMN || !dag_node.column)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&dag_node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        const auto & future_set = column_set->getData();
+        if (!future_set || !typeid_cast<const FutureSetFromTuple *>(future_set.get()))
+            return false;
+    }
+    return true;
+}
+
 void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Pattern: a step whose single child is a `ReadFromRemotePlanStep` placeholder. Depending on the
@@ -181,13 +217,22 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     }
 
     /// Otherwise only an `ExpressionStep` or `FilterStep` can be evaluated on the shards.
-    if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step))
+    const ActionsDAG * dag = nullptr;
+    if (const auto * expression = typeid_cast<ExpressionStep *>(step))
+        dag = &expression->getExpression();
+    else if (const auto * filter = typeid_cast<FilterStep *>(step))
+        dag = &filter->getExpression();
+    else
         return;
 
     /// Graceful degradation: only move a step that can be serialized to the shard and that carries no
     /// correlated expressions (`PLACEHOLDER` action nodes referencing outer-query columns absent on the
     /// shard). Otherwise leave the step on the initiator.
     if (!step->isSerializable() || step->hasCorrelatedExpressions())
+        return;
+
+    /// Sets from subqueries or `Set` storages cannot travel with the serialized shard plan.
+    if (!dagReferencesOnlyInlineSets(*dag))
         return;
 
     /// A shard plan that outputs zero columns cannot carry its row count across `ReadFromRemote`:

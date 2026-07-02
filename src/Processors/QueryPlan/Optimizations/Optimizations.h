@@ -267,9 +267,11 @@ void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization
 void enableMemoryBoundMerging(QueryPlan::Node & node);
 
 /// True if the plan reads from remote shards: it contains a `ReadFromRemotePlanStep` placeholder
-/// or a `ReadFromRemote` step. Such a plan must not additionally go through the MPP
-/// `make_distributed_plan` conversion — the distributed split has already been decided.
-bool planReadsFromRemote(const QueryPlan::Node & root);
+/// or a `ReadFromRemote` step, possibly nested in a child plan of a step (e.g. `ReadFromMerge`).
+/// Such a plan must not additionally go through the MPP `make_distributed_plan` conversion —
+/// the distributed split has already been decided. Non-const because enumerating child plans
+/// may create them (`ReadFromMerge` builds its children lazily).
+bool planReadsFromRemote(QueryPlan::Node & root);
 
 /// Push a serializable `ExpressionStep`/`FilterStep` sitting directly above a `ReadFromRemotePlanStep`
 /// placeholder into the placeholder's inner (per-shard) plan, so the expression/filter executes on the

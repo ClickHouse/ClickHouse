@@ -1,0 +1,129 @@
+-- expressions and aliases in SELECT + WHERE
+0	50	1_x
+0	50	1_x
+2	44	1_x
+2	44	1_x
+2	54	0_x
+2	54	0_x
+4	48	0_x
+4	48	0_x
+4	58	2_x
+4	58	2_x
+0	50	1_x
+0	50	1_x
+2	44	1_x
+2	44	1_x
+2	54	0_x
+2	54	0_x
+4	48	0_x
+4	48	0_x
+4	58	2_x
+4	58	2_x
+-- GROUP BY + HAVING (aggregation on the initiator)
+0	12	150
+1	12	162
+2	12	174
+3	12	186
+4	12	198
+0	12	150
+1	12	162
+2	12	174
+3	12	186
+4	12	198
+-- ORDER BY + LIMIT/OFFSET
+3	28
+3	28
+2	27
+2	27
+1	26
+3	28
+3	28
+2	27
+2	27
+1	26
+-- DISTINCT
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+2	0
+2	1
+2	2
+3	0
+3	1
+3	2
+4	0
+4	1
+4	2
+0	0
+0	1
+0	2
+1	0
+1	1
+1	2
+2	0
+2	1
+2	2
+3	0
+3	1
+3	2
+4	0
+4	1
+4	2
+-- literal IN (set is pushed to the shards with the plan)
+24	348
+24	348
+-- IN with a subquery over a local table (set is built on the initiator)
+36	486
+36	486
+-- IN with a subquery over the distributed table itself
+60	870
+60	870
+-- GLOBAL IN with a subquery over the distributed table
+60	870
+60	870
+-- CTE whose body reads the Distributed table
+1	162
+2	174
+3	186
+4	198
+1	162
+2	174
+3	186
+4	198
+-- FINAL over a ReplacingMergeTree-backed Distributed table
+0	100
+0	100
+1	101
+1	101
+2	102
+2	102
+3	103
+3	103
+4	104
+4	104
+0	100
+0	100
+1	101
+1	101
+2	102
+2	102
+3	103
+3	103
+4	104
+4	104
+-- SAMPLE over a sampled MergeTree-backed Distributed table
+112
+112
+-- JOIN of the Distributed table with a small local table (join on the initiator)
+0	name_0	150
+1	name_1	162
+2	name_2	174
+0	name_0	150
+1	name_1	162
+2	name_2	174
+-- StorageMerge over the Distributed table
+60	870
+60	870

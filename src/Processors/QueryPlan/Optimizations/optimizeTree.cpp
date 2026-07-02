@@ -254,19 +254,34 @@ void optimizeTreeSecondPass(
         });
     }
 
+    /// A plan that already reads from remote shards (a `ReadFromRemotePlanStep` placeholder or a
+    /// `ReadFromRemote` step) must not additionally go through the MPP conversion — the
+    /// distributed split has already been decided, and the MPP machinery would mangle the
+    /// initiator plan (e.g. WITH TOTALS over Distributed would throw). Computed after subplan
+    /// references were materialized (they may bring remote reads into this plan).
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan && !planReadsFromRemote(root);
+
+    /// `convertLogicalJoinToPhysical` keeps logical join steps when the plan is going to be
+    /// MPP-converted (a worker converts them after fragment deserialization). It must see the
+    /// effective flag: when the MPP conversion is skipped, joins have to be converted right here —
+    /// otherwise nothing ever converts them and execution would fail with
+    /// `Cannot execute JoinStepLogical`.
+    QueryPlanOptimizationSettings join_optimization_settings = optimization_settings;
+    join_optimization_settings.make_distributed_plan = make_distributed_plan;
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
-            optimizeJoinLogical(frame_node, nodes, optimization_settings);
-            optimizeJoinLegacy(frame_node, nodes, optimization_settings);
-            useMemoryBufferForCommonSubplanResult(frame_node, optimization_settings);
+            optimizeJoinLogical(frame_node, nodes, join_optimization_settings);
+            optimizeJoinLegacy(frame_node, nodes, join_optimization_settings);
+            useMemoryBufferForCommonSubplanResult(frame_node, join_optimization_settings);
         },
         [&](auto & frame_node)
         {
             if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, join_optimization_settings);
+            convertLogicalJoinToPhysical(frame_node, nodes, join_optimization_settings);
         });
 
     /// If join runtime filters were added re-run push down optimizations
@@ -309,12 +324,6 @@ void optimizeTreeSecondPass(
                 optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
             });
     }
-
-    /// A plan that already reads from remote shards (a `ReadFromRemotePlanStep` placeholder or a
-    /// `ReadFromRemote` step) must not additionally go through the MPP conversion below — the
-    /// distributed split has already been decided, and the MPP machinery would mangle the
-    /// initiator plan (e.g. WITH TOTALS over Distributed would throw here).
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan && !planReadsFromRemote(root);
 
     /// WITH TOTALS / ROLLUP / CUBE / extremes produce extra streams the exchange protocol does not
     /// carry, so such plans cannot be distributed. make_distributed_plan is explicit, so fail rather
