@@ -61,9 +61,9 @@ extern const int INVALID_JOIN_ON_EXPRESSION;
 
 size_t getMinBytesForPrefetchInJoin()
 {
-    /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-    /// Threshold: 4 * L2 cache size (`getL2CacheSize` defaults to 256 KiB). Cached after first call.
-    static const size_t result = 4 * getL2CacheSize();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead. Cached after first call.
+    static const size_t result = getL2CacheSize();
     return result;
 }
 

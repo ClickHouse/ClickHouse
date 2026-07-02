@@ -11,6 +11,7 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
+#include <Common/MemoryTracker.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/ThreadPool_fwd.h>
 
@@ -336,8 +337,10 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
-    /// How many RAM were used to process the query before processing the first block.
+    /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
+    /// Track memory held by the aggreagation state during execution.
+    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///

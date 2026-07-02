@@ -6,10 +6,7 @@
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -117,6 +114,8 @@ ProjectionDescription ProjectionDescription::clone() const
     other.index = index;
     other.settings_changes = settings_changes;
     other.has_index_granularity_overrides = has_index_granularity_overrides;
+    if (where_clause_ast)
+        other.where_clause_ast = where_clause_ast->clone();
 
     return other;
 }
@@ -361,6 +360,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     auto projection_order_by = query.orderBy();
     result.query_ast = query.cloneToASTSelect();
 
+    /// Store the WHERE clause AST if present (Issue #74234).
+    /// This will be used by the optimizer to check if a query's WHERE implies
+    /// this projection's WHERE, and during materialization to filter rows.
+    auto projection_where = query.where();
+    if (projection_where)
+        result.where_clause_ast = projection_where->clone();
+
     /// Prevent normal projection from storing parent part offset if the parent table defines `_parent_part_offset` or
     /// `_part_offset` as physical columns, which would cause a conflict. Parent table cannot defines `_part_index` as
     /// physical column either because it's used to build part offset mapping during merge.
@@ -414,7 +420,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
-        SelectQueryOptions{is_aggregate ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
+        SelectQueryOptions{(is_aggregate || result.where_clause_ast) ? QueryProcessingStage::WithMergeableState : QueryProcessingStage::FetchColumns}
             .modify()
             .ignoreAlias()
             .ignoreASTOptimizations()
@@ -434,6 +440,10 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 
         if (projection_order_by)
             throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "When aggregation is used in projection, ORDER BY cannot be specified");
+
+        /// Aggregate projections with WHERE are now supported: the optimizer's predicate
+        /// implication check (doesQueryFilterImplyProjectionWhere) ensures a filtered
+        /// aggregate projection is only selected when the query's filter covers it.
 
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
@@ -494,7 +504,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
     result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
-    NamesAndTypesList metadata_columns;
+    ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
@@ -511,11 +521,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         }
         else
         {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+            ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
+            /// Carry over the parent column's DEFAULT so a column missing from a projection part written
+            /// before the column was added reads the table default, not the column type's default.
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            metadata_columns.add(std::move(column_description));
         }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
@@ -698,9 +713,21 @@ Block ProjectionDescription::calculateByQuery(
         if (!select_row_exists)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
 
-        select_row_exists->setExpression(
-            ASTSelectQuery::Expression::WHERE,
-            makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1)));
+        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
+
+        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
+        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
+        /// Otherwise the projection's own filter would be lost during mutations.
+        auto existing_where = select_row_exists->where();
+        if (existing_where)
+        {
+            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
+            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
+        }
+        else
+        {
+            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
+        }
 
         source_block.insert(block.getByName(RowExistsColumn::name));
     }
@@ -735,7 +762,7 @@ Block ProjectionDescription::calculateByQuery(
                        mut_context,
                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{
-                           type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
+                           type == ProjectionDescription::Type::Normal && !where_clause_ast ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState}
                            .ignoreASTOptimizations()
                            .ignoreSettingConstraints())

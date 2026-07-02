@@ -364,6 +364,9 @@ class JobNames:
     SQL_LOGIC_TEST = "SQLLogic test"
     SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
+    # No "++": the job name becomes the GitHub Actions job id via
+    # Utils.normalize_string, and '+' is not a valid id character.
+    SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
@@ -482,7 +485,12 @@ class ArtifactNames:
 
 
 LLVM_FT_NUM_BATCHES = 3
-LLVM_IT_NUM_BATCHES = 5
+LLVM_IT_NUM_BATCHES = 8
+# The old-analyzer + s3 + DatabaseReplicated + WasmEdge parallel variant runs the
+# whole stateless suite un-batched and is the slowest job in CI (main run alone
+# ~1h40m-2h10m under coverage instrumentation). It is split into batches so each
+# shard finishes well inside the runner lease and is not torn down mid-job.
+LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES = 3
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -491,8 +499,14 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel",
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DatabaseReplicated + WasmEdge, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
+    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
@@ -501,7 +515,7 @@ LLVM_FT_ARTIFACTS_LIST += [
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
-    # default.profdata files for 5 batches from Integration tests
+    # default.profdata files for the batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)

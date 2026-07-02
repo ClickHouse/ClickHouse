@@ -66,6 +66,20 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     ASTSelectWithUnionQuery * ast = query_ptr->as<ASTSelectWithUnionQuery>();
     bool require_full_header = ast->hasNonDefaultUnionMode();
 
+    /// INTERSECT/EXCEPT children always return their full header (they ignore
+    /// required_result_column_names), so the whole UNION must keep the full header too.
+    if (!require_full_header)
+    {
+        for (const auto & select : ast->list_of_selects->children)
+        {
+            if (select->as<ASTSelectIntersectExceptQuery>())
+            {
+                require_full_header = true;
+                break;
+            }
+        }
+    }
+
     const Settings & settings = context->getSettingsRef();
     if (options.subquery_depth == 0 && (settings[Setting::limit] > 0 || settings[Setting::offset] > 0))
         settings_limit_offset_needed = true;
@@ -253,22 +267,32 @@ Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const SharedHeade
 
 SharedHeader InterpreterSelectWithUnionQuery::getCurrentChildResultHeader(const ASTPtr & ast_ptr_, const Names & required_result_column_names)
 {
+    /// The header probe must also plan in its own settings scope: a probed branch (e.g. FINAL)
+    /// may disable parallel replicas on its context, and passing the mutable parent context here
+    /// would leak that into the siblings built afterwards, just like the real construction path.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return InterpreterSelectWithUnionQuery(ast_ptr_, context, options.copy().analyze().noModify(), required_result_column_names)
+        return InterpreterSelectWithUnionQuery(ast_ptr_, child_context, options.copy().analyze().noModify(), required_result_column_names)
             .getSampleBlock();
     if (ast_ptr_->as<ASTSelectQuery>())
-        return InterpreterSelectQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
-    return InterpreterSelectIntersectExceptQuery(ast_ptr_, context, options.copy().analyze().noModify()).getSampleBlock();
+        return InterpreterSelectQuery(ast_ptr_, child_context, options.copy().analyze().noModify()).getSampleBlock();
+    return InterpreterSelectIntersectExceptQuery(ast_ptr_, child_context, options.copy().analyze().noModify()).getSampleBlock();
 }
 
 std::unique_ptr<IInterpreterUnionOrSelectQuery>
 InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast_ptr_, const Names & current_required_result_column_names)
 {
+    /// Each branch must plan in its own settings scope: a branch may disable parallel replicas
+    /// for itself (e.g. on FINAL), and that must not retroactively change a sibling's already
+    /// decided processing stage through a shared mutable context.
+    auto child_context = Context::createCopy(context);
+
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
-        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, child_context, options, current_required_result_column_names);
     if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, child_context, options, current_required_result_column_names);
+    return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, child_context, options);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
