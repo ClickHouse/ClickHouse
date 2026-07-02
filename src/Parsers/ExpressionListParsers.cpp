@@ -31,8 +31,6 @@
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 
-#include <Poco/String.h>
-
 #include <Parsers/ParserSelectWithUnionQuery.h>
 
 #include <Common/logger_useful.h>
@@ -1283,19 +1281,7 @@ public:
             if (has_distinct)
                 function_name += "Distinct";
 
-            boost::intrusive_ptr<ASTFunction> function_node;
-
-            /// Zero-argument `year()` returns the current year, mirroring `now()`/`today()`.
-            /// Rewrite it to `toYear(today())`: the non-determinism comes from `today()` (evaluated
-            /// once at analysis time), while `toYear` stays deterministic so `year(<date>)`/
-            /// `toYear(<date>)` keep their index/monotonicity/preimage optimizations. `year` is only
-            /// an alias of `toYear`, so ordinary calls with arguments fall through unchanged.
-            if (elements.empty() && !parameters && !is_compound_name && !is_table_function
-                && function_name.size() == 4 && Poco::toLower(function_name) == "year")
-                function_node = makeASTFunction("toYear", makeASTFunction("today"));
-            else
-                function_node = makeASTFunction(function_name, std::move(elements));
-
+            auto function_node = makeASTFunction(function_name, std::move(elements));
             function_node->setIsCompoundName(is_compound_name);
             function_node->setIsOperator(is_operator);
 

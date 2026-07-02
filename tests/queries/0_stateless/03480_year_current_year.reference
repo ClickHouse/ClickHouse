@@ -6,11 +6,14 @@ UInt16
 1
 -- case-insensitive
 1	1	1
--- year() is non-deterministic (evaluated once at analysis, like today())
+-- year() is a constant expression (evaluated once at analysis, like today())
 1
--- year(<date>) still works as the deterministic alias of toYear
+-- year(<date>) delegates to toYear across date/time types
 2023	1900	2077	2149
--- two-argument toYear(datetime, timezone) is unaffected
-2023
--- the rewrite year() -> toYear(today()) is visible in EXPLAIN SYNTAX (analyzer-agnostic)
+-- year(datetime, timezone) matches toYear(datetime, timezone)
+1
+-- system.functions exposes year with its own metadata (own row, not an alias)
+year	0	
+-- year(<key>) keeps toYear index/monotonicity analysis (same granule pruning)
+1
 1
