@@ -15,6 +15,7 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/Operators.h>
+#include <algorithm>
 #include <cstring> // memcpy
 
 
@@ -57,6 +58,16 @@ ColumnArray::ColumnArray(MutableColumnPtr && nested_column, MutableColumnPtr && 
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "offsets_column has data inconsistent with nested_column. Data size: {}, last offset: {}",
                 data->size(), last_offset);
+
+        /// Offsets are cumulative array sizes, so they must be monotonically non-decreasing.
+        /// A column whose offsets decrease (offsets[i] < offsets[i - 1]) is malformed: offsetAt(i)
+        /// then exceeds offsets[i] and consumers that read the nested column at [offsetAt(i), offsets[i])
+        /// (compareAt, getExtremes, ...) index it out of bounds. Enforce the invariant at the point of
+        /// construction so a producer that builds an inconsistent column aborts at its own stack in
+        /// debug/sanitizer builds instead of far away in a consumer (checked only there via chassert;
+        /// release builds keep the O(1) last-offset check above).
+        chassert(std::is_sorted(offsets_concrete->getData().begin(), offsets_concrete->getData().end()),
+            "ColumnArray constructed with non-monotonic offsets");
     }
 
     /** NOTE
