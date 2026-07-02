@@ -62,6 +62,7 @@ The supported formats are:
 | [CustomSeparated](./formats/CustomSeparated/CustomSeparated.md)                                            | ✔   | ✔     |
 | [CustomSeparatedWithNames](./formats/CustomSeparated/CustomSeparatedWithNames.md)                          | ✔   | ✔     |
 | [CustomSeparatedWithNamesAndTypes](./formats/CustomSeparated/CustomSeparatedWithNamesAndTypes.md)          | ✔   | ✔     |
+| [HiveText](./formats/HiveText.md)                                                                          | ✔   | ✔     |
 | [SQLInsert](./formats/SQLInsert.md)                                                                        | ✗   | ✔     |
 | [Values](./formats/Values.md)                                                                              | ✔   | ✔     |
 | [Vertical](./formats/Vertical.md)                                                                          | ✗   | ✔     |

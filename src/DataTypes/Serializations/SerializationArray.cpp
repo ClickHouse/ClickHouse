@@ -692,6 +692,31 @@ void SerializationArray::readArraySafe(DB::IColumn & column, std::function<void(
     }
 }
 
+void SerializationArray::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+
+    const IColumn & nested_column = column_array.getData();
+
+    const size_t level = settings.hive_text.nesting_level;
+    const char separator = getHiveTextDelimiter(settings, level);
+
+    auto child_settings = settings;
+    child_settings.hive_text.nesting_level = level + 1;
+
+    for (size_t i = offset; i < next_offset; ++i)
+    {
+        if (i != offset)
+            writeChar(separator, ostr);
+
+        nested->serializeTextHive(nested_column, i, ostr, child_settings);
+    }
+}
+
 void SerializationArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr,

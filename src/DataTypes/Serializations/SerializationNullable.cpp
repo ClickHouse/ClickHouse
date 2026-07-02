@@ -831,6 +831,19 @@ bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextCSV(DB::IColu
     return deserializeTextCSVImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
 }
 
+void SerializationNullable::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        /// Hive's LazySimpleSerDe uses `\N` as its default null sequence (serialization.null.format).
+        /// Write it directly instead of reusing format_csv_null_representation, whose custom value would
+        /// otherwise leak into HiveText output and no longer be recognized by Hive as null.
+        writeCString("\\N", ostr);
+    else
+        nested->serializeTextHive(col.getNestedColumn(), row_num, ostr, settings);
+}
+
 void SerializationNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);

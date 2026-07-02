@@ -37,6 +37,18 @@ UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & ti
     return hash.get128();
 }
 
+void SerializationDateTime64::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    /// Hive timestamps are always the simple `yyyy-MM-dd HH:mm:ss.fffffffff` text, regardless of `date_time_output_format`.
+    /// Delegating to `serializeText` would honor that setting and could emit epoch seconds (`unix_timestamp`) or
+    /// `T...Z` (`iso`), which Hive cannot parse as a `TIMESTAMP`.
+    auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
+        writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
+    else
+        writeDateTimeText(value, scale, ostr, time_zone);
+}
+
 void SerializationDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto value = assert_cast<const ColumnType &>(column).getData()[row_num];

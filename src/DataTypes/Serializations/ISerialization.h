@@ -53,6 +53,14 @@ struct NameAndTypePair;
 
 struct MergeTreeSettings;
 
+/** Returns the separator byte that the HiveText output format uses at the given nesting level,
+  * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
+  * 1 the collection-items delimiter, 2 the map-keys delimiter, and deeper levels default to
+  * consecutive control characters (0x04, 0x05, ...). Throws if the nesting is too deep to be
+  * represented (Hive supports at most 8 separators).
+  */
+char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level);
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -612,6 +620,14 @@ public:
     virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+
+    /** Text serialization for the Hive text format. Used only for output.
+      * Without escaping or quoting. Complex types separate their elements by the Hive separator
+      * for the current nesting level (see getHiveTextDelimiter), threaded through
+      * settings.hive_text.nesting_level. The default implementation throws, so only the data
+      * types supported in Hive override it.
+      */
+    virtual void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.

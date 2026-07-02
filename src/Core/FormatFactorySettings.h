@@ -268,6 +268,9 @@ Delimiter between a pair of map key/values in Hive Text File
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
 )", 0) \
+    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
+Delimiter at the end of each row in the Hive Text output format
+)", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.
 )", 0) \
