@@ -67,6 +67,7 @@
             --logo-color: #FFF;
             --border-color-selected: #F80;
             --menu-toggle-color: #000;
+            --menu-icon-color: #24292f; /* Match the GitHub logo's color. */
 
             --progress-color: #0C4;
             --table-size-bar-color: #FFF;
@@ -119,6 +120,7 @@
             --logo-color: #444;
             --border-color-selected: #FF0;
             --menu-toggle-color: #FF0;
+            --menu-icon-color: #FFF; /* Match the GitHub logo's color. */
 
             --progress-color: #FF0;
             --table-size-bar-color: #104050;
@@ -193,7 +195,7 @@
             border-right: 1px solid var(--border-color);
             display: grid;
             grid-template-rows: auto 1fr auto;
-            grid-template-areas: "databases-icon" "contents" "terminal-icon" "github-icon";
+            grid-template-areas: "databases-icon" "contents" "terminal-icon" "docs-icon" "github-icon";
             cursor: e-resize;
             min-height: 0;
             overflow-x: visible;
@@ -201,12 +203,13 @@
         }
 
         /* When the databases list is expanded, lay out the bottom icons (Web
-           Terminal, GitHub) side by side instead of stacked, so the list of
+           Terminal, Documentation, GitHub) side by side instead of stacked, so the list of
            databases/tables gets more vertical space. */
         #menu.databases-opened
         {
-            grid-template-columns: auto 1fr;
-            grid-template-areas: "databases-icon databases-hide" "contents contents" "terminal-icon github-icon";
+            grid-template-columns: auto auto 1fr;
+            grid-template-areas: "databases-icon databases-hide databases-hide" "contents contents contents" "terminal-icon docs-icon github-icon";
+            column-gap: 0.25rem;
         }
 
         #menu.databases-opened #github-icon
@@ -229,6 +232,9 @@
             cursor: pointer;
             user-select: none;
             fill: var(--menu-toggle-color);
+            /* Stroke-based icons (Web Terminal, Documentation) draw with `currentColor`;
+               pin it to the GitHub logo's color so all three icons match. */
+            color: var(--menu-icon-color);
         }
 
         .menu-icon:hover
@@ -361,6 +367,22 @@
         {
             border-radius: 0.25rem;
             background-color: var(--border-color);
+        }
+
+        #docs-icon
+        {
+            grid-area: docs-icon;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        /* This is an `<a>` whose SVG draws with `currentColor`. Pin the color across all link
+           states (including `:visited`, which the generic `a:visited` rule would otherwise tint
+           with `--link-color`) so the icon always matches the other menu icons. */
+        #docs-icon:link, #docs-icon:visited, #docs-icon:hover, #docs-icon:active
+        {
+            color: var(--menu-icon-color);
         }
 
         #github-icon
@@ -1127,6 +1149,9 @@
         <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click or Ctrl/Shift+click to open in a new tab">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
+        <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 4a2 2 0 0 1 2-2h13v18H6a2 2 0 0 0-2 2V4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><line x1="8" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </a>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
             <a href="https://github.com/ClickHouse/ClickHouse/">
@@ -1148,7 +1173,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
+                <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3146,6 +3171,23 @@ function checkURL() {
 url_elem.addEventListener('input', checkURL);
 checkURL();
 
+/// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
+/// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
+/// Resolve the Documentation link against that configured server (like `getTerminalURL` does for the Web
+/// Terminal) instead of leaving it hardcoded to `/docs`, and keep it in sync as the URL input changes.
+{
+    const docs_icon = document.getElementById('docs-icon');
+    function updateDocsURL() {
+        try {
+            docs_icon.href = new URL('/docs', url_elem.value).href;
+        } catch (e) {
+            /// Leave the previous href in place while the configured URL is not parsable.
+        }
+    }
+    url_elem.addEventListener('input', updateDocsURL);
+    updateDocsURL();
+}
+
 async function auxiliaryQuery(server_address, user, password, query, url_params = '') {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
@@ -4455,6 +4497,12 @@ document.getElementById('run-all').addEventListener('click', e =>
         storeCredentials();
     }
 });
+
+/// On Mac, the shortcut is Cmd+Enter; elsewhere it is Ctrl+Enter. Show only the relevant modifier in the hint.
+/// Match case-insensitively: UA Client Hints reports macOS as "macOS" and iOS as "iOS",
+/// while the legacy navigator.platform reports "MacIntel", "iPhone", "iPad", etc.
+const isMac = /mac|iphone|ipad|ipod|ios/i.test(navigator.userAgentData?.platform || navigator.platform || '');
+document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
