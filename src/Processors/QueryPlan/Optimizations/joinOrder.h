@@ -1,8 +1,11 @@
 #pragma once
 
+#include <concepts>
 #include <vector>
 #include <Core/Joins.h>
 #include <Common/EquivalenceClasses.h>
+#include <Common/logger_useful.h>
+#include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -19,6 +22,12 @@ enum class JoinMethod : UInt8
     Hash,
     Merge,
 };
+
+template <std::unsigned_integral T>
+inline String toBinaryString(T value)
+{
+    return toString(BitSet::fromUInt(value));
+}
 
 struct DPJoinEntry
 {
@@ -106,5 +115,15 @@ struct QueryGraph
 struct QueryPlanOptimizationSettings;
 
 DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+
+namespace QueryPlanOptimizations
+{
+
+/// Propagate per-column statistics through `actions`, rekeying the map in place by output name.
+/// An output inherits an input's stats when it is that input, an alias of it, or a deterministic
+/// single-argument function of it (which cannot increase the distinct count).
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
+
+}
 
 }

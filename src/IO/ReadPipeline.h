@@ -5,6 +5,7 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
 #include <IO/ReadSettings.h>
+#include <Common/Logger.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
@@ -227,6 +228,23 @@ private:
     std::optional<DistributedCacheStage> distributed_cache;
     std::optional<AsyncPrefetchStage> async_prefetch;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+
+    LoggerPtr log = getLogger("ReadPipeline");
+
+    /// Experimental `ReaderExecutor` path (gated by `use_reader_executor`).
+    /// Returns nullptr when the setting is off, the source variant is not yet
+    /// supported, or any stage the minimal executor can't handle (caches,
+    /// decryption, distributed cache) is configured — so the caller falls back
+    /// to the legacy matryoshka pipeline. When it returns a buffer, `build` must
+    /// NOT apply the `wrap*` stages.
+    std::unique_ptr<ReadBufferFromFileBase> tryBuildReaderExecutor() const;
+
+    /// Whether the memory (page) cache stage will actually be applied. It is requested via
+    /// `needMemoryCache`, but is skipped for objects of unknown size: the page cache addresses
+    /// the file by absolute offset and reads `getFileSize()` up front, which is impossible for an
+    /// object served without `Content-Length`. The source stages gate `use_external_buffer` on
+    /// this so the inner reader is not left in external-buffer mode without a driver.
+    bool usesMemoryCache() const;
 
     /// build() helpers: one per logical stage group.
     /// Each helper reads private state and returns the (partial) impl buffer.

@@ -46,37 +46,37 @@ timeSlot;toDateTime64;true	1920-02-02 10:00:00.000
 type;timeSlot;toDateTime64;true	DateTime64(3, \'UTC\')
 toStartOfDay;toDate32;true	1920-02-02 00:00:00.000
 type;toStartOfDay;toDate32;true	DateTime64(3, \'UTC\')
-toStartOfYear;toDate32;false	2099-06-06
+toStartOfYear;toDate32;false	1970-01-01
 type;toStartOfYear;toDate32;false	Date
-toStartOfYear;toDateTime64;false	2099-06-06
+toStartOfYear;toDateTime64;false	1970-01-01
 type;toStartOfYear;toDateTime64;false	Date
 toStartOfISOYear;toDate32;false	1970-01-01
 type;toStartOfISOYear;toDate32;false	Date
 toStartOfISOYear;toDateTime64;false	1970-01-01
 type;toStartOfISOYear;toDateTime64;false	Date
-toStartOfQuarter;toDate32;false	2099-06-06
+toStartOfQuarter;toDate32;false	1970-01-01
 type;toStartOfQuarter;toDate32;false	Date
-toStartOfQuarter;toDateTime64;false	2099-06-06
+toStartOfQuarter;toDateTime64;false	1970-01-01
 type;toStartOfQuarter;toDateTime64;false	Date
-toStartOfMonth;toDate32;false	2099-07-07
+toStartOfMonth;toDate32;false	1970-01-01
 type;toStartOfMonth;toDate32;false	Date
-toStartOfMonth;toDateTime64;false	2099-07-07
+toStartOfMonth;toDateTime64;false	1970-01-01
 type;toStartOfMonth;toDateTime64;false	Date
-toStartOfWeek;toDate32;false	2099-07-07
+toStartOfWeek;toDate32;false	1970-01-01
 type;toStartOfWeek;toDate32;false	Date
 toStartOfWeek;toDateTime64;false	1970-01-01
 type;toStartOfWeek;toDateTime64;false	Date
-toMonday;toDate32;false	2099-07-08
+toMonday;toDate32;false	1970-01-01
 type;toMonday;toDate32;false	Date
-toMonday;toDateTime64;false	2099-07-08
+toMonday;toDateTime64;false	1970-01-01
 type;toMonday;toDateTime64;false	Date
-toLastDayOfWeek;toDate32;false	2099-07-13
+toLastDayOfWeek;toDate32;false	1970-01-01
 type;toLastDayOfWeek;toDate32;false	Date
-toLastDayOfWeek;toDateTime64;false	2099-07-13
+toLastDayOfWeek;toDateTime64;false	1970-01-01
 type;toLastDayOfWeek;toDateTime64;false	Date
-toLastDayOfMonth;toDate32;false	2099-08-04
+toLastDayOfMonth;toDate32;false	1970-01-01
 type;toLastDayOfMonth;toDate32;false	Date
-toLastDayOfMonth;toDateTime64;false	2099-08-04
+toLastDayOfMonth;toDateTime64;false	1970-01-01
 type;toLastDayOfMonth;toDateTime64;false	Date
 toStartOfDay;toDateTime64;false	2056-03-09 06:28:16
 type;toStartOfDay;toDateTime64;false	DateTime(\'UTC\')
@@ -92,5 +92,5 @@ toStartOfFifteenMinutes;toDateTime64;false	2056-03-09 16:43:16
 type;toStartOfFifteenMinutes;toDateTime64;false	DateTime(\'UTC\')
 timeSlot;toDateTime64;false	2056-03-09 16:58:16
 type;timeSlot;toDateTime64;false	DateTime(\'UTC\')
-toStartOfDay;toDate32;false	2056-03-09 06:28:16
+toStartOfDay;toDate32;false	1970-01-01 00:00:00
 type;toStartOfDay;toDate32;false	DateTime(\'UTC\')

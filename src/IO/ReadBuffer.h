@@ -69,6 +69,10 @@ public:
 
     virtual ~ReadBuffer() = default;
 
+    /// True if the whole input is already in the working buffer and will never be refilled
+    /// (e.g. ReadBufferFromMemory). Lets hot parsers take the no-copy path without an RTTI check.
+    virtual bool isMemoryBuffer() const { return false; }
+
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
       * If at the moment the position is at the end of the buffer, it calls the next() method.
@@ -166,7 +170,7 @@ public:
         return bytes_copied;
     }
 
-    /** Reads n bytes, if there are less - throws an exception. */
+    /** Reads n bytes with read, if there are less - throws an exception. */
     void readStrict(char * to, size_t n);
 
     /** A method that can be more efficiently implemented in derived classes, in the case of reading large enough blocks.
@@ -176,6 +180,9 @@ public:
       * Don't use for small reads.
       */
     [[nodiscard]] virtual size_t readBig(char * to, size_t n) { return read(to, n); }
+
+    /** Reads n bytes with readBig, if there are less - throws an exception. */
+    void readBigStrict(char * to, size_t n);
 
     /** Do something to allow faster subsequent call to 'nextImpl' if possible.
       * It's used for asynchronous readers with double-buffering.

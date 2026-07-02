@@ -116,7 +116,7 @@ public:
         : database_catalog(database_catalog_)
     {}
 
-    Names getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
         auto context = CurrentThread::tryGetQueryContext();
         if (!context)
@@ -125,7 +125,7 @@ public:
         const auto access = context->getAccess();
         const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
-        Names result;
+        VectorWithMemoryTracking<String> result;
         auto databases_list = database_catalog.getDatabases(GetDatabasesOptions{.with_remote_databases = true});
         for (const auto & database_name : databases_list | boost::adaptors::map_keys)
         {
@@ -305,6 +305,13 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
     /// Because some databases might use them until their shutdown is called, but calling shutdown
     /// on temporary database means clearing its set of tables, which will lead to unnecessary errors like "table not found".
     std::vector<DatabasePtr> databases_with_delayed_shutdown;
+    /// A database shutdown() can throw (e.g. a table flushAndShutdown hitting a ZooKeeper timeout).
+    /// It must not skip the steps below: shutdown_system_logs() joins the system log flush threads,
+    /// and if one stays alive into the static thread pool teardown in `main` its lazy backing-table
+    /// (re)creation hits an already-reset pool and aborts. So log and continue, keeping the ordering
+    /// user databases -> system logs -> system / temporary databases. The throwing shutdown() still
+    /// releases that database's table references (see DatabaseWithOwnTablesBase::shutdown), so the
+    /// UUID mappings below are emptied as usual.
     for (auto & database : current_databases)
     {
         if (database.first == TEMPORARY_DATABASE || database.first == SYSTEM_DATABASE)
@@ -313,7 +320,14 @@ void DatabaseCatalog::shutdownImpl(std::function<void()> shutdown_system_logs)
             continue;
         }
         LOG_TRACE(log, "Shutting down database {}", database.first);
-        database.second->shutdown();
+        try
+        {
+            database.second->shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Failed to shut down database {}", backQuoteIfNeed(database.first)));
+        }
     }
 
     LOG_TRACE(log, "Shutting down system logs");
@@ -484,7 +498,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (exception)
         {
             DatabaseNameHints hints(*this);
-            std::vector<String> names = hints.getHints(table_id.getDatabaseName());
+            auto names = hints.getHints(table_id.getDatabaseName());
             if (names.empty())
             {
                 exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(table_id.getDatabaseName())));
@@ -589,7 +603,7 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        auto names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -668,7 +682,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(database_name);
+        auto names = hints.getHints(database_name);
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -713,10 +727,21 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             throw;
         }
 
-        /// Old ClickHouse versions did not store database.sql files
-        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
-        default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+        /// Databases managed by Shared Catalog keep no metadata on disk.
+        /// Skip the removal to avoid a needless metadata-disk transaction that could fail.
+#if CLICKHOUSE_CLOUD
+        const bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
+#else
+        const bool managed_by_shared_catalog = false;
+#endif
+
+        if (!managed_by_shared_catalog)
+        {
+            /// Old ClickHouse versions did not store database.sql files
+            /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+            default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
+            default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+        }
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -819,7 +844,7 @@ DatabasePtr DatabaseCatalog::getDatabase(std::string_view database_name) const
     if (!db)
     {
         DatabaseNameHints hints(*this);
-        std::vector<String> names = hints.getHints(std::string{database_name});
+        auto names = hints.getHints(std::string{database_name});
         if (names.empty())
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
@@ -2333,7 +2358,7 @@ std::pair<String, String> TableNameHints::getExtendedHintForTable(const String &
     return best_match;
 }
 
-Names TableNameHints::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> TableNameHints::getAllRegisteredNames() const
 {
     if (!database)
         return {};
