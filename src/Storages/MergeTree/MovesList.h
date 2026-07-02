@@ -21,10 +21,10 @@ struct MoveInfo
     std::string part_name;
     std::string target_disk_name;
     std::string target_disk_path;
-    UInt64 part_size;
+    UInt64 part_size{};
 
-    Float64 elapsed;
-    UInt64 thread_id;
+    Float64 elapsed{};
+    UInt64 thread_id{};
 };
 
 struct MovesListElement : private boost::noncopyable

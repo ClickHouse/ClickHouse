@@ -22,8 +22,8 @@ struct ExtractWWW
         {
             if (pos != data)
             {
-                Pos tmp;
-                size_t protocol_length;
+                Pos tmp = nullptr;
+                size_t protocol_length = 0;
                 ExtractProtocol::execute(data, size, tmp, protocol_length);
 
                 if (pos != data + protocol_length + 1)

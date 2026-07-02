@@ -1,5 +1,4 @@
 import base64
-import concurrent
 import errno
 import http.client
 import json
@@ -59,11 +58,29 @@ from minio import Minio
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
-from .config_cluster import *
+from .config_cluster import (
+    dremio_pass,
+    dremio_user,
+    minio_access_key,
+    minio_secret_key,
+    mongo_pass,
+    mongo_user,
+    mysql_pass,
+    mysql_user,
+    nats_pass,
+    nats_user,
+    odbc_mysql_db,
+    odbc_mysql_uid,
+    odbc_psql_db,
+    odbc_psql_user,
+    pg_db,
+    pg_pass,
+    pg_user,
+)
 from .kazoo_client import KazooClientWithImplicitRetries
 from .random_settings import write_random_settings_config
 from .retry_decorator import retry
-from .test_tools import assert_eq_with_retry, exec_query_with_retry
+from .test_tools import exec_query_with_retry
 
 HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
@@ -120,7 +137,7 @@ CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.lo
 # Minimum version we use in integration tests to check compatibility with old releases
 # Keep in mind that we only support upgrading between releases that are at most 1 year different.
 # This means that this minimum need to be, at least, 1 year older than the current release
-CLICKHOUSE_CI_MIN_TESTED_VERSION = "23.3"
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 
 # `Nullable(Tuple)` experimental feature is introduced in 26.1. This has lead to changes in the output return type
 # of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
@@ -342,6 +359,14 @@ def check_kerberos_kdc_is_available(kerberos_kdc_id):
 def check_postgresql_java_client_is_available(postgresql_java_client_id):
     p = subprocess.Popen(
         docker_exec(postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+def check_postgresql_dotnet_client_is_available(docker_id):
+    p = subprocess.Popen(
+        docker_exec(docker_id, "dotnet", "--version"),
         stdout=subprocess.PIPE,
     )
     p.communicate()
@@ -592,7 +617,7 @@ class ClickHouseCluster:
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
         # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
-        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
+        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -653,6 +678,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -822,6 +848,12 @@ class ClickHouseCluster:
             self.postgresql_java_client_host
         )
 
+        # available when with_postgresql_dotnet_client = True
+        self.postgresql_dotnet_client_host = "postgresql-dotnet-client"
+        self.postgresql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_dotnet_client_host
+        )
+
         # available when with_mysql_dotnet_client = True
         self.mysql_dotnet_client_host = "dotnet"
         self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
@@ -913,7 +945,7 @@ class ClickHouseCluster:
             logging.debug(f"Removed :{self.instances_dir}")
 
         if with_spark:
-            import pyspark
+            pass
 
             # (
             #     pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -1169,7 +1201,7 @@ class ClickHouseCluster:
                 if unstopped_containers:
                     logging.debug(f"Left unstopped containers: {unstopped_containers}")
                 else:
-                    logging.debug(f"Unstopped containers killed.")
+                    logging.debug("Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except Exception as ex:
@@ -1525,6 +1557,29 @@ class ClickHouseCluster:
             instance.env_file,
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        )
+
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    "docker_compose_postgresql_dotnet_client.yml",
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(
+                docker_compose_yml_dir,
+                "docker_compose_postgresql_dotnet_client.yml",
+            ),
         )
 
     def setup_mysql_dotnet_client_cmd(
@@ -2021,6 +2076,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2189,6 +2245,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2296,6 +2353,13 @@ class ClickHouseCluster:
         if with_postgresql_java_client and not self.with_postgresql_java_client:
             cmds.append(
                 self.setup_postgresql_java_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -3003,6 +3067,21 @@ class ClickHouseCluster:
                 time.sleep(0.5)
         raise Exception("Cannot wait PostgreSQL Java Client container")
 
+    def wait_postgresql_dotnet_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_dotnet_client_is_available(
+                    self.postgresql_dotnet_client_docker_id
+                ):
+                    logging.debug("PostgreSQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL C# Client container")
+
     def wait_mysql_dotnet_client(self, timeout=30):
         start = time.time()
         while time.time() - start < timeout:
@@ -3145,7 +3224,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_kafka_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
         raise Exception("Kafka is not available")
 
@@ -3262,7 +3341,7 @@ class ClickHouseCluster:
                 subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                     self.base_minio_cmd + ["logs"], stdout=f
                 )
-        except Exception as e:
+        except Exception:
             logging.debug("Unable to get logs from docker.")
 
         raise Exception("Can't wait Minio to start")
@@ -3368,7 +3447,6 @@ class ClickHouseCluster:
 
             start = time.time()
             sr_started = False
-            sr_auth_started = False
             while time.time() - start < timeout:
                 try:
                     sr_client._send_request(sr_client.url)
@@ -3514,7 +3592,7 @@ class ClickHouseCluster:
 
         try:
             self.cleanup()
-        except Exception as e:
+        except Exception:
             logging.warning("Cleanup failed:{e}")
 
         try:
@@ -3780,6 +3858,17 @@ class ClickHouseCluster:
                 self.wait_postgresql_java_client()
 
             if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
+
+            if (
                 self.with_mysql_dotnet_client
                 and self.base_mysql_dotnet_client_cmd
             ):
@@ -3844,7 +3933,7 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
                 time.sleep(2)
-                logging.debug(f"RabbitMQ checking container try")
+                logging.debug("RabbitMQ checking container try")
                 self.wait_rabbitmq_to_start()
 
             if self.with_nats and self.base_nats_cmd:
@@ -4048,7 +4137,7 @@ class ClickHouseCluster:
                 )
                 run_and_check(arrowflight_start_cmd)
 
-                logging.error(f'Trying to connect to Arrowflight...')
+                logging.error('Trying to connect to Arrowflight...')
                 self.wait_arrowflight_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
@@ -4271,10 +4360,32 @@ class ClickHouseCluster:
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
 
+    def _signal_clickhouse_in_container(self, instance_name, signal_name):
+        # Returns True if a `clickhouse` process was signaled inside the
+        # container; False if no such process exists so callers can fall
+        # back to signaling the container's main process.
+        container_id = self.get_container_id(instance_name)
+        result = self.exec_in_container(
+            container_id,
+            ["bash", "-c", "pkill -{} clickhouse; echo $?".format(signal_name)],
+            nothrow=True,
+            user="root",
+        )
+        last_line = (result or "").strip().splitlines()[-1] if result else ""
+        return last_line == "0"
+
     def _pause_container_using_signal(self, instance_name):
+        # ClickHouse runs as a child of the bash entrypoint at PID 1, and
+        # bash does not propagate uncatchable signals to children, so we
+        # must target the `clickhouse` process directly. For non-ClickHouse
+        # containers (Kafka, MongoDB, etc.) PID 1 is the service itself.
+        if self._signal_clickhouse_in_container(instance_name, "STOP"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
 
     def _unpause_container_using_signal(self, instance_name):
+        if self._signal_clickhouse_in_container(instance_name, "CONT"):
+            return
         subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     def _wait_for_pause_effective(self, instance_name, timeout):
@@ -4552,19 +4663,12 @@ class ClickHouseCluster:
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
-
-        def process_single_node(node):
-            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
-            subprocess_check_call(base_cmd + [action, node])
-            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
-            futures = []
-            for n in nodes:
-                futures += [executor.submit(process_single_node, n)]
-
-            for future in concurrent.futures.as_completed(futures):
-                future.result()
+        # One `docker compose` invocation for all nodes: concurrent compose commands on
+        # the same project race on shared project state and can silently drop a node's
+        # action. compose parallelizes the services internally.
+        logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
+        subprocess_check_call(base_cmd + [action] + list(nodes))
+        logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
@@ -4692,6 +4796,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgresql_dotnet_client,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4742,7 +4847,7 @@ class ClickHouseInstance:
         if pids_limit is not None:
             self.pids_limit = f"pids_limit: {pids_limit}"
         else:
-            self.pids_limit = f"pids_limit: 5000"
+            self.pids_limit = "pids_limit: 5000"
 
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
@@ -4784,6 +4889,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl
@@ -5231,6 +5337,7 @@ class ClickHouseInstance:
             raise Exception(
                 "clickhouse can be stopped only with stay_alive=True instance"
             )
+
         try:
             ps_clickhouse = self.exec_in_container(
                 ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
@@ -5238,6 +5345,26 @@ class ClickHouseInstance:
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return False
+
+            # Under LLVM coverage the server runs several times slower and writes its
+            # .profraw only on a graceful shutdown (the libprofile atexit handler, or
+            # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
+            # SIGKILL loses everything this process executed. So for a graceful stop give
+            # the server a much larger window to finish shutting down (and flush coverage)
+            # before the force-kill below. We detect a coverage build from
+            # system.build_options (cached; the server is confirmed up at this point),
+            # which is reliable - unlike LLVM_PROFILE_FILE, which is set for every
+            # container regardless of build. restart_clickhouse() delegates here, so it
+            # is covered too.
+            if not kill and stop_wait_sec < 180:
+                if getattr(self, "_built_with_llvm_coverage", None) is None:
+                    try:
+                        self._built_with_llvm_coverage = self.is_built_with_llvm_coverage()
+                    except Exception as e:
+                        logging.warning(f"Could not detect LLVM coverage build: {e}")
+                        self._built_with_llvm_coverage = False
+                if self._built_with_llvm_coverage:
+                    stop_wait_sec = 180
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
@@ -5316,7 +5443,7 @@ class ClickHouseInstance:
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
                     return exec_id
-                except Exception as e:
+                except Exception:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
                     )
@@ -5356,7 +5483,7 @@ class ClickHouseInstance:
             if time.time() > start_time + start_wait_sec:
                 break
         logging.error(
-            f"No time left to start. But process is still running. Will dump threads."
+            "No time left to start. But process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5379,7 +5506,7 @@ class ClickHouseInstance:
                 return
             time.sleep(1)
         logging.error(
-            f"No time left to shutdown. Process is still running. Will dump threads."
+            "No time left to shutdown. Process is still running. Will dump threads."
         )
         ps_clickhouse = self.exec_in_container(
             ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
@@ -5451,7 +5578,7 @@ class ClickHouseInstance:
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
-        logging.debug(f"grep in log called %s", substring)
+        logging.debug("grep in log called %s", substring)
         if after is not None:
             after_opt = "-A{}".format(after)
         else:
@@ -5664,7 +5791,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -5745,7 +5872,7 @@ class ClickHouseInstance:
         # wait start
         time_left = begin_time + stop_start_wait_sec - time.time()
         if time_left <= 0:
-            raise Exception(f"No time left during restart")
+            raise Exception("No time left during restart")
         else:
             self.wait_start(time_left)
 
@@ -5963,7 +6090,7 @@ class ClickHouseInstance:
                 delimiter = d
                 break
         else:
-            raise Exception(f"Couldn't find a suitable delimiter")
+            raise Exception("Couldn't find a suitable delimiter")
         replace = shlex.quote(replace)
         replacement = shlex.quote(replacement)
         self.exec_in_container(
@@ -6077,10 +6204,9 @@ class ClickHouseInstance:
             # If custom main config is used, do not apply random settings to it
             write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
 
-        version = None
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
-            version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+            {"major": int(version_parts[0]), "minor": int(version_parts[1])}
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

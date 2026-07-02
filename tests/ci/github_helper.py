@@ -2,11 +2,13 @@
 """Helper for GitHub API requests"""
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from os import path as p
 from pathlib import Path
 from time import sleep
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import github
 import requests
@@ -15,6 +17,7 @@ import requests
 # pylint: disable=useless-import-alias
 from github.AuthenticatedUser import AuthenticatedUser
 from github.GithubException import (
+    GithubException as GithubException,
     RateLimitExceededException as RateLimitExceededException,
 )
 from github.Issue import Issue as Issue
@@ -30,6 +33,37 @@ logger = logging.getLogger(__name__)
 
 PullRequests = List[PullRequest]
 Issues = List[Issue]
+
+# How many PRs to fetch concurrently in `get_pulls_from_search`. The GitHub
+# search API returns issues, and each one still needs a `get_pull` request; those
+# requests are independent, so fetching them in parallel turns an O(N) sequence
+# of round-trips into a handful of waves.
+DEFAULT_FETCH_THREADS = 12
+
+
+@dataclass
+class PullRequestInfo:
+    """Lightweight, read-only view of a pull request fetched via GraphQL.
+
+    Carries only the fields needed for bulk classification and body edits, so a
+    whole search result set can be retrieved in a few batched GraphQL requests
+    instead of one REST request per PR. To mutate a PR (e.g. `PullRequest.edit`)
+    fetch the full object via `GitHub.get_pull_cached` for the few that change.
+    """
+
+    number: int
+    head_ref: str
+    base_ref: str
+    label_names: List[str]
+    merged: bool
+    merge_commit_sha: Optional[str]
+    body: str
+    node_id: str
+    html_url: str
+    repo: str
+    # Numbers of the issues this PR resolves, taken from GitHub's "Development"
+    # links (`closingIssuesReferences`), restricted to the PR's own repository.
+    closing_issue_numbers: List[int] = field(default_factory=list)
 
 
 class GitHub(github.Github):
@@ -115,20 +149,33 @@ class GitHub(github.Github):
         progress_func = kwargs.pop(
             "progress_func", lambda x: x
         )  # type: Callable[[Issues], Issues]
+        threads = kwargs.pop("threads", DEFAULT_FETCH_THREADS)
         issues = self.search_issues(*args, **kwargs)
-        repos = {}
-        prs = []  # type: PullRequests
-        for issue in progress_func(issues):
-            # See https://github.com/PyGithub/PyGithub/issues/2202,
-            # obj._rawData doesn't spend additional API requests
-            # pylint: disable=protected-access
+
+        # See https://github.com/PyGithub/PyGithub/issues/2202,
+        # obj._rawData doesn't spend additional API requests
+        # pylint: disable=protected-access
+        repos = {}  # type: Dict[str, Repository]
+        # Resolve the repository objects up front (cheap, usually a single repo)
+        # so the parallel fetch below neither races to populate `repos` nor
+        # triggers a lazy `issue.repository` API call from a worker thread.
+        for issue in issues:
             repo_url = issue._rawData["repository_url"]
             if repo_url not in repos:
                 repos[repo_url] = issue.repository
-            prs.append(
-                self.get_pull_cached(repos[repo_url], issue.number, issue.updated_at)
-            )
-        return prs
+
+        def _fetch(issue: Issue) -> PullRequest:
+            repo_url = issue._rawData["repository_url"]
+            return self.get_pull_cached(repos[repo_url], issue.number, issue.updated_at)
+
+        if threads <= 1 or len(issues) <= 1:
+            return [_fetch(issue) for issue in progress_func(issues)]
+
+        # Each `get_pull` is an independent request and each PR is cached to its
+        # own file, so the fetches parallelize without shared mutable state.
+        # `executor.map` preserves input order, keeping the result deterministic.
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            return list(progress_func(executor.map(_fetch, issues)))
 
     def get_release_pulls(self, repo_name: str) -> PullRequests:
         prs = self.get_pulls_from_search(
@@ -142,6 +189,202 @@ class GitHub(github.Github):
         # Ensure that the answer from GitHub is correct (we should always have some releases)
         assert prs
         return prs
+
+    # The exact set of fields `PullRequestInfo` needs, shared by both GraphQL
+    # entry points below.
+    _GRAPHQL_PR_FIELDS = """
+        number
+        headRefName
+        baseRefName
+        merged
+        body
+        id
+        url
+        mergeCommit { oid }
+        labels(first: 100) { nodes { name } }
+        baseRepository { nameWithOwner }
+        closingIssuesReferences(first: 50) {
+            nodes { number repository { nameWithOwner } }
+        }
+    """
+
+    @staticmethod
+    def _pr_info_from_node(node: dict) -> PullRequestInfo:
+        merge_commit = node["mergeCommit"] or {}
+        repo = node["baseRepository"]["nameWithOwner"]
+        # Keep only same-repo closing references: a `Closes #N` for an issue in
+        # another repository would collide with this repo's issue numbering.
+        closing = (node.get("closingIssuesReferences") or {}).get("nodes") or []
+        closing_issue_numbers = [
+            issue["number"]
+            for issue in closing
+            if (issue.get("repository") or {}).get("nameWithOwner") == repo
+        ]
+        return PullRequestInfo(
+            number=node["number"],
+            head_ref=node["headRefName"],
+            base_ref=node["baseRefName"],
+            label_names=[label["name"] for label in node["labels"]["nodes"]],
+            merged=node["merged"],
+            merge_commit_sha=merge_commit.get("oid"),
+            body=node["body"] or "",
+            node_id=node["id"],
+            html_url=node["url"],
+            repo=repo,
+            closing_issue_numbers=closing_issue_numbers,
+        )
+
+    def _graphql(self, query: str, variables: dict) -> dict:
+        # pylint: disable=protected-access
+        requester = self._Github__requester  # type: ignore
+        url = f"{requester.base_url}/graphql"
+        for i in range(self.retries):
+            try:
+                _, data = requester.requestJsonAndCheck(
+                    "POST", url, input={"query": query, "variables": variables}
+                )
+                # GraphQL reports query errors with HTTP 200 and an `errors` key,
+                # so `requestJsonAndCheck` does not raise on them. A query can be
+                # partially successful: e.g. a `pullRequest(number: N)` alias for
+                # a number that does not exist in this repo returns `null` for
+                # that field plus a NOT_FOUND error, while the other aliases
+                # resolve. Use whatever `data` resolved; only raise when nothing
+                # came back at all (malformed query, auth failure, ...).
+                payload = data.get("data")
+                errors = data.get("errors")
+                if payload is None:
+                    raise GithubException(
+                        200, errors or "GraphQL query returned no data", None
+                    )
+                if errors:
+                    logger.warning(
+                        "GraphQL returned %s error(s); using partial data: %s",
+                        len(errors),
+                        errors[0].get("message", errors[0]),
+                    )
+                return payload
+            except RateLimitExceededException:
+                if i == self.retries - 1:
+                    raise
+                self.sleep_on_rate_limit()
+        raise RuntimeError("Unreachable: GraphQL retry loop exited without result")
+
+    def get_pulls_lightweight(
+        self, query: str, merged: Optional[List[datetime]] = None
+    ) -> List[PullRequestInfo]:
+        """Fetch lightweight PR records matching a search `query` via GraphQL.
+
+        A single GraphQL request returns up to 100 PRs, versus one REST request
+        per PR in `get_pulls_from_search`. The GitHub search index caps any one
+        query at 1000 results, so when `merged=[since, until]` is given and a
+        sub-range would exceed that, the range is split in half and re-queried --
+        mirroring `search_issues`. Results are de-duplicated by PR number.
+        """
+        gql = (
+            "query($q:String!, $after:String) {"
+            "  search(query:$q, type:ISSUE, first:100, after:$after) {"
+            "    issueCount pageInfo { hasNextPage endCursor }"
+            "    nodes { ... on PullRequest {" + self._GRAPHQL_PR_FIELDS + "} }"
+            "  }"
+            "}"
+        )
+        found = {}  # type: Dict[int, PullRequestInfo]
+
+        def run(since: Optional[datetime], until: Optional[datetime]) -> None:
+            q = query
+            if since is not None:
+                q = f"{query} merged:{since.isoformat()}..{until.isoformat()}"
+            after = None
+            first_page = True
+            while True:
+                search = self._graphql(gql, {"q": q, "after": after})["search"]
+                if first_page and since is not None and search["issueCount"] > 1000:
+                    middle = since + (until - since) / 2
+                    if since < middle < until:
+                        run(since, middle)
+                        run(middle, until)
+                        return
+                first_page = False
+                for node in search["nodes"]:
+                    if node:  # search also returns plain issues -> empty fragment
+                        info = self._pr_info_from_node(node)
+                        found[info.number] = info
+                if not search["pageInfo"]["hasNextPage"]:
+                    return
+                after = search["pageInfo"]["endCursor"]
+
+        if merged is not None:
+            assert len(merged) == 2
+            run(merged[0], merged[1])
+        else:
+            run(None, None)
+        return list(found.values())
+
+    def get_pulls_lightweight_by_numbers(
+        self, repo_name: str, numbers: List[int]
+    ) -> Dict[int, PullRequestInfo]:
+        """Fetch lightweight PR records for explicit PR numbers via GraphQL,
+        batching many PRs per request using field aliases."""
+        owner, name = repo_name.split("/")
+        result = {}  # type: Dict[int, PullRequestInfo]
+        batch_size = 50
+        for start in range(0, len(numbers), batch_size):
+            batch = numbers[start : start + batch_size]
+            aliases = " ".join(
+                f"pr{n}: pullRequest(number: {n}) {{{self._GRAPHQL_PR_FIELDS}}}"
+                for n in batch
+            )
+            gql = (
+                "query($owner:String!, $name:String!) {"
+                f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
+                "}"
+            )
+            repository = self._graphql(gql, {"owner": owner, "name": name})[
+                "repository"
+            ]
+            for n in batch:
+                node = (repository or {}).get(f"pr{n}")
+                if node:
+                    result[n] = self._pr_info_from_node(node)
+        return result
+
+    def get_backport_merge_commits(
+        self, repo_name: str, head_refs: List[str]
+    ) -> Dict[str, Optional[str]]:
+        """For each backport branch name, return the merge commit SHA of the
+        merged PR opened from it (or ``None`` if there is none), batching many
+        head refs per GraphQL request.
+
+        Replaces one REST `get_pulls(head=...)` request per backport branch --
+        which at a large lookback fans out into thousands of calls and trips
+        GitHub's secondary rate limit -- with a handful of GraphQL queries.
+        """
+        owner, name = repo_name.split("/")
+        result = {}  # type: Dict[str, Optional[str]]
+        batch_size = 50
+        for start in range(0, len(head_refs), batch_size):
+            batch = head_refs[start : start + batch_size]
+            aliases = " ".join(
+                f'b{i}: pullRequests(headRefName: "{head}", states: MERGED, '
+                "first: 1) { nodes { mergeCommit { oid } } }"
+                for i, head in enumerate(batch)
+            )
+            gql = (
+                "query($owner:String!, $name:String!) {"
+                f"  repository(owner:$owner, name:$name) {{ {aliases} }}"
+                "}"
+            )
+            repository = (
+                self._graphql(gql, {"owner": owner, "name": name})["repository"] or {}
+            )
+            for i, head in enumerate(batch):
+                node = repository.get(f"b{i}")
+                oid = None
+                if node and node["nodes"]:
+                    merge_commit = node["nodes"][0].get("mergeCommit")
+                    oid = merge_commit.get("oid") if merge_commit else None
+                result[head] = oid
+        return result
 
     def sleep_on_rate_limit(self) -> None:
         for limit, data in self.get_rate_limit().raw_data.items():

@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -73,6 +74,13 @@ public:
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
     bool isTransactional() const override { return true; }
 
     void dropTable(const String & namespace_name, const String & table_name) const override;
@@ -121,7 +129,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
-    mutable std::optional<AccessToken> access_token;
+    mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -189,6 +197,8 @@ public:
     }
 
     String getTenantId() const { return tenant_id; }
+
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
 
 protected:
     /// Parameters for OneLake OAuth.

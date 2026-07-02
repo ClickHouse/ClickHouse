@@ -105,7 +105,8 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     # These functions genuinely need live context at execution time
     # (dictionary loading, join access, ZooKeeper, ML prediction,
-    # complex type resolution for DateTime/Interval/Tuple arithmetic)
+    # complex type resolution for DateTime/Interval/Tuple arithmetic,
+    # AI provider calls)
     # and cannot use WithContext (weak_ptr) because the context may expire
     # in deferred execution paths (default expressions, async inserts).
     -e /FunctionsExternalDictionaries.h
@@ -120,6 +121,8 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /formatRow.cpp
     -e /structureToFormatSchema.cpp
     -e /UserDefined/
+    -e /FunctionBaseAI.h
+    -e /aiEmbed.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 

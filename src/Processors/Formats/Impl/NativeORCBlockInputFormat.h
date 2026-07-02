@@ -6,7 +6,6 @@
 
 #include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -113,8 +112,8 @@ private:
     FormatFilterInfoPtr format_filter_info;
 
     std::vector<int> selected_stripes;
-    size_t read_iterator;
-    size_t prefetch_iterator;
+    size_t read_iterator{};
+    size_t prefetch_iterator{};
 
     std::unique_ptr<orc::StripeInformation> current_stripe_info;
 

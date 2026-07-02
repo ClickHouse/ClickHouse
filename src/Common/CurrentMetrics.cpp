@@ -57,6 +57,8 @@
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
+    M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
+    M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -220,6 +222,9 @@
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
+    M(UDFDriverInvokerThreads, "Number of threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsActive, "Number of active threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsScheduled, "Number of queued or active jobs in thread pools servicing pipes of executable UDF driver commands.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
@@ -322,12 +327,17 @@
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
+    M(FilesystemCachePriorityQueueElements, "Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal") \
+    M(FilesystemCacheInvalidatedElements, "Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue") \
     M(FilesystemCacheDownloadQueueElements, "Filesystem cache elements in download queue") \
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
+    M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
+    M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
+    M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
@@ -349,12 +359,19 @@
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
     M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
+    M(PointInPolygonCacheBytes, "Size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function") \
+    M(PointInPolygonCacheCells, "Number of preprocessed constant polygons in the cache for the `pointInPolygon` function") \
+    M(PointInPolygonCacheSizeLimit, "Maximum size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function (the applied value of the `point_in_polygon_cache_size` server setting)") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(UniqueKeyIndexCacheBytes, "Total size of UNIQUE KEY index cache in bytes") \
+    M(UniqueKeyIndexCacheEntries, "Total number of UNIQUE KEY index blocks cached") \
+    M(DeleteBitmapCacheBytes, "Total size of the UNIQUE KEY delete-bitmap cache in bytes") \
+    M(DeleteBitmapCacheEntries, "Total number of UNIQUE KEY delete bitmaps cached") \
     M(NamedCollection, "Number of named collections") \
     M(PrimaryIndexCacheBytes, "Total size of primary index cache in bytes. Holds primary-key indices loaded on demand when `primary_key_lazy_load=1` and `use_primary_key_cache=1`. Allocations live in the dedicated cache jemalloc arena (`jemalloc.cache_arena.*`). NEVER overlaps with `system.parts.primary_key_bytes_in_memory[_allocated]` — a part's index lives either in this cache (counted here) or in the part itself (counted there); never both. To get total primary-index memory across all parts, sum the two.") \
     M(PrimaryIndexCacheFiles, "Total number of index files cached in the primary index cache") \
@@ -371,8 +388,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
-    M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
-    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
+    M(CompiledExpressionCacheBytes, "Reserved page-block capacity (rounded up to whole pages with a 2x over-provisioning factor) held by `JITModuleMemoryManager` for executable/data sections of cached JIT-compiled functions. NOT the actual bytes of machine code in use (that's smaller). Allocated via `posix_memalign`, which is intercepted into jemalloc, so this is accounted within the dedicated JIT arena and is a subset of `jemalloc.jit_arena.active_bytes`.") \
+    M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled machine code.") \
     M(SerializationCacheBytesInMemoryAllocated, "Total size of the serialization cache in bytes including keys and overhead from empty slots") \
     M(SerializationCacheBytesInMemory, "Total size of the serialization cache in bytes including only the values") \
     M(SerializationCacheCount, "Total number of entries in the serialization cache") \
@@ -384,6 +401,7 @@
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
+    M(KeeperTTLNodes, "Number of nodes with a TTL set currently stored in Keeper.") \
     M(ThreadsInOvercommitTracker, "Number of waiting threads inside of OvercommitTracker") \
     M(IOUringPendingEvents, "Number of io_uring SQEs waiting to be submitted") \
     M(IOUringInFlightEvents, "Number of io_uring SQEs in flight") \
@@ -444,6 +462,9 @@
     M(BlobCopierThreads, "Number of threads in the thread pool of the object storage disk background replication process") \
     M(BlobCopierThreadsActive, "Number of threads in the thread pool of the object storage disk background replication process running a task") \
     M(BlobCopierThreadsScheduled, "Number of queued or active tasks in the thread pool of the object storage disk background replication process") \
+    M(DiskObjectStorageCopyObjectThreads, "Number of threads in the thread pool used to parallelize copyObjectToAnotherObjectStorage calls inside object storage disk transactions") \
+    M(DiskObjectStorageCopyObjectThreadsActive, "Number of threads in the disk object storage copy thread pool running a task") \
+    M(DiskObjectStorageCopyObjectThreadsScheduled, "Number of queued or active tasks in the disk object storage copy thread pool") \
     \
     M(HTTPConnectionsStored, "Total count of sessions stored in the session pool for http hosts") \
     M(HTTPConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for http hosts") \
@@ -462,6 +483,9 @@
     \
     M(ConcurrentQueryScheduled, "Total number of query slot requests are being scheduled currently") \
     M(ConcurrentQueryAcquired, "Total number of acquired query slots") \
+    \
+    M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
+    M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \
@@ -498,6 +522,9 @@
     M(StatelessWorkerThreads, "Number of threads in the stateless worker thread pool.") \
     M(StatelessWorkerThreadsActive, "Number of threads in the stateless worker thread pool running a task.") \
     M(StatelessWorkerThreadsScheduled, "Number of queued or active jobs in the stateless worker thread pool.") \
+    M(ExchangeServerThreads, "Number of threads in the distributed exchange server handshake thread pool.") \
+    M(ExchangeServerThreadsActive, "Number of threads in the distributed exchange server handshake thread pool running a task.") \
+    M(ExchangeServerThreadsScheduled, "Number of queued or active jobs in the distributed exchange server handshake thread pool.") \
     M(ReadonlyDisks, "Number of disks that were marked as readonly during disk check.") \
     M(BrokenDisks, "Number of disks disks that were marked as broken during disk check.") \
     M(TaskTrackerThreads, "Number of threads used by the distributed query remote task tracker.") \

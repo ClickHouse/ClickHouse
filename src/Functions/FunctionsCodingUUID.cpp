@@ -16,6 +16,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <span>
+#include <Core/UUID.h>
 
 
 namespace DB::ErrorCodes

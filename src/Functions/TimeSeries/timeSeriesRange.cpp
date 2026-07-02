@@ -274,7 +274,7 @@ public:
                 num_steps = (end_timestamp - start_timestamp) / step + 1;
             }
 
-            size_t values_base_offset;
+            size_t values_base_offset = 0;
             if constexpr (with_values)
             {
                 values_base_offset = (*values_offsets)[i - 1];
@@ -285,7 +285,7 @@ public:
 
             for (size_t j = 0; j != num_steps; ++j)
             {
-                size_t offset;
+                size_t offset = 0;
                 if constexpr (with_values)
                 {
                     offset = j + values_base_offset;

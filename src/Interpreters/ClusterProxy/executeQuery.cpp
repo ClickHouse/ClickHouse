@@ -1,3 +1,6 @@
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Columns/ColumnConst.h>
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -101,7 +104,7 @@ namespace ErrorCodes
 namespace ClusterProxy
 {
 
-ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
     ContextPtr context,
     const Settings & settings,
@@ -387,7 +390,7 @@ void executeQuery(
         if (new_settings_ref[Setting::skip_unavailable_shards])
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
-            Float64 max_ratio = new_settings_ref[Setting::max_skip_unavailable_shards_ratio];
+            Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
             if (max_num > 0 || max_ratio > 0)
                 unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
@@ -709,11 +712,10 @@ void executeQueryWithParallelReplicas(
     auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     const auto & shard = cluster->getShardsInfo().at(0);
 
-    const auto & settings = new_context->getSettingsRef();
-    /// do not build local plan for distributed queries for now (address it later)
-    /// when parallel_replicas_prefer_local_replica is false, skip local plan to allow the load balancer to pick any replica
-    if (settings[Setting::allow_experimental_analyzer] && settings[Setting::parallel_replicas_local_plan]
-        && settings[Setting::parallel_replicas_prefer_local_replica] && !shard_num)
+    /// do not build local plan for distributed queries for now (address it later);
+    /// when `parallel_replicas_prefer_local_replica` is false, skip local plan to allow the
+    /// load balancer to pick any replica.
+    if (canUseLocalPlanForParallelReplicas(new_context))
     {
         auto local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
 
@@ -735,11 +737,20 @@ void executeQueryWithParallelReplicas(
         std::shared_ptr<const QueryPlan> remote_query_plan;
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
-            remote_query_plan = createRemotePlanForParallelReplicas(query_ast, * header, new_context, processed_stage);
+            remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
             remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan));
+        /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
+        /// context down so the local plan is optimized with the same read-in-order settings as the
+        /// replicas, and the initiator does not end up with a different coordination mode.
+        ContextPtr local_context = new_context;
+        if (const auto * query_node = query_tree->as<QueryNode>())
+            local_context = query_node->getContext();
+        else if (const auto * union_node = query_tree->as<UnionNode>())
+            local_context = union_node->getContext();
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -974,6 +985,27 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
             cluster->getShardCount());
 
     return false;
+}
+
+bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_experimental_analyzer]
+        || !settings[Setting::parallel_replicas_local_plan]
+        || !settings[Setting::parallel_replicas_prefer_local_replica])
+        return false;
+
+    /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
+    /// `executeQueryWithParallelReplicas`).
+    auto scalars = context->hasQueryContext() ? context->getQueryContext()->getScalars() : Scalars{};
+    if (auto it = scalars.find("_shard_num"); it != scalars.end())
+    {
+        const auto & column = it->second.safeGetByPosition(0).column;
+        if (column->getUInt(0) > 0)
+            return false;
+    }
+
+    return true;
 }
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)

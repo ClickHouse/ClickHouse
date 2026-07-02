@@ -125,7 +125,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
         auto * func = atom.ast->as<ASTFunction>();
         if (func && relations.contains(func->name))
         {
-            assert(!atom.negative);
+            chassert(!atom.negative);
             constraints_for_graph.push_back(atom.ast);
         }
     }
@@ -244,7 +244,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
             auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
             if (function_node && relations.contains(function_node->getFunctionName()))
             {
-                assert(!atom.negative);
+                chassert(!atom.negative);
                 constraints_for_graph.push_back(atom.node_with_hash.node);
             }
         }
@@ -310,13 +310,13 @@ ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDesc
     return *this;
 }
 
-ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) noexcept
+ConstraintsDescription::ConstraintsDescription(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     : constraints(std::move(other.constraints))
 {
     update();
 }
 
-ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) noexcept
+ConstraintsDescription & ConstraintsDescription::operator=(ConstraintsDescription && other) /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 {
     constraints = std::move(other.constraints);
     update();
