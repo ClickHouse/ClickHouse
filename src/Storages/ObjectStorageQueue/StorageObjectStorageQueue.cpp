@@ -1745,7 +1745,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = fs::path(zk_path_prefix) / toString(database_uuid) / toString(table_id.uuid);
     }
 
-    if (context_ && result_zk_path.find('{') != String::npos)
+    if (context_ && result_zk_path.contains('{'))
     {
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;

@@ -89,7 +89,7 @@ bool isMdxImport(std::string_view line)
     line = trimView(line);
     if (!line.starts_with("import "))
         return false;
-    return line.find(" from '") != std::string_view::npos || line.find(" from \"") != std::string_view::npos || line.starts_with("import '")
+    return line.contains(" from '") || line.contains(" from \"") || line.starts_with("import '")
         || line.starts_with("import \"");
 }
 
@@ -1022,12 +1022,12 @@ private:
             }
 
             /// Table: a row of cells followed by a separator row.
-            if (line.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+            if (line.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
             {
                 std::vector<std::string_view> rows;
                 rows.push_back(line);
                 i += 2; /// skip the header and the separator
-                while (i < lines.size() && !isBlank(lines[i]) && lines[i].find('|') != std::string_view::npos
+                while (i < lines.size() && !isBlank(lines[i]) && lines[i].contains('|')
                        && !stripCR(lines[i]).substr(leadingSpaces(lines[i])).starts_with("```"))
                 {
                     rows.push_back(stripCR(lines[i]));
@@ -1103,7 +1103,7 @@ private:
                     std::string_view pl = stripCR(lines[i]);
                     if (startsNewBlock(pl))
                         break;
-                    if (pl.find('|') != std::string_view::npos && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
+                    if (pl.contains('|') && i + 1 < lines.size() && isTableSeparator(lines[i + 1]))
                         break;
                     if (!paragraph.empty())
                         paragraph += ' ';

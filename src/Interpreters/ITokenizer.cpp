@@ -435,7 +435,7 @@ VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const Vecto
 
         for (const auto & existing_token : result)
         {
-            if (existing_token.find(token) != std::string::npos)
+            if (existing_token.contains(token))
             {
                 is_covered = true;
                 break;

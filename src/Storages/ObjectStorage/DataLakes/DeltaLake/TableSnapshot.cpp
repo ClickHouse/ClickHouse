@@ -214,9 +214,9 @@ public:
             return false;
         const auto & msg = e.message();
         const bool stale_credentials_error =
-            msg.find("ExpiredToken") != std::string::npos
-            || msg.find("InvalidToken") != std::string::npos
-            || msg.find("TokenRefreshRequired") != std::string::npos;
+            msg.contains("ExpiredToken")
+            || msg.contains("InvalidToken")
+            || msg.contains("TokenRefreshRequired");
         if (!stale_credentials_error)
             return false;
 
@@ -815,9 +815,9 @@ bool TableSnapshot::tryRefreshAfterStaleTokenError(
         return false;
     const auto & msg = e.message();
     const bool stale_credentials_error =
-        msg.find("ExpiredToken") != std::string::npos
-        || msg.find("InvalidToken") != std::string::npos
-        || msg.find("TokenRefreshRequired") != std::string::npos;
+        msg.contains("ExpiredToken")
+        || msg.contains("InvalidToken")
+        || msg.contains("TokenRefreshRequired");
     if (!stale_credentials_error)
         return false;
 

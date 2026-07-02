@@ -764,7 +764,7 @@ public:
         UInt64 mask = 0xFFFFFFFFFFFFFFFFULL;
         if (total_bit_num < 64)
         {
-            mask = (1ULL << (total_bit_num)) - 1;
+            mask = (1ULL << total_bit_num) - 1;
         }
         Float64 ratio = static_cast<Float64>(1ULL << vector.fraction_bit_num);
         for (size_t i = 0; i < length; ++i)
@@ -820,7 +820,7 @@ public:
         UInt64 mask = 0xFFFFFFFFFFFFFFFFULL;
         if (total_bit_num < 64)
         {
-            mask = (1ULL << (total_bit_num)) - 1;
+            mask = (1ULL << total_bit_num) - 1;
         }
         Float64 ratio = static_cast<Float64>(1ULL << fraction_bit_num);
         UInt32 number_of_1s = 0;

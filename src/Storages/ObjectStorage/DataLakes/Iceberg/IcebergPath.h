@@ -74,7 +74,7 @@ public:
         trim_backward_slashes(table_location);
 
         /// Normalize: non-URI table_location should start with '/'
-        if (!table_location.empty() && table_location.find("://") == String::npos && table_location[0] != '/')
+        if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
     }
 

@@ -5222,7 +5222,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         for (const auto & col_name : left_cols)
         {
             /// Skip sub-columns (e.g. name.size) — NATURAL JOIN only matches top-level columns.
-            if (col_name.find('.') != std::string::npos)
+            if (col_name.contains('.'))
                 continue;
 
             if (right_cols.contains(col_name) && !seen.contains(col_name))

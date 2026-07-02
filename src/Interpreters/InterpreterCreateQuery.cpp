@@ -2750,7 +2750,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
 
-    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+    if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion is supported only for MergeTree family engines");
 

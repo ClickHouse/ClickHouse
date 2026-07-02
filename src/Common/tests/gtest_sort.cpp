@@ -72,7 +72,7 @@ std::vector<int> makeKeys(size_t n, Pattern pattern, std::mt19937_64 & rng)
 
 TEST(Sort, MatchesStdSortTriviallyCopyable)
 {
-    std::mt19937_64 rng(12345); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t n : test_sizes)
     {
         for (Pattern pattern : test_patterns)
@@ -108,7 +108,7 @@ TEST(Sort, StableSortMatchesStdAndIsStable)
 
     auto less = [](const Item & x, const Item & y) { return x.key < y.key; };
 
-    std::mt19937_64 rng(67890); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(67890); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t n : test_sizes)
     {
         for (Pattern pattern : test_patterns)
@@ -153,7 +153,7 @@ TEST(Sort, NonDefaultConstructibleTriviallyCopyable)
 
     auto less = [](const NoDefault & x, const NoDefault & y) { return x.key < y.key; };
 
-    std::mt19937_64 rng(11111); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(11111); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t n : test_sizes)
     {
         std::vector<int> keys = makeKeys(n, Pattern::Random, rng);
@@ -195,7 +195,7 @@ TEST(Sort, OverAlignedType)
         return x.key < y.key;
     };
 
-    std::mt19937_64 rng(22222); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(22222); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t n : {65u, 128u, 300u, 5000u})
     {
         std::vector<Aligned> a(n);
@@ -226,7 +226,7 @@ TEST(Sort, NonTriviallyCopyableFallback)
 
     auto less = [](const Item & x, const Item & y) { return x.key < y.key; };
 
-    std::mt19937_64 rng(33333); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(33333); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
     for (size_t n : test_sizes)
     {
         std::vector<Item> a(n);
@@ -279,7 +279,7 @@ TEST(Sort, MoveBasedPartitionExceptionSafety)
     /// vector is destroyed.
     const size_t n = 512;
 
-    std::mt19937_64 rng(44444); // NOLINT(cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
+    std::mt19937_64 rng(44444); // NOLINT(bugprone-random-generator-seed,cert-msc51-cpp,cert-msc32-c): deterministic seed for reproducible test failures
 
     for (size_t limit = 1; limit <= 400; ++limit)
     {

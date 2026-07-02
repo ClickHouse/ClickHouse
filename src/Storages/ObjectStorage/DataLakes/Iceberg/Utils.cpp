@@ -115,13 +115,13 @@ using namespace DB;
 /// reporting metrics, not deletion safety.
 FileCategory inspectFileCategory(const String & relative_path)
 {
-    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    if (relative_path.contains("/metadata/") || relative_path.starts_with("metadata/"))
     {
-        if (relative_path.find(".metadata.json") != String::npos)
+        if (relative_path.contains(".metadata.json"))
             return FileCategory::METADATA_JSON;
         if (relative_path.ends_with(".avro"))
         {
-            if (relative_path.find("snap-") != String::npos)
+            if (relative_path.contains("snap-"))
                 return FileCategory::MANIFEST_LIST;
             return FileCategory::MANIFEST_FILE;
         }
@@ -129,10 +129,10 @@ FileCategory inspectFileCategory(const String & relative_path)
             return FileCategory::STATISTICS_FILE;
     }
 
-    if (relative_path.find("eq-del") != String::npos)
+    if (relative_path.contains("eq-del"))
         return FileCategory::EQUALITY_DELETE_FILE;
 
-    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+    if (relative_path.contains("-deletes.parquet") || relative_path.contains("-delete-"))
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
@@ -1217,7 +1217,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        if (explicit_metadata_path.find('\0') != String::npos)
+        if (explicit_metadata_path.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);

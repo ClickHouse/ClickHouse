@@ -1747,7 +1747,7 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const Str
     auto & column_data = assert_cast<ColumnDateTime64 &>(*internal_column).getData();
     column_data.reserve(orc_ts_column->numElements);
 
-    constexpr Int64 multiplier = 1e9L;
+    constexpr Int64 multiplier = 1'000'000'000;
     for (size_t i = 0; i < orc_ts_column->numElements; ++i)
     {
         if (!orc_ts_column->hasNulls || orc_ts_column->notNull[i])

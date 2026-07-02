@@ -260,7 +260,7 @@ private:
 
     /// get implementation with interpolation
     Value getInterpolatedImpl(Float64 level) const
-    requires(interpolated)
+    requires interpolated
     {
         size_t size = map.size();
         if (0 == size)
@@ -275,7 +275,7 @@ private:
 
     /// getMany implementation with interpolation
     void getManyInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Value * result) const
-    requires(interpolated)
+    requires interpolated
     {
         size_t size = map.size();
         if (0 == size)
@@ -299,7 +299,7 @@ private:
 
     /// getFloat implementation with interpolation
     Float64 getFloatInterpolatedImpl(Float64 level) const
-    requires(interpolated)
+    requires interpolated
     {
         size_t size = map.size();
 
@@ -326,7 +326,7 @@ private:
 
     /// getManyFloat implementation with interpolation
     void getManyFloatInterpolatedImpl(const Float64 * levels, const size_t * indices, size_t num_levels, Float64 * result) const
-    requires(interpolated)
+    requires interpolated
     {
         size_t size = map.size();
         if (0 == size)
@@ -360,7 +360,7 @@ private:
 
     /// Calculate quantile, using linear interpolation between two closest values
     Float64 NO_SANITIZE_UNDEFINED quantileInterpolated(const Pair * array, size_t size, Float64 position) const
-    requires(interpolated)
+    requires interpolated
     {
         size_t lower = static_cast<size_t>(std::floor(position));
         size_t higher = static_cast<size_t>(std::ceil(position));

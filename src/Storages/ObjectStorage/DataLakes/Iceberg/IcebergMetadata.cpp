@@ -764,7 +764,7 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (location_path.find("://") == String::npos && !location_path.starts_with('/'))
+    if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
@@ -790,7 +790,7 @@ void IcebergMetadata::createInitial(
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
         if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().find("PreconditionFailed") != String::npos)
+            && e.message().contains("PreconditionFailed"))
             return;
         throw;
     }

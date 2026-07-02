@@ -12,5 +12,5 @@
 double shift10(double x, int exponent);
 float shift10(float x, int exponent);
 
-long double shift10(UInt64 x, int exponent);
-long double shift10(Int64 x, int exponent);
+long double shift10(UInt64 x, int exponent); // NOLINT(google-runtime-float)
+long double shift10(Int64 x, int exponent); // NOLINT(google-runtime-float)

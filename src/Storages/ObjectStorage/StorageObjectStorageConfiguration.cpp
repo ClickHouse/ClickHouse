@@ -254,12 +254,12 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return path.find(PARTITION_ID_WILDCARD) != String::npos;
+    return path.contains(PARTITION_ID_WILDCARD);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
 {
-    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+    return path.contains(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const

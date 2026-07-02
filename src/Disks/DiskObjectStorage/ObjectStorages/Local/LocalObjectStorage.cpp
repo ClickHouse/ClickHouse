@@ -433,7 +433,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
     /// unbounded loop for a directory that holds only subdirectories). A
     /// `readdir` entry name never contains a NUL, so this single up-front check
     /// guarantees no path derived during traversal can reintroduce one.
-    if (path.find('\0') != std::string::npos)
+    if (path.contains('\0'))
         throw fs::filesystem_error(
             "Path contains an embedded NUL byte", path,
             std::make_error_code(std::errc::invalid_argument));

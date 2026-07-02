@@ -60,7 +60,7 @@ void PNGWriter::writeImage(const unsigned char * pixels)
     if (!info_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create libpng info struct");
 
-    if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(cert-err52-cpp)
+    if (setjmp(png_jmpbuf(png_ptr))) // NOLINT(modernize-avoid-setjmp-longjmp,cert-err52-cpp)
     {
         /// A callback longj'd back here. Either an I/O exception was saved while writing, or libpng raised an error/warning.
         if (saved_exception)

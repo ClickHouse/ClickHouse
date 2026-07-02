@@ -125,7 +125,7 @@ def main():
             Result.from_commands_run(
                 name="Clone LLVM",
                 command=(
-                    f"git clone --depth 1 --branch release/21.x"
+                    f"git clone --depth 1 --branch release/22.x"
                     f" https://github.com/llvm/llvm-project.git {LLVM_SOURCE_DIR}"
                 ),
                 retries=3,
@@ -196,8 +196,8 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=Native"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_BUILD_INSTRUMENTED=IR"
-            f" -DCMAKE_C_COMPILER=clang-21"
-            f" -DCMAKE_CXX_COMPILER=clang++-21"
+            f" -DCMAKE_C_COMPILER=clang-22"
+            f" -DCMAKE_CXX_COMPILER=clang++-22"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_TERMINFO=OFF"
             f" -DLLVM_ENABLE_ZLIB=OFF"
@@ -325,7 +325,7 @@ def main():
                 Result.from_commands_run(
                     name="Merge PGO profiles",
                     command=(
-                        f"llvm-profdata-21 merge"
+                        f"llvm-profdata-22 merge"
                         f" -output={PROFDATA_PATH}"
                         f" {profraw_dir}"
                     ),
@@ -404,8 +404,8 @@ def main():
             f" -DLLVM_TARGETS_TO_BUILD=all"
             f" -DCMAKE_BUILD_TYPE=Release"
             f" -DLLVM_PROFDATA_FILE={PROFDATA_PATH}"
-            f" -DCMAKE_C_COMPILER=clang-21"
-            f" -DCMAKE_CXX_COMPILER=clang++-21"
+            f" -DCMAKE_C_COMPILER=clang-22"
+            f" -DCMAKE_CXX_COMPILER=clang++-22"
             f" -DLLVM_ENABLE_LLD=ON"
             f" -DLLVM_ENABLE_LTO=Thin"
             f' -DCMAKE_EXE_LINKER_FLAGS="-Wl,--emit-relocs,-znow"'
@@ -458,9 +458,9 @@ def main():
     if res and JobStages.BOLT_OPTIMIZATION in stages:
         bolt_ok = True
         bolt_results = []
-        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-21"
+        clang_binary = f"{STAGE2_INSTALL_DIR}/bin/clang-22"
 
-        # Find the actual clang binary (it may be clang-21, clang-20, etc.)
+        # Find the actual clang binary (it may be clang-22, clang-21, etc.)
         if not os.path.exists(clang_binary):
             candidates = sorted(
                 glob.glob(f"{STAGE2_INSTALL_DIR}/bin/clang-[0-9]*"),
