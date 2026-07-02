@@ -253,6 +253,8 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
             return OpNum::CreateTTL;
         if (include_stats)
             return OpNum::Create2;
+        if (is_container)
+            return OpNum::CreateContainer;
         return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
     }
 

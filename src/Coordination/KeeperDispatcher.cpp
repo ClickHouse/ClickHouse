@@ -77,6 +77,8 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsNonZeroUInt64 ttl_gc_batch_size;
+    extern const CoordinationSettingsMilliseconds container_gc_period_ms;
+    extern const CoordinationSettingsNonZeroUInt64 container_gc_batch_size;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_size;
@@ -196,6 +198,11 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
         ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
+    {
+        size_t container_batch_size = keeper_coordination_settings[CoordinationSetting::container_gc_batch_size];
+        UInt64 container_max_never_used_ms = keeper_coordination_settings[CoordinationSetting::container_gc_max_never_used_interval_ms].totalMilliseconds();
+        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
+    }
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
@@ -217,6 +224,8 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
             const auto & feature_flags = keeper_context->getFeatureFlags();
             if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && ttl_garbage_collector_thread.joinable())
                 ttl_garbage_collector_thread.join();
+            if (container_garbage_collector_thread.joinable())
+                container_garbage_collector_thread.join();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -336,6 +345,61 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
             keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()).count());
     }
 
+}
+
+void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms)
+{
+    DB::setThreadName(ThreadName::KEEPER_CONTAINER_GARBAGE_COLLECTOR);
+
+    const auto & shutdown_called = keeper_context->isShutdownCalled();
+    Int32 next_gc_xid = 0;
+
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (server->checkInit() && isLeader())
+            {
+                auto paths = server->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
+                for (auto & [path, version] : paths)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
+                    auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
+                    rem.path = path;
+                    rem.version = version;
+                    rem.try_remove = true;
+                    rem.xid = next_gc_xid++;
+
+                    try
+                    {
+                        if (putRequest(request, keeper_internal_container_garbage_collector_session_id, /*use_xid_64=*/ false))
+                            LOG_TRACE(log, "Container garbage collector: Remove request enqueued, path: {}", path);
+                        else
+                        {
+                            LOG_WARNING(log, "Container garbage collector: putRequest rejected, retry next tick");
+                            break;
+                        }
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        break;
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        if (isShuttingDown())
+            return;
+        sleepForMilliseconds(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::container_gc_period_ms].totalMilliseconds()).count());
+    }
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)

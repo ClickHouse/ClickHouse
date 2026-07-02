@@ -2140,6 +2140,12 @@ std::vector<std::pair<std::string, Int32>> KeeperStateMachine::getExpiredTTLPath
     return storage->collectExpiredTTLPaths(now_ms, batch_size);
 }
 
+std::vector<std::pair<std::string, Int32>> KeeperStateMachine::getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const
+{
+    KEEPER_STORAGE_LOCK_SHARED(lock);
+    return storage->collectContainerCandidates(batch_size, max_never_used_interval_ms);
+}
+
 std::vector<KeeperSnapshotStatus> KeeperStateMachine::getSnapshotsStatus() const
 {
     std::lock_guard lock(snapshots_lock);

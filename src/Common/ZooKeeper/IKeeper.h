@@ -425,6 +425,7 @@ struct CreateRequest : virtual Request
     String data;
     bool is_ephemeral = false;
     bool is_sequential = false;
+    bool is_container = false;
     ACLs acls;
     bool include_stats = false;
     bool include_ttl = false;

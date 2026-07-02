@@ -310,8 +310,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
             is_sequential = true;
             break;
         case CreateMode::CONTAINER:
-            throw Coordination::Exception(Coordination::Error::ZBADARGUMENTS,
-                "Container nodes are not supported");
+            is_container = true;
+            break;
         case CreateMode::PERSISTENT_WITH_TTL:
             include_ttl = true;
             break;
@@ -1437,7 +1437,7 @@ ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
     if (op_num == OpNum::CreateTTL)
         return std::make_shared<ZooKeeperCreateTTLResponse>();
 
-    if (op_num == OpNum::Create2)
+    if (op_num == OpNum::Create2 || op_num == OpNum::CreateContainer)
         return std::make_shared<ZooKeeperCreate2Response>();
 
     if (op_num == OpNum::CreateIfNotExists)
@@ -1765,6 +1765,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->include_stats = true;
         else if constexpr (num == OpNum::CreateTTL)
             res->include_ttl = true;
+        else if constexpr (num == OpNum::CreateContainer)
+            res->is_container = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
         else if constexpr (num == OpNum::TryRemove)
@@ -1790,6 +1792,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::CreateContainer, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::CreateTTL, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
