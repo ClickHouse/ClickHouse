@@ -4,7 +4,9 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorWriteBinary.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -53,6 +55,15 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
+}
+
+std::optional<UInt64> StatisticsMinMax::getSerializedSize() const
+{
+    const String type_name = data_type->getName();
+    return sizeof(row_count)
+        + getLengthOfVarUInt(type_name.size()) + type_name.size()
+        + getFieldBinarySize(min)
+        + getFieldBinarySize(max);
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
