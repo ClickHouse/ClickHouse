@@ -50,7 +50,7 @@ RemoteSource::RemoteSource(RemoteQueryExecutorPtr executor, bool add_aggregation
                 if (info.hasAppliedLimit())
                     rows_before_limit->add(info.getRowsBeforeLimit());
                 else
-                    manually_add_rows_before_limit_counter = true; /// Remote subquery doesn't contain a limit
+                    manually_add_rows_before_limit_counter.store(true, std::memory_order_release); /// Remote subquery doesn't contain a limit
             }
 
             if (rows_before_aggregation)
@@ -213,7 +213,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
 
     if (block.empty())
     {
-        if (manually_add_rows_before_limit_counter)
+        if (manually_add_rows_before_limit_counter.load(std::memory_order_acquire))
             rows_before_limit->add(rows);
         query_executor->finish();
         return {};
@@ -235,11 +235,76 @@ std::optional<Chunk> RemoteSource::tryGenerate()
     return chunk;
 }
 
+void RemoteSource::cancel(CancelReason reason) noexcept
+{
+    /// Use `cancel_reason` itself as the first-canceller gate via CAS so the reason and
+    /// the cancellation flag become visible to other threads as a single atomic step.
+    /// If `is_cancelled` were the gate (as in `ISource::cancel`), a thread could see
+    /// `is_cancelled == true` while `cancel_reason` is still `NotCancelled` — set by a
+    /// winning thread preempted between the two writes — and incorrectly drop a hard-cancel
+    /// upgrade. With `cancel_reason` as the gate, the upgrade path is guaranteed to see
+    /// the winning reason.
+    CancelReason expected = CancelReason::NotCancelled;
+    if (cancel_reason.compare_exchange_strong(expected, reason, std::memory_order_acq_rel))
+    {
+        /// Publish the framework-level cancellation flag. `ISource` and surrounding code
+        /// observe `is_cancelled` to gate work / port handling; setting it after the
+        /// reason CAS is sufficient because the reason CAS already serialized cancellers.
+        is_cancelled.store(true, std::memory_order_release);
+        onCancel();
+        return;
+    }
+
+    /// A `PartialResult` cancellation is a soft signal that asks `RemoteSource` to drain
+    /// remaining packets via `query_executor->finish`, so trailing `Progress` packets are
+    /// preserved (see `onCancel`). If a hard cancellation (`CancelledByUser`,
+    /// `CancelledByTimeout`, etc.) arrives afterwards, it must take precedence so the user
+    /// is not made to wait for the drain to complete. Upgrade the reason and force a hard
+    /// `query_executor->cancel`.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    if (expected != CancelReason::PartialResult)
+        return;
+
+    if (!cancel_reason.compare_exchange_strong(expected, reason, std::memory_order_acq_rel))
+        return;
+
+    try
+    {
+        /// First, signal the drain loop in `finish` to abort early. `cancel` would
+        /// otherwise block on `was_cancelled_mutex` until the drain naturally completes,
+        /// since `finish` holds the mutex across the entire blocking receive loop.
+        /// `abortDrain` is lock-free, so the drain can observe the abort signal and
+        /// release the mutex; only then does our subsequent `cancel` make progress.
+        query_executor->abortDrain();
+        query_executor->cancel();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("RemoteSource"), "Error occurs on cancellation upgrade.");
+    }
+}
+
 void RemoteSource::onCancel() noexcept
 {
     try
     {
-        query_executor->cancel();
+        /// For `PartialResult` (consumer has enough data, e.g. `LIMIT` satisfied), use `finish`
+        /// to drain remaining packets from the connection. This ensures `Progress` packets sent
+        /// by replicas after data blocks are still processed and accumulated in `read_progress`,
+        /// so that the coordinator pipeline can report accurate `rows_read` statistics.
+        /// Without this, fast queries with `LIMIT` and parallel replicas may show `rows_read=0`
+        /// because the replicas send `Progress` packets after all data blocks, and `cancel`
+        /// would close the connection before they are received.
+        /// For other reasons (user cancel, timeout, exception), use `cancel` to close the
+        /// connection immediately without waiting for remaining packets — this avoids long
+        /// delays when replicas are still processing and would otherwise take significant
+        /// time to reach end-of-stream (e.g. many streams in cluster functions).
+        if (cancel_reason.load(std::memory_order_acquire) == CancelReason::PartialResult)
+            query_executor->finish();
+        else
+            query_executor->cancel();
     }
     catch (...)
     {

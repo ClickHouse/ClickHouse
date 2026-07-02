@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -192,6 +193,14 @@ public:
     /// This method may be called from separate thread.
     void cancel();
 
+    /// Signal a concurrent `finish` drain loop to abort early. Used by
+    /// `RemoteSource::cancel` to upgrade a soft `PartialResult` cancellation to
+    /// a hard cancellation: we cannot acquire `was_cancelled_mutex` to call
+    /// `cancel` without first letting the drain loop in `finish` exit, because
+    /// `finish` holds the mutex across the entire blocking receive loop.
+    /// This method is lock-free and safe to call from any thread.
+    void abortDrain() noexcept;
+
     /// Get totals and extremes if any.
     Block getTotals() { return std::move(totals); }
     Block getExtremes() { return std::move(extremes); }
@@ -283,9 +292,11 @@ private:
     /** All data from all replicas are received, before EndOfStream packet.
       * To prevent desynchronization, if not all data is read before object
       * destruction, it's required to send cancel query request to replicas and
-      * read all packets before EndOfStream
+      * read all packets before EndOfStream.
+      * Atomic because onCancel() -> finish() can set it concurrently with
+      * prepare() -> isFinished() reading it from a different thread.
       */
-    bool finished = false;
+    std::atomic<bool> finished = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:
@@ -295,15 +306,39 @@ private:
     bool was_cancelled = false;
     std::mutex was_cancelled_mutex;
 
-    /** An exception from replica was received. No need in receiving more packets or
-      * requesting to cancel query execution
+    /** Set by `finish` (under `was_cancelled_mutex`) while it owns the drain loop, which runs
+      * with `was_cancelled_mutex` released so a concurrent hard cancel can preempt it. A
+      * concurrent `finish` that observes `was_cancelled` (which the draining call sets via its
+      * own `tryCancel` before releasing the mutex) must not eagerly `disconnect` the connections
+      * in that case: tearing them down under the active `receivePacket` throws
+      * `No more packets are available`. The draining call (or the destructor) cleans up instead.
+      * Guarded by `was_cancelled_mutex`, like `was_cancelled`.
       */
-    bool got_exception_from_replica = false;
+    bool draining = false;
+
+    /** Set by `abortDrain` to make `finish`'s drain loop exit early when a
+      * concurrent hard cancellation arrives. The drain loop checks this atomic
+      * after each packet so the hard cancel does not have to wait for the full
+      * drain to complete (which could be long if the remote is slow to respond
+      * to the `Cancel` packet).
+      */
+    std::atomic<bool> drain_should_stop{false};
+
+    /** An exception from replica was received. No need in receiving more packets or
+      * requesting to cancel query execution.
+      *
+      * Atomic so the `finish` drain loop — which runs outside `was_cancelled_mutex`
+      * to let a concurrent hard cancel preempt the drain — can write this flag while
+      * `hasThrownException` observers (including the `SCOPE_EXIT` in `finish`) read
+      * it without a data race.
+      */
+    std::atomic<bool> got_exception_from_replica{false};
 
     /** Unknown packet was received from replica. No need in receiving more packets or
-      * requesting to cancel query execution
+      * requesting to cancel query execution. Atomic for the same reason as
+      * `got_exception_from_replica`.
       */
-    bool got_unknown_packet_from_replica = false;
+    std::atomic<bool> got_unknown_packet_from_replica{false};
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;

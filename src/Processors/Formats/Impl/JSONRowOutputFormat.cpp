@@ -116,6 +116,8 @@ void JSONRowOutputFormat::writeAfterExtremes()
 
 void JSONRowOutputFormat::finalizeImpl()
 {
+    bool should_write_statistics = settings.write_statistics && exception_message.empty();
+
     JSONUtils::writeAdditionalInfo(
         row_count,
         statistics.rows_before_limit,
@@ -124,7 +126,7 @@ void JSONRowOutputFormat::finalizeImpl()
         statistics.applied_aggregation,
         statistics.watch,
         statistics.progress,
-        settings.write_statistics && exception_message.empty(),
+        should_write_statistics && !hasDeferredStatistics(),
         *ostr);
 
     if (!exception_message.empty())
@@ -132,6 +134,39 @@ void JSONRowOutputFormat::finalizeImpl()
         writeCString(",\n\n", *ostr);
         JSONUtils::writeException(exception_message, *ostr, settings, 1);
     }
+
+    /// When statistics are deferred, skip closing the document here.
+    /// It will be done in writeDeferredStatisticsAndFinalize().
+    if (hasDeferredStatistics())
+        return;
+
+    JSONUtils::writeObjectEnd(*ostr);
+    writeChar('\n', *ostr);
+    ostr->next();
+}
+
+bool JSONRowOutputFormat::hasDeferredStatistics() const
+{
+    return settings.write_statistics && exception_message.empty();
+}
+
+void JSONRowOutputFormat::writeDeferredStatisticsAndFinalize()
+{
+    JSONUtils::writeFieldDelimiter(*ostr, 2);
+    JSONUtils::writeObjectStart(*ostr, 1, "statistics");
+
+    writeCString("\t\t\"elapsed\": ", *ostr);
+    writeText(statistics.watch.elapsedSeconds(), *ostr);
+    JSONUtils::writeFieldDelimiter(*ostr);
+
+    writeCString("\t\t\"rows_read\": ", *ostr);
+    writeText(statistics.progress.read_rows.load(), *ostr);
+    JSONUtils::writeFieldDelimiter(*ostr);
+
+    writeCString("\t\t\"bytes_read\": ", *ostr);
+    writeText(statistics.progress.read_bytes.load(), *ostr);
+
+    JSONUtils::writeObjectEnd(*ostr, 1);
 
     JSONUtils::writeObjectEnd(*ostr);
     writeChar('\n', *ostr);

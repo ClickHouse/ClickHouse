@@ -192,9 +192,26 @@ void XMLRowOutputFormat::finalizeImpl()
 
     if (!exception_message.empty())
         writeException();
-    else if (format_settings.write_statistics)
+    else if (format_settings.write_statistics && !hasDeferredStatistics())
         writeStatistics();
 
+    /// When statistics are deferred, skip closing the document here.
+    /// It will be done in writeDeferredStatisticsAndFinalize().
+    if (hasDeferredStatistics())
+        return;
+
+    writeCString("</result>\n", *ostr);
+    ostr->next();
+}
+
+bool XMLRowOutputFormat::hasDeferredStatistics() const
+{
+    return format_settings.write_statistics && exception_message.empty();
+}
+
+void XMLRowOutputFormat::writeDeferredStatisticsAndFinalize()
+{
+    writeStatistics();
     writeCString("</result>\n", *ostr);
     ostr->next();
 }

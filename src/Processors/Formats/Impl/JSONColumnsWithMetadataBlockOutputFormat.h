@@ -64,6 +64,9 @@ protected:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    bool hasDeferredStatistics() const override;
+    void writeDeferredStatisticsAndFinalize() override;
+
     void writeChunkStart() override;
     void writeChunkEnd() override;
 

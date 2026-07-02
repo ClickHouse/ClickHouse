@@ -174,7 +174,15 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
 
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
+
     graph->cancel(toCancelReason(reason));
+
+    /// After `graph->cancel`, `onCancel` has been called on all processors synchronously.
+    /// Some processors (e.g. `RemoteSource`) drain remaining packets during `onCancel`,
+    /// which may produce additional progress (e.g. `Progress` packets from parallel replicas).
+    /// This progress is accumulated in `ISource::read_progress` and will be collected by
+    /// `finalizeExecution` which runs after all worker threads have been joined,
+    /// ensuring no concurrent access to processor state.
 }
 
 void PipelineExecutor::cancelReading()
@@ -308,18 +316,39 @@ void PipelineExecutor::finalizeExecution()
     checkTimeLimit();
 
     auto status = execution_status.load();
-    if (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser)
-        return;
+    bool is_cancelled = (status == ExecutionStatus::CancelledByTimeout || status == ExecutionStatus::CancelledByUser);
 
+    /// First pass: check if all processors are finished (for "Pipeline stuck" detection).
     bool all_processors_finished = true;
     for (auto & node : graph->nodes)
     {
         if (node.status != ExecutingGraph::ExecStatus::Finished)
         {
-            /// Single thread, do not hold mutex
             all_processors_finished = false;
-            break;
+            if (!is_cancelled)
+                break;
         }
+    }
+
+    if (!is_cancelled && !all_processors_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+
+    /// Ensure remote source processors' onCancel() handlers have run before collecting progress.
+    /// For cancelled pipelines, `graph->cancel` was already called in `cancel`.
+    /// For normal completion (e.g. `LIMIT` satisfied with parallel replicas), we cancel
+    /// with `PartialResult`. `IProcessor::cancel` (non-sources) returns early for
+    /// `PartialResult`. `ISource::cancel` sets `is_cancelled` but skips `onCancel` for
+    /// `PartialResult` (`onCancel` is intended for hard cancellation and has side effects
+    /// like `SQLiteSource::onCancel` calling `sqlite3_interrupt`). Only `RemoteSource`
+    /// overrides `cancel` to react to `PartialResult`: `RemoteSource::onCancel` calls
+    /// `query_executor->finish` which drains remaining packets (including `Progress`)
+    /// from replica connections. This is safe because all worker threads have been joined.
+    if (!is_cancelled)
+        graph->cancel(IProcessor::CancelReason::PartialResult);
+
+    /// Second pass: collect remaining progress from all processors.
+    for (auto & node : graph->nodes)
+    {
         if (node.processor() && read_progress_callback)
         {
             /// Some executors might have reported progress as part of their finish() call
@@ -343,8 +372,8 @@ void PipelineExecutor::finalizeExecution()
         }
     }
 
-    if (!all_processors_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+    if (finalize_callback)
+        finalize_callback();
 }
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)

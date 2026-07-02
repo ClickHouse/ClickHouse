@@ -41,11 +41,14 @@ public:
 
     void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
 
+    void cancel(CancelReason reason) noexcept override;
+
 protected:
     std::optional<Chunk> tryGenerate() override;
     void onCancel() noexcept override;
 
 private:
+    std::atomic<CancelReason> cancel_reason{CancelReason::NotCancelled};
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;
     bool add_aggregation_info = false;
@@ -58,7 +61,10 @@ private:
     bool is_async_state = false;
     int fd = -1;
     size_t rows = 0;
-    bool manually_add_rows_before_limit_counter = false;
+    /// Written by the profile-info callback that is invoked from `RemoteQueryExecutor::finish()`
+    /// while draining packets on one pipeline thread, and read by `tryGenerate()` on another
+    /// pipeline thread. `std::atomic` provides the synchronization edge required by TSan.
+    std::atomic_bool manually_add_rows_before_limit_counter = false;
     std::atomic_bool preprocessed_packet = false;
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     EventFD startup_event_fd;

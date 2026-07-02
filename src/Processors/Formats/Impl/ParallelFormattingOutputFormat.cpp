@@ -43,6 +43,7 @@ namespace DB
         auto formatter = internal_formatter_creator(out);
         formatter->setRowsReadBefore(rows_collected);
         formatter->setException(exception_message);
+        formatter->statistics = std::move(statistics);
 
         if (!collected_prefix && (need_write_prefix || started_prefix))
             formatter->writePrefix();
@@ -51,9 +52,27 @@ namespace DB
             formatter->writeSuffix();
 
         if (!collected_finalize)
+        {
             formatter->finalizeImpl();
+            if (formatter->hasDeferredStatistics())
+                formatter->writeDeferredStatisticsAndFinalize();
+        }
 
         formatter->finalizeBuffers();
+    }
+
+    void ParallelFormattingOutputFormat::writeDeferredStatisticsAndFinalize()
+    {
+        auto formatter = internal_formatter_creator(out);
+        formatter->statistics = std::move(statistics);
+        formatter->writeDeferredStatisticsAndFinalize();
+        /// Flush and finalize the formatter's internal write buffers
+        /// (e.g. UTF8 validation wrapper) to ensure all data reaches `out`.
+        /// Without this, data may remain in intermediate buffers and be
+        /// discarded when the formatter is destroyed.
+        formatter->flush();
+        formatter->finalizeBuffers();
+        out.next();
     }
 
     void ParallelFormattingOutputFormat::addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception)
@@ -86,6 +105,12 @@ namespace DB
         {
             std::lock_guard lock(statistics_mutex);
             unit.statistics = std::move(statistics);
+            /// Note: after the move, statistics.progress still retains its values
+            /// because Progress::operator=(&&) copies atomics without clearing the source.
+            /// This is intentional: writeDeferredStatisticsAndFinalize() (called later
+            /// from IOutputFormat::finalize or completeDeferredStatistics) needs the
+            /// accumulated progress. Additional progress from connection draining
+            /// (parallel replicas) will be added via onProgress() before that call.
         }
 
         size_t first_row_num = rows_consumed;

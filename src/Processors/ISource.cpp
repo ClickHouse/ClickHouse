@@ -19,10 +19,30 @@ ISource::ISource(SharedHeader header, bool enable_auto_progress)
 {
 }
 
-void ISource::cancel(CancelReason) noexcept
+void ISource::cancel(CancelReason reason) noexcept
 {
-    bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
-    if (already_cancelled)
+    /// Always publish `is_cancelled` so `prepare` returns `Finished` and the source
+    /// stops generating new data. This is required for `partial_result_on_first_cancel`,
+    /// where SIGINT triggers `graph->cancel(PartialResult)` and ordinary sources (no
+    /// `cancel` override) must respond by stopping.
+    is_cancelled.store(true, std::memory_order_release);
+
+    /// Skip `onCancel` for `PartialResult`: most sources' `onCancel` is intended for
+    /// hard cancellation (user cancel, timeout, exception) and has unintended side
+    /// effects on the success path — e.g. `SQLiteSource::onCancel` calls
+    /// `sqlite3_interrupt`. Sources that need to react to `PartialResult` (notably
+    /// `RemoteSource`, which drains remaining packets to collect final progress)
+    /// override `cancel` directly.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    /// Gate `onCancel` on a separate latch so escalation from a prior `PartialResult`
+    /// cancel still invokes `onCancel` exactly once. `ExecutingGraph::cancel` upgrades
+    /// `cancel_reason` from `PartialResult` to a hard reason and re-calls every
+    /// processor's `cancel`; without this latch, the second call would no-op and
+    /// hard-cancel hooks (e.g. `sqlite3_interrupt`) would never run.
+    bool already_called = on_cancel_called.exchange(true, std::memory_order_acq_rel);
+    if (already_called)
         return;
 
     onCancel();
@@ -82,7 +102,14 @@ void ISource::progress(size_t read_rows, size_t read_bytes)
 std::optional<ISource::ReadProgress> ISource::getReadProgress()
 {
     std::lock_guard lock(read_progress_mutex);
-    if (finished && read_progress.read_bytes == 0 && read_progress.total_rows_approx == 0)
+    /// If the source has finished and there is genuinely nothing to report, skip the
+    /// downstream `onProgress` call. Check every counter to avoid dropping accumulated
+    /// `read_rows` in cases where a `Progress` packet reports rows without bytes.
+    if (finished
+        && read_progress.read_rows == 0
+        && read_progress.read_bytes == 0
+        && read_progress.total_rows_approx == 0
+        && read_progress.total_bytes == 0)
         return {};
 
     ReadProgressCounters res_progress;

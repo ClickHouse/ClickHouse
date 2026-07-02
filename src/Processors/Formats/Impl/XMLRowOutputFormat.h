@@ -31,6 +31,9 @@ private:
     void finalizeImpl() override;
     void resetFormatterImpl() override;
 
+    bool hasDeferredStatistics() const override;
+    void writeDeferredStatisticsAndFinalize() override;
+
     void writeMinExtreme(const Columns & columns, size_t row_num) override;
     void writeMaxExtreme(const Columns & columns, size_t row_num) override;
     void writeTotals(const Columns & columns, size_t row_num) override;

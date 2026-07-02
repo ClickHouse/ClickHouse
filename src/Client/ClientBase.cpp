@@ -870,7 +870,9 @@ try
         output_format->setAutoFlush();
 
         /// Replay progress that was accumulated before the output format was created
-        /// (e.g. from scalar subqueries evaluated during query analysis on the server).
+        /// (e.g. from scalar subqueries evaluated during query analysis on the server,
+        /// or with parallel replicas on small tables where reading can complete before
+        /// any data blocks are sent).
         auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
         if (replayed.read_rows || replayed.read_bytes)
             output_format->onProgress(replayed);

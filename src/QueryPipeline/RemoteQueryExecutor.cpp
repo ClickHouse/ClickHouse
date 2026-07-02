@@ -61,6 +61,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SYSTEM_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -668,7 +670,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
-            got_exception_from_replica = true;
+            got_exception_from_replica.store(true, std::memory_order_release);
             packet.exception->rethrow();
             break;
 
@@ -727,7 +729,7 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         default:
-            got_unknown_packet_from_replica = true;
+            got_unknown_packet_from_replica.store(true, std::memory_order_release);
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
                 "Unknown packet {} from one of the following replicas: {}",
@@ -792,76 +794,162 @@ void RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement(InitialAllRang
 
 void RemoteQueryExecutor::finish()
 {
-    LockAndBlocker guard(was_cancelled_mutex);
-
-    /** If one of:
-      * - nothing started to do;
-      * - received all packets before EndOfStream;
-      * - received exception from one replica;
-      * - received an unknown packet from one replica;
-      * then you do not need to read anything.
-      */
-    if (!isQueryPending() || hasThrownException() || was_cancelled)
+    /// Acquire the cancel mutex only for the state check and `tryCancel`, then release
+    /// it before entering the (potentially long) blocking drain loop. Holding the mutex
+    /// across the loop would cause a concurrent hard cancel (`cancel`, which also takes
+    /// the same mutex) to wait until the drain naturally completes, defeating the
+    /// purpose of the `abortDrain` preemption signal.
     {
-        /// If the query was never sent there is nothing to drain, but we must still mark the
-        /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
-        /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
-        /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-        /// never becomes true. On Linux the async startup path always sends the query before this
-        /// point, so only the synchronous (non-Linux) send path is affected.
-        if (!sent_query)
+        LockAndBlocker guard(was_cancelled_mutex);
+
+        /** If one of:
+          * - nothing started to do;
+          * - received all packets before EndOfStream;
+          * - received exception from one replica;
+          * - received an unknown packet from one replica;
+          * - the executor was already cancelled (e.g. by `cancel`) — draining is not safe
+          *   here because the caller asked for a fast cancel; only `PartialResult` callers
+          *   that explicitly want to drain progress should hit `finish` first, which they do
+          *   in `RemoteSource::onCancel` before any `cancel` has set `was_cancelled`;
+          * then you do not need to read anything.
+          */
+        if (!isQueryPending() || hasThrownException() || was_cancelled)
         {
-            finished = true;
+            /// If the query was never sent there is nothing to drain, but we must still mark the
+            /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
+            /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
+            /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
+            /// never becomes true. On Linux the async startup path always sends the query before this
+            /// point, so only the synchronous (non-Linux) send path is affected.
+            if (!sent_query)
+            {
+                finished = true;
+            }
+            else if (was_cancelled && !finished && connections && !draining)
+            {
+                /// The query was already cancelled (e.g. concurrently from the pipeline) but its
+                /// connections may still hold undelivered packets - the server keeps sending the data,
+                /// `ProfileInfo` and `EndOfStream` that were produced before it observed the cancel.
+                /// We do not drain them here after cancellation, because the read side may already be
+                /// torn down and reading from it could throw or crash (see #95466). But such connections
+                /// must not be returned to the connection pool in this out-of-sync state - otherwise the
+                /// next user of the connection would read a stale packet during establishment, failing
+                /// with "Unexpected packet from server (expected TablesStatusResponse, got ProfileInfo)"
+                /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
+                /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
+                /// `finished` later becomes true through another path.
+                ///
+                /// The `!draining` guard excludes the case where another `finish` call is currently
+                /// draining these connections: it set `was_cancelled` via its own `tryCancel` before
+                /// releasing `was_cancelled_mutex` and is now blocked in `receivePacket` with the mutex
+                /// released. Disconnecting here would tear the connections down under that active read,
+                /// making it throw `No more packets are available`. The draining call finishes the
+                /// drain (or the destructor disconnects) instead.
+                connections->disconnect();
+                finished = true;
+            }
+            return;
         }
-        else if (was_cancelled && !finished && connections)
-        {
-            /// The query was already cancelled (e.g. concurrently from the pipeline) but its
-            /// connections may still hold undelivered packets - the server keeps sending the data,
-            /// `ProfileInfo` and `EndOfStream` that were produced before it observed the cancel.
-            /// We do not drain them here after cancellation, because the read side may already be
-            /// torn down and reading from it could throw or crash (see #95466). But such connections
-            /// must not be returned to the connection pool in this out-of-sync state - otherwise the
-            /// next user of the connection would read a stale packet during establishment, failing
-            /// with "Unexpected packet from server (expected TablesStatusResponse, got ProfileInfo)"
-            /// (see #93018). So disconnect them, forcing a clean reconnect on reuse. This mirrors the
-            /// cleanup done in the destructor, but performs it eagerly so it cannot be skipped if
-            /// `finished` later becomes true through another path.
-            connections->disconnect();
-            finished = true;
-        }
-        return;
+
+        /** If you have not read all the data yet, but they are no longer needed.
+          * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
+          */
+
+        /// Send the request to abort the execution of the request, if not already sent.
+        tryCancel("Cancelling query because enough data has been read");
+
+        /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
+        if (!connections || !sent_query || finished)
+            return;
+
+        /// Take ownership of the drain loop before releasing the mutex. A concurrent `finish` that
+        /// observes the `was_cancelled` we just set (via `tryCancel` above) will now skip its eager
+        /// `disconnect` branch instead of tearing down the connections while we read from them.
+        draining = true;
     }
 
-    /// To make sure finish is only called once
-    SCOPE_EXIT({ finished = true; });
-
-    /** If you have not read all the data yet, but they are no longer needed.
-      * This may be due to the fact that the data is sufficient (for example, when using LIMIT).
-      */
-
-    /// Send the request to abort the execution of the request, if not already sent.
-    tryCancel("Cancelling query because enough data has been read");
-
-    /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
-    if (!connections || !sent_query || finished)
-        return;
+    /// Mark `finished` only when the drain loop has actually drained every replica:
+    /// `SCOPE_EXIT` runs regardless of how we leave the loop, so gate it strictly on
+    /// `!connections->hasActiveConnections()`. There are three ways out of the loop:
+    ///   - normal completion (all replicas sent `EndOfStream`) — no active connections,
+    ///     so `finished` becomes true;
+    ///   - early exit via `drain_should_stop` (a concurrent hard cancel preempted the
+    ///     drain) — replicas still have unread packets, so `finished` stays false and the
+    ///     destructor (or a subsequent caller) cleans up the connection state via `disconnect`;
+    ///   - a genuine replica exception is rethrown — `receivePacket` only invalidated the
+    ///     replica that produced the `Exception` packet, while the other parallel/hedged
+    ///     replicas can still be active. Leaving `finished = false` here (matching the
+    ///     normal-read path in `processPacket`, which sets `got_exception_from_replica`
+    ///     but never flips `finished`) keeps `isQueryPending` truthful so the destructor
+    ///     disconnects the remaining connections instead of returning them to the pool with
+    ///     unread packets.
+    SCOPE_EXIT({
+        /// Re-acquire the mutex to release ownership of the drain loop and publish `finished`
+        /// consistently with the disconnect branch above (which reads `draining` and `finished`
+        /// under the same mutex). We are past the drain loop and hold no lock here, so taking it
+        /// cannot deadlock; the lock order (`was_cancelled_mutex` then a `connections` method) is
+        /// the same as in `tryCancel` and the disconnect branch.
+        LockAndBlocker guard(was_cancelled_mutex);
+        draining = false;
+        if (!connections->hasActiveConnections())
+            finished = true;
+    });
 
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
-    /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
-    /// packets that had been sent before the connection is fully finished in order to have final statistics of what
-    /// was executed in the remote queries
-    while (connections->hasActiveConnections() && !finished)
+    /// We do this manually instead of calling `drain` because we want to process `Log`, `ProfileEvents`
+    /// and `Progress` packets that had been sent before the connection is fully finished, in order to have
+    /// final statistics of what was executed in the remote queries.
+    ///
+    /// With `MultiplexedConnections` / `HedgedConnections` (parallel replicas) each replica sends its own
+    /// `EndOfStream` and `receivePacket` returns one packet at a time. Setting `finished = true` after the
+    /// first `EndOfStream` would exit the loop early and discard remaining `Progress` packets from the other
+    /// replicas, which is exactly what causes `rows_read = 0` in JSON/XML statistics on the client side.
+    /// Loop until all replicas have completed (`hasActiveConnections` returns false); the `SCOPE_EXIT` above
+    /// flips `finished` to true only when that condition holds (or an exception was observed). This mirrors
+    /// the check in `processPacket` which only flips `finished` when `!hasActiveConnections`.
+    while (connections->hasActiveConnections())
     {
+        /// Allow a concurrent hard cancel (via `abortDrain`) to interrupt the drain loop
+        /// between packets. Since `was_cancelled_mutex` is released above before entering
+        /// this loop, the hard-cancel caller can also acquire the mutex (and trigger
+        /// `connections->sendCancel`, prompting replicas to respond with `EndOfStream`)
+        /// without waiting for the drain to complete.
+        if (drain_should_stop.load(std::memory_order_acquire))
+            break;
+
         Packet packet = connections->receivePacket();
 
         switch (packet.type)
         {
             case Protocol::Server::EndOfStream:
-                finished = true;
+                /// One replica finished; let `hasActiveConnections` drive loop termination so the remaining
+                /// replicas' trailing `Progress` packets are still processed.
                 break;
 
             case Protocol::Server::Exception:
-                got_exception_from_replica = true;
+                /// We just called `tryCancel` above before entering this drain loop, which sends
+                /// `Cancel` to the replicas. A replica that was actively processing responds with
+                /// `QUERY_WAS_CANCELLED_BY_CLIENT` (or `QUERY_WAS_CANCELLED` when the cancel is
+                /// observed via the process list). Rethrowing such an expected cancellation would
+                /// kill the initiator's pipeline, prevent `PipelineExecutor::finalizeExecution`
+                /// from running, and lose the `Progress` packets that the replica already sent
+                /// before the cancellation — producing `rows_read = 0` in JSON/XML statistics.
+                /// Swallow these expected exceptions, log them, and let the loop continue so the
+                /// remaining replicas' trailing packets can still be drained.
+                ///
+                /// Do not set `got_exception_from_replica` for filtered cancellations: it would
+                /// make `hasThrownException` true, causing the `SCOPE_EXIT` above to mark
+                /// `finished = true` even on the abort path (`drain_should_stop`) with replicas
+                /// still active, and would cause subsequent `finish` / `cancelUnlocked` calls to
+                /// return early as if a real replica error had occurred.
+                if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                    || packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
+                {
+                    if (log)
+                        LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
+                    break;
+                }
+                got_exception_from_replica.store(true, std::memory_order_release);
                 packet.exception->rethrow();
                 break;
 
@@ -899,6 +987,11 @@ void RemoteQueryExecutor::cancel()
 {
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
+}
+
+void RemoteQueryExecutor::abortDrain() noexcept
+{
+    drain_should_stop.store(true, std::memory_order_release);
 }
 
 void RemoteQueryExecutor::cancelUnlocked()
@@ -1023,7 +1116,8 @@ bool RemoteQueryExecutor::isQueryPending() const
 
 bool RemoteQueryExecutor::hasThrownException() const
 {
-    return got_exception_from_replica || got_unknown_packet_from_replica;
+    return got_exception_from_replica.load(std::memory_order_acquire)
+        || got_unknown_packet_from_replica.load(std::memory_order_acquire);
 }
 
 void RemoteQueryExecutor::setProgressCallback(ProgressCallback callback)
