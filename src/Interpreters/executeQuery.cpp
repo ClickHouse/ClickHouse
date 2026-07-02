@@ -1154,7 +1154,9 @@ static String convertSortToOrderBy(const String & sort)
         while (!item.empty() && (item.back() == ' ' || item.back() == '\t'))
             item.pop_back();
         if (item.empty())
-            return;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Empty element in `sort` setting (a stray, leading, or trailing comma?). "
+                "Each element must be a column name or a positive positional reference.");
 
         String direction = " ASC";
         String name = item;
@@ -1170,6 +1172,12 @@ static String convertSortToOrderBy(const String & sort)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty identifier in `sort` setting");
 
         const bool all_digits = std::all_of(name.begin(), name.end(), isNumericASCII);
+        /// Positional references are 1-based, so reject a zero position (e.g. `sort=0`), which would
+        /// otherwise become a constant `ORDER BY 0` no-op instead of a clear error.
+        if (all_digits && name.find_first_not_of('0') == String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Positional reference in `sort` setting must be a positive integer (1-based), got '{}'. "
+                "Use `order` for complex expressions.", name);
         if (!all_digits)
             for (char c : name)
                 if (!isAlphaNumericASCII(c) && c != '_')
