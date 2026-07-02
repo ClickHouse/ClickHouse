@@ -1,0 +1,11 @@
+multiIf present, optimize_if_transform_const_strings_to_lowcardinality = 1
+1
+multiIf present, optimize_if_transform_const_strings_to_lowcardinality = 0
+1
+result type and values, optimize_if_transform_const_strings_to_lowcardinality = 1
+0	a	String
+1	b	String
+2	c	String
+0	a	Nullable(String)
+1	\N	Nullable(String)
+2	c	Nullable(String)
