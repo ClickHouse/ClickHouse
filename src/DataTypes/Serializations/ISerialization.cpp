@@ -812,10 +812,13 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     {
         /// COW-safe append: `result_column` may be shared (it can be handed to the substreams cache
         /// below and reused for another substream in the same range), so clone it when shared instead
-        /// of reallocating a buffer still referenced elsewhere via `assumeMutable`.
-        auto mutable_result = IColumn::mutate(std::move(result_column));
-        mutable_result->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        result_column = std::move(mutable_result);
+        /// of reallocating a buffer still referenced elsewhere via `assumeMutable`. Assigning the
+        /// (possibly cloned) column back to `result_column` up front also keeps it valid if
+        /// `insertRangeFrom` throws below (e.g. on a memory limit): otherwise `result_column` would be
+        /// left moved-from (null), which the previous `assumeMutable` path never did — mirrors the
+        /// exception-safe fix in `deserializeBinaryBulkWithMultipleStreams` above.
+        result_column = IColumn::mutate(std::move(result_column));
+        result_column->assumeMutableRef().insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         if (update_cache_after_insert)
         {
             /// Replace column in the cache with the new column to avoid inserting into it again
