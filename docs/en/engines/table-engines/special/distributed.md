@@ -217,6 +217,32 @@ When querying a `Distributed` table, `SELECT` queries are sent to all shards and
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#max_parallel_replicas).
 
+### ALIAS column handling {#distributed-alias-columns}
+
+When a `Distributed` table contains `ALIAS` columns and the query uses the analyzer (`enable_analyzer = 1`), the `enable_alias_marker` setting controls how `ALIAS` expressions are reconciled between the initiator and shards.
+
+With `enable_alias_marker = false` (default):
+- `ALIAS` columns are inlined in the distributed SQL sent to shards without markers.
+- On a mixed-version cluster (some shards running ClickHouse 26.5 or earlier, others running 26.6+), this is the safe setting because pre-26.6 shards do not understand the `__aliasMarker` function.
+- However, this can cause correctness issues: if a `Distributed` table has multiple `ALIAS` columns or is queried as part of a `Distributed`-over-`Distributed` stack, columns may be swapped or mismatched in the result, leading to `THERE_IS_NO_COLUMN` or `NUMBER_OF_COLUMNS_DOESNT_MATCH` exceptions.
+
+With `enable_alias_marker = true`:
+- `ALIAS` expressions are wrapped with the internal `__aliasMarker` function, preserving column identity across the initiator/shard boundary.
+- This fixes the correctness issues above by ensuring columns are reconciled by name instead of by position.
+- All shards in the cluster must recognize the `__aliasMarker` function, which requires ClickHouse 26.6 or newer on every shard.
+
+**Migration guidance**: During a rolling upgrade of a mixed-version cluster:
+1. Initially, keep `enable_alias_marker = false` on the initiator.
+2. Once all shards are upgraded to ClickHouse 26.6 or newer, set `enable_alias_marker = true` to enable the correctness fix.
+
+Example:
+
+```sql
+-- On the initiator, after cluster upgrade is complete:
+SET enable_alias_marker = 1;
+SELECT * FROM distributed_table_with_alias_columns;
+```
+
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
 
 ## Virtual columns {#virtual-columns}

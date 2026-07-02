@@ -641,11 +641,13 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         storage_limits,
         nullptr);
 
-    auto converting = ActionsDAG::makeConvertingActions(
-        header->getColumnsWithTypeAndName(),
-        initial_header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Position,
+    const auto & source_columns = header->getColumnsWithTypeAndName();
+    const auto & result_columns = initial_header->getColumnsWithTypeAndName();
+    auto converting = makeConvertingActionsPreferNameThenPosition(
+        source_columns,
+        result_columns,
         context,
+        "findParallelReplicasQuery",
         false /*ignore_constant_values*/,
         false /*add_cast_columns*/,
         nullptr /*new_names*/);
