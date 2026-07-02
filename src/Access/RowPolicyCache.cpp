@@ -7,11 +7,20 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event RowPolicyCacheRecalculations;
+    extern const Event RowPolicyCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -137,17 +146,23 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
     /// `mutex` is already locked.
     if (all_policies_read)
         return;
-    all_policies_read = true;
 
     subscription = access_control.subscribeForChanges<RowPolicy>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                rowPolicyAddedOrChanged(id, typeid_cast<RowPolicyPtr>(entity));
-            else
-                rowPolicyRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    rowPolicyAddedOrChanged(change.id, typeid_cast<RowPolicyPtr>(change.entity));
+                else
+                    rowPolicyRemoved(change.id);
+            }
+            mixFiltersIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_policies.clear();
     for (const UUID & id : access_control.findAll<RowPolicy>())
     {
         auto policy = access_control.tryRead<RowPolicy>(id);
@@ -156,12 +171,15 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
             all_policies.emplace(id, PolicyInfo(policy));
         }
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_policies_read = true;
 }
 
 
 void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_policies.find(policy_id);
     if (it == all_policies.end())
     {
@@ -175,21 +193,34 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 
     auto & info = it->second;
     info.setPolicy(new_policy);
-    mixFilters();
+    need_mix_filters = true;
 }
 
 
 void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_policies.erase(policy_id);
+    need_mix_filters = true;
+}
+
+
+void RowPolicyCache::mixFiltersIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_mix_filters)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing mixFilters() is retried next batch.
     mixFilters();
+    need_mix_filters = false;
 }
 
 
 void RowPolicyCache::mixFilters()
 {
     /// `mutex` is already locked.
+    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_row_policies.begin(), e = enabled_row_policies.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -201,6 +232,14 @@ void RowPolicyCache::mixFilters()
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::RowPolicyCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * policies), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_WARNING(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
+    else
+        LOG_DEBUG(getLogger("RowPolicyCache"), "Re-mixed row policy filters for {} enabled set(s) over {} policies in {} ms", enabled_row_policies.size(), all_policies.size(), elapsed_ms);
 }
 
 

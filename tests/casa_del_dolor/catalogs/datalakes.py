@@ -310,6 +310,7 @@ logger.jetty.level = warn
             "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
             "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
             "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
+            "org.apache.paimon:paimon-spark-4.0_2.13:1.4.1",
             # Derby jars
             "org.apache.derby:derby:10.14.2.0",
             "org.apache.derby:derbytools:10.14.2.0",
@@ -330,7 +331,6 @@ logger.jetty.level = warn
                 else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
             )
         elif lake == LakeFormat.Paimon:
-            all_jars.append("org.apache.paimon:paimon-spark-4.0_2.13:1.4.1")
             catalog_extension = (
                 "org.apache.paimon.spark.extensions.PaimonSparkSessionExtensions"
             )
@@ -639,7 +639,7 @@ logger.jetty.level = warn
             elif storage == TableStorage.Azure:
                 # For Azurite local emulation
                 builder.config(
-                    f"spark.hadoop.fs.azure.storage.emulator.account.name",
+                    "spark.hadoop.fs.azure.storage.emulator.account.name",
                     cluster.azurite_account,
                 )
                 builder.config(
@@ -739,7 +739,9 @@ logger.jetty.level = warn
         # Ignore spark_query_logger at the moment because this is multithreaded
         # with open(self.spark_query_logger, "a") as f:
         #    f.write(query + "\n")
-        session.sql(query)
+        # session.sql takes a single statement; the Iceberg/Delta SQL-extension grammars are
+        # stricter than Spark's base parser and reject a trailing ';' with "expecting <EOF>".
+        session.sql(query.strip().rstrip(";"))
 
     def create_database(self, session, catalog_name: str):
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"

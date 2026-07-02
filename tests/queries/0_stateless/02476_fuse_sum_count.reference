@@ -19,7 +19,7 @@ QUERY id: 0
       FUNCTION id: 6, function_name: avg, function_type: aggregate, result_type: Nullable(Float64)
         ARGUMENTS
           LIST id: 7, nodes: 1
-            COLUMN id: 8, column_name: a, result_type: Nullable(Int8), source_id: 5
+            COLUMN id: 4, column_name: a, result_type: Nullable(Int8), source_id: 5
   JOIN TREE
     TABLE id: 5, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0
@@ -123,20 +123,20 @@ QUERY id: 0
             FUNCTION id: 30, function_name: plus, function_type: ordinary, result_type: Nullable(Int16)
               ARGUMENTS
                 LIST id: 31, nodes: 2
-                  COLUMN id: 32, column_name: a, result_type: Nullable(Int8), source_id: 7
-                  CONSTANT id: 33, constant_value: UInt64_1, constant_value_type: UInt8
-      FUNCTION id: 34, function_name: sum, function_type: aggregate, result_type: Nullable(Int64)
+                  COLUMN id: 6, column_name: a, result_type: Nullable(Int8), source_id: 7
+                  CONSTANT id: 32, constant_value: UInt64_1, constant_value_type: UInt8
+      FUNCTION id: 33, function_name: sum, function_type: aggregate, result_type: Nullable(Int64)
         ARGUMENTS
-          LIST id: 35, nodes: 1
-            FUNCTION id: 36, function_name: plus, function_type: ordinary, result_type: Nullable(Int16)
+          LIST id: 34, nodes: 1
+            FUNCTION id: 35, function_name: plus, function_type: ordinary, result_type: Nullable(Int16)
               ARGUMENTS
-                LIST id: 37, nodes: 2
-                  COLUMN id: 38, column_name: a, result_type: Nullable(Int8), source_id: 7
-                  CONSTANT id: 39, constant_value: UInt64_2, constant_value_type: UInt8
-      FUNCTION id: 40, function_name: count, function_type: aggregate, result_type: UInt64
+                LIST id: 36, nodes: 2
+                  COLUMN id: 6, column_name: a, result_type: Nullable(Int8), source_id: 7
+                  CONSTANT id: 37, constant_value: UInt64_2, constant_value_type: UInt8
+      FUNCTION id: 38, function_name: count, function_type: aggregate, result_type: UInt64
         ARGUMENTS
-          LIST id: 41, nodes: 1
-            COLUMN id: 42, column_name: a, result_type: Nullable(Int8), source_id: 7
+          LIST id: 39, nodes: 1
+            COLUMN id: 6, column_name: a, result_type: Nullable(Int8), source_id: 7
   JOIN TREE
     TABLE id: 7, alias: __table1, table_name: default.fuse_tbl
 QUERY id: 0

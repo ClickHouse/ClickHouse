@@ -173,12 +173,14 @@ MergeSelectorApplier::MergeSelectorApplier(
     bool merge_with_ttl_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
-    StorageID storage_id_)
+    StorageID storage_id_,
+    bool readonly_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
+    , readonly(readonly_)
 {
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
@@ -213,6 +215,13 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .current_time = current_time,
         .aggressive = aggressive,
     };
+
+    /// A read-only table (the `table_readonly` MergeTree setting) does not modify any data on disk and
+    /// wastes no background CPU: no merges of any kind run on it — not regular merges, not recompression,
+    /// and not TTL drop/delete merges. A table with a TTL is never marked read-only (see
+    /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
+    if (readonly)
+        return {};
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
         if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())
