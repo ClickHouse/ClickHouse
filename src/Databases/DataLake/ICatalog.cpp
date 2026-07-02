@@ -3,7 +3,10 @@
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
+#include <string_view>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
@@ -308,6 +311,142 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
+}
+
+namespace
+{
+
+/// True if some string starting with `prefix` can match the SQL LIKE `pattern`
+/// (case-sensitive, default backslash escape). Decides whether namespace `N`
+/// (tested as `N + "."`) may hold a table matching `name LIKE pattern`.
+///
+/// This helper only prunes namespaces, so it must never reject one that ClickHouse
+/// `LIKE` could match — a false negative would silently drop rows from
+/// `system.tables`. A false positive only costs an unnecessary table listing.
+/// Whenever it meets a construct it cannot model exactly (a multi-byte `_` match or
+/// an invalid trailing escape) it conservatively reports a possible match.
+bool likeCanMatchWithPrefix(std::string_view prefix, std::string_view pattern)
+{
+    size_t i = 0;            /// byte index into prefix
+    size_t j = 0;            /// byte index into pattern
+    size_t star_j = std::string_view::npos;  /// position of last '%' in pattern
+    size_t star_i = 0;       /// prefix index recorded when last '%' was seen
+
+    while (i < prefix.size())
+    {
+        if (j < pattern.size())
+        {
+            const char pc = pattern[j];
+            if (pc == '%')
+            {
+                star_j = j;
+                star_i = i;
+                ++j;
+                continue;
+            }
+            if (pc == '_')
+            {
+                /// ClickHouse `LIKE` matches `_` against one whole character. For an
+                /// ASCII byte that is exactly one byte; for a multi-byte UTF-8 lead
+                /// byte the width depends on the regexp encoding, which we cannot
+                /// model reliably here, so report a possible match instead of risking
+                /// a dropped namespace.
+                if (static_cast<unsigned char>(prefix[i]) >= 0x80)
+                    return true;
+                ++i;
+                ++j;
+                continue;
+            }
+            if (pc == '\\')
+            {
+                /// A trailing backslash is an invalid LIKE escape; the outer predicate
+                /// will surface the error, so just don't prune on it here.
+                if (j + 1 >= pattern.size())
+                    return true;
+
+                const char next = pattern[j + 1];
+                if (next == '%' || next == '_' || next == '\\')
+                {
+                    /// Escaped metacharacter: matches that single literal character.
+                    if (prefix[i] == next)
+                    {
+                        ++i;
+                        j += 2;
+                        continue;
+                    }
+                }
+                else
+                {
+                    /// Unknown escape: ClickHouse keeps the backslash as a literal `\`
+                    /// and matches `next` on its own in a later iteration.
+                    if (prefix[i] == '\\')
+                    {
+                        ++i;
+                        ++j;
+                        continue;
+                    }
+                }
+            }
+            else if (prefix[i] == pc)
+            {
+                /// Literal character (multi-byte UTF-8 literals match byte by byte).
+                ++i;
+                ++j;
+                continue;
+            }
+        }
+
+        /// Mismatch (or pattern exhausted while the prefix still has characters):
+        /// backtrack to the last '%' and let it swallow one more prefix char.
+        if (star_j != std::string_view::npos)
+        {
+            ++star_i;
+            i = star_i;
+            j = star_j + 1;
+            continue;
+        }
+        return false;
+    }
+
+    /// Whole prefix consumed: any remaining pattern can be matched by the
+    /// unknown continuation, so a match is possible.
+    return true;
+}
+
+}
+
+DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::Equals:
+        {
+            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
+            const auto pos = filter.value.rfind('.');
+            if (pos == std::string::npos)
+                return getTables();
+            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// List every namespace that could hold a matching table (test the
+            /// pattern against `N + "."` as a prefix), then list each directly.
+            DB::Names result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                if (!likeCanMatchWithPrefix(namespace_name + ".", filter.value))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const

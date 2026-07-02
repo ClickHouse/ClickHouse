@@ -51,6 +51,8 @@ public:
 
     DB::Names getTables() const override;
 
+    Namespaces getNamespaces() const override;
+
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(
@@ -149,11 +151,17 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    Namespaces getNamespaces(const std::string & base_namespace) const;
+    /// List the immediate child namespaces directly under `base_namespace`
+    /// (single level, not recursive). An empty base lists the root namespaces.
+    Namespaces listChildNamespaces(const std::string & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
-    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
+    /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
+    /// `limit` is a soft cap on the number of returned names; 0 means no limit.
+    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 

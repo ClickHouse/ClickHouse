@@ -1,6 +1,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/IDatabase.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>

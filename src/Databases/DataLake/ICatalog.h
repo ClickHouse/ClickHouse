@@ -122,6 +122,25 @@ private:
 };
 
 
+/// Catalog-layer view of the `name` predicate (translated from `DB::TablesFilter`
+/// by `DatabaseDataLake`) so the catalog can restrict which namespaces it lists.
+struct TableNameFilter
+{
+    /// Equals (`name = 'ns.table'`) and Like (`name LIKE 'ns.%'`) prune to specific
+    /// namespaces; All lists the whole catalog (fallback when we can't prune).
+    enum class Kind
+    {
+        All,
+        Equals,
+        Like,
+    };
+
+    Kind kind = Kind::All;
+    /// `Equals`: the literal value (e.g. `ns.table`). `Like`: the pattern (e.g. `ns.%`).
+    std::string value;
+};
+
+
 struct CatalogSettings
 {
     String storage_endpoint;
@@ -154,6 +173,14 @@ public:
     /// Fetch tables' names list.
     /// Contains full namespaces in names.
     virtual DB::Names getTables() const = 0;
+
+    /// Enumerate every namespace as a full dot-separated path (hierarchical catalogs
+    /// return every nested level; flat catalogs their single-level names).
+    virtual Namespaces getNamespaces() const = 0;
+
+    /// Fetch fully-qualified table names, restricted by the `name` predicate (see
+    /// `TableNameFilter`). Default impl prunes namespaces via `getNamespaces()`.
+    virtual DB::Names getTables(const TableNameFilter & filter) const;
 
     /// Check that a table exists in a given namespace.
     virtual bool existsTable(
@@ -213,6 +240,10 @@ public:
     }
 
 protected:
+    /// List tables directly in `namespace_name` (non-recursive), as fully-qualified
+    /// `namespace.table` names.
+    virtual DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const = 0;
+
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
     const std::string warehouse;
