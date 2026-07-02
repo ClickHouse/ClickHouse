@@ -24,17 +24,19 @@ Note that the Iceberg table must already exist in the storage, this command does
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
-    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 
 CREATE TABLE iceberg_table_hdfs
-    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergHDFS(path_to_table, [,format])
 
 CREATE TABLE iceberg_table_local
-    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergLocal(path_to_table, [,format])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake engines: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Engine arguments {#engine-arguments}
 

@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -99,7 +100,9 @@ void StorageObjectStorageConfiguration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    const StorageID * table_id)
+    const StorageID * table_id,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup)
 {
     std::string disk_name;
     if (configuration_to_initialize.isDataLakeConfiguration())
@@ -125,6 +128,22 @@ void StorageObjectStorageConfiguration::initialize(
         if (configuration_to_initialize.partition_strategy_type != PartitionStrategyFactory::StrategyType::NONE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
+        }
+
+        /// Reject only when the user supplies a fresh definition: a `CREATE TABLE`, or a table
+        /// function (which always loads with `CREATE`). Every `ATTACH` and server-startup replay
+        /// has `mode >= ATTACH` and reuses previously-validated metadata, so it must skip the check
+        /// for pre-fix tables to still load after upgrade. `RESTORE TABLE` loads with
+        /// `SECONDARY_CREATE` (which is `< ATTACH`), hence the explicit `is_restore_from_backup` guard.
+        if (mode < LoadingStrictnessLevel::ATTACH
+            && !is_restore_from_backup
+            && configuration_to_initialize.compression_method_user_provided)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The `compression_method` argument is not supported by data lake engines. "
+                "Data lake formats use their own internal compression codec; set it via the "
+                "format-specific setting (for example, `output_format_parquet_compression_method`) instead.");
         }
     }
     else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
@@ -335,6 +354,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
 {
     format = parsed_arguments.format;
     compression_method = parsed_arguments.compression_method;
+    compression_method_user_provided = parsed_arguments.compression_method_user_provided;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;

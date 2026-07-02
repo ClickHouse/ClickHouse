@@ -49,7 +49,14 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+    StorageObjectStorageConfiguration::initialize(
+        *configuration,
+        args.engine_args,
+        context,
+        false,
+        &args.table_id,
+        args.mode,
+        args.is_restore_from_backup);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -1113,22 +1120,24 @@ Note that the Iceberg table must already exist in the storage, this command does
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+    ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
-    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 
 CREATE TABLE iceberg_table_hdfs
-    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergHDFS(path_to_table, [,format])
 
 CREATE TABLE iceberg_table_local
-    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = IcebergLocal(path_to_table, [,format])
 ```
 
 ## Engine arguments {#engine-arguments}
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
+
+Unlike the plain object-storage engines, data lake engines do not accept a `compression_method` (or `compression`) argument: the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
@@ -1684,22 +1693,24 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
+    ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format])
 
 CREATE TABLE paimon_table_azure
-    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 
 CREATE TABLE paimon_table_hdfs
-    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonHDFS(path_to_table, [,format])
 
 CREATE TABLE paimon_table_local
-    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+    ENGINE = PaimonLocal(path_to_table, [,format])
 ```
 
 ## Engine arguments {#engine-arguments}
 
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Paimon table.
+
+Unlike the plain object-storage engines, data lake engines do not accept a `compression_method` (or `compression`) argument: the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
 
@@ -2225,7 +2236,7 @@ ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<pa
 
 ```sql
 CREATE TABLE table_name
-ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format])
 ```
 
 **Arguments**
@@ -2236,6 +2247,8 @@ ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpa
 - `blobpath` — Path to the Delta Lake table within the container
 - `account_name` — Azure storage account name
 - `account_key` — Azure storage account key
+
+Data lake engines do not accept a `compression_method` (or `compression`) argument: the data files use the format's own internal codec, so the outer codec would be silently dropped on write and misinterpreted on read. Control file compression with the format-specific setting (for example, `output_format_parquet_compression_method`) instead.
 
 </TabItem>
 </Tabs>

@@ -261,7 +261,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
 
     format = collection.getOrDefault<String>("format", format);
-    compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    if (collection.hasAny({"compression_method", "compression"}))
+    {
+        compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+        compression_method_user_provided = true;
+    }
     structure = collection.getOrDefault<String>("structure", "auto");
 
     s3_settings->request_settings = S3::S3RequestSettings(collection, settings, /* validate_settings */ true);
@@ -361,7 +365,10 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
+    {
         compression_method = *parsing_result.compression_method;
+        compression_method_user_provided = true;
+    }
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
@@ -682,10 +689,21 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         structure = structure_value.value();
     }
 
-    if (auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
-        compression_method_value.has_value())
+    auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
+    if (!compression_method_value.has_value())
+    {
+        /// Historical `compression` alias for `compression_method` in key-value form, mirroring
+        /// the named-collection handling in `S3StorageParsedArguments::fromNamedCollection` above.
+        /// Without this branch, `s3('...', compression = 'lzma')` (and the data lake variants
+        /// `icebergS3`, `deltaLakeS3`, `hudi`, `paimonS3`) silently slip past the data lake
+        /// `compression_method` rejection in `StorageObjectStorageConfiguration::initialize`.
+        if (auto it = key_value_args.find("compression"); it != key_value_args.end())
+            compression_method_value = it->second.safeGet<String>();
+    }
+    if (compression_method_value.has_value())
     {
         compression_method = compression_method_value.value();
+        compression_method_user_provided = true;
     }
 
     if (auto partition_strategy_value = getFromPositionOrKeyValue<String>("partition_strategy", args, engine_args_to_idx, key_value_args);

@@ -13,18 +13,20 @@ Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.ap
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,extra_credentials])
 icebergS3(named_collection[, option=value [,..]])
 
-icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format])
 icebergAzure(named_collection[, option=value [,..]])
 
-icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(path_to_table, [,format])
 icebergHDFS(named_collection[, option=value [,..]])
 
-icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(path_to_table, [,format])
 icebergLocal(named_collection[, option=value [,..]])
 ```
+
+The `compression_method` / `compression` argument is not supported by data lake table functions: the underlying data file format (`Parquet`/`ORC`/`Avro`) carries its own internal codec. To configure the codec used when writing, use the format-specific server setting such as `output_format_parquet_compression_method`.
 
 ## Arguments {#arguments}
 

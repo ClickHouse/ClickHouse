@@ -25,7 +25,11 @@ void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & co
 {
     path = collection.get<String>("path");
     format = collection.getOrDefault<String>("format", "auto");
-    compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    if (collection.hasAny({"compression_method", "compression"}))
+    {
+        compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+        compression_method_user_provided = true;
+    }
     structure = collection.getOrDefault<String>("structure", "auto");
 }
 
@@ -36,7 +40,10 @@ void LocalStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
+    {
         compression_method = *parsing_result.compression_method;
+        compression_method_user_provided = true;
+    }
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
@@ -70,11 +77,13 @@ void LocalStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool 
         if (args.size() > 3)
         {
             compression_method = checkAndGetLiteralArgument<String>(args[3], "compression_method");
+            compression_method_user_provided = true;
         }
     }
     else if (args.size() > 2)
     {
         compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
+        compression_method_user_provided = true;
     }
 }
 

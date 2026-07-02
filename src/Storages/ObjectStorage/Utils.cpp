@@ -252,8 +252,15 @@ ParseFromDiskResult parseFromDisk(ASTs args, bool with_structure, ContextPtr con
         result.structure = structure_value.value();
     }
 
-    if (auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
-        compression_method_value.has_value())
+    auto compression_method_value = getFromPositionOrKeyValue<String>("compression_method", args, engine_args_to_idx, key_value_args);
+    if (!compression_method_value.has_value())
+    {
+        /// Historical `compression` alias for `compression_method` in key-value form, mirroring
+        /// the named-collection handling in the data lake `fromNamedCollection` implementations.
+        if (auto it = key_value_args.find("compression"); it != key_value_args.end())
+            compression_method_value = it->second.safeGet<String>();
+    }
+    if (compression_method_value.has_value())
     {
         result.compression_method = compression_method_value.value();
     }
