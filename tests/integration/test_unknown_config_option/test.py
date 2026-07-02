@@ -320,6 +320,23 @@ node_graphite_retention_missing_age = (
 )
 caught_graphite_retention_missing_age_exception = ""
 
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries two `<retention>`
+# blocks whose `age` and `precision` do not grow together (age ascends while precision descends).
+# Every child is well-formed, but `appendGraphitePattern` finishes by sorting the retentions with
+# `compareRetentions`, which throws `BAD_ARGUMENTS` for such a rule, so the section would never load.
+# The validator must mirror that ordering check and reject the whole section as an unknown top-level
+# key.
+cluster_graphite_retention_bad_ordering = ClickHouseCluster(
+    __file__, name="graphite_retention_bad_ordering"
+)
+node_graphite_retention_bad_ordering = (
+    cluster_graphite_retention_bad_ordering.add_instance(
+        "node_graphite_retention_bad_ordering",
+        main_configs=["configs/config.d/graphite_retention_bad_ordering.xml"],
+    )
+)
+caught_graphite_retention_bad_ordering_exception = ""
+
 # Negative case: a `<protocols>...<handlers>NAME</handlers>` reference whose handler prefix does
 # NOT exist. `createHTTPHandlerFactory` falls back to the default `http_handlers` when
 # `!config.has(NAME)` and never reads the named section, so the validator must NOT exempt the
@@ -659,6 +676,23 @@ def start_graphite_retention_missing_age_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_graphite_retention_bad_ordering_cluster():
+    global caught_graphite_retention_bad_ordering_exception
+    try:
+        cluster_graphite_retention_bad_ordering.start()
+    except Exception as e:
+        caught_graphite_retention_bad_ordering_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_retention_bad_ordering.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_retention_bad_ordering_exception += "\n" + f.read()
+    yield
+    cluster_graphite_retention_bad_ordering.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_protocols_missing_cluster():
     global caught_protocols_missing_exception
     try:
@@ -936,6 +970,69 @@ def test_external_include_from_source_does_not_exempt_unknown_key(
         node_include_from_external.exec_in_container(
             ["bash", "-c", f"rm -f {bad_config_path} {external_source_path}"]
         )
+
+
+def test_users_config_include_from_source_does_not_exempt_server_key(
+    start_include_from_external_cluster,
+):
+    # `ConfigProcessor` resolves a top-level server `<include incl="X"/>` only against the *server*
+    # config's own `<include_from>` source, never against the users config's. So a top-level server
+    # key must still be rejected even when the *users* config declares its own `<include_from>` whose
+    # source happens to define the referenced node `<X>` with a child of that key's name. (Before the
+    # fix, the validator resolved server include refs against every discovered `include_from` source,
+    # including the users-config source, so it wrongly whitelisted a server key the server config
+    # never imports.)
+    #
+    # Layout mirrors the reported repro: the server config has its own `<include_from>` (a source that
+    # does NOT define `shared_root`), a `<include incl="shared_root"/>`, and an otherwise unknown
+    # `<my_users_only_payload>`; the users config has its own `<include_from>` whose source defines
+    # `<shared_root><my_users_only_payload/></shared_root>`.
+    server_source_path = "/etc/clickhouse-server/server_incl_source.xml"
+    server_source = (
+        "<clickhouse>"
+        "<unrelated_server_lookup>server value</unrelated_server_lookup>"
+        "</clickhouse>"
+    )
+    users_source_path = "/etc/clickhouse-server/users_incl_source.xml"
+    users_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_users_only_payload>imported from users source</my_users_only_payload>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    server_config_path = "/etc/clickhouse-server/config.d/server_include_users_leak.xml"
+    server_config = (
+        "<clickhouse>"
+        f"<include_from>{server_source_path}</include_from>"
+        '<include incl="shared_root"/>'
+        "<my_users_only_payload>1</my_users_only_payload>"
+        "</clickhouse>"
+    )
+    users_config_path = "/etc/clickhouse-server/users.d/users_include_from_leak.xml"
+    users_config = (
+        "<clickhouse>"
+        f"<include_from>{users_source_path}</include_from>"
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(server_source_path, server_source)
+        node_include_from_external.replace_config(users_source_path, users_source)
+        node_include_from_external.replace_config(users_config_path, users_config)
+        node_include_from_external.replace_config(server_config_path, server_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_users_only_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {server_config_path} {users_config_path} "
+                f"{server_source_path} {users_source_path}",
+            ]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
 
 
 def test_top_level_include_from_external_source_accepted(
@@ -1277,6 +1374,26 @@ def test_graphite_retention_missing_age_rejected(
     assert (
         "graphite_retention_missing_age"
         in caught_graphite_retention_missing_age_exception
+    )
+
+
+def test_graphite_retention_bad_ordering_rejected(
+    start_graphite_retention_bad_ordering_cluster,
+):
+    # `<graphite_retention_bad_ordering>` carries a `<pattern>` with two `<retention>` blocks whose
+    # `age` ascends (0 -> 86400) while `precision` descends (60 -> 10). Every child is well-formed,
+    # but `appendGraphitePattern` finishes by sorting the retentions with `compareRetentions`, which
+    # throws `BAD_ARGUMENTS` ("Age and precision should only grow up") for such a rule, so the section
+    # would never load. The validator must mirror that ordering check (not merely accept two
+    # well-formed `<retention>` blocks) and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG"
+        in caught_graphite_retention_bad_ordering_exception
+    )
+    assert (
+        "graphite_retention_bad_ordering"
+        in caught_graphite_retention_bad_ordering_exception
     )
 
 

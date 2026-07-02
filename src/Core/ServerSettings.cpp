@@ -27,6 +27,7 @@
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
+#include <base/sort.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
@@ -69,6 +70,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -2404,6 +2406,15 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::XML::DOMParser dom_parser;
         std::unordered_set<std::string> include_from_paths;
 
+        /// The subset of `include_from_paths` that comes from *server*-config files (the main config
+        /// or a merged `config.d`/`conf.d` fragment), plus the server's default substitution source.
+        /// `ConfigProcessor` resolves a top-level server `<include incl="X"/>` only against the server
+        /// config's own `<include_from>`, never against the users config's — so top-level include refs
+        /// must be resolved against these sources only. Resolving them against a users-config
+        /// `<include_from>` source would let a genuinely unknown top-level server key pass validation
+        /// merely because the users source happens to define a node of the referenced name.
+        std::unordered_set<std::string> server_include_from_paths;
+
         /// Reference names of *top-level* `<include incl="X"/>` elements found in the server config
         /// (the main config or a merged `config.d`/`conf.d` fragment). `ConfigProcessor` expands such
         /// an element by inserting the *children* of node `X` (resolved from the `<include_from>`
@@ -2488,7 +2499,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                             }
                         }
                         if (!src.empty())
+                        {
+                            if (is_server_file)
+                                server_include_from_paths.insert(src);
                             include_from_paths.insert(std::move(src));
+                        }
                     }
                     else if (is_server_file && child->nodeName() == "include")
                     {
@@ -2573,7 +2588,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// resolved by `ConfigProcessor`. Use it as a fallback for sources we cannot resolve
         /// from raw XML alone (e.g. ZooKeeper-backed substitutions).
         if (String resolved_include_from = config.getString("include_from", ""); !resolved_include_from.empty())
+        {
+            /// `config` is the merged *server* config, so this is a server-side source.
+            server_include_from_paths.insert(resolved_include_from);
             include_from_paths.insert(std::move(resolved_include_from));
+        }
 
         /// Resolve the *active* users config path exactly as `AccessControl::addStoragesFromMainConfig`
         /// does, so we never pull `incl`/`include_from` exemptions from an inactive users config tree
@@ -2633,7 +2652,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         {
             static const std::string default_include_from = "/etc/metrika.xml";
             if (fs::exists(default_include_from))
+            {
+                /// The server's default substitution source, used to resolve server include refs.
+                server_include_from_paths.insert(default_include_from);
                 include_from_paths.insert(default_include_from);
+            }
         }
 
         for (const auto & include_from_path : include_from_paths)
@@ -2652,7 +2675,12 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             /// misplaced-section class this check catches. The one way an external source *does*
             /// contribute a top-level key is a top-level `<include incl="X"/>`, handled below.
             const bool source_is_merged = merge_files.contains(to_canonical(include_from_path));
-            if (!source_is_merged && top_level_include_refs.empty())
+            /// A top-level server `<include incl="X"/>` resolves only against server-side sources
+            /// (mirrors `ConfigProcessor`, which never consults the users config's `<include_from>`
+            /// for a server include). A users-config source is thus consulted only for the
+            /// merged-fragment exemption below, never for include-ref resolution.
+            const bool source_is_server = server_include_from_paths.contains(include_from_path);
+            if (!source_is_merged && !(source_is_server && !top_level_include_refs.empty()))
                 continue;
             try
             {
@@ -2678,14 +2706,19 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                 /// when the source is external and not merged. Resolve `<X>` exactly as the processor
                 /// does (`getRootNode(include_from)->getNodeByPath(name)`) and exempt only the
                 /// imported children — nothing else, so an unrelated typo elsewhere stays rejected.
-                for (const auto & ref : top_level_include_refs)
+                /// Only server-side sources are consulted (see `source_is_server` above): a server
+                /// `<include>` is never resolved against the users config's `<include_from>`.
+                if (source_is_server)
                 {
-                    if (auto * referenced = root->getNodeByPath(ref))
+                    for (const auto & ref : top_level_include_refs)
                     {
-                        for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
+                        if (auto * referenced = root->getNodeByPath(ref))
                         {
-                            if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
-                                referenced_top_level_keys.insert(child->nodeName());
+                            for (auto * child = referenced->firstChild(); child; child = child->nextSibling())
+                            {
+                                if (child->nodeType() == Poco::XML::Node::ELEMENT_NODE)
+                                    referenced_top_level_keys.insert(child->nodeName());
+                            }
                         }
                     }
                 }
@@ -2745,6 +2778,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         Poco::Util::AbstractConfiguration::Keys rule_children;
         config.keys(rule_element, rule_children);
         bool has_function_or_retention = false;
+        /// `(age, precision)` pairs collected in config order, to mirror `appendGraphitePattern`'s
+        /// final `::sort(..., compareRetentions)` after the child loop (see below).
+        std::vector<std::pair<UInt64, UInt64>> retentions;
         for (const auto & rule_child : rule_children)
         {
             const bool ok = rule_child == "regexp" || rule_child == "function"
@@ -2767,8 +2803,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     return false;
                 try
                 {
-                    config.getUInt(retention + ".age");
-                    config.getUInt(retention + ".precision");
+                    retentions.emplace_back(config.getUInt(retention + ".age"), config.getUInt(retention + ".precision"));
                 }
                 catch (const Poco::Exception &)
                 {
@@ -2789,6 +2824,34 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
                     return false;
             }
         }
+
+        /// `appendGraphitePattern` finishes a rule by sorting its `retention*` blocks with
+        /// `compareRetentions`, which throws `BAD_ARGUMENTS` ("Age and precision should only grow up")
+        /// unless, for every compared pair, `age` and `precision` grow together. A rule whose
+        /// retentions are not co-monotonic is therefore rejected by the parser and must not be
+        /// exempted here. Replicate that exact `::sort` — same comparator logic, same config-order
+        /// input — rather than an all-pairs invariant: for a co-monotonic (valid) rule no comparison
+        /// ever throws regardless of the sort's internal order, so this only rejects sections the
+        /// parser also rejects and never turns a valid rollup config into a startup failure.
+        try
+        {
+            ::sort(
+                retentions.begin(),
+                retentions.end(),
+                [](const std::pair<UInt64, UInt64> & a, const std::pair<UInt64, UInt64> & b) -> bool
+                {
+                    if (a.first > b.first && a.second > b.second)
+                        return true;
+                    if (a.first < b.first && a.second < b.second)
+                        return false;
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Retention age and precision must grow together");
+                });
+        }
+        catch (const Exception &)
+        {
+            return false;
+        }
+
         return has_function_or_retention;
     };
 
