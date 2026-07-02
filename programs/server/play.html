@@ -43,6 +43,9 @@
         :root {
             --background-color-rotate: 215;
             --background-color: oklch(96% 0.0296 var(--background-color-rotate));
+            /* Top color of the active tab's gradient: same hue/lightness as the page but
+               more saturated (higher chroma), fading down to the page color. */
+            --active-tab-top-color: oklch(96% 0.09 var(--background-color-rotate));
             --element-background-color: #FFF;
             --element-color-ok: #080;
             --element-background-color-fail: #FEE;
@@ -96,6 +99,9 @@
         [data-theme="dark"] {
             --background-color-rotate: 250;
             --background-color: oklch(15% 0.0296 var(--background-color-rotate));
+            /* Top color of the active tab's gradient: same hue as the page but brighter
+               (higher lightness), fading down to the page color. */
+            --active-tab-top-color: oklch(28% 0.0296 var(--background-color-rotate));
             --element-background-color: #000;
             --element-color-ok: #8F8;
             --element-background-color-fail: #300;
@@ -224,6 +230,204 @@
             padding: 0.5rem;
             position: relative;
             z-index: 0; /* stacking context so children don't overlap #menu */
+        }
+
+        /* Tab bar: the first child of #main, scrolling vertically together with the page
+           content. Sticky on the horizontal axis only (left: 0, no top) like #controls and
+           #logo-container, so it stays at the left edge while a wide result is scrolled
+           horizontally but still scrolls away vertically.
+           The full-width gray/black strip and the top-of-main border are painted by
+           ::before, which extends 0.5rem into #main's side padding. A negative left/right
+           margin is NOT used for that bleed: it is clamped away under position: sticky in
+           some browsers, leaving #main's padding showing to the left of the tabs. */
+        #tab-bar
+        {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.25rem;
+            position: sticky;
+            left: 0;
+            margin: -0.5rem 0 0.5rem 0; /* negative top bleeds into #main's top padding */
+            /* No left padding: the bar's content edge already sits at #main's content
+               edge, so the first tab lines up with the query editor and result tables.
+               Top padding equals the inter-tab gap (0.25rem), so the space above the tabs
+               matches the space between them. It resolves to a whole pixel at the default
+               root size, avoiding the sub-pixel border rasterization a fractional value
+               (e.g. 0.15rem = 2.4px) would cause between the native button and the divs. */
+            padding: 0.25rem 0.5rem 0 0;
+        }
+
+        #tab-bar::before
+        {
+            content: "";
+            position: absolute;
+            /* Cover the tab bar and bleed 0.5rem into #main's side padding for a full-width
+               strip; +1px at the bottom so the border sits exactly at each tab's bottom
+               (the active tab covers its own 1px segment via its box-shadow). */
+            inset: 0 -0.5rem -1px -0.5rem;
+            z-index: -1;
+            background: var(--table-header-color); /* light gray strip */
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* The `display: flex` above (id specificity) overrides the user-agent
+           `[hidden] { display: none }` rule, so restore hiding explicitly with a
+           selector that wins on specificity. */
+        #tab-bar[hidden]
+        {
+            display: none;
+        }
+
+        [data-theme="dark"] #tab-bar::before
+        {
+            background: #000; /* pure black strip */
+        }
+
+        #tabs
+        {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.25rem;
+            /* Take only the width of the tabs (do not grow), so the [+] button sits
+               directly after the last tab. No overflow clipping here: it would force
+               overflow-y to clip and cut off the 1px the active tab uses to merge with
+               the main area. When there are many tabs they compress (see .tab). */
+            flex: 0 1 auto;
+            min-width: 0;
+        }
+
+        .tab
+        {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            /* Stay at natural width when there is room; compress (title ellipsizes) when
+               there are many tabs, instead of overflowing. */
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 12rem; /* keep tabs compact; longer titles ellipsize (see .tab-title) */
+            padding: 0.25rem 0.5rem;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+            color: var(--text-color);
+            /* No bottom border: the single top-of-main line is the strip's border-bottom,
+               and every tab sits directly on it. A per-tab bottom border would render a
+               second line 1px below it. */
+            border: 1px solid var(--border-color);
+            border-bottom: none;
+            /* Inactive tabs are tinted by the hash of their own query text, mirroring
+               the page background formula, so different queries get distinct colors. */
+            background: oklch(96% 0.0296 var(--tab-hue, var(--background-color-rotate)));
+        }
+
+        [data-theme="dark"] .tab
+        {
+            background: oklch(15% 0.0296 var(--tab-hue, var(--background-color-rotate)));
+        }
+
+        /* The active tab uses the page background and paints over its segment of the strip's
+           border line with a page-background box-shadow, so its title reads as part of the
+           main area below. The shadow covers 2px (not 1px): on the sticky compositing layer
+           a 1px shadow and the 1px border can round to different device rows, leaving a
+           faint sliver of the border visible; 2px guarantees full coverage. The extra pixel
+           is the page background (the merge), not a line, and it adds no layout offset. */
+        .tab.active
+        {
+            /* Gradient: more saturated (light) / brighter (dark) at the top, fading to the
+               page color at the bottom so it still merges with the main area below. */
+            background: linear-gradient(var(--active-tab-top-color), var(--background-color));
+            color: var(--text-color-active);
+            font-weight: bold;
+            position: relative; /* for the ::after that opens the bottom border */
+        }
+
+        /* Erase the top-of-main border only in the active tab's interior (between its side
+           borders), so the bottom looks open and merges with the main area while the side
+           borders still connect to the line at the bottom corners. left/right: 0 are inset
+           by the 1px side borders (relative to the padding box); the 2px height robustly
+           covers the 1px line even with sticky-layer rounding. */
+        .tab.active::after
+        {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -2px;
+            height: 2px;
+            background: var(--background-color);
+        }
+
+        .tab-title
+        {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0; /* allow the title to ellipsize when the tab is compressed */
+        }
+
+        /* Over the active tab's title the cursor indicates inline text editing. */
+        .tab.active .tab-title
+        {
+            cursor: text;
+        }
+
+        /* While editing, let the title grow with its content instead of being clipped
+           to an ellipsis, and remove the focus outline. */
+        .tab-title.editing
+        {
+            overflow: visible;
+            text-overflow: clip;
+            min-width: 1ch;
+            outline: none;
+            color: var(--text-color-active);
+        }
+
+        /* The tab being edited drops its width cap and flexes to fit the full title. */
+        .tab.editing
+        {
+            max-width: none;
+            flex-shrink: 0;
+        }
+
+        .tab-close
+        {
+            line-height: 1;
+            font-size: 1em; /* same size as the [+] glyph, so the two align vertically */
+            padding: 0 0.15rem;
+            color: var(--misc-text-color);
+            flex-shrink: 0; /* never shrink the close icon */
+        }
+
+        .tab-close:hover
+        {
+            color: var(--text-color-active);
+            background: var(--border-color);
+        }
+
+        /* Styled like a tab (same border, height and bottom-line alignment) and placed
+           directly after the last tab. */
+        #tab-add
+        {
+            flex-shrink: 0;
+            align-self: flex-end;
+            /* Center the [+] glyph so it lines up vertically with each tab's close [x]. */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem 0.6rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%;
+            background: var(--element-background-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            border-bottom: none; /* sits on the strip line like the tabs (no second line) */
+        }
+
+        #tab-add:hover, #tab-add:focus
+        {
+            background: var(--button-color);
+            color: var(--button-text-color);
         }
 
         .menu-icon
@@ -832,7 +1036,7 @@
 
         #run_div
         {
-            margin-top: 0.5rem;
+            margin-top: 0.25rem;
             display: flex;
             align-items: center;
             gap: 1rem;
@@ -1164,6 +1368,10 @@
         <div id="terminal-resizer"></div>
     </div>
     <div id="main">
+        <div id="tab-bar" hidden>
+            <div id="tabs"></div>
+            <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+        </div>
         <form id="controls">
             <div id="inputs">
                 <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
@@ -2883,6 +3091,11 @@ class QueryResultElement extends HTMLElement
                 console.warn('no integrity for', src);
             }
             script.addEventListener('load', function() { resolve(true); });
+            /// Reject on a failed load (blocked/unavailable CDN, network error, or SRI mismatch)
+            /// so awaiting callers (the chart/graph renderers in the query lifecycle) fall into
+            /// their `catch` and report the error instead of hanging forever - the script `error`
+            /// event otherwise leaves this promise pending and the run stuck in flight.
+            script.addEventListener('error', function() { reject(new Error('Failed to load script: ' + src)); });
             document.head.appendChild(script);
         });
     }
@@ -2892,7 +3105,10 @@ class QueryResultElement extends HTMLElement
         if (QueryResultElement._vizInstance) { return QueryResultElement._vizInstance; }
         if (!QueryResultElement._loadVizPromise)
         {
-            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js');
+            /// Drop the cached promise on failure so a later attempt can retry the load
+            /// instead of re-awaiting a permanently rejected promise.
+            QueryResultElement._loadVizPromise = this._loadJS('/js/viz-standalone.js')
+                .catch((e) => { QueryResultElement._loadVizPromise = null; throw e; });
         }
         await QueryResultElement._loadVizPromise;
         if (typeof Viz === 'undefined')
@@ -2907,14 +3123,21 @@ class QueryResultElement extends HTMLElement
     {
         if (QueryResultElement._loadUplotPromise) { return QueryResultElement._loadUplotPromise; }
         QueryResultElement._loadUplotPromise = this._loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA')
+            /// Drop the cached promise on failure so a later attempt can retry the load
+            /// instead of re-awaiting a permanently rejected promise.
+            .catch((e) => { QueryResultElement._loadUplotPromise = null; throw e; });
         return QueryResultElement._loadUplotPromise;
     }
 
-    async renderGraph()
+    /// `isValid` (optional) is checked right after the async Viz load and before any DOM
+    /// mutation, so a tab switch during the first (slow) load cannot let this stale render
+    /// paint into the now-active tab's shared result element.
+    async renderGraph(isValid)
     {
         this._clearElement(this._dataTable);
         const viz = await this._getViz();
+        if (isValid && !isValid()) return;
         const svg = viz.renderSVGElement(this._explain_graph);
         this._graph.replaceChildren(svg);
         this._graph.style.display = 'block';
@@ -3017,9 +3240,13 @@ class QueryResultElement extends HTMLElement
         };
     }
 
-    async renderChart(json)
+    /// `isValid` (optional) is checked right after the async uPlot load and before any DOM
+    /// mutation, so a tab switch during the first (slow) load cannot let this stale render
+    /// paint into the now-active tab's shared result element.
+    async renderChart(json, isValid)
     {
         await this._loadUplot();
+        if (isValid && !isValid()) return;
 
         if (this._uplot)
         {
@@ -3080,8 +3307,41 @@ customElements.define('query-result', QueryResultElement);
 /// This is to avoid race conditions.
 let request_num = 0;
 
-/// Save query in history only if it is different.
-let previous_query = '';
+/// While a tab activation is rebuilding the active tab's parameter inputs, this holds the
+/// activation's request token. `restoreFromHistory` sets it right before the `updateQueryParams`
+/// await (the `param_*` DOM inputs still hold the PREVIOUS tab's values during that await) and
+/// clears it once the restored parameters are committed. `captureActiveTab` uses it to avoid
+/// snapshotting the stale inputs into the newly-active tab while the restore is in flight.
+let params_restore_pending_token = null;
+
+/// Tabs let the user keep several independent queries side by side. Each tab owns its
+/// query text, title, query parameters and the last result snapshot. The connection
+/// settings (url/user/password) are global and shared across all tabs.
+/// We keep a SINGLE editor and a SINGLE result element and swap their content when the
+/// active tab changes, rather than maintaining a DOM tree per tab.
+let tabs = [];           /// array of tab objects; display order == array order
+let activeTabId = null;
+let tabSeq = 0;          /// monotonic counter for synthetic, stable tab ids
+let tabTitleSeq = 0;     /// counter for default titles "Query A", "Query B", ...
+let dbReady = null;      /// Promise<IDBDatabase|null>; null result means persistence is unavailable
+
+/// The page is interactive from first paint (the bootstrap tab holds the URL query, if any),
+/// but the saved workspace is only read from IndexedDB asynchronously in `reconcileStartup`.
+/// If the user types/pastes a query, creates a tab, or starts a run during that window, the
+/// live in-memory state is NEWER than the saved one, and the restore must NOT clobber it.
+/// `bootstrap_dirty` records such interaction; `bootstrap_settled` is set once reconciliation
+/// takes over, after which these signals are irrelevant (and reconciliation's own synthetic
+/// edits/runs must not set the flag).
+let bootstrap_dirty = false;
+let bootstrap_settled = false;
+function markBootstrapDirty(e) {
+    /// Only genuine user actions count. The page programmatically dispatches input events and
+    /// calls run helpers during bootstrap/reconciliation; those carry `isTrusted === false`
+    /// (or arrive after `bootstrap_settled`) and must be ignored.
+    if (bootstrap_settled) return;
+    if (e && e.isTrusted === false) return;
+    bootstrap_dirty = true;
+}
 
 /// Start of the last query
 let last_query_start = 0;
@@ -3090,7 +3350,9 @@ const current_url = new URL(window.location);
 const opened_locally = location.protocol == 'file:';
 
 /// Run query instantly after page is loaded if the run parameter is present.
-const run_immediately = current_url.searchParams.has("run");
+/// Mutable: a stale reload (the URL hash is older than a persisted, never-run local edit)
+/// drops this directive so the edit is not auto-run just because the old URL carried `run=1`.
+let run_immediately = current_url.searchParams.has("run");
 
 /// Restore per-column color coding modes from the URL, so a shared/bookmarked link keeps them.
 const color_modes_from_url = current_url.searchParams.get('color_modes');
@@ -3920,7 +4182,9 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
             is_chart = true;
             reply = await response.text();
             if (posted_request_num != request_num) { return { cancelled: true }; }
-            targetResultEl.renderChart(JSON.parse(reply));
+            /// Await the chart render and let it bail inside (after the uPlot load, before
+            /// touching the DOM) if a tab switch superseded this request meanwhile.
+            await targetResultEl.renderChart(JSON.parse(reply), () => posted_request_num === request_num);
         } else {
             is_raw = true;
             const reader = response.body.getReader();
@@ -3938,6 +4202,26 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                 targetResultEl.updateRaw(new_content);
             }
         }
+
+        if (targetResultEl.isExplainGraph) {
+            /// Bail inside renderGraph (after the Viz load, before mutating the DOM) if a tab
+            /// switch superseded this request during the load. Kept inside the `try` so a Viz
+            /// loader failure (like the uPlot one for charts) is reported as a normal error.
+            await targetResultEl.renderGraph(() => posted_request_num === request_num);
+        } else {
+            /// Render totals before coloring, so the totals row (which `_colorTargetRows`
+            /// includes) is colored on the first paint too.
+            if (is_table) targetResultEl.renderTotals();
+            targetResultEl.applyColumnColors();
+            if (is_table) targetResultEl.transposeIfNeeded();
+        }
+
+        /// A tab switch during an awaited renderer (chart/graph loader) makes the render bail
+        /// without painting; report cancellation too, so the caller does not then update the
+        /// now-active tab's shared progress/download/history state for this stale run.
+        if (posted_request_num != request_num) { return { cancelled: true }; }
+
+        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
     } catch (e) {
         if (posted_request_num != request_num) { return { cancelled: true }; }
 
@@ -3952,26 +4236,14 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         targetResultEl.renderError(reply);
         return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
-
-    if (targetResultEl.isExplainGraph) {
-        await targetResultEl.renderGraph();
-    } else {
-        /// Render totals before coloring, so the totals row (which `_colorTargetRows` includes)
-        /// is colored on the first paint, exactly as it would be after a later toggle.
-        if (is_table) targetResultEl.renderTotals();
-        targetResultEl.applyColumnColors();
-        if (is_table) targetResultEl.transposeIfNeeded();
-    }
-
-    return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error };
 }
 
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending)
 {
-    const paramValuesSnapshot = getParamValues();
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -3990,6 +4262,24 @@ async function postSingle(posted_request_num, query, history_query_text)
         progressEl.clear();
         document.getElementById('download-div').style.display = 'none';
         document.getElementById('copy-div').style.display = 'none';
+        /// Persist the error as this tab's result snapshot. The restore path renders an
+        /// `ok: false` snapshot as the exception, so switching away/back or reloading shows
+        /// the failed query's error; without this, the failed run leaves the tab's previous
+        /// successful result in place and that stale result would resurrect under the failed
+        /// query. Guarded on the request number like the success path below (and like
+        /// `postMulti`), so a superseded run (tab switch / newer run) does not overwrite the
+        /// now-active tab's snapshot.
+        if (posted_request_num == request_num) {
+            saveHistory({
+                query: history_query_text || query,
+                resultQuery: query,
+                format: result.format,
+                ok: result.response_ok,
+                data: result.reply.length > 100000 ? null : result.reply,
+                elapsed_ns: 1e6 * (performance.now() - last_query_start),
+                params: paramValuesSnapshot,
+            });
+        }
         return;
     }
 
@@ -4016,56 +4306,20 @@ async function postSingle(posted_request_num, query, history_query_text)
 
     if (posted_request_num != request_num) { return; }
 
-    /// The query is saved in browser history (in a state JSON object)
-    /// as well as in URL fragment identifier.
-    /// When history_query_text is provided (multi-query "Run selected" with a single query),
-    /// use the full textarea content for history/URL to avoid losing the rest of the editor.
-    const saved_query = history_query_text || query;
-    if (saved_query != previous_query) {
-        const state = {
-            query: saved_query,
-            format: result.format,
-            ok: result.response_ok,
-            data: result.reply.length > 100000 ? null : result.reply,
-            elapsed_ns: elapsed_ns,
-            params: paramValuesSnapshot,
-            color_modes: column_color_modes,
-        };
-        const title = "ClickHouse Query: " + saved_query;
-
-        const user = user_elem.value;
-        const server_address = url_elem.value;
-        const history_params = [];
-        if (user) {
-            history_params.push('user=' + encodeURIComponent(user));
-        }
-        if (run_immediately) {
-            history_params.push('run=1');
-        }
-        if (server_address != location.origin) {
-            history_params.push('url=' + encodeURIComponent(server_address));
-        }
-        for (const [name, value] of Object.entries(paramValuesSnapshot))
-        {
-            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
-        }
-        if (Object.keys(column_color_modes).length > 0) {
-            history_params.push('color_modes=' + encodeURIComponent(JSON.stringify(column_color_modes)));
-        }
-        let history_url = window.location.pathname;
-        if (history_params.length > 0) {
-            history_url += '?' + history_params.join('&');
-        }
-        history_url += '#' + toBase64(saved_query);
-
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
-        } else {
-            history.pushState(state, title, history_url);
-        }
-        document.title = title;
-        previous_query = saved_query;
-    }
+    /// Persist the result snapshot on the active tab and record an entry in browser
+    /// history + the URL. In multi-query "Run selected" mode `history_query_text` carries
+    /// the full editor content (the editor text + URL), while `resultQuery` is the single
+    /// statement that actually produced this result (used for rendering and downloads).
+    /// The per-column color coding modes travel with the snapshot (see `saveHistory`).
+    saveHistory({
+        query: history_query_text || query,
+        resultQuery: query,
+        format: result.format,
+        ok: result.response_ok,
+        data: result.reply.length > 100000 ? null : result.reply,
+        elapsed_ns: elapsed_ns,
+        params: paramValuesSnapshot,
+    });
 }
 
 /// Container for dynamically created result elements in multi-query mode.
@@ -4075,9 +4329,9 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed)
+async function postMulti(posted_request_num, parsed, params_restore_pending)
 {
-    const paramValuesSnapshot = getParamValues();
+    const paramValuesSnapshot = resolveRunParams(params_restore_pending);
     last_query_start = performance.now();
 
     document.getElementById('download-div').style.display = 'none';
@@ -4157,7 +4411,9 @@ async function postMulti(posted_request_num, parsed)
     }
 
     /// Execute groups sequentially; within a parallelizable group, execute all queries concurrently.
+    /// Keep each statement's result so a small run can be snapshotted for restore (see below).
     let had_error = false;
+    const collected = new Array(parsed.length).fill(null);
     for (const group of groups) {
         if (posted_request_num != request_num) return;
         if (had_error) break;
@@ -4173,6 +4429,7 @@ async function postMulti(posted_request_num, parsed)
 
         for (const { index, result } of results) {
             if (result.cancelled) return;
+            collected[index] = result;
             if (result.is_error || !result.response_ok) {
                 had_error = true;
             }
@@ -4203,101 +4460,271 @@ async function postMulti(posted_request_num, parsed)
 
     if (posted_request_num != request_num) return;
 
+    /// Snapshot the per-statement results so switching tabs / reloading restores the whole
+    /// "Run all" output (not just the queries), the same way a single query's result is kept.
+    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above
+    /// it we store no data (`multi: null`) and the run is query-only (re-running reproduces it).
+    /// Images stream as a blob (their `reply` stays empty) and cannot be re-rendered from text,
+    /// so they are stored with `data: null` and restore as empty, exactly like a single image.
+    let multi = collected.map((r, i) => ({
+        query: parsed[i].query,
+        format: r ? r.format : null,
+        ok: r ? !!r.response_ok : false,
+        data: (r && !r.is_image) ? r.reply : null,
+    }));
+    let multi_size = 0;
+    for (const s of multi) multi_size += s.data ? s.data.length : 0;
+    if (multi_size > 100000) multi = null;
+
     /// Save all queries to browser history, using the full textarea content.
-    const all_queries_text = query_area.value;
-    if (all_queries_text != previous_query) {
-        const state = {
-            query: all_queries_text,
-            format: null,
-            ok: !had_error,
-            data: null,
-            elapsed_ns: elapsed_ns,
-            params: paramValuesSnapshot,
-            color_modes: column_color_modes,
-        };
-        const title = "ClickHouse Query: " + parsed[0].query;
+    saveHistory({
+        query: query_area.value,
+        format: null,
+        ok: !had_error,
+        data: null,
+        multi: multi,
+        elapsed_ns: elapsed_ns,
+        params: paramValuesSnapshot,
+    }, parsed[0].query);
+}
 
-        const user = user_elem.value;
-        const server_address = url_elem.value;
-        const history_params = [];
-        if (user) {
-            history_params.push('user=' + encodeURIComponent(user));
-        }
-        if (run_immediately) {
-            history_params.push('run=1');
-        }
-        if (server_address != location.origin) {
-            history_params.push('url=' + encodeURIComponent(server_address));
-        }
-        for (const [name, value] of Object.entries(paramValuesSnapshot))
-        {
-            history_params.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
-        }
-        if (Object.keys(column_color_modes).length > 0) {
-            history_params.push('color_modes=' + encodeURIComponent(JSON.stringify(column_color_modes)));
-        }
-        let history_url = window.location.pathname;
-        if (history_params.length > 0) {
-            history_url += '?' + history_params.join('&');
-        }
-        history_url += '#' + toBase64(all_queries_text);
+/// Render one saved multi-query statement snapshot into `el`, mirroring the live per-statement
+/// rendering in `postImpl` (table / chart / EXPLAIN graph / raw / error), minus the streaming.
+/// `token` guards the awaited chart/graph loaders: a superseding activation bails before touching
+/// the DOM, and a loader failure (e.g. a blocked CDN) is shown as an error for that statement
+/// rather than throwing out of the whole restore.
+async function renderSnapshotIntoElement(el, snap, token) {
+    el.queryText = snap.query;
+    if (!snap.data) return;
+    const format = snap.format;
 
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
-        } else {
-            history.pushState(state, title, history_url);
+    if (!snap.ok) {
+        let has_exception = false;
+        for (const line of snap.data.split('\n')) {
+            if (line.startsWith(`{"exception":`)) {
+                el.update(JSON.parse(line));
+                has_exception = true;
+                break;
+            }
         }
-        document.title = title;
-        previous_query = all_queries_text;
+        if (!has_exception) el.renderError(snap.data);
+        return;
+    }
+
+    let is_table = false;
+    if (format == default_format) {
+        is_table = true;
+        let fragment = document.createDocumentFragment();
+        for (const line of snap.data.split('\n')) {
+            if (line.length == 0) continue;
+            if (!el.update(JSON.parse(line), fragment)) { break; }
+        }
+        el.flushFragment(fragment);
+    } else if (format == 'JSONCompactColumns') {
+        if (token !== request_num) return;
+        try {
+            await el.renderChart(JSON.parse(snap.data), () => token === request_num);
+        } catch (e) {
+            if (token !== request_num) return;
+            console.log(e);
+            el.renderError(e.toString());
+            return;
+        }
+        if (token !== request_num) return;
+    } else {
+        el.updateRaw(snap.data);
+    }
+
+    if (el.isExplainGraph) {
+        try {
+            await el.renderGraph(() => token === request_num);
+        } catch (e) {
+            if (token !== request_num) return;
+            console.log(e);
+            el.renderError(e.toString());
+            return;
+        }
+        if (token !== request_num) return;
+    } else {
+        /// Render totals before coloring, so the totals row (which `_colorTargetRows`
+        /// includes) is colored on the first paint too.
+        if (is_table) el.renderTotals();
+        el.applyColumnColors();
+        if (is_table) el.transposeIfNeeded();
     }
 }
 
-/// Persist the per-column color coding modes into the current history entry and the URL,
-/// without creating a new history record, so reloads, shares, and back/forward keep them.
+/// Persist the per-column color coding modes so reloads, shares, and Back/Forward keep them.
+/// The modes belong to the active tab's displayed result, so record them on the tab's result
+/// snapshot (persisted to IndexedDB and re-applied when the tab is re-activated) and re-stamp the
+/// current history entry + URL in place, without creating a new record.
 function persistColorModes() {
+    const tab = getActiveTab();
+    if (tab && tab.result) tab.result.color_modes = column_color_modes;
     const url = new URL(window.location);
     if (Object.keys(column_color_modes).length > 0) {
         url.searchParams.set('color_modes', JSON.stringify(column_color_modes));
     } else {
         url.searchParams.delete('color_modes');
     }
-    const state = Object.assign({}, history.state || {}, { color_modes: column_color_modes });
-    try {
-        history.replaceState(state, document.title, url.toString());
-    } catch (e) {
-        /// History manipulation is not allowed for the 'file:' protocol.
+    /// Keep the tabs state shape: fold the modes into the entry's nested `result` when it has one
+    /// (matching how `restoreFromHistory` reads them back via `state.result || state`), else at
+    /// the top level for a legacy flat entry.
+    const cur = history.state;
+    if (cur) {
+        const next = cur.result
+            ? { ...cur, result: { ...cur.result, color_modes: column_color_modes } }
+            : { ...cur, color_modes: column_color_modes };
+        try {
+            history.replaceState(next, document.title, url.toString());
+        } catch (e) {
+            /// History manipulation is not allowed for the 'file:' protocol.
+        }
     }
+    scheduleSave();
 }
 
-async function restoreFromHistory(state) {
-    clear();
-    /// Restore the color coding modes saved alongside this history entry before re-rendering.
-    column_color_modes = state.color_modes || {};
-    query_area.value = state.query;
-    query_area.dispatchEvent(new Event('input'));
-    resultEl.queryText = state.query;
+/// Re-render a saved multi-query ("Run all") result snapshot, rebuilding the multi-query
+/// container the same way `postMulti` lays it out: one result element per statement, the single
+/// result element and logo hidden, and aggregated progress text. Called from `restoreFromHistory`
+/// for a tab whose result carries a `multi` array (small runs; large ones are query-only).
+async function restoreMultiQuery(snapshot, token) {
+    resultEl.style.display = 'none';
+    logoEl.style.display = 'none';
 
-    /// Restore query parameter inputs and their values.
-    await updateQueryParams();
-    if (state.params)
-    {
-        setParamValues(state.params);
+    if (!multiQueryContainer) {
+        multiQueryContainer = document.createElement('div');
+        multiQueryContainer.id = 'multi-query-results';
+        resultEl.parentElement.insertBefore(multiQueryContainer, resultEl);
+    }
+    multiQueryContainer.innerHTML = '';
+    multiQueryContainer.style.display = 'block';
+
+    const elements = [];
+    for (let i = 0; i < snapshot.multi.length; ++i) {
+        const el = document.createElement('query-result');
+        multiQueryContainer.appendChild(el);
+        elements.push(el);
     }
 
-    if (!state.data) return;
+    for (let i = 0; i < snapshot.multi.length; ++i) {
+        await renderSnapshotIntoElement(elements[i], snapshot.multi[i], token);
+        if (token !== request_num) return;
+    }
+
+    /// The logo returns only for a fully successful run, matching the live `postMulti` path.
+    if (!snapshot.multi.some(s => !s.ok)) logoEl.style.display = 'block';
+
+    let total_rows = 0;
+    let max_elapsed_ns = 0;
+    let any_incomplete = false;
+    for (const el of elements) {
+        total_rows += el.rowCount;
+        max_elapsed_ns = Math.max(max_elapsed_ns, el.elapsedNs);
+        if (el.incompleteResult) any_incomplete = true;
+    }
+
+    progressEl.finish();
+    elapsed_ns = snapshot.elapsed_ns || max_elapsed_ns;
+    progressEl.updateText(total_rows, elapsed_ns, any_incomplete);
+    progressEl.style.setProperty('--progress', '0');
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(snapshot.multi[0].query));
+}
+
+/// `token` ties this render to one activation/history navigation (the value of
+/// `request_num` at the time). After each await we bail if it changed, so a slow
+/// activation cannot apply its state on top of a newer one.
+async function restoreFromHistory(state, token) {
+    if (token === undefined) token = request_num;
+    /// The editor (textarea + param inputs) is restored from the top-level query/params.
+    /// The result is rendered from `state.result`, which carries the query/params that
+    /// produced it; for flat history entries (editor == result) it defaults to `state`.
+    const result = state.result || state;
+    /// Restore the per-column color coding modes saved with this result before rendering, so the
+    /// table is colored on the first paint. Reads `result.color_modes`, which covers both nested
+    /// per-tab snapshots and legacy flat entries (where `result === state`, carrying a top-level
+    /// `color_modes`). A result-less entry leaves the modes empty.
+    column_color_modes = result.color_modes || {};
+    clear();
+    /// Reset the result-action targets, so an empty/other tab can't download or copy the
+    /// previously active tab's query/result. Shown again below if a result renders. They
+    /// follow the PRODUCING query/params, not the (possibly edited) editor.
+    document.getElementById('download-div').style.display = 'none';
+    document.getElementById('copy-div').style.display = 'none';
+    last_query_for_download = result.query || '';
+    last_params_for_download = result.params || {};
+    query_area.value = state.query;
+    query_area.dispatchEvent(new Event('input'));
+    /// Graph detection keys off the producing query, so a snapshot still renders as a graph
+    /// even if the editor query was changed without rerunning.
+    resultEl.queryText = result.query ?? state.query;
+
+    /// Restore query parameter inputs and their values. Replace the FULL snapshot rather than
+    /// overlaying `state.params`: when the previous and restored tabs share a placeholder name,
+    /// `updateQueryParams` keeps the existing input (the detected param list is unchanged), so a
+    /// value from the previous tab would leak into a param the restored tab leaves unset. Reset
+    /// every detected param explicitly (absent -> ''), then capture the snapshot into the active
+    /// tab so its stored params match what is shown and will run.
+    /// `updateQueryParams` awaits tokenization, and `activateTab` has already made this tab active,
+    /// but the `param_*` inputs still hold the previous tab's values until `setParamValues` below.
+    /// Mark the restore as in flight so a `captureActiveTab` running during the await (the debounced
+    /// `persist`, or a quick second navigation) does not snapshot those stale inputs into this tab.
+    params_restore_pending_token = token;
+    const params_ok = await updateQueryParams();
+    if (token !== request_num) return;
+    const restored_params = {};
+    if (params_ok)
+    {
+        for (const param of currentQueryParams)
+        {
+            restored_params[param.name] = state.params?.[param.name] ?? '';
+        }
+        setParamValues(restored_params);
+    }
+    else
+    {
+        /// Tokenization did not rebuild the parameter list (e.g. a query too large for the WASM
+        /// lexer, or no lexer at all), so `currentQueryParams` may still describe the PREVIOUS
+        /// tab. Deriving params from it would inject that tab's placeholder names into this one
+        /// and persist them into history / `IndexedDB`. Fall back to this tab's own saved
+        /// snapshot, and clear the stale param inputs (and the stale list) so the previous tab's
+        /// names/values cannot linger in the UI or leak through `getParamValues`.
+        queryParamsContainer.innerHTML = '';
+        currentQueryParams = [];
+        Object.assign(restored_params, state.params || {});
+    }
+    const active_tab_for_params = getActiveTab();
+    if (active_tab_for_params) active_tab_for_params.params = restored_params;
+    /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
+    params_restore_pending_token = null;
+
+    /// A snapshotted multi-query ("Run all") result is restored into the multi-query
+    /// container, rebuilding one result element per statement, rather than into `resultEl`.
+    if (result.multi && result.multi.length) {
+        await restoreMultiQuery(result, token);
+        return;
+    }
+
+    if (!result.data) return;
 
     let is_table = false;
     let is_raw = false;
     let is_chart = false;
     let is_error = false;
 
-    let format = state.format;
+    let format = result.format;
 
-    if (!state.ok) {
+    if (!result.ok) {
         is_error = true;
+        /// Hide the idle logo for the whole error branch, matching the live single-query error
+        /// path (`postSingle` hides it once at the top of its `!result.response_ok` block, for
+        /// both JSON exceptions and plain-text errors). Restoring a JSON exception previously
+        /// left the logo showing, so a reloaded/switched-back error tab looked different from the
+        /// original run.
+        logoEl.style.display = 'none';
 
         let has_exception = false;
-        for (const line of state.data.split('\n')) {
+        for (const line of result.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
                 resultEl.update(JSON.parse(line));
                 has_exception = true;
@@ -4305,15 +4732,14 @@ async function restoreFromHistory(state) {
             }
         }
         if (!has_exception) {
-            resultEl.renderError(state.data);
-            logoEl.style.display = 'none';
+            resultEl.renderError(result.data);
         }
 
         progressEl.clear();
         return;
     } else if (format == default_format) {
         is_table = true;
-        let lines = state.data.split('\n');
+        let lines = result.data.split('\n');
         let fragment = document.createDocumentFragment();
 
         for (const line of lines) {
@@ -4324,15 +4750,41 @@ async function restoreFromHistory(state) {
         resultEl.flushFragment(fragment);
     } else if (format == 'JSONCompactColumns') {
         is_chart = true;
-        if (posted_request_num != request_num) { return; }
-        resultEl.renderChart(JSON.parse(state.data));
+        if (token !== request_num) { return; }
+        /// renderChart awaits the uPlot loader on first use; the predicate makes it bail
+        /// inside (right after the load, before mutating the DOM) if a tab switch superseded
+        /// this activation, and we re-check here too.
+        try {
+            await resultEl.renderChart(JSON.parse(result.data), () => token === request_num);
+        } catch (e) {
+            /// The external chart library failed to load (e.g. CDN blocked). Show the error
+            /// for this saved snapshot instead of throwing out of the activation half-rendered.
+            if (token !== request_num) return;
+            console.log(e);
+            resultEl.renderError(e.toString());
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
+        if (token !== request_num) { return; }
     } else {
         is_raw = true;
-        resultEl.updateRaw(state.data);
+        resultEl.updateRaw(result.data);
     }
 
     if (resultEl.isExplainGraph) {
-        await resultEl.renderGraph();
+        try {
+            await resultEl.renderGraph(() => token === request_num);
+        } catch (e) {
+            /// The Viz loader failed; show the error instead of throwing out of the activation.
+            if (token !== request_num) return;
+            console.log(e);
+            resultEl.renderError(e.toString());
+            logoEl.style.display = 'none';
+            progressEl.clear();
+            return;
+        }
+        if (token !== request_num) return;
     } else {
         /// Render totals before coloring, so the totals row is colored on first paint too.
         if (is_table) resultEl.renderTotals();
@@ -4342,25 +4794,608 @@ async function restoreFromHistory(state) {
     }
 
     progressEl.finish();
+    /// A result is shown for this tab, so its download/copy actions apply to this query.
+    document.getElementById('download-div').style.display = 'block';
     document.getElementById('copy-div').style.display = is_raw ? 'block' : 'none';
 
     if (is_raw) {
-        resultEl.elapsedNs = state.elapsed_ns;
+        resultEl.elapsedNs = result.elapsed_ns;
     }
     elapsed_ns = resultEl.elapsedNs;
 
     progressEl.updateText(resultEl.rowCount, resultEl.elapsedNs, resultEl.incompleteResult);
     progressEl.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(state.query));
 }
 
 let query_area = document.getElementById('query');
 
 appendTextareaResizer();
 
+/// ===== Tabs =====================================================================
+/// A tab bundles a query, its title, query parameters and a result snapshot.
+/// We keep one editor + one result element and swap content on activation.
+
+const tab_bar_elem = document.getElementById('tab-bar');
+const tabs_elem = document.getElementById('tabs');
+
+/// Generate the next default title: "Query A" .. "Query Z", "Query AA", ...
+/// Skips titles already in use so closing/reopening doesn't produce duplicates.
+function nextDefaultTitle() {
+    const used = new Set(tabs.map(t => t.title));
+    for (;;) {
+        let n = tabTitleSeq++;
+        let letters = '';
+        do { letters = String.fromCharCode(65 + (n % 26)) + letters; n = Math.floor(n / 26) - 1; } while (n >= 0);
+        const title = 'Query ' + letters;
+        if (!used.has(title)) return title;
+    }
+}
+
+/// Tab titles double as the URL `tab=` key and the startup-reconciliation lookup key, so
+/// they must stay unique: two tabs sharing a title would let a shared/reloaded URL match —
+/// and overwrite — the wrong tab. If `desired` collides with another tab (ignoring the tab
+/// `excludeId`, i.e. the one being renamed), disambiguate by appending " (2)", " (3)", …
+function uniqueTitle(desired, excludeId) {
+    const taken = new Set(tabs.filter(t => t.id !== excludeId).map(t => t.title));
+    if (!taken.has(desired)) return desired;
+    for (let i = 2; ; ++i) {
+        const candidate = desired + ' (' + i + ')';
+        if (!taken.has(candidate)) return candidate;
+    }
+}
+
+function makeTab(title, query) {
+    return {
+        id: 't' + (++tabSeq),
+        title: title || nextDefaultTitle(),
+        query: query || '',
+        params: {},
+        result: null,          /// last result snapshot (history-state shape) or null
+        lastSavedQuery: undefined,
+    };
+}
+
+function getActiveTab() {
+    return tabs.find(t => t.id === activeTabId) || null;
+}
+
+/// Serialize the live editor (query text + parameter values) into the active tab.
+/// The result snapshot is written separately by `saveHistory` after a run.
+function captureActiveTab() {
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.query = query_area.value;
+    /// While an activation is restoring this tab's parameter inputs (after the `updateQueryParams`
+    /// await in `restoreFromHistory`, before `setParamValues`), the `param_*` DOM inputs still hold
+    /// the previously active tab's values. Snapshotting them now would overwrite this tab's own
+    /// parameters with the previous tab's and later reload/run with the wrong values. Skip the
+    /// parameter capture until the restore commits. `tab.query` is safe: `restoreFromHistory` sets
+    /// the editor to this tab's query before the await. The guard lifts automatically once a run or
+    /// a newer activation advances `request_num`, so it can never suppress capture indefinitely.
+    if (params_restore_pending_token !== request_num) tab.params = getParamValues();
+}
+
+/// Invalidate any in-flight query and abort its HTTP requests, so a late response cannot
+/// render or be saved into the now-active tab. Bumping `request_num` also supersedes any
+/// run still suspended on an await (it captured the old value) and any in-progress tab
+/// activation (`restoreFromHistory` bails when the token no longer matches `request_num`).
+function invalidateInFlight() {
+    ++request_num;
+    if (controller) controller.abort();
+    for (const ac of multiQueryControllers) ac.abort();
+    multiQueryControllers = [];
+    if (typeof in_flight !== 'undefined' && in_flight) endFlight();
+}
+
+/// Load a tab's content into the editor and re-render its stored result.
+/// Routed through `restoreFromHistory` so the syntax backdrop, params and run
+/// buttons resync (it dispatches an 'input' event), exactly like history navigation.
+async function activateTab(id) {
+    const tab = tabs.find(t => t.id === id);
+    if (!tab) return;
+    activeTabId = id;
+    invalidateInFlight();
+    const token = request_num;
+
+    /// Restore the editor from the live tab.query/tab.params (latest edits), while rendering
+    /// the stored result from tab.result, which keeps its own producing query/params.
+    await restoreFromHistory({ query: tab.query, params: tab.params, result: tab.result }, token);
+    if (token !== request_num) return; /// a newer activation/run superseded this one
+    /// Always recolor the page (and thus the active tab slab) to this tab's query,
+    /// even when there is no result to render (restoreFromHistory skips this otherwise).
+    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
+    renderTabBar();
+    query_area.focus();
+}
+
+/// Switch tabs in response to a user click: capture the current tab, activate the
+/// target, and push a browser-history entry so Back/Forward moves between tabs.
+async function switchToTab(id) {
+    if (id === activeTabId) return;
+    captureActiveTab();
+    /// Fold the captured editor state of the tab we are leaving back into its own history
+    /// entry, so a later Back/Forward to it restores the latest edit rather than the stale
+    /// last-run/URL snapshot.
+    refreshCurrentHistoryEntry(getActiveTab());
+    await activateTab(id);
+    syncHistory();
+}
+
+function addTab() {
+    markBootstrapDirty();   /// user created a tab; reconciliation must preserve it
+    captureActiveTab();
+    refreshCurrentHistoryEntry(getActiveTab());
+    const tab = makeTab();
+    tabs.push(tab);
+    activeTabId = tab.id;
+    /// A brand new tab has no result; clear the editor and result area.
+    activateTab(tab.id).then(syncHistory);
+    scheduleSave();
+}
+
+function closeTab(id) {
+    const idx = tabs.findIndex(t => t.id === id);
+    if (idx === -1) return;
+    const wasActive = id === activeTabId;
+    tabs.splice(idx, 1);
+    if (tabs.length === 0) {
+        /// Never leave zero tabs: start a fresh default one.
+        const tab = makeTab();
+        tabs.push(tab);
+        activeTabId = tab.id;
+        activateTab(tab.id).then(syncHistory);
+    } else if (wasActive) {
+        /// Prefer the right neighbour, otherwise the left.
+        const next = tabs[Math.min(idx, tabs.length - 1)];
+        activeTabId = next.id;
+        activateTab(next.id).then(syncHistory);
+    } else {
+        renderTabBar();
+    }
+    scheduleSave();
+}
+
+/// Begin inline editing of the active tab's title. The title `span` itself becomes
+/// editable (rather than swapping in an `input`), so it grows with its content and the
+/// tab width does not jump when editing starts.
+function startTitleEdit(tab, titleEl) {
+    titleEl.contentEditable = 'true';
+    titleEl.spellcheck = false;
+    titleEl.classList.add('editing');
+    /// Mark the tab so it drops its max-width and flexes to fit the title being typed.
+    titleEl.closest('.tab').classList.add('editing');
+
+    /// Select the whole title for easy replacement.
+    const range = document.createRange();
+    range.selectNodeContents(titleEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    titleEl.focus();
+
+    let done = false;
+    const commit = (save) => {
+        if (done) return;
+        done = true;
+        if (save) {
+            /// Collapse any pasted newlines/runs of whitespace into single spaces.
+            const v = titleEl.textContent.replace(/\s+/g, ' ').trim();
+            /// Keep titles unique (they key the URL `tab=` reconciliation), disambiguating
+            /// a collision rather than letting two tabs share a name.
+            if (v) tab.title = uniqueTitle(v, tab.id);
+        }
+        renderTabBar();   /// rebuilds the bar, replacing this editable span with a static one
+        syncHistory();
+        scheduleSave();
+    };
+    titleEl.addEventListener('keydown', (e) => {
+        /// Keep keys (Space/Enter) from reaching the tab-level switch handler.
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+    });
+    titleEl.addEventListener('blur', () => commit(true));
+}
+
+/// Rebuild the whole tab bar. Cheap (few nodes) so we never diff.
+function renderTabBar() {
+    const active = getActiveTab();
+    /// Hidden when there is a single tab that has never produced a result from a genuine
+    /// run, so the page looks exactly as before tabs existed. Keying off `result.ran`
+    /// (rather than merely `result != null`) also ignores any stale/fabricated result
+    /// snapshot that an older build may have persisted to IndexedDB.
+    tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran));
+
+    tabs_elem.textContent = '';
+    for (const tab of tabs) {
+        const el = document.createElement('div');
+        el.className = 'tab' + (tab.id === activeTabId ? ' active' : '');
+        el.dataset.id = tab.id;
+        el.tabIndex = 0;
+        /// Inactive tabs are tinted by the hash of their own query text.
+        el.style.setProperty('--tab-hue', queryToColor(tab.query));
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'tab-title';
+        titleEl.textContent = tab.title;
+        el.appendChild(titleEl);
+
+        const closeEl = document.createElement('span');
+        closeEl.className = 'tab-close';
+        closeEl.title = 'Close';
+        closeEl.textContent = '×';
+        el.appendChild(closeEl);
+
+        el.addEventListener('click', (e) => {
+            if (e.target === closeEl) { e.stopPropagation(); closeTab(tab.id); return; }
+            if (tab.id === activeTabId) {
+                if (e.target === titleEl) startTitleEdit(tab, titleEl);
+            } else {
+                switchToTab(tab.id);
+            }
+        });
+        el.addEventListener('keydown', (e) => {
+            /// Ignore keys coming from the inline title editor (so Space/Enter type normally).
+            if (e.target !== el) return;
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchToTab(tab.id); }
+        });
+        tabs_elem.appendChild(el);
+    }
+}
+
+document.getElementById('tab-add').addEventListener('click', addTab);
+
+/// Mouse wheel over the tab panel switches tabs: scrolling up or left -> previous (left)
+/// tab, down or right -> next (right) tab. The dominant axis is used, so both vertical and
+/// horizontal wheels/trackpad gestures work. Deltas are accumulated (and normalized for
+/// line-mode) so one mouse notch switches one tab and a trackpad swipe switches once per
+/// threshold; switching stops at the ends.
+let wheel_accum = 0;
+tab_bar_elem.addEventListener('wheel', (e) => {
+    if (tabs.length < 2) return; /// nothing to switch; let the page scroll
+    e.preventDefault();
+    const scale = e.deltaMode === 1 ? 16 : 1;
+    const dx = e.deltaX * scale, dy = e.deltaY * scale;
+    wheel_accum += Math.abs(dx) > Math.abs(dy) ? dx : dy;
+    if (Math.abs(wheel_accum) < 40) return;
+    const dir = wheel_accum > 0 ? 1 : -1; /// down/right (+) -> right, up/left (-) -> left
+    wheel_accum = 0;
+    const idx = tabs.findIndex(t => t.id === activeTabId);
+    const next = idx + dir;
+    if (next >= 0 && next < tabs.length) switchToTab(tabs[next].id);
+}, { passive: false });
+
+/// ----- IndexedDB persistence ----------------------------------------------------
+/// Stores the workspace (tabs, titles, active tab, order and small result snapshots)
+/// so it survives reloads. Best-effort: any failure degrades to in-memory-only tabs.
+
+const DB_NAME = 'clickhouse-play';
+const TAB_STORE = 'tabs';
+const META_STORE = 'meta';
+
+function openDb() {
+    return new Promise((resolve) => {
+        let req;
+        try {
+            req = indexedDB.open(DB_NAME, 1);
+        } catch (e) {
+            resolve(null);
+            return;
+        }
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(TAB_STORE)) db.createObjectStore(TAB_STORE, { keyPath: 'id' });
+            if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'key' });
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+    });
+}
+
+async function loadFromDb() {
+    const db = await dbReady;
+    if (!db) return null;
+    return new Promise((resolve) => {
+        try {
+            const tx = db.transaction([TAB_STORE, META_STORE], 'readonly');
+            const tabsReq = tx.objectStore(TAB_STORE).getAll();
+            const metaReq = tx.objectStore(META_STORE).get('state');
+            tx.oncomplete = () => resolve({ records: tabsReq.result || [], meta: metaReq.result || null });
+            tx.onerror = () => resolve(null);
+        } catch (e) {
+            resolve(null);
+        }
+    });
+}
+
+let save_timer = null;
+function scheduleSave() {
+    if (save_timer) return;
+    save_timer = setTimeout(() => { save_timer = null; persist(); }, 400);
+}
+
+async function persist() {
+    const db = await dbReady;
+    if (!db) return;
+    captureActiveTab();
+    try {
+        const tx = db.transaction([TAB_STORE, META_STORE], 'readwrite');
+        const tabStore = tx.objectStore(TAB_STORE);
+        tabStore.clear();
+        for (const tab of tabs) {
+            tabStore.put({
+                id: tab.id,
+                title: tab.title,
+                query: tab.query,
+                params: tab.params,
+                result: tab.result,
+                /// The query as of the last URL/history sync. Persisting it lets startup
+                /// reconciliation tell a stale reload (the URL hash is this tab's own last
+                /// synced query, but the tab was edited afterwards) from a fresh external URL.
+                lastSavedQuery: tab.lastSavedQuery,
+            });
+        }
+        tx.objectStore(META_STORE).put({
+            key: 'state',
+            activeTabId: activeTabId,
+            tabOrder: tabs.map(t => t.id),
+            tabSeq: tabSeq,
+            tabTitleSeq: tabTitleSeq,
+        });
+    } catch (e) {
+        /// Ignore persistence failures (private mode, quota, etc.).
+    }
+}
+
+/// ----- Browser history + URL ----------------------------------------------------
+
+/// Build the query-string parameters (user/run/url/param_*/tab) shared by history
+/// entries. Connection settings are global; the active tab name is appended so a
+/// shared URL can be reconciled against saved tabs on load.
+/// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
+function buildHistoryParams(params, tabName, fromRun, colorModes) {
+    const out = [];
+    const user = user_elem.value;
+    const server_address = url_elem.value;
+    if (user) out.push('user=' + encodeURIComponent(user));
+    /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
+    /// still match it (`fromRun`). `saveHistory` sets it on the run itself; the editor-only
+    /// writers (`syncHistory`/`refreshCurrentHistoryEntry`, driven by tab switch/rename,
+    /// parameter edits and startup sync) recompute it from `tabReflectsRun`, preserving the
+    /// marker while the editor is unchanged (so a shared `run=1` link whose result is not
+    /// snapshotted — an image or oversized result — stays reproducible across a tab switch or
+    /// rename), but dropping it the moment the editor diverges from the produced result. An
+    /// unrun edit must never keep `run=1`: reloading would auto-execute it (e.g. a
+    /// `DROP`/`INSERT`), because startup treats a `run=1` URL as authoritative.
+    if (run_immediately && fromRun) out.push('run=1');
+    if (server_address != location.origin) out.push('url=' + encodeURIComponent(server_address));
+    for (const [name, value] of Object.entries(params || {})) {
+        /// Serialize every parameter, including empty strings: an empty value is valid for a
+        /// String parameter and must be distinguishable from "absent" on load (read back with
+        /// URLSearchParams.get, which returns '' for present-empty and null for absent).
+        if (value === undefined || value === null) continue;
+        out.push('param_' + encodeURIComponent(name) + '=' + encodeURIComponent(value));
+    }
+    /// Carry the result's per-column color coding modes so a shared/reloaded URL restores them.
+    if (colorModes && Object.keys(colorModes).length > 0) {
+        out.push('color_modes=' + encodeURIComponent(JSON.stringify(colorModes)));
+    }
+    if (tabName) out.push('tab=' + encodeURIComponent(tabName));
+    return out;
+}
+
+/// Write a browser-history entry + URL derived from the tab. The top-level query/params
+/// are the EDITOR state (also the URL hash and the de-dup key); `result` is the snapshot
+/// that produced the rendered result, carrying its OWN query/params so rendering/download
+/// stay tied to the producing query even if the editor was edited without rerunning.
+/// `titleForDoc` overrides the document title text. When `forceReplace` is set, the current
+/// entry is replaced in place even if the query changed (used to refresh the entry of a tab
+/// being left so it carries the latest editor edit rather than the last run/URL snapshot).
+/// `fromRun` is set only by `saveHistory` (an actual run) so the URL carries `run=1`; every
+/// editor-only caller leaves it unset so an unrun edit is never re-stamped as auto-runnable.
+function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
+    /// Skip a fresh entry if neither the active tab nor its query changed.
+    const cur = history.state;
+    const sameTab = cur && cur.tabId === tab.id;
+    const unchanged = sameTab && cur.query === tab.query;
+
+    const state = {
+        query: tab.query,
+        params: tab.params,
+        result: tab.result || null,
+        tabId: tab.id,
+        tabName: tab.title,
+    };
+    const title = "ClickHouse Query: " + (titleForDoc || tab.query);
+    const history_params = buildHistoryParams(tab.params, tab.title, fromRun, tab.result && tab.result.color_modes);
+    let history_url = window.location.pathname;
+    if (history_params.length > 0) history_url += '?' + history_params.join('&');
+    history_url += '#' + toBase64(tab.query);
+
+    if (!cur || unchanged || (forceReplace && sameTab)) {
+        history.replaceState(state, title, history_url);
+    } else {
+        history.pushState(state, title, history_url);
+    }
+    document.title = title;
+    tab.lastSavedQuery = tab.query;
+    renderTabBar();
+    scheduleSave();
+}
+
+/// True when the tab's editor (query + params) still exactly matches the query/params that
+/// produced its current result, i.e. re-running the editor would reproduce what is shown. The
+/// editor-only history writers use it to decide whether to keep `run=1` on the entry: a shared
+/// `run=1` link whose result is not snapshotted (an image or an oversized result) must stay
+/// re-runnable across a tab switch or rename, but the marker must be dropped the moment the
+/// editor diverges from the produced result so an unrun edit is never auto-executed on reload.
+/// `result.query` is the FULL editor text for a single "Run" and for a multi-query "Run all"
+/// (both store the editor into `tab.query` and into the snapshot), so the two are equal while
+/// the tab is clean; a "Run selected" result stores only the selected statement, so it compares
+/// unequal to the full editor and conservatively drops the marker (its URL hash is the whole
+/// editor and could not reproduce that single-statement result anyway).
+function tabReflectsRun(tab) {
+    return !!(tab && tab.result && tab.result.ran
+        && tab.query === tab.result.query
+        && JSON.stringify(tab.params || {}) === JSON.stringify(tab.result.params || {}));
+}
+
+/// Refresh the current browser-history entry in place from the given tab's captured editor
+/// state. Called when leaving a tab, and on every trusted editor edit, so a later Back/Forward
+/// to its entry (or a reload) restores the latest edit instead of the last run/URL snapshot.
+/// Without this, an edit made after the last run lives only in memory, and the next `popstate`
+/// would restore the stale entry (still holding the old query) and overwrite it. The `run=1`
+/// marker is preserved while the editor still reflects the produced run (`tabReflectsRun`) and
+/// dropped once it diverges, so an unrun edit never becomes auto-runnable while a clean tab
+/// stays reproducible from a shared `run=1` link.
+///
+/// When an entry already exists it must belong to this tab — refreshing another tab's entry
+/// would clobber it, so bail in that case. When there is NO state yet we still seed one: a
+/// fresh load leaves `history.state` null until the first `syncHistory`/`postAll`, and the very
+/// first trusted edit can land before `reconcileStartup` runs any of those (the no-saved-tabs
+/// bare-URL path and the dirty-startup merge never call them). That initial entry is the page's
+/// own and conceptually belongs to the active tab, so replace it in place (`writeHistoryEntry`
+/// uses `replaceState` when there is no state, never pushing a spurious entry). Seeding records
+/// the edit in `history.state`, the URL hash and `lastSavedQuery`; otherwise the stale URL hash
+/// stays authoritative and the next reload either reopens a stale tab (bare URL) or overwrites
+/// the persisted live tab (dirty-startup merge) with the pre-edit query.
+function refreshCurrentHistoryEntry(tab) {
+    if (!tab) return;
+    const cur = history.state;
+    if (cur && cur.tabId !== tab.id) return;
+    writeHistoryEntry(tab, undefined, /*forceReplace=*/ true, /*fromRun=*/ tabReflectsRun(tab));
+}
+
+/// Called after an actual run: stash the result snapshot on the active tab (this is
+/// what makes the tab "have a result", hence visible in the bar) and record history.
+/// The snapshot records the query/params that produced it.
+function saveHistory(stateData, titleForDoc) {
+    const tab = getActiveTab();
+    if (!tab) return;
+    tab.query = stateData.query;
+    tab.result = {
+        ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
+        /// The single statement that produced this result (in multi-query mode it differs
+        /// from the editor text in tab.query); used for rendering/graph-detection/downloads.
+        query: stateData.resultQuery ?? stateData.query,
+        params: stateData.params,    /// the params that produced this result
+        format: stateData.format,
+        ok: stateData.ok,
+        data: stateData.data,
+        /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
+        /// runs and for multi-query runs too large to snapshot (see `postMulti`).
+        multi: stateData.multi ?? null,
+        /// Per-column color coding modes in effect when this result was produced. Travels with the
+        /// snapshot so re-activating the tab (or navigating to its entry / reloading) restores and
+        /// re-applies the same coloring; a later toggle updates it via `persistColorModes`.
+        color_modes: column_color_modes,
+        elapsed_ns: stateData.elapsed_ns,
+    };
+    /// This entry was produced by an actual run, so it may carry `run=1` (a reload/shared link
+    /// re-runs it). Editor-only writers (`syncHistory`/`refreshCurrentHistoryEntry`) never do.
+    writeHistoryEntry(tab, titleForDoc, /*forceReplace=*/ false, /*fromRun=*/ true);
+}
+
+/// Record a history entry for the active tab on tab switch / rename. Reuses the tab's
+/// existing result (or none); does NOT fabricate a result, so a never-run single tab
+/// stays result-less and the tab bar stays hidden. Keeps the entry's `run=1` marker while the
+/// editor still reflects the produced run (`tabReflectsRun`) so switching INTO a run-backed tab
+/// leaves its shared `run=1` URL as re-runnable as `saveHistory` left it; a result-less or
+/// edited tab reports false and the marker is dropped.
+function syncHistory() {
+    const tab = getActiveTab();
+    if (!tab) return;
+    writeHistoryEntry(tab, undefined, /*forceReplace=*/ false, /*fromRun=*/ tabReflectsRun(tab));
+}
+
+/// Resolve which tab a history state refers to. The `tabId` is the AUTHORITATIVE, stable
+/// identity: when the state carries one it wins, and we never fall back to matching by title.
+/// A same-titled tab may be an unrelated one the user has since renamed to the closed tab's
+/// old title, and adopting it would let Back/Forward overwrite that live tab's query/result.
+/// The title fallback exists ONLY for legacy entries predating `tabId`. When a state's
+/// `tabId` names a tab that was closed, recreate a fresh tab (disambiguating its title) so
+/// the navigation is non-destructive instead of hijacking an existing tab.
+function resolveTabForState(state) {
+    let tab = state.tabId && tabs.find(t => t.id === state.tabId);
+    if (!tab && !state.tabId && state.tabName) tab = tabs.find(t => t.title === state.tabName);
+    if (!tab) {
+        const title = state.tabId ? uniqueTitle(state.tabName) : state.tabName;
+        tab = makeTab(title, state.query);
+        tabs.push(tab);
+    }
+    return tab;
+}
+
 window.onpopstate = function(event) {
     if (!event.state) return;
-    restoreFromHistory(event.state);
+    captureActiveTab();
+    /// Back/Forward can switch tabs while a query is in flight; invalidate it just like a
+    /// click switch, so a late response is not saved into the tab we are navigating to.
+    invalidateInFlight();
+    const token = request_num;
+    const tab = resolveTabForState(event.state);
+    /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
+    /// BOTH the state's `tabId`/`tabName` and the URL's `tab=` key. Two cases need it:
+    ///   - The entry named a now-closed tab and we recreated a fresh one (`tabId` changed): adopt
+    ///     the new id so repeated Back/Forward lands on the same recreated tab instead of spawning
+    ///     a duplicate each time.
+    ///   - The entry's `tabId` still resolves to a live tab, but that tab's title has since changed
+    ///     (e.g. the startup dirty-merge de-conflicted a live bootstrap tab's title): the entry/URL
+    ///     still hold the stale `tabName`.
+    /// In both cases, without the restamp a later reload of this URL would make startup
+    /// reconciliation match a persisted tab by the stale title and overwrite it with this entry's
+    /// query. (Normal and legacy title-only entries already match and are left untouched.)
+    if (event.state.tabId && (event.state.tabId !== tab.id || event.state.tabName !== tab.title)) {
+        const restamped_url = new URL(location.href);
+        restamped_url.searchParams.set('tab', tab.title);
+        history.replaceState({ ...event.state, tabId: tab.id, tabName: tab.title },
+            document.title, restamped_url.href);
+    }
+    activeTabId = tab.id;
+    tab.query = event.state.query;
+    /// This history entry is now the tab's URL-synced query, so it is also the query the saved
+    /// tab is "in sync" with: keep `lastSavedQuery` aligned with it. Otherwise a later edit and
+    /// reload (while the URL still holds this entry) would be misread by startup reconciliation
+    /// as a fresh external URL and overwrite the edit (`lastSavedQuery` would still point at the
+    /// newer entry that `writeHistoryEntry` last recorded, not at this one).
+    tab.lastSavedQuery = event.state.query;
+    if (event.state.params) tab.params = event.state.params;
+    /// Adopt the entry's result snapshot (its own producing query/params), or clear it. This
+    /// avoids leaving a stale snapshot attached to a different query. Modern entries nest the
+    /// snapshot under `result`; legacy flat entries (predating per-tab state) store the produced
+    /// result at the TOP level, and `restoreFromHistory` still renders them via `state.result ||
+    /// state`. Normalize such a flat entry into a nested snapshot rather than treating it as "no
+    /// result" — otherwise the tab bar would hide despite a visible result and the next
+    /// persist/switch would drop the restored snapshot. A truly result-less entry stays null.
+    if (event.state.result) {
+        tab.result = event.state.result;
+    } else if (event.state.data != null || (event.state.multi && event.state.multi.length)) {
+        const flat = event.state;
+        tab.result = {
+            ran: true,
+            query: flat.query,
+            params: flat.params || {},
+            format: flat.format,
+            ok: flat.ok,
+            data: flat.data ?? null,
+            multi: flat.multi ?? null,
+            color_modes: flat.color_modes || {},
+            elapsed_ns: flat.elapsed_ns,
+        };
+    } else {
+        tab.result = null;
+    }
+    restoreFromHistory(event.state, token).then(() => {
+        if (token !== request_num) return; /// a newer navigation/run superseded this one
+        /// Mirror `activateTab`: always recolor the page (and thus the active-tab slab) to this
+        /// tab's query. `restoreFromHistory` only recolors on its full-result path, so a
+        /// Back/Forward into a result-less, error, or large/image-result tab would otherwise keep
+        /// the previously active tab's hue even though the active tab has changed.
+        document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
+        renderTabBar();
+    });
+    scheduleSave();
 };
 
 if (window.location.hash) {
@@ -4395,7 +5430,18 @@ function endFlight() {
 /// Run the query under cursor, or all queries intersecting the selection.
 async function postOne()
 {
-    ++request_num;
+    /// Capture the request id now; `getQueryUnderCursor`/`splitAllQueries` await the lexer
+    /// (WASM) load, during which a tab switch may bump `request_num`. Reading the global
+    /// after the await would let this stale run execute/save in the wrong tab, so bail if
+    /// it changed and pass the captured id (not the global) to the post functions.
+    ///
+    /// A tab activation / Back-Forward restore already in flight for this generation has not
+    /// yet written the destination tab's saved parameters to the `param_*` inputs (that write
+    /// happens only after `restoreFromHistory`'s tokenization await, which the `++request_num`
+    /// below aborts). Detect it before the bump so the run sources its parameters from the
+    /// destination tab's own saved snapshot instead of the previous tab's stale DOM inputs.
+    const params_restore_pending = params_restore_pending_token === request_num;
+    const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -4404,6 +5450,7 @@ async function postOne()
         /// Find all queries that intersect the selection and run them.
         const all_text = query_area.value;
         const parsed = await splitAllQueries(all_text);
+        if (my_request_num !== request_num) return;
         const selStart = query_area.selectionStart;
         const selEnd = query_area.selectionEnd;
 
@@ -4416,38 +5463,49 @@ async function postOne()
         }
 
         if (selected.length > 1) {
-            await postMulti(request_num, selected);
+            await postMulti(my_request_num, selected, params_restore_pending);
         } else if (selected.length === 1) {
-            await postSingle(request_num, selected[0].query, all_text);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending);
         }
     } else {
         const query = await getQueryUnderCursor();
+        if (my_request_num !== request_num) return;
         /// In multi-query mode, preserve the full textarea content in history/URL
         /// even when running a single query under cursor (so refresh restores all queries).
-        await postSingle(request_num, query, isMultiQuery ? query_area.value : undefined);
+        await postSingle(my_request_num, query, isMultiQuery ? query_area.value : undefined, params_restore_pending);
     }
 
-    endFlight();
+    /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
+    /// state; a newer run (e.g. after a tab switch) may have taken over while we awaited.
+    if (my_request_num === request_num) endFlight();
 }
 
 /// Run all queries from the textarea.
 async function postAll()
 {
-    ++request_num;
+    /// See `postOne`: detect an in-flight tab activation / Back-Forward parameter restore for
+    /// this generation before `++request_num` aborts it, so the run reads the destination tab's
+    /// saved parameters rather than the previously active tab's stale DOM inputs.
+    const params_restore_pending = params_restore_pending_token === request_num;
+    const my_request_num = ++request_num;
     document.body.scrollTo(0, 0);
     beginFlight();
 
     const all_text = query_area.value;
     const parsed = await splitAllQueries(all_text);
+    if (my_request_num !== request_num) return;
 
     if (parsed.length > 1) {
-        await postMulti(request_num, parsed);
+        await postMulti(my_request_num, parsed, params_restore_pending);
     } else {
         const query = await getQueryUnderCursor();
-        await postSingle(request_num, query);
+        if (my_request_num !== request_num) return;
+        await postSingle(my_request_num, query, undefined, params_restore_pending);
     }
 
-    endFlight();
+    /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
+    /// state; a newer run (e.g. after a tab switch) may have taken over while we awaited.
+    if (my_request_num === request_num) endFlight();
 }
 
 async function cancel()
@@ -4480,6 +5538,7 @@ function storeCredentials() {
 document.getElementById('controls').addEventListener('submit', e =>
 {
     e.preventDefault();
+    markBootstrapDirty(e);   /// a manual run before reconciliation must keep this tab's state
     if (in_flight) {
         cancel();
     } else {
@@ -4492,6 +5551,7 @@ document.getElementById('controls').addEventListener('submit', e =>
 document.getElementById('run-all').addEventListener('click', e =>
 {
     e.preventDefault();
+    markBootstrapDirty(e);
     if (!in_flight) {
         postAll();
         storeCredentials();
@@ -4507,6 +5567,7 @@ document.getElementById('hint-modifier').innerText = isMac ? 'Cmd' : 'Ctrl';
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+        markBootstrapDirty(event);
         if (in_flight) {
             cancel();
         } else if (event.shiftKey && isMultiQuery) {
@@ -5829,11 +6890,51 @@ function setParamValues(values)
     }
 }
 
+/// Resolve the parameter values a run must execute with, and keep the `param_*` inputs in sync.
+///
+/// Normally the live DOM inputs are authoritative. But when a tab activation / Back-Forward
+/// restore is still pending for this run's generation, the destination tab's saved parameters
+/// have not yet been written to the inputs — that write happens only after `restoreFromHistory`'s
+/// tokenization await, which `++request_num` in `postOne`/`postAll` has just aborted — so the
+/// inputs still hold the previously active tab's values. Sourcing them would execute this tab's
+/// query against the wrong bindings (a correctness bug, not just a stale UI). Take the values
+/// from the destination tab's own saved `params` instead (parameters are tab-owned), and write
+/// them back so the inputs reflect what actually ran.
+///
+/// The parameter NAMES must also come from the destination tab's snapshot, NOT from the global
+/// `currentQueryParams`: that list is only rewritten by `updateQueryParams` after its own
+/// `await tokenize(...)`, which the still-pending restore has not reached, so it can still describe
+/// the PREVIOUS tab's query. Enumerating it here would send the wrong parameter set — e.g. for a
+/// switch from `SELECT {x}` to `SELECT {y}`, it would send `param_x` and drop `param_y`, running
+/// the destination query with blank/default bindings. The tab's saved `params` already lists this
+/// tab's own parameters (captured when it was last committed / restored), so use its keys.
+function resolveRunParams(params_restore_pending)
+{
+    if (!params_restore_pending) return getParamValues();
+    const tab = getActiveTab();
+    const saved = (tab && tab.params) || {};
+    const values = {};
+    for (const name of Object.keys(saved))
+    {
+        values[name] = saved[name] !== undefined ? saved[name] : '';
+    }
+    setParamValues(values);
+    return values;
+}
+
+/// Rebuild the syntax highlighting, run buttons and query-parameter inputs from the current
+/// editor text. Returns `true` when `currentQueryParams` now reflects that text (tokenized
+/// successfully, or the query is empty), and `false` when it could not be rebuilt (WASM lexer
+/// unavailable, the query too large to tokenize, or a newer generation superseded this call).
+/// Callers that then read `currentQueryParams` to restore a tab's parameters (`restoreFromHistory`
+/// and the startup URL reconciliation) MUST honor a `false` result: on failure the list may still
+/// describe the PREVIOUS tab, so deriving params from it would attach that tab's placeholder names
+/// to this one and persist them into history / `IndexedDB`.
 async function updateQueryParams()
 {
     if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
     {
-        return;
+        return false;
     }
 
     /// Bump the generation up-front so that any in-flight older runs (which only
@@ -5849,7 +6950,7 @@ async function updateQueryParams()
         currentQueryParams = [];
         updateRunButtons(false);
         updateQueryBackdrop('', [], []);
-        return;
+        return true;   /// the empty list correctly reflects a query with no parameters
     }
 
     /// If tokenization or rendering throws (e.g. the query is larger than the WASM
@@ -5864,12 +6965,12 @@ async function updateQueryParams()
     }
     catch (e)
     {
-        if (generation !== updateQueryParamsGeneration) { return; }
+        if (generation !== updateQueryParamsGeneration) { return false; }
         console.error('Tokenization failed, disabling syntax highlighting:', e);
         updateQueryBackdrop('', [], []);
-        return;
+        return false;   /// `currentQueryParams` was NOT rebuilt; it may still describe another query
     }
-    if (generation !== updateQueryParamsGeneration) { return; }
+    if (generation !== updateQueryParamsGeneration) { return false; }
     const params = extractQueryParams(tokens);
 
     /// Detect multi-query mode from the same token stream.
@@ -5887,7 +6988,7 @@ async function updateQueryParams()
 
     if (JSON.stringify(params) === JSON.stringify(currentQueryParams))
     {
-        return;
+        return true;   /// unchanged, but `currentQueryParams` already reflects this query
     }
 
     const oldValues = getParamValues();
@@ -5918,7 +7019,7 @@ async function updateQueryParams()
         {
             input.value = oldValues[param.name];
         }
-        input.addEventListener('input', function()
+        input.addEventListener('input', function(e)
         {
             /// Resize to fit the value, clamped between 10em and 20em.
             this.style.width = '10em';
@@ -5926,6 +7027,16 @@ async function updateQueryParams()
             {
                 this.style.width = Math.min(this.scrollWidth, this.clientWidth * 2) + 'px';
             }
+            /// Only react to genuine user edits: `updateQueryParams` (on query edits) and
+            /// `setParamValues` (on restore) dispatch synthetic input events for the resize
+            /// above, and syncing on those would spam history / fight the restore.
+            if (!e.isTrusted) return;
+            markBootstrapDirty(e);   /// user edited a parameter before reconciliation
+            /// Parameters are tab-owned: persist edited values into the active tab, and keep
+            /// the URL/history entry in sync (replaceState, since the query is unchanged) so a
+            /// reload's URL params are never stale relative to the saved tab.
+            const tab = getActiveTab();
+            if (tab) { tab.params = getParamValues(); syncHistory(); }
         });
         wrapper.appendChild(input);
 
@@ -5934,10 +7045,16 @@ async function updateQueryParams()
         /// Trigger resize after the element is in the DOM so scrollWidth is valid.
         input.dispatchEvent(new Event('input'));
     }
+    return true;   /// `currentQueryParams` now reflects the current query
 }
 
-query_area.addEventListener('input', () =>
+query_area.addEventListener('input', (e) =>
 {
+    /// A real keystroke/paste into the editor before reconciliation completes means the live
+    /// query is newer than the saved workspace; keep it. `restoreFromHistory`/bootstrap dispatch
+    /// synthetic input events (`isTrusted === false`), which `markBootstrapDirty` ignores.
+    markBootstrapDirty(e);
+
     resizeQueryAreaIfSlightlyOverflowing();
 
     /// Run the update synchronously instead of with a setTimeout: the heavy work
@@ -5948,6 +7065,30 @@ query_area.addEventListener('input', () =>
     /// transparent` from `.has-backdrop`) and the backdrop still showing the
     /// pre-edit contents, so the freshly typed characters would be invisible.
     updateQueryParams();
+
+    /// Keep the active tab and its persisted copy in sync with the editor. The hue of
+    /// the active tab follows the page background, so no per-tab recolor is needed here.
+    const tab = getActiveTab();
+    if (tab) {
+        tab.query = query_area.value;
+        /// Fold the edit into the current browser-history entry (and its URL) right away, not
+        /// only on a click-driven tab switch (`switchToTab`/`addTab`). Otherwise the entry keeps
+        /// the query last written by a run/switch, and browser Back/Forward away from this tab and
+        /// back — or closing it and pressing Back to recreate it — restores that stale text from
+        /// `history.state` over the newer unrun edit (both `window.onpopstate` and
+        /// `resolveTabForState` read `event.state.query`). Refreshing here keeps the entry the tab
+        /// would be restored from in sync with the latest keystroke. Only genuine keystrokes do it:
+        /// the synthetic 'input' events `restoreFromHistory`/bootstrap dispatch merely replay
+        /// already-recorded state (`isTrusted === false`, as `markBootstrapDirty` relies on) and
+        /// must not rewrite the entry. `refreshCurrentHistoryEntry` only touches the current entry
+        /// when it belongs to this tab (or seeds the page's initial entry when a fresh load has not
+        /// written one yet — this first trusted edit), always via replaceState, so it never spams
+        /// new entries, and it drops `run=1` once the edit diverges the editor from the produced
+        /// result (`tabReflectsRun`) — a genuine keystroke does — so an unrun edit never becomes
+        /// auto-runnable on reload.
+        if (e.isTrusted) refreshCurrentHistoryEntry(tab);
+        scheduleSave();
+    }
 });
 
 function setColorTheme(new_theme, update_preference) {
@@ -5981,33 +7122,244 @@ if (theme) {
     });
 }
 
-/// Detect query parameters on page load and restore their values from the URL.
-/// If run_immediately is set, run the query after params are ready.
+/// ----- Tab bootstrap & startup reconciliation -----------------------------------
+/// Build the initial in-memory tab from whatever the synchronous load produced (the
+/// URL hash query, if any). A single result-less tab keeps the tab bar hidden, so the
+/// first paint is identical to the pre-tabs UI (no layout shift).
+tabs = [makeTab(undefined, query_area.value)];
+activeTabId = tabs[0].id;
+
+const url_tab_name = current_url.searchParams.get('tab');
+/// Whether the URL actually carries a query fragment (`#<base64>`), as opposed to no
+/// fragment or a bare `#`. `url_query` is '' in all those cases, so we must not treat an
+/// absent query the same as an empty one: a bare `?tab=Name` must not wipe the saved query.
+const has_url_query = window.location.hash.length > 1;
+const url_query = query_area.value;          /// already decoded from the hash; may be ''
+/// When the URL carries a query, defer the auto-run until after IndexedDB reconciliation,
+/// so it runs in the right tab (a switch would otherwise abort an in-flight run).
+const defer_run_for_reconcile = run_immediately && has_url_query;
+
+/// Reconcile the freshly loaded URL (query + tab name) against tabs saved in IndexedDB.
+async function reconcileStartup() {
+    const loaded = await loadFromDb();
+    /// From here on reconciliation owns the workspace; any programmatic edits/runs it triggers
+    /// below (activateTab's synthetic input, a deferred auto-run) must no longer set the flag.
+    /// The value captured during the `await` above (real user interaction) is what we act on.
+    bootstrap_settled = true;
+    let activated = false;
+    /// Set when the matched tab's saved query/params are newer than the URL (a stale reload
+    /// of an edited-but-not-resynced tab). In that case the URL is NOT authoritative, so we
+    /// keep the saved query and skip the URL-driven parameter reconciliation below.
+    let preserve_local_query = false;
+
+    if (loaded && loaded.records.length) {
+        /// Order saved tabs by the persisted order, then restore the id/title counters.
+        const order = (loaded.meta && loaded.meta.tabOrder) || [];
+        const byId = new Map(loaded.records.map(r => [r.id, r]));
+        const ordered = [];
+        for (const id of order) if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); }
+        for (const r of byId.values()) ordered.push(r);
+        const savedTabs = ordered.map(r => ({
+            id: r.id, title: r.title, query: r.query || '',
+            params: r.params || {}, result: r.result || null, lastSavedQuery: r.lastSavedQuery,
+        }));
+        if (loaded.meta) {
+            tabSeq = Math.max(tabSeq, loaded.meta.tabSeq || 0);
+            tabTitleSeq = Math.max(tabTitleSeq, loaded.meta.tabTitleSeq || 0);
+        }
+
+        if (bootstrap_dirty) {
+            /// The user interacted with the bootstrap workspace while IndexedDB was still
+            /// loading, so the live tabs are NEWER than the saved ones. Do not overwrite them.
+            /// Merge instead: keep the live workspace (and its active tab) and bring the saved
+            /// tabs alongside it, so neither the fresh work nor the persisted tabs are lost.
+            /// Merely skipping the restore is not enough: the trailing `scheduleSave` would
+            /// `clear()` the store (see `persist`) and drop the saved tabs permanently.
+            captureActiveTab();
+            const liveTabs = tabs;
+            /// Both id sequences start at `t1`, so the saved ids can collide with the live ids.
+            /// Keep the LIVE ids stable and re-id the colliding restored (saved) tabs instead:
+            /// any browser-history entries created during the load window reference the live
+            /// bootstrap ids, and Back/Forward must keep resolving those to the live tabs. The
+            /// saved tabs have no history entries in this session (just loaded from IndexedDB),
+            /// so re-id'ing them is safe. Re-id'ing the live tabs instead would leave older,
+            /// un-remapped live-id entries resolving to same-id saved tabs and overwriting their
+            /// persisted query/result state — a worse, durable data loss.
+            const liveIds = new Set(liveTabs.map(t => t.id));
+            for (const t of savedTabs) {
+                if (liveIds.has(t.id)) t.id = 't' + (++tabSeq);
+            }
+            /// Saved tabs keep their persisted order and come first; the live workspace follows.
+            tabs = savedTabs.concat(liveTabs);
+            /// The bootstrap tabs default to the same titles as the persisted workspace
+            /// (`Query A`, `Query B`, ...), so the merge can leave duplicate titles. Titles double
+            /// as the unique `tab=` reconciliation key (see `uniqueTitle`), so de-conflict the live
+            /// titles against the saved ones (saved tabs keep theirs). `tabs` is already the merged
+            /// list, so `uniqueTitle` sees every title and excludes the tab itself by id.
+            for (const t of liveTabs) t.title = uniqueTitle(t.title, t.id);
+            /// Renaming a live tab above changes its title, but the current URL's `tab=` key (and
+            /// the browser-history entry written during the load window via `syncHistory`) still
+            /// carries the pre-rename title. A reload of that URL would then make startup
+            /// reconciliation match the persisted saved tab by the old title and overwrite it.
+            /// Restamp the current entry/URL to the active live tab's new title. (Older load-window
+            /// entries keep the stable live `tabId` and are restamped lazily by `onpopstate` on
+            /// Back/Forward.)
+            const active_tab = getActiveTab();
+            if (active_tab) {
+                const restamp_url = new URL(location.href);
+                const cur_tab_param = restamp_url.searchParams.get('tab');
+                if (cur_tab_param !== null && cur_tab_param !== active_tab.title) {
+                    restamp_url.searchParams.set('tab', active_tab.title);
+                    const cur_state = history.state;
+                    const new_state = (cur_state && cur_state.tabId === active_tab.id)
+                        ? { ...cur_state, tabName: active_tab.title } : cur_state;
+                    history.replaceState(new_state, document.title, restamp_url.href);
+                }
+            }
+            renderTabBar();
+            scheduleSave();
+            return;   /// skip URL param reconciliation and auto-run: the user is already editing
+        }
+
+        tabs = savedTabs;
+        if (!has_url_query && !url_tab_name) {
+            /// Plain load: restore the saved workspace as-is.
+            activeTabId = (loaded.meta && savedTabs.some(t => t.id === loaded.meta.activeTabId))
+                ? loaded.meta.activeTabId : savedTabs[0].id;
+        } else {
+            let match = null;
+            if (url_tab_name) {
+                /// Tabs are normally kept title-unique (see `uniqueTitle`), but legacy persisted
+                /// state could still hold duplicates. Among same-titled tabs, prefer the one the
+                /// URL actually came from — its query (or last URL-synced query) equals the URL's
+                /// — so a shared/reloaded link lands on its originating tab and stays
+                /// non-destructive, instead of clobbering an unrelated tab that shares the name.
+                const named = savedTabs.filter(t => t.title === url_tab_name);
+                match = named.find(t => t.query === url_query)
+                     || named.find(t => t.lastSavedQuery === url_query)
+                     || named[0] || null;
+            }
+            if (match) {
+                /// Named URL: substitute the URL query into that tab ONLY when the URL carries
+                /// a query; a bare ?tab=Name just activates the tab and keeps its saved query.
+                if (has_url_query && match.query !== url_query) {
+                    if (match.lastSavedQuery !== url_query) {
+                        /// The URL holds a query this tab was never synced to (a fresh/shared
+                        /// link for an existing tab name): the URL wins, substitute it.
+                        match.query = url_query;
+                        match.result = null;
+                    } else {
+                        /// Stale reload: the URL hash is exactly this tab's own last-synced
+                        /// query, but the saved tab was edited (and persisted) afterwards
+                        /// without re-syncing the URL. The IndexedDB value is newer — keep it,
+                        /// and don't let the stale URL parameters override the saved ones.
+                        preserve_local_query = true;
+                        /// The URL's `run=1` was meant to auto-run the (now stale) URL query, not
+                        /// the newer local edit the user never ran. Drop the stale run directive so
+                        /// the edit is neither auto-run below nor re-stamped with `run=1` into the
+                        /// synced URL (which would auto-run it on the next reload). A destructive
+                        /// edit (e.g. `DROP`/`INSERT`) left unrun must stay unrun.
+                        run_immediately = false;
+                    }
+                }
+                activeTabId = match.id;
+            } else if (has_url_query && !url_tab_name && (match = savedTabs.find(t => t.query === url_query))) {
+                /// Unnamed URL with a query: a tab already holds this exact query, switch to it.
+                activeTabId = match.id;
+            } else {
+                /// Not found: open a new tab carrying the name (if any) and query.
+                const t = makeTab(url_tab_name || undefined, url_query);
+                tabs.push(t);
+                activeTabId = t.id;
+            }
+        }
+        await activateTab(activeTabId);
+        activated = true;
+    } else if (url_tab_name) {
+        /// No saved tabs but the URL named a tab: adopt the name for the bootstrap tab.
+        const t = getActiveTab();
+        if (t) {
+            t.title = url_tab_name;
+            /// Seed lastSavedQuery (= the query the URL is authoritative for) so a later reload of
+            /// this same shared link is recognized as a stale reload — the URL hash equals this
+            /// tab's own last-synced query — rather than a fresh external query. Without it, editing
+            /// this bootstrap tab and reloading the same URL would discard the edit: the named-tab
+            /// branch above would see `undefined !== url_query` and overwrite the saved query. The
+            /// loaded-tab paths get this seeding for free via syncHistory()/postAll(); this branch
+            /// leaves `activated` false and runs neither, so seed it explicitly here.
+            if (has_url_query) t.lastSavedQuery = url_query;
+        }
+        renderTabBar();
+    } else {
+        renderTabBar();
+    }
+
+    /// Rebuild the active query's parameters from the URL for ANY URL carrying a query (not
+    /// only run=1): activateTab above restored the saved tab's params, but when the URL is
+    /// authoritative its parameter list must REPLACE them, not merely overlay the values it
+    /// happens to carry. Otherwise a shared `?tab=Name#<query>` URL with no `param_x` would
+    /// inherit the matched tab's stale `param_x` and auto-run with it. So each placeholder
+    /// detected in the query takes its URL value when present and is cleared to empty (its
+    /// default) when absent. Skipped on a stale reload, where the saved params are newer.
+    /// Done after reconciliation so it targets the reconciled active tab; the auto-run itself
+    /// is still gated on run=1 below. Also skipped when the user already edited the bootstrap
+    /// workspace during the load window (`bootstrap_dirty`): their live params are newer and
+    /// must not be replaced by the URL's.
+    if (url_query && !preserve_local_query && !bootstrap_dirty) {
+        const params_ok = await updateQueryParams();
+        if (params_ok) {
+            const urlParamValues = {};
+            for (const param of currentQueryParams) {
+                const value = current_url.searchParams.get('param_' + param.name);
+                urlParamValues[param.name] = value !== null ? value : '';
+            }
+            setParamValues(urlParamValues);
+            const tab = getActiveTab();
+            if (tab) tab.params = getParamValues();
+        } else {
+            /// The URL query could not be tokenized, so `currentQueryParams` may describe a
+            /// different query; rebuilding from it would attach the wrong placeholder names to
+            /// the reconciled tab (and auto-run with them). Clear the stale inputs/list and leave
+            /// the tab's own reconciled params in place rather than deriving bogus ones.
+            queryParamsContainer.innerHTML = '';
+            currentQueryParams = [];
+        }
+    }
+
+    /// Auto-run only when the URL is still authoritative. On a stale reload
+    /// (`preserve_local_query`), the persisted local edit is newer than the URL and was never
+    /// run by the user, so the stale `run=1` must not execute it; just sync the restored tab
+    /// into the URL instead (with the `run=1` directive already dropped above).
+    if (defer_run_for_reconcile && query_area.value && !preserve_local_query && !bootstrap_dirty) {
+        postAll();   /// saves history itself on completion
+    } else if (activated) {
+        syncHistory();   /// reflect the restored active tab in the URL (replaceState)
+    }
+    scheduleSave();
+}
+
+/// Render the syntax highlighting and parameter inputs for the URL query on page load.
+/// `query_area.value` is populated only from a `#<query>` hash, so reaching this branch means
+/// the URL carries a query (`has_url_query`). In that case `reconcileStartup` below is the
+/// SOLE owner of URL parameter restoration and the auto-run: it reconciles the URL against the
+/// IndexedDB workspace first and, on a stale reload, deliberately preserves a newer saved tab
+/// (`preserve_local_query`) and drops the stale `run=1`. Applying the URL `param_*` values or
+/// auto-running here as well would race that reconciliation: this callback resumes after
+/// tokenization, which can land after `activateTab` has restored the preserved tab, overwriting
+/// its params with stale URL values that the scheduled `persist` would then save. So only
+/// refresh the editor here and let reconciliation apply the parameters and trigger the run.
 if (query_area.value)
 {
     resizeQueryAreaIfSlightlyOverflowing();
-    updateQueryParams().then(() =>
-    {
-        const urlParamValues = {};
-        for (const param of currentQueryParams)
-        {
-            const value = current_url.searchParams.get('param_' + param.name);
-            if (value !== null)
-            {
-                urlParamValues[param.name] = value;
-            }
-        }
-        setParamValues(urlParamValues);
-        if (run_immediately)
-        {
-            postAll();
-        }
-    });
+    updateQueryParams();
 }
-else if (run_immediately)
+else if (run_immediately && !defer_run_for_reconcile)
 {
     postAll();
 }
+
+dbReady = openDb();
+reconcileStartup();
 
 document.getElementById('toggle-light').onclick = function() {
     setColorTheme('light', true);
