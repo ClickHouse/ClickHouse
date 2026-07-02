@@ -1,6 +1,9 @@
 #include <Parsers/IAST.h>
 
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -370,6 +373,40 @@ std::string IAST::dumpTree(size_t indent) const
     WriteBufferFromOwnString wb;
     dumpTree(wb, indent);
     return wb.str();
+}
+
+void IAST::writeJSON(WriteBuffer &) const
+{
+    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
+    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
+    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
+    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
+    /// read back. Reject such queries here instead of emitting lossy JSON.
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
+        getID());
+}
+
+void IAST::readJSON(const Poco::JSON::Object & json)
+{
+    /// Default: read children from the "children" array.
+    if (json.has("children"))
+    {
+        auto arr = json.getArray("children");
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
+        children.reserve(arr->size());
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto child_obj = arr->getObject(i);
+            if (!child_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
+            children.push_back(IAST::createFromJSON(*child_obj));
+        }
+    }
+
+    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
+    /// in their own readJSON overrides, so we don't handle them here.
 }
 
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an

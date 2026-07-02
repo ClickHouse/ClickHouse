@@ -16,13 +16,16 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
 #include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
+#include <Common/StringUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
@@ -49,6 +52,9 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsString send_logs_source_regexp;
     extern const SettingsString promql_database;
@@ -62,6 +68,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int SYNTAX_ERROR;
 }
 
 LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
@@ -201,6 +209,14 @@ void LocalConnection::sendQuery(
 
     state->query_id = query_id;
     state->query = query;
+    /// Capture the parser-affecting settings now, before the query's own `SETTINGS` clause is applied
+    /// during execution. The `input()` initializer below reparses `state->query`, and must use the
+    /// dialect/gate the query was originally accepted with rather than the (possibly mutated) live ones.
+    state->parsed_as_json_dialect = query_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
+    state->allow_experimental_json_ast_dialect = query_context->getSettingsRef()[Setting::allow_experimental_json_ast_dialect];
+    state->json_ast_max_query_size = query_context->getSettingsRef()[Setting::max_query_size];
+    state->json_ast_max_depth = query_context->getSettingsRef()[Setting::max_ast_depth];
+    state->json_ast_max_elements = query_context->getSettingsRef()[Setting::max_ast_elements];
     state->query_scope_holder = QueryScope::create(query_context);
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
@@ -239,37 +255,82 @@ void LocalConnection::sendQuery(
         const char * end = begin + state->query.size();
         const Dialect & dialect = settings[Setting::dialect];
 
-        std::unique_ptr<IParserBase> parser;
-        if (dialect == Dialect::kusto)
-            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-        else if (dialect == Dialect::prql)
-            parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-        else if (dialect == Dialect::promql)
-            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-        else
-            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
         ASTPtr parsed_query;
-        if (dialect == Dialect::kusto)
-            parsed_query = parseKQLQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
+        /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
+        /// except for plain `SET` queries which are still parsed with `ParserQuery` so
+        /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
+        /// without being locked into JSON-only input.
+        if (state->parsed_as_json_dialect && !isClickHouseJSONSetEscape(begin, end, state->json_ast_max_query_size))
+        {
+            if (!state->allow_experimental_json_ast_dialect)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Support for clickhouse_json dialect is disabled "
+                    "(turn on setting 'allow_experimental_json_ast_dialect')");
+
+            const size_t max_query_size = state->json_ast_max_query_size;
+            if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+            /// Strip an optional trailing `;` delimiter (and surrounding whitespace) so a single
+            /// statement like `<json>;` parses, mirroring the SQL path and the server `executeQuery`
+            /// clickhouse_json branch (`Poco::JSON::Parser` rejects a trailing `;` as excess input).
+            const char * json_end = end;
+            while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                --json_end;
+            if (json_end > begin && json_end[-1] == ';')
+            {
+                --json_end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+            }
+
+            parsed_query = IAST::createFromJSON(String(begin, json_end),
+                state->json_ast_max_depth,
+                state->json_ast_max_elements);
+
+            /// `createFromJSON` enforces depth/element limits via counters during construction,
+            /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
+            /// children from strings) that bypass those counters. Re-check the assembled AST,
+            /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
+            if (state->json_ast_max_depth)
+                parsed_query->checkDepth(state->json_ast_max_depth);
+            if (state->json_ast_max_elements)
+                parsed_query->checkSize(state->json_ast_max_elements);
+        }
         else
-            parsed_query = parseQueryAndMovePosition(
-                *parser,
-                begin,
-                end,
-                "",
-                /*allow_multi_statements*/ false,
-                settings[Setting::max_query_size],
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
+        {
+            std::unique_ptr<IParserBase> parser;
+            if (dialect == Dialect::kusto)
+                parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+            else if (dialect == Dialect::prql)
+                parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else if (dialect == Dialect::promql)
+                parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            else
+                parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+            if (dialect == Dialect::kusto)
+                parsed_query = parseKQLQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+            else
+                parsed_query = parseQueryAndMovePosition(
+                    *parser,
+                    begin,
+                    end,
+                    "",
+                    /*allow_multi_statements*/ false,
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]);
+        }
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {

@@ -1,12 +1,15 @@
 #include <Parsers/ASTPartition.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -59,6 +62,49 @@ ASTPtr ASTPartition::clone() const
     }
 
     return res;
+}
+
+void ASTPartition::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Partition");
+    w.writeChild("value", value);
+    w.writeChild("id", id);
+    w.writeBool("all", all);
+    if (fields_count.has_value())
+        w.writeUInt("fields_count", *fields_count);
+}
+
+void ASTPartition::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    all = r.getBool("all");
+
+    if (r.has("fields_count"))
+        fields_count = r.getUInt("fields_count");
+
+    auto val_child = r.readChild("value");
+    if (val_child)
+        setPartitionValue(val_child);
+
+    if (!val_child)
+    {
+        auto id_child = r.readChild("id");
+        if (id_child)
+            setPartitionID(id_child);
+    }
+
+    /// `ParserPartition` produces exactly one shape: `PARTITION ALL` (`all = true`, no value/id) or
+    /// `PARTITION <expr>` / `PARTITION ID '<id>'` (exactly one of `value`/`id`). `formatImpl`
+    /// unconditionally dereferences `id` when neither `value` nor `all` is set, and emits only `ALL`
+    /// when `all` is set (dropping any value/id). Reject the parser-impossible combinations:
+    /// `{"type":"Partition"}` (no target) and `all` together with a `value`/`id`.
+    if (!value && !all && !id)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Partition` AST requires one of 'value', 'id', or 'all' = true during AST JSON deserialization");
+    if (all && (value || id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`Partition` AST cannot set 'all' together with 'value' or 'id' during AST JSON deserialization");
 }
 
 void ASTPartition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

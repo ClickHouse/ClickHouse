@@ -4,6 +4,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -12,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -32,6 +35,158 @@ ASTPtr ASTDropQuery::clone() const
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
+}
+
+void ASTDropQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DropQuery");
+
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    const char * kind_str = "Drop";
+    if (kind == Kind::Detach)
+        kind_str = "Detach";
+    else if (kind == Kind::Truncate)
+        kind_str = "Truncate";
+    w.writeString("kind", std::string_view(kind_str));
+
+    w.writeBool("if_exists", if_exists);
+    w.writeBool("if_empty", if_empty);
+    w.writeBool("no_ddl_lock", no_ddl_lock);
+    w.writeBool("has_all", has_all);
+    w.writeBool("has_tables", has_tables);
+
+    if (!like.empty())
+        w.writeString("like", like);
+
+    w.writeBool("not_like", not_like);
+    w.writeBool("case_insensitive_like", case_insensitive_like);
+    w.writeBool("is_dictionary", is_dictionary);
+    w.writeBool("is_view", is_view);
+    w.writeBool("sync", sync);
+    w.writeBool("permanently", permanently);
+    /// `TEMPORARY` is part of the formatted DDL (`DROP TEMPORARY TABLE ...`) and selects a
+    /// different target object class, so it must survive the round-trip.
+    if (isTemporary())
+        w.writeBool("is_temporary", true);
+
+    w.writeChild("database_and_tables", database_and_tables);
+
+    /// Serialize the database/table identifier ASTs as well so that parameterized
+    /// names like `{tbl:Identifier}` survive the round-trip. The plain `database`/`table`
+    /// strings above lose them (they stringify to empty), so we restore from these on read.
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+    writeOutputOptionsJSON(w);
+}
+
+void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// Restore the full identifier ASTs first, falling back to the plain string names only when the
+    /// AST key is absent. `writeJSON` emits both forms, so reading AST-first (like `ASTDropIndexQuery`/
+    /// `ASTAlterQuery`) avoids leaving a stale extra `children` entry from `setDatabase`/`setTable` that
+    /// no longer matches the `database`/`table` member. The AST form also preserves parameterized names
+    /// like `{tbl:Identifier}` that the string form cannot represent. These slots are parser-produced
+    /// identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`, so reject other
+    /// node types here.
+    if (auto database_child = r.readIdentifierChild("database_ast"))
+    {
+        database = database_child;
+        children.push_back(database);
+    }
+    else
+    {
+        String db = r.getString("database");
+        if (!db.empty())
+            setDatabase(db);
+    }
+    if (auto table_child = r.readIdentifierChild("table_ast"))
+    {
+        table = table_child;
+        children.push_back(table);
+    }
+    else
+    {
+        String tbl = r.getString("table");
+        if (!tbl.empty())
+            setTable(tbl);
+    }
+
+    cluster = r.getString("cluster");
+
+    String kind_str = r.getString("kind");
+    if (kind_str == "Drop")
+        kind = Kind::Drop;
+    else if (kind_str == "Detach")
+        kind = Kind::Detach;
+    else if (kind_str == "Truncate")
+        kind = Kind::Truncate;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown DropQuery kind: '{}'", kind_str);
+
+    if_exists = r.getBool("if_exists");
+    if_empty = r.getBool("if_empty");
+    no_ddl_lock = r.getBool("no_ddl_lock");
+    has_all = r.getBool("has_all");
+    has_tables = r.getBool("has_tables");
+
+    like = r.getString("like");
+    not_like = r.getBool("not_like");
+    case_insensitive_like = r.getBool("case_insensitive_like");
+    is_dictionary = r.getBool("is_dictionary");
+    is_view = r.getBool("is_view");
+    sync = r.getBool("sync");
+    permanently = r.getBool("permanently");
+    if (r.getBool("is_temporary"))
+        setIsTemporary(true);
+
+    /// `database_and_tables` is parser-owned as an `ASTExpressionList` of `ASTTableIdentifier`s.
+    /// `formatQueryImpl` downcasts it with `as<ASTExpressionList &>()` and casts each entry to
+    /// `ASTTableIdentifier`, so reject any other shape from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTExpressionList>("database_and_tables");
+    if (child)
+    {
+        for (const auto & entry : child->children)
+            if (!entry || !entry->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'database_and_tables' must be a table identifier during AST JSON deserialization");
+        database_and_tables = child;
+        children.push_back(database_and_tables);
+    }
+
+    /// `formatQueryImpl` unconditionally dereferences `table` in the single-table branch.
+    /// Require at least one valid target so we cannot construct an AST that crashes on formatting.
+    if (!table && !database && !database_and_tables)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` must specify at least one of 'database', 'table', or 'database_and_tables' during AST JSON deserialization");
+
+    /// `has_all`/`has_tables` are produced by the parser only for `TRUNCATE [ALL] TABLES FROM <db>`,
+    /// whose shape is `kind == Truncate`, a single `database` target, and no `table`/`database_and_tables`.
+    /// Any other combination is parser-impossible and would make the formatted SQL disagree with the
+    /// executed operation (e.g. `kind == Drop` with `has_tables` formats as `DROP TABLES FROM db` while
+    /// `InterpreterDropQuery` runs `DROP DATABASE`). Reject it.
+    if (has_all || has_tables)
+    {
+        if (kind != Kind::Truncate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'has_all'/'has_tables' are only valid for TRUNCATE during AST JSON deserialization");
+        if (!has_tables)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'has_all' requires 'has_tables' (TRUNCATE ALL TABLES FROM) during AST JSON deserialization");
+        if (!database || table || database_and_tables)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE TABLES FROM requires a single 'database' target during AST JSON deserialization");
+    }
+
+    /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
+    /// as `DROP DATABASE`, ignoring the `is_view`/`is_dictionary` flags. Such a combination
+    /// cannot be produced by the parser and, left unchecked, would let a JSON that claims to
+    /// name a view or dictionary silently execute as `DROP DATABASE`. Reject it.
+    if (!table && !database_and_tables && (is_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DropQuery` with 'is_view' or 'is_dictionary' set must specify a table target ('table' or 'database_and_tables') during AST JSON deserialization");
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

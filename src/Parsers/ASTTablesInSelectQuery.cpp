@@ -1,6 +1,11 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
@@ -8,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 #define CLONE(member) \
 do \
@@ -344,6 +354,310 @@ void ASTTablesInSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings
 {
     for (const auto & child : children)
         child->format(ostr, settings, state, frame);
+}
+
+
+void ASTTablesInSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TablesInSelectQuery");
+    w.writeChildren(children);
+}
+
+void ASTTablesInSelectQueryElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TablesInSelectQueryElement");
+    w.writeChild("table_join", table_join);
+    w.writeChild("table_expression", table_expression);
+    w.writeChild("array_join", array_join);
+}
+
+void ASTTableExpression::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableExpression");
+    if (final)
+        w.writeBool("final", true);
+    w.writeChild("database_and_table_name", database_and_table_name);
+    w.writeChild("table_function", table_function);
+    w.writeChild("subquery", subquery);
+    w.writeChild("sample_size", sample_size);
+    w.writeChild("sample_offset", sample_offset);
+    w.writeChild("column_aliases", column_aliases);
+    w.writeChild("stream_settings", stream_settings);
+}
+
+void ASTTableJoin::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableJoin");
+    if (locality != JoinLocality::Unspecified)
+        w.writeString("locality", toString(locality));
+    if (strictness != JoinStrictness::Unspecified)
+        w.writeString("strictness", toString(strictness));
+    w.writeString("kind", toString(kind));
+    if (is_natural)
+        w.writeBool("is_natural", true);
+    w.writeChild("using_expression_list", using_expression_list);
+    w.writeChild("on_expression", on_expression);
+}
+
+void ASTArrayJoin::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ArrayJoin");
+    w.writeString("kind", kind == Kind::Left ? "Left" : "Inner");
+    w.writeChild("expression_list", expression_list);
+}
+
+static JoinKind parseJoinKind(const String & s)
+{
+    if (s == "INNER") return JoinKind::Inner;
+    if (s == "LEFT") return JoinKind::Left;
+    if (s == "RIGHT") return JoinKind::Right;
+    if (s == "FULL") return JoinKind::Full;
+    if (s == "CROSS") return JoinKind::Cross;
+    if (s == "COMMA") return JoinKind::Comma;
+    if (s == "PASTE") return JoinKind::Paste;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinKind: '{}'", s);
+}
+
+static JoinStrictness parseJoinStrictness(const String & s)
+{
+    if (s == "RIGHT_ANY") return JoinStrictness::RightAny;
+    if (s == "ANY") return JoinStrictness::Any;
+    if (s == "ALL") return JoinStrictness::All;
+    if (s == "ASOF") return JoinStrictness::Asof;
+    if (s == "SEMI") return JoinStrictness::Semi;
+    if (s == "ANTI") return JoinStrictness::Anti;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinStrictness: '{}'", s);
+}
+
+static JoinLocality parseJoinLocality(const String & s)
+{
+    if (s == "LOCAL") return JoinLocality::Local;
+    if (s == "GLOBAL") return JoinLocality::Global;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown JoinLocality: '{}'", s);
+}
+
+void ASTTablesInSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// `TablesInSelectQuery` is not a generic expression list: callers such as
+    /// `ASTSelectQuery::setDatabaseName` / `replaceDatabaseAndTable` downcast every child
+    /// with `child->as<ASTTablesInSelectQueryElement &>()`, so a foreign child type must be
+    /// rejected at the `clickhouse_json` boundary instead of reaching that downcast later.
+    children = r.readChildrenOfType<ASTTablesInSelectQueryElement>("TablesInSelectQuery");
+}
+
+void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// These slots are parser-owned concrete nodes that `formatImpl` and SELECT helpers downcast
+    /// (`table_join->as<ASTTableJoin &>()`, etc.). Restore them with `readChildOfType` so a wrong
+    /// node type from malformed `clickhouse_json` is rejected here instead of at a later cast.
+    auto child = r.readChildOfType<ASTTableJoin>("table_join");
+    if (child)
+    {
+        table_join = child;
+        children.push_back(table_join);
+    }
+
+    child = r.readChildOfType<ASTTableExpression>("table_expression");
+    if (child)
+    {
+        table_expression = child;
+        children.push_back(table_expression);
+    }
+
+    child = r.readChildOfType<ASTArrayJoin>("array_join");
+    if (child)
+    {
+        array_join = child;
+        children.push_back(array_join);
+    }
+
+    /// The formatter handles two mutually exclusive shapes: either `table_expression` (optionally with `table_join`)
+    /// or `array_join`. Exactly one of `table_expression`/`array_join` must be present, and `table_join` is only
+    /// meaningful alongside `table_expression`.
+    if (static_cast<size_t>(table_expression != nullptr) + static_cast<size_t>(array_join != nullptr) != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTablesInSelectQueryElement must have exactly one of 'table_expression' or 'array_join' "
+            "during AST JSON deserialization");
+    if (table_join && !table_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTablesInSelectQueryElement has 'table_join' without 'table_expression' during AST JSON deserialization");
+}
+
+void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    final = r.getBool("final");
+
+    /// `database_and_table_name` is parser-produced as an `ASTTableIdentifier`: default-database
+    /// injection visits only `ASTTableIdentifier`, and `StorageID(const ASTPtr &)` throws
+    /// `LOGICAL_ERROR` for any other node. Reject a wrong type from malformed `clickhouse_json` here.
+    auto child = r.readChildOfType<ASTTableIdentifier>("database_and_table_name");
+    if (child)
+    {
+        database_and_table_name = child;
+        children.push_back(database_and_table_name);
+    }
+
+    /// `table_function` is parser-owned as an `ASTFunction`; `formatImpl` downcasts it with
+    /// `table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting()`, so a wrong
+    /// node type from malformed `clickhouse_json` must be rejected here.
+    child = r.readChildOfType<ASTFunction>("table_function");
+    if (child)
+    {
+        table_function = child;
+        children.push_back(table_function);
+    }
+
+    /// `subquery` is parser-produced as an `ASTSubquery`; table-expression helpers read
+    /// `subquery->children.at(0)`, so reject any other node type here.
+    child = r.readChildOfType<ASTSubquery>("subquery");
+    if (child)
+    {
+        subquery = child;
+        children.push_back(subquery);
+    }
+
+    /// `sample_size`/`sample_offset` are parser-owned `ASTSampleRatio` nodes; the analyzer downcasts
+    /// `sample_size->as<ASTSampleRatio &>()`, so reject any other node type here.
+    child = r.readChildOfType<ASTSampleRatio>("sample_size");
+    if (child)
+    {
+        sample_size = child;
+        children.push_back(sample_size);
+    }
+
+    child = r.readChildOfType<ASTSampleRatio>("sample_offset");
+    if (child)
+    {
+        sample_offset = child;
+        children.push_back(sample_offset);
+    }
+
+    /// `formatImpl` emits `OFFSET` only inside the `SAMPLE` (`sample_size`) branch, so a `sample_offset`
+    /// without a `sample_size` is parser-impossible and would silently drop the offset on formatting.
+    if (sample_offset && !sample_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`sample_offset` requires `sample_size` during AST JSON deserialization");
+
+    /// `column_aliases` is parser-produced as an `ASTExpressionList`; alias handling expects that shape.
+    child = r.readChildOfType<ASTExpressionList>("column_aliases");
+    if (child)
+    {
+        column_aliases = child;
+        children.push_back(column_aliases);
+    }
+
+    /// `stream_settings` is parser-owned as an `ASTStreamSettings`; `formatImpl` downcasts it
+    /// with `stream_settings->as<ASTStreamSettings &>()`, so reject any other node type here.
+    child = r.readChildOfType<ASTStreamSettings>("stream_settings");
+    if (child)
+    {
+        stream_settings = child;
+        children.push_back(stream_settings);
+    }
+
+    /// The formatter chooses exactly one source: `database_and_table_name`, else `table_function`, else `subquery`.
+    /// A table expression with no source (carrying only FINAL/SAMPLE/stream_settings) is invalid, as are multiple sources.
+    size_t num_sources = static_cast<size_t>(database_and_table_name != nullptr)
+        + static_cast<size_t>(table_function != nullptr)
+        + static_cast<size_t>(subquery != nullptr);
+    if (num_sources != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableExpression must have exactly one of 'database_and_table_name', 'table_function' or 'subquery', "
+            "but has {} during AST JSON deserialization", num_sources);
+}
+
+void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    String locality_str = r.getString("locality");
+    if (!locality_str.empty())
+        locality = parseJoinLocality(locality_str);
+
+    String strictness_str = r.getString("strictness");
+    if (!strictness_str.empty())
+        strictness = parseJoinStrictness(strictness_str);
+
+    kind = parseJoinKind(r.getString("kind"));
+    is_natural = r.getBool("is_natural");
+
+    /// `using_expression_list` is parser-produced as an `ASTExpressionList`; `TranslateQualifiedNamesVisitor`
+    /// and `QueryTreeBuilder::buildExpressionList` downcast it, so reject any other node type here.
+    auto child = r.readChildOfType<ASTExpressionList>("using_expression_list");
+    if (child)
+    {
+        using_expression_list = child;
+        children.push_back(using_expression_list);
+    }
+
+    child = r.readChild("on_expression");
+    if (child)
+    {
+        on_expression = child;
+        children.push_back(on_expression);
+    }
+
+    /// A JOIN's `USING` and `ON` are mutually exclusive: the formatter emits `USING` and skips `ON` when both are present,
+    /// silently dropping the `ON` predicate. The parser can never produce both, so reject such a payload.
+    if (using_expression_list && on_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTTableJoin must not have both 'using_expression_list' and 'on_expression' during AST JSON deserialization");
+
+    /// Mirror the parser-impossible join shapes that `ParserTablesInSelectQuery` rejects, so malformed
+    /// `clickhouse_json` cannot build a join the analyzer would mis-handle (e.g. a `CROSS JOIN ... ON ...`
+    /// whose predicate `QueryTreeBuilder` silently drops when it builds a `CrossJoinNode`):
+    const bool has_predicate = using_expression_list || on_expression;
+    const bool predicate_disallowed_kind = kind == JoinKind::Cross || kind == JoinKind::Comma || kind == JoinKind::Paste;
+    /// `ON`/`USING` are parsed only for non-`CROSS`/non-comma/non-`PASTE` joins.
+    if (has_predicate && predicate_disallowed_kind)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CROSS, comma and PASTE joins cannot have an 'on_expression'/'using_expression_list' during AST JSON deserialization");
+    /// `NATURAL JOIN` derives its columns automatically; the parser never attaches an explicit predicate.
+    if (has_predicate && is_natural)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot have an 'on_expression'/'using_expression_list' during AST JSON deserialization");
+    /// `CROSS`/`PASTE` joins take no strictness modifier.
+    if (strictness != JoinStrictness::Unspecified && (kind == JoinKind::Cross || kind == JoinKind::Paste))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CROSS and PASTE joins cannot have a strictness modifier during AST JSON deserialization");
+    /// `SEMI`/`ANTI` are only valid for `LEFT`/`RIGHT` joins.
+    if ((strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+        && kind != JoinKind::Left && kind != JoinKind::Right)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "SEMI and ANTI strictness is only valid for LEFT/RIGHT joins during AST JSON deserialization");
+    /// `NATURAL JOIN` cannot be combined with a strictness modifier or with `CROSS`/`PASTE`.
+    if (is_natural && strictness != JoinStrictness::Unspecified)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot be combined with a strictness modifier during AST JSON deserialization");
+    if (is_natural && (kind == JoinKind::Cross || kind == JoinKind::Paste))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "NATURAL JOIN cannot be used with CROSS or PASTE join during AST JSON deserialization");
+}
+
+void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    String kind_str = r.getString("kind");
+    if (kind_str == "Left")
+        kind = Kind::Left;
+    else if (kind_str == "Inner")
+        kind = Kind::Inner;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin has invalid 'kind' value '{}' (expected 'Left' or 'Inner') during AST JSON deserialization", kind_str);
+
+    /// `expression_list` is parser-produced as an `ASTExpressionList`; downstream array-join handling
+    /// downcasts it, so reject any other node type at the JSON boundary.
+    auto child = r.readChildOfType<ASTExpressionList>("expression_list");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "ASTArrayJoin is missing required 'expression_list' child during AST JSON deserialization");
+    expression_list = child;
+    children.push_back(expression_list);
 }
 
 }

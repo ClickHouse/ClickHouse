@@ -2,6 +2,8 @@
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -19,6 +21,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/FunctionSecretArgumentsFinderAST.h>
 
 
@@ -30,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int UNKNOWN_FUNCTION;
 }
@@ -125,6 +129,138 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
             writeCString(")", ostr);
         }
     }
+}
+
+void ASTFunction::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Function");
+    w.writeString("name", name);
+    w.writeChild("arguments", arguments);
+    w.writeChild("parameters", parameters);
+    if (!window_name.empty())
+        w.writeString("window_name", window_name);
+    w.writeChild("window_definition", window_definition);
+    if (isOperator())
+        w.writeBool("is_operator", true);
+    if (isWindowFunction())
+        w.writeBool("is_window_function", true);
+    if (computeAfterWindowFunctions())
+        w.writeBool("compute_after_window_functions", true);
+    if (isLambdaFunction())
+        w.writeBool("is_lambda_function", true);
+    if (preferSubqueryToFunctionFormatting())
+        w.writeBool("prefer_subquery_to_function_formatting", true);
+    if (noEmptyArgs())
+        w.writeBool("no_empty_args", true);
+    if (isCompoundName())
+        w.writeBool("is_compound_name", true);
+    if (getNullsAction() == NullsAction::RESPECT_NULLS)
+        w.writeString("nulls_action", "RESPECT_NULLS");
+    else if (getNullsAction() == NullsAction::IGNORE_NULLS)
+        w.writeString("nulls_action", "IGNORE_NULLS");
+    if (getKind() != Kind::ORDINARY_FUNCTION)
+    {
+        const char * kind_str = nullptr;
+        switch (getKind())
+        {
+            case Kind::WINDOW_FUNCTION: kind_str = "WINDOW_FUNCTION"; break;
+            case Kind::LAMBDA_FUNCTION: kind_str = "LAMBDA_FUNCTION"; break;
+            case Kind::TABLE_ENGINE: kind_str = "TABLE_ENGINE"; break;
+            case Kind::DATABASE_ENGINE: kind_str = "DATABASE_ENGINE"; break;
+            case Kind::BACKUP_NAME: kind_str = "BACKUP_NAME"; break;
+            case Kind::CODEC: kind_str = "CODEC"; break;
+            case Kind::STATISTICS: kind_str = "STATISTICS"; break;
+            default: break;
+        }
+        if (kind_str)
+            w.writeString("kind", kind_str);
+    }
+    w.writeAlias(*this);
+}
+
+void ASTFunction::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'name' for ASTFunction");
+
+    setIsOperator(r.getBool("is_operator"));
+    setIsWindowFunction(r.getBool("is_window_function"));
+    setComputeAfterWindowFunctions(r.getBool("compute_after_window_functions"));
+    setIsLambdaFunction(r.getBool("is_lambda_function"));
+    setPreferSubqueryToFunctionFormatting(r.getBool("prefer_subquery_to_function_formatting"));
+    setNoEmptyArgs(r.getBool("no_empty_args"));
+    setIsCompoundName(r.getBool("is_compound_name"));
+
+    String nulls_action_str = r.getString("nulls_action");
+    if (nulls_action_str == "RESPECT_NULLS")
+        setNullsAction(NullsAction::RESPECT_NULLS);
+    else if (nulls_action_str == "IGNORE_NULLS")
+        setNullsAction(NullsAction::IGNORE_NULLS);
+    else if (!nulls_action_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'nulls_action' value '{}' during AST JSON deserialization", nulls_action_str);
+
+    String kind_str = r.getString("kind");
+    if (kind_str == "WINDOW_FUNCTION")
+        setKind(Kind::WINDOW_FUNCTION);
+    else if (kind_str == "LAMBDA_FUNCTION")
+        setKind(Kind::LAMBDA_FUNCTION);
+    else if (kind_str == "TABLE_ENGINE")
+        setKind(Kind::TABLE_ENGINE);
+    else if (kind_str == "DATABASE_ENGINE")
+        setKind(Kind::DATABASE_ENGINE);
+    else if (kind_str == "BACKUP_NAME")
+        setKind(Kind::BACKUP_NAME);
+    else if (kind_str == "CODEC")
+        setKind(Kind::CODEC);
+    else if (kind_str == "STATISTICS")
+        setKind(Kind::STATISTICS);
+    else if (!kind_str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown 'kind' value '{}' during AST JSON deserialization", kind_str);
+
+    /// `arguments` and `parameters` are parser-produced `ASTExpressionList` children. The formatter
+    /// iterates their `children`, so a scalar node here would silently rewrite the function (e.g.
+    /// `f(x)` becoming `f()`). Reject any other node type at the JSON boundary with `BAD_ARGUMENTS`.
+    arguments = r.readChildOfType<ASTExpressionList>("arguments");
+    if (arguments)
+        children.push_back(arguments);
+
+    parameters = r.readChildOfType<ASTExpressionList>("parameters");
+    if (parameters)
+        children.push_back(parameters);
+
+    window_name = r.getString("window_name");
+
+    /// `window_definition` is parser-produced as an `ASTWindowDefinition`; `finishFormatWithWindow`
+    /// prints it inside `OVER (...)` and `QueryTreeBuilder::buildWindow` does
+    /// `window_definition->as<const ASTWindowDefinition &>()`. Reject any other node type from
+    /// malformed `clickhouse_json` here instead of reaching that downstream cast.
+    window_definition = r.readChildOfType<ASTWindowDefinition>("window_definition");
+    if (window_definition)
+        children.push_back(window_definition);
+
+    /// A window payload or window kind is only formatted when the function is a window function.
+    /// Accepting such input while 'is_window_function' is false would silently drop the OVER (...) clause,
+    /// producing an AST the parser cannot have produced.
+    if ((r.has("window_name") || window_definition || getKind() == Kind::WINDOW_FUNCTION) && !isWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'window_name', 'window_definition' or 'kind' = 'WINDOW_FUNCTION' require 'is_window_function' to be true during AST JSON deserialization");
+
+    /// The parser only assigns `kind = LAMBDA_FUNCTION` together with `is_lambda_function`
+    /// (`makeASTFunction` for the lambda operator). Reject a `clickhouse_json` payload that marks a
+    /// function as the lambda kind without the flag, which the parser could not have produced.
+    /// Note the reverse does not hold: `APPLY (x -> ...)` sets `is_lambda_function` while leaving
+    /// `kind` ordinary, so only this single direction is a parser invariant.
+    if (getKind() == Kind::LAMBDA_FUNCTION && !isLambdaFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'kind' = 'LAMBDA_FUNCTION' requires 'is_lambda_function' to be true during AST JSON deserialization");
+
+    if (isWindowFunction() && window_name.empty() && !window_definition)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
+
+    r.readAlias(*this);
 }
 
 void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

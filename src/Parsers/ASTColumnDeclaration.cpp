@@ -1,11 +1,21 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTCollation.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
-#include <base/EnumReflection.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 const char * toString(ColumnDefaultSpecifier kind)
 {
@@ -28,6 +38,8 @@ ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str)
     if (str == "ALIAS") return ColumnDefaultSpecifier::Alias;
     if (str == "EPHEMERAL") return ColumnDefaultSpecifier::Ephemeral;
     if (str == "AUTO_INCREMENT") return ColumnDefaultSpecifier::AutoIncrement;
+    if (!str.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown column default specifier: '{}'", str);
     return ColumnDefaultSpecifier::Empty;
 }
 
@@ -166,6 +178,82 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         settings->format(ostr, format_settings, state, frame);
         ostr << ')';
     }
+}
+
+void ASTColumnDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ColumnDeclaration");
+    w.writeString("name", name);
+
+    if (default_specifier != ColumnDefaultSpecifier::Empty)
+        w.writeString("default_specifier", std::string_view(toString(default_specifier)));
+
+    if (null_modifier.has_value())
+        w.writeBool("null_modifier", *null_modifier);
+
+    w.writeBool("ephemeral_default", ephemeral_default);
+    w.writeBool("primary_key_specifier", primary_key_specifier);
+
+    w.writeChild("data_type", getType());
+    w.writeChild("default_expression", getDefaultExpression());
+    w.writeChild("comment", getComment());
+    w.writeChild("codec", getCodec());
+    w.writeChild("statistics_desc", getStatisticsDesc());
+    w.writeChild("ttl", getTTL());
+    w.writeChild("collation", getCollation());
+    w.writeChild("settings", getSettings());
+}
+
+void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+
+    String spec = r.getString("default_specifier");
+    default_specifier = columnDefaultSpecifierFromString(spec);
+
+    if (r.has("null_modifier"))
+        null_modifier = r.getBool("null_modifier");
+
+    ephemeral_default = r.getBool("ephemeral_default");
+    primary_key_specifier = r.getBool("primary_key_specifier");
+
+    setType(r.readChild("data_type"));
+
+    ASTPtr default_expression = r.readChild("default_expression");
+
+    /// Validate the (default_specifier, default_expression) pair so that it mirrors what the parser and `formatImpl` allow.
+    /// `formatImpl` emits the default clause only when a `default_expression` is present, prefixing it with the specifier keyword.
+    /// Therefore a `default_expression` without a specifier would be formatted with no keyword (e.g. `DEFAULT`/`MATERIALIZED`/`ALIAS`),
+    /// and a specifier without an expression would be silently dropped.
+    /// The only specifier the parser allows without an expression is `AUTO_INCREMENT`; for `EPHEMERAL` the parser always synthesizes
+    /// an expression (and sets `ephemeral_default`), so it requires an expression here as well.
+    if (default_expression && default_specifier == ColumnDefaultSpecifier::Empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A 'default_expression' was provided without a 'default_specifier' during AST JSON deserialization");
+
+    if (!default_expression
+        && default_specifier != ColumnDefaultSpecifier::Empty
+        && default_specifier != ColumnDefaultSpecifier::AutoIncrement)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A 'default_specifier' '{}' was provided without a 'default_expression' during AST JSON deserialization",
+            toString(default_specifier));
+
+    setDefaultExpression(std::move(default_expression));
+
+    /// These sub-slots are parser-produced as fixed concrete types and are downcast later
+    /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
+    /// the compression/statistics factories take the `CODEC`/`STATISTICS` `ASTFunction`s). Validate them
+    /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
+    /// `data_type` is left untyped (a type can be `ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`/...),
+    /// and `ttl`/`default_expression` are arbitrary expressions.
+    setComment(r.readStringLiteralChild("comment"));
+    setCodec(r.readChildOfType<ASTFunction>("codec"));
+    setStatisticsDesc(r.readChildOfType<ASTFunction>("statistics_desc"));
+    setTTL(r.readChild("ttl"));
+    setCollation(r.readChildOfType<ASTCollation>("collation"));
+    setSettings(r.readChildOfType<ASTSetQuery>("settings"));
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)

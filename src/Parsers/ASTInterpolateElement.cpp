@@ -1,9 +1,16 @@
 #include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTInterpolateElement::clone() const
 {
@@ -38,6 +45,27 @@ void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings 
     {
         expr->format(ostr, settings, state, frame);
     }
+}
+
+void ASTInterpolateElement::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "InterpolateElement");
+    w.writeString("column", column);
+    w.writeChild("expr", expr);
+}
+
+void ASTInterpolateElement::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    column = r.getString("column");
+    if (column.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have a non-empty column during AST JSON deserialization");
+
+    auto child = r.readChild("expr");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate element must have an expression during AST JSON deserialization");
+    expr = child;
+    children.push_back(expr);
 }
 
 }

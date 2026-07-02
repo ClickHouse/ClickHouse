@@ -1,11 +1,19 @@
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 {
     const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
@@ -30,6 +38,53 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     }
 
     return res;
+}
+
+void ASTDictionaryAttributeDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DictionaryAttributeDeclaration");
+    w.writeString("name", name);
+    w.writeChild("attr_type", type);
+    w.writeChild("default_value", default_value);
+    w.writeChild("expression", expression);
+    w.writeBool("hierarchical", hierarchical);
+    w.writeBool("bidirectional", bidirectional);
+    w.writeBool("injective", injective);
+    w.writeBool("is_object_id", is_object_id);
+}
+
+void ASTDictionaryAttributeDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// `ParserDictionaryAttributeDeclaration` always requires a non-empty attribute name followed by
+    /// `ParserDataType`, so both are mandatory and `attr_type` must be a data-type node. (`as<T>` is
+    /// exact-type, so use `dynamic_cast` to also accept the `ASTDataType` subclasses `ASTEnumDataType`/
+    /// `ASTTupleDataType`.) Reject malformed `clickhouse_json` here instead of failing later in
+    /// dictionary configuration.
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
+
+    type = r.readChild("attr_type");
+    if (!type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'attr_type' for `DictionaryAttributeDeclaration` during AST JSON deserialization");
+    if (!dynamic_cast<const ASTDataType *>(type.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`DictionaryAttributeDeclaration` 'attr_type' must be a data type during AST JSON deserialization");
+    children.push_back(type);
+
+    default_value = r.readChild("default_value");
+    if (default_value)
+        children.push_back(default_value);
+
+    expression = r.readChild("expression");
+    if (expression)
+        children.push_back(expression);
+
+    hierarchical = r.getBool("hierarchical");
+    bidirectional = r.getBool("bidirectional");
+    injective = r.getBool("injective");
+    is_object_id = r.getBool("is_object_id");
 }
 
 void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

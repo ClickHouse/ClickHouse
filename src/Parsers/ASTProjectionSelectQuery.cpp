@@ -8,6 +8,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -176,6 +179,49 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
     settings_query->is_standalone = false;
     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
     return node;
+}
+
+void ASTProjectionSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ProjectionSelectQuery");
+    w.writeChild("with", with());
+    w.writeChild("select", select());
+    w.writeChild("group_by", groupBy());
+    w.writeChild("order_by", orderBy());
+}
+
+void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    auto setExpr = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            this->setExpression(expr, std::move(child));
+    };
+
+    /// `with` and `group_by` are parser-owned `ASTExpressionList`s; `formatImpl` formats them via
+    /// `as<ASTExpressionList &>()`, so reject a non-list node from malformed `clickhouse_json`.
+    auto setExprList = [&](const char * key, ASTProjectionSelectQuery::Expression expr)
+    {
+        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExprList("with", Expression::WITH);
+
+    /// `formatImpl` always formats the SELECT expression list and unconditionally
+    /// casts it to `ASTExpressionList`, so it must be present and of the right type.
+    auto select_child = r.readChild("select");
+    if (!select_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
+    if (!select_child->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
+    setExpression(Expression::SELECT, std::move(select_child));
+
+    setExprList("group_by", Expression::GROUP_BY);
+    setExpr("order_by", Expression::ORDER_BY);
 }
 
 }

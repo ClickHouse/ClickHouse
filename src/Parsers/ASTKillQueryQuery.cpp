@@ -1,8 +1,17 @@
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTKillQueryQuery::getID(char delim) const
 {
@@ -38,6 +47,47 @@ void ASTKillQueryQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     }
 
     ostr << " " << (test ? "TEST" : (sync ? "SYNC" : "ASYNC"));
+}
+
+void ASTKillQueryQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "KillQueryQuery");
+    w.writeInt("kill_type", static_cast<Int64>(type));
+    w.writeChild("where_expression", where_expression);
+    if (sync)
+        w.writeBool("sync", true);
+    if (test)
+        w.writeBool("test", true);
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    writeOutputOptionsJSON(w);
+}
+
+void ASTKillQueryQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("kill_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kill_type' field in `KillQueryQuery` during AST JSON deserialization");
+    Int64 type_value = r.getInt("kill_type");
+    auto type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(type_value));
+    if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown KILL kill_type: {}", type_value);
+    type = *type_opt;
+    where_expression = r.readChild("where_expression");
+    if (!where_expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'where_expression' in `KillQueryQuery` during AST JSON deserialization");
+    children.push_back(where_expression);
+    sync = r.getBool("sync");
+    test = r.getBool("test");
+    /// `SYNC`, `ASYNC` and `TEST` are mutually exclusive parser modes, so `sync` and `test`
+    /// cannot both be set. For `KILL PART_MOVE_TO_SHARD` such a JSON AST would display as `TEST`
+    /// (printed by `formatQueryImpl`) while `InterpreterKillQueryQuery` checks `sync` first and
+    /// executes the unsupported sync variant. Reject this parser-impossible combination here.
+    if (sync && test)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`KillQueryQuery` cannot set both 'sync' and 'test' during AST JSON deserialization");
+    cluster = r.getString("cluster");
+    readOutputOptionsJSON(r);
 }
 
 }

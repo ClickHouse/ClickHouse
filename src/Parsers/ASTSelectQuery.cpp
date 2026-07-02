@@ -4,7 +4,11 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -16,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -608,6 +613,235 @@ NameToNameMap ASTSelectQuery::getQueryParameters() const
         return {};
 
     return analyzeReceiveQueryParamsWithType(make_intrusive<ASTSelectQuery>(*this));
+}
+
+void ASTSelectQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "SelectQuery");
+
+    if (recursive_with)
+        w.writeBool("recursive_with", true);
+    if (distinct)
+        w.writeBool("distinct", true);
+    if (group_by_all)
+        w.writeBool("group_by_all", true);
+    if (group_by_with_totals)
+        w.writeBool("group_by_with_totals", true);
+    if (group_by_with_rollup)
+        w.writeBool("group_by_with_rollup", true);
+    if (group_by_with_cube)
+        w.writeBool("group_by_with_cube", true);
+    /// `group_by_with_constant_keys` is not SQL syntax: `ExpressionAnalyzer` derives it after
+    /// inspecting/optimizing constant `GROUP BY` keys, so a parsed AST never legitimately carries it.
+    /// It is intentionally not serialized (and not read back) so `clickhouse_json` cannot lie about
+    /// analysis state.
+    if (group_by_with_grouping_sets)
+        w.writeBool("group_by_with_grouping_sets", true);
+    if (order_by_all)
+        w.writeBool("order_by_all", true);
+    if (limit_with_ties)
+        w.writeBool("limit_with_ties", true);
+    if (limit_by_all)
+        w.writeBool("limit_by_all", true);
+
+    w.writeChild("with", with());
+    w.writeChild("select", select());
+    w.writeChild("tables", tables());
+    w.writeChild("aliases", aliases());
+    w.writeChild("cte_aliases", cteAliases());
+    w.writeChild("prewhere", prewhere());
+    w.writeChild("where", where());
+    w.writeChild("group_by", groupBy());
+    w.writeChild("having", having());
+    w.writeChild("window", window());
+    w.writeChild("qualify", qualify());
+    w.writeChild("order_by", orderBy());
+    w.writeChild("limit_by_offset", limitByOffset());
+    w.writeChild("limit_by_length", limitByLength());
+    w.writeChild("limit_by", limitBy());
+    w.writeChild("limit_offset", limitOffset());
+    w.writeChild("limit_length", limitLength());
+    w.writeChild("settings", settings());
+    w.writeChild("interpolate", interpolate());
+}
+
+void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    recursive_with = r.getBool("recursive_with");
+    distinct = r.getBool("distinct");
+    group_by_all = r.getBool("group_by_all");
+    group_by_with_totals = r.getBool("group_by_with_totals");
+    group_by_with_rollup = r.getBool("group_by_with_rollup");
+    group_by_with_cube = r.getBool("group_by_with_cube");
+    /// `group_by_with_constant_keys` is analysis-derived, not parser-produced, so it is intentionally
+    /// not read from JSON (see `writeJSON`): accepting it would let `clickhouse_json` lie about analysis
+    /// state (e.g. drive the constant-key empty-result path with no constant `GROUP BY` in the SQL).
+    group_by_with_grouping_sets = r.getBool("group_by_with_grouping_sets");
+    order_by_all = r.getBool("order_by_all");
+    limit_with_ties = r.getBool("limit_with_ties");
+    limit_by_all = r.getBool("limit_by_all");
+
+    auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
+    {
+        auto child = r.readChild(key);
+        if (child)
+            this->setExpression(expr, std::move(child));
+    };
+
+    /// These clauses are parser-owned `ASTExpressionList`s that `formatImpl` formats via
+    /// `as<ASTExpressionList &>()` (the multiline paths) and analysis iterates as lists, so a scalar
+    /// node from malformed `clickhouse_json` would reach an internal cast. Restore them with a typed read.
+    auto setExprList = [&](const char * key, ASTSelectQuery::Expression expr)
+    {
+        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+            this->setExpression(expr, std::move(child));
+    };
+
+    setExprList("with", Expression::WITH);
+    setExpr("select", Expression::SELECT);
+
+    /// `tables` is a parser-owned `ASTTablesInSelectQuery`. SELECT analysis and helpers
+    /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast
+    /// `tables()` unconditionally, so a different node type from malformed `clickhouse_json` must be
+    /// rejected here with `BAD_ARGUMENTS` instead of reaching an internal downcast path later.
+    if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
+        this->setExpression(Expression::TABLES, std::move(tables_child));
+
+    /// Both column `aliases` (`SELECT ... (a, b)`) and `cte_aliases` (`WITH (a, b) AS (...)`) are
+    /// parser-produced as an `ASTExpressionList` of `ASTIdentifier` (`ParserAliasesExpressionList`).
+    /// `QueryTreeBuilder::buildSelectWithUnionExpression` does `aliases->as<ASTExpressionList &>()`
+    /// then `column_alias->as<ASTIdentifier &>()`, so validate both layers here for either list.
+    auto setIdentifierList = [&](const char * key, ASTSelectQuery::Expression expr, const char * what)
+    {
+        if (auto list_child = r.readChildOfType<ASTExpressionList>(key))
+        {
+            for (const auto & alias : list_child->children)
+                if (!alias || !alias->as<ASTIdentifier>())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be identifiers during AST JSON deserialization", what);
+            this->setExpression(expr, std::move(list_child));
+        }
+    };
+
+    setIdentifierList("aliases", Expression::ALIASES, "SELECT column aliases");
+    setIdentifierList("cte_aliases", Expression::CTE_ALIASES, "CTE column aliases");
+    setExpr("prewhere", Expression::PREWHERE);
+    setExpr("where", Expression::WHERE);
+    setExprList("group_by", Expression::GROUP_BY);
+    setExpr("having", Expression::HAVING);
+    setExprList("window", Expression::WINDOW);
+    setExpr("qualify", Expression::QUALIFY);
+    setExprList("order_by", Expression::ORDER_BY);
+    setExpr("limit_by_offset", Expression::LIMIT_BY_OFFSET);
+    setExpr("limit_by_length", Expression::LIMIT_BY_LENGTH);
+    setExprList("limit_by", Expression::LIMIT_BY);
+    setExpr("limit_offset", Expression::LIMIT_OFFSET);
+    setExpr("limit_length", Expression::LIMIT_LENGTH);
+    /// `settings` (`SELECT ... SETTINGS`) is parser-produced as an `ASTSetQuery`; `QueryTreeBuilder`
+    /// does `select_settings->as<ASTSetQuery &>()`, so reject any other node type here.
+    if (auto settings_child = r.readChildOfType<ASTSetQuery>("settings"))
+        this->setExpression(Expression::SETTINGS, std::move(settings_child));
+
+    /// A SELECT query must always have a SELECT list, and `formatImpl` relies on it
+    /// being an `ASTExpressionList` (it is unconditionally cast and formatted).
+    ASTPtr select_list = select();
+    if (!select_list)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing SELECT list during AST JSON deserialization");
+    if (!select_list->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SELECT list must be an expression list during AST JSON deserialization");
+
+    /// Every ORDER BY element is parser-produced as an `ASTOrderByElement`; `formatImpl` and sort-key
+    /// extraction downcast them. Reject any other child type from malformed `clickhouse_json`.
+    if (auto order_by_list = orderBy())
+        for (const auto & order_by_element : order_by_list->children)
+            if (!order_by_element || !order_by_element->as<ASTOrderByElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ORDER BY elements must be order-by elements during AST JSON deserialization");
+
+    /// `INTERPOLATE` is parser-produced only as an `ASTExpressionList` of `ASTInterpolateElement`s
+    /// under an `ORDER BY ... WITH FILL` clause. `formatImpl`/analysis do `interpolate()->children`
+    /// then `elem->as<ASTInterpolateElement &>()`, and the clause is formatted only inside the
+    /// `orderBy()` branch. Restore it with a typed read, validate every child, and reject it unless the
+    /// ORDER BY list carries a `WITH FILL` element (the parser cannot produce it otherwise, and
+    /// `formatImpl` would silently drop it). An empty list is the valid `INTERPOLATE`-all form.
+    if (auto interpolate_child = r.readChildOfType<ASTExpressionList>("interpolate"))
+    {
+        for (const auto & elem : interpolate_child->children)
+            if (!elem || !elem->as<ASTInterpolateElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "INTERPOLATE elements must be interpolate elements during AST JSON deserialization");
+        this->setExpression(Expression::INTERPOLATE, std::move(interpolate_child));
+    }
+    if (interpolate())
+    {
+        bool has_with_fill = false;
+        if (auto order_by_list = orderBy())
+            for (const auto & e : order_by_list->children)
+                if (const auto * obe = e->as<ASTOrderByElement>(); obe && obe->with_fill)
+                {
+                    has_with_fill = true;
+                    break;
+                }
+        if (!has_with_fill)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "INTERPOLATE requires an ORDER BY ... WITH FILL element during AST JSON deserialization");
+    }
+
+    /// `order_by_all` is only meaningful together with an ORDER BY clause, because
+    /// `formatImpl` recovers the sort direction and null ordering from the first
+    /// element of the ORDER BY list (which must be an `ASTOrderByElement`).
+    if (order_by_all)
+    {
+        ASTPtr order_by_list = orderBy();
+        if (!order_by_list || order_by_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "order_by_all requires a non-empty ORDER BY clause during AST JSON deserialization");
+        if (!order_by_list->children[0]->as<ASTOrderByElement>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The first ORDER BY element must be an order-by element when order_by_all is set during AST JSON deserialization");
+    }
+
+    /// `GROUP BY ALL` and an explicit `GROUP BY` list are mutually exclusive: `formatImpl`
+    /// emits `GROUP BY ALL` and drops the list, so the SQL parser can never produce both.
+    if (group_by_all && groupBy())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "group_by_all cannot be set together with a GROUP BY list during AST JSON deserialization");
+
+    /// `recursive_with` is set by the parser only after parsing `WITH`, so it always has a `with` list.
+    /// `formatImpl` emits `recursive_with` only inside the `with()` branch, but analysis trusts the flag
+    /// regardless (e.g. `AddDefaultDatabaseVisitor` does `select.with()->children` when it is set), so a
+    /// flag without a `with` child would reach a null dereference. Reject it.
+    if (recursive_with && !with())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "recursive_with requires a WITH clause during AST JSON deserialization");
+
+    /// `group_by_with_grouping_sets` is produced only by `GROUP BY GROUPING SETS (...)`, where
+    /// `ParserGroupingSetsExpressionListElements` wraps every grouping set as a nested `ASTExpressionList`.
+    /// The analyzer relies on that shape (`group_asts[i]->as<const ASTExpressionList>()->children`), so
+    /// require a non-empty `GROUP BY` whose every child is an `ASTExpressionList` when the flag is set.
+    if (group_by_with_grouping_sets)
+    {
+        auto group_by_list = groupBy();
+        if (!group_by_list || group_by_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "group_by_with_grouping_sets requires a non-empty GROUP BY clause during AST JSON deserialization");
+        for (const auto & grouping_set : group_by_list->children)
+            if (!grouping_set || !grouping_set->as<ASTExpressionList>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "GROUP BY GROUPING SETS elements must be expression lists during AST JSON deserialization");
+    }
+
+    /// `LIMIT BY ALL` is parser-produced with an *empty* `limit_by` `ASTExpressionList` (which
+    /// `writeJSON` serializes), so reading the writer's own output must keep working — only a
+    /// *non-empty* explicit `LIMIT BY` list is mutually exclusive with `LIMIT BY ALL`.
+    if (limit_by_all && limitBy() && !limitBy()->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_by_all cannot be set together with a non-empty LIMIT BY list during AST JSON deserialization");
+
+    /// `WITH TIES` is a modifier of `LIMIT length`; `formatImpl` only emits it inside the
+    /// `LIMIT length` branch, so it is meaningless without a LIMIT length child.
+    if (limit_with_ties && !limitLength())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires a LIMIT length clause during AST JSON deserialization");
+
+    /// `ParserSelectQuery` rejects `LIMIT ... WITH TIES` without an `ORDER BY` clause, and
+    /// `InterpreterSelectQuery` otherwise hits a `LOGICAL_ERROR` (`LIMIT WITH TIES without ORDER BY`).
+    /// Reject the parser-impossible shape at the JSON boundary.
+    if (limit_with_ties && !orderBy())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
 }
 
 }

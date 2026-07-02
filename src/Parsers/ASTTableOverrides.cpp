@@ -3,6 +3,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTableOverrides.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 
 namespace DB
@@ -113,6 +115,51 @@ void ASTTableOverrideList::removeTableOverride(const String & name)
 bool ASTTableOverrideList::hasOverride(const String & name) const
 {
     return positions.contains(name);
+}
+
+void ASTTableOverride::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    table_name = r.getString("table_name");
+    is_standalone = r.getBool("is_standalone", true);
+    /// `columns` (`ASTColumns`) and `storage` (`ASTStorage`) are concrete typed members; restoring them
+    /// generically would let a wrong node type reach `IAST::set` as a `LOGICAL_ERROR` cast failure.
+    auto columns_child = r.readChildOfType<ASTColumns>("columns");
+    if (columns_child)
+        set(columns, columns_child);
+    auto storage_child = r.readChildOfType<ASTStorage>("storage");
+    if (storage_child)
+        set(storage, storage_child);
+}
+
+void ASTTableOverride::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverride");
+    w.writeString("table_name", table_name);
+    w.writeBool("is_standalone", is_standalone);
+    w.writeChild("columns", columns);
+    w.writeChild("storage", storage);
+}
+
+void ASTTableOverrideList::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    /// `TableOverrideList` must contain only `TableOverride` nodes: semantic lookup through
+    /// `tryGetTableOverride` / `hasOverride` only sees children registered in `positions`,
+    /// so a foreign child would still be formatted but silently ignored. Reject it here.
+    children = r.readChildrenOfType<ASTTableOverride>("TableOverrideList");
+    positions.clear();
+    for (size_t i = 0; i < children.size(); ++i)
+    {
+        auto & override = children[i]->as<ASTTableOverride &>();
+        positions[override.table_name] = i;
+    }
+}
+
+void ASTTableOverrideList::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "TableOverrideList");
+    w.writeChildren(children);
 }
 
 void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

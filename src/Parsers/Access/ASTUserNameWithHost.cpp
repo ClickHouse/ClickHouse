@@ -2,6 +2,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Common/Exception.h>
@@ -14,6 +16,19 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    /// `ParserUserNameWithHost` stores the host pattern as a string `ASTLiteral`, and the user name as either an
+    /// identifier (possibly a query parameter) or a string `ASTLiteral`. Any other shape would later reach the
+    /// `LOGICAL_ERROR` branch in `ASTUserNameWithHost::getStringFromAST`, so reject it at the JSON boundary.
+    bool isStringLiteral(const ASTPtr & ast)
+    {
+        const auto * literal = ast->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String;
+    }
 }
 
 void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
@@ -117,6 +132,25 @@ Strings ASTUserNamesWithHost::toStrings() const
     return res;
 }
 
+void ASTUserNamesWithHost::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "UserNamesWithHost");
+    w.writeChildren(children);
+}
+
+void ASTUserNamesWithHost::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    children = r.readChildren();
+
+    for (const auto & child : children)
+        if (!child->as<ASTUserNameWithHost>())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected child type '{}' during AST JSON deserialization of ASTUserNamesWithHost, expected UserNameWithHost",
+                child ? child->getID() : "NULL");
+}
+
 bool ASTUserNamesWithHost::getHostPatternIfCommon(String & out_common_host_pattern) const
 {
     out_common_host_pattern.clear();
@@ -168,6 +202,45 @@ ASTPtr ASTUserNameWithHost::clone() const
     }
 
     return clone;
+}
+
+void ASTUserNameWithHost::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "UserNameWithHost");
+    w.writeChild("username", username);
+    w.writeChild("host_pattern", host_pattern);
+}
+
+void ASTUserNameWithHost::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    children.clear();
+    username.reset();
+    host_pattern.reset();
+
+    username = r.readChild("username");
+    if (!username)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required field 'username' during AST JSON deserialization");
+    if (!username->as<ASTIdentifier>() && !isStringLiteral(username))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Field 'username' must be an identifier or a string literal during AST JSON deserialization of "
+            "ASTUserNameWithHost, got '{}'",
+            username->getID());
+    children.emplace_back(username);
+
+    host_pattern = r.readChild("host_pattern");
+    if (host_pattern)
+    {
+        if (!isStringLiteral(host_pattern))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Field 'host_pattern' must be a string literal during AST JSON deserialization of ASTUserNameWithHost, "
+                "got '{}'",
+                host_pattern->getID());
+        children.emplace_back(host_pattern);
+    }
 }
 
 }

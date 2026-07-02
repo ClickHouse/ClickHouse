@@ -3,6 +3,8 @@
 #include <Parsers/IAST.h>
 #include <Core/Names.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -170,6 +172,8 @@ public:
     NameToNameMap getQueryParameters() const;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     bool isLimitByAll() const
     {

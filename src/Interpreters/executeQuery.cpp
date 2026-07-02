@@ -2,6 +2,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Logger.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
@@ -34,6 +35,7 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Parsers/toOneLineQuery.h>
@@ -132,6 +134,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -1226,6 +1229,50 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        {
+            /// Allow `SET` queries in plain SQL so users can switch back to another dialect
+            /// without being locked into JSON-only input. The experimental gate must be
+            /// applied only to the JSON-deserialization branch — otherwise a session with
+            /// `dialect = clickhouse_json` and `allow_experimental_json_ast_dialect = 0`
+            /// cannot execute `SET dialect = 'clickhouse'` to recover.
+            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            {
+                ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            }
+            else
+            {
+                if (!settings[Setting::allow_experimental_json_ast_dialect])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for clickhouse_json dialect is disabled "
+                        "(turn on setting 'allow_experimental_json_ast_dialect')");
+
+                if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                    throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+                /// A single-statement `clickhouse_json` query may carry a trailing `;` delimiter, just as
+                /// the SQL path and the JSON multiquery scanner accept one. `Poco::JSON::Parser` rejects
+                /// any trailing non-whitespace ("Excess characters found after JSON end"), so strip one
+                /// trailing `;` (and surrounding whitespace) before deserializing. Anything else after the
+                /// object is still rejected by the JSON parser as excess input.
+                const char * json_end = end;
+                while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > begin && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > begin && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+
+                out_ast = IAST::createFromJSON(String(begin, json_end),
+                    settings[Setting::max_ast_depth],
+                    settings[Setting::max_ast_elements]);
+                checkASTSizeLimits(*out_ast, settings);
+            }
         }
         else
         {

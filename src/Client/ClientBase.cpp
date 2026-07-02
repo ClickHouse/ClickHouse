@@ -44,6 +44,8 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ASTFromJSON.h>
+#include <Parsers/IAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
@@ -146,6 +148,9 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
+    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
@@ -465,46 +470,210 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
 
     const Dialect dialect = settings[Setting::dialect];
 
-    if (dialect == Dialect::kusto)
-        parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
-    else if (dialect == Dialect::prql)
-        parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-    else if (dialect == Dialect::promql)
-        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-    else if (dialect == Dialect::polyglot)
-        parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
-    else
-        parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-
-    if (is_interactive || ignore_error)
+    /// In `clickhouse_json` dialect, route the query through `IAST::createFromJSON`,
+    /// except for plain `SET` queries which are still parsed with `ParserQuery` so
+    /// users can switch back to another dialect (e.g. `SET dialect = 'clickhouse'`)
+    /// without being locked into JSON-only input.
+    if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]))
     {
-        String message;
+        if (!settings[Setting::allow_experimental_json_ast_dialect])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Support for clickhouse_json dialect is disabled "
+                "(turn on setting 'allow_experimental_json_ast_dialect')");
+
+        if (max_length != 0 && static_cast<size_t>(end - pos) > max_length)
+            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
         try
         {
-            if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            /// In multiquery mode `end` points to the end of the whole script, not the end of
+            /// the current statement, so we must not feed the entire remainder to the JSON parser
+            /// (it would choke on the trailing `;` and subsequent statements with "excess input").
+            /// Scan for exactly one balanced top-level JSON object starting at `pos`, parse only
+            /// that substring, and advance `pos` to just past it so the usual `;` handling and the
+            /// following statements are processed normally.
+            const char * json_end = end;
+            if (allow_multi_statements)
+            {
+                const char * p = pos;
+
+                /// Bound every byte we walk before the per-statement size guard (which only runs once
+                /// `json_end` is known in multiquery mode) by `max_query_size`, starting with the
+                /// leading-whitespace skip: an input that is a huge run of whitespace before the JSON
+                /// would otherwise be walked in full here.
+                const size_t scan_max_query_size = settings[Setting::max_query_size];
+
+                /// Skip leading whitespace before the JSON value.
+                while (p < end && isWhitespaceASCII(*p))
+                {
+                    if (scan_max_query_size != 0 && static_cast<size_t>(p - pos) > scan_max_query_size)
+                        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                            "Max query size exceeded (can be increased with the `max_query_size` setting)");
+                    ++p;
+                }
+
+                if (p < end && *p == '{')
+                {
+                    size_t depth = 0;
+                    bool in_string = false;
+                    bool escaped = false;
+                    const char * q = p;
+                    /// Bound the JSON-object scan by `max_query_size` too, for the same reason.
+                    for (; q < end; ++q)
+                    {
+                        if (scan_max_query_size != 0 && static_cast<size_t>(q - p) > scan_max_query_size)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Max query size exceeded (can be increased with the `max_query_size` setting)");
+                        const char c = *q;
+                        if (in_string)
+                        {
+                            if (escaped)
+                                escaped = false;
+                            else if (c == '\\')
+                                escaped = true;
+                            else if (c == '"')
+                                in_string = false;
+                        }
+                        else if (c == '"')
+                        {
+                            in_string = true;
+                        }
+                        else if (c == '{')
+                        {
+                            ++depth;
+                        }
+                        else if (c == '}')
+                        {
+                            --depth;
+                            if (depth == 0)
+                            {
+                                ++q;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (depth == 0)
+                    {
+                        json_end = q;
+
+                        /// Require the next significant token after the balanced JSON object to be a
+                        /// statement delimiter (`;`) or the end of input. Without this, multiquery
+                        /// input like `<json ast> garbage;` would deserialize and send the JSON prefix
+                        /// and only fail on `garbage` in the next iteration, whereas the SQL path
+                        /// rejects the same shape as excessive input before executing the prefix.
+                        Tokens after_json_tokens(json_end, end, settings[Setting::max_query_size]);
+                        IParser::Pos after_json_iterator(
+                            after_json_tokens,
+                            static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+                            static_cast<uint32_t>(settings[Setting::max_parser_backtracks]));
+                        /// Require the next significant token to be `;` or end of input. Compare the
+                        /// token type directly rather than via `isValid()`, which is false for both
+                        /// `EndOfStream` and lexer-error tokens — so a trailing invalid token (e.g.
+                        /// `<json ast> #`) would otherwise slip through and execute the prefix.
+                        if (after_json_iterator->type != TokenType::Semicolon
+                            && after_json_iterator->type != TokenType::EndOfStream)
+                            throw Exception(ErrorCodes::SYNTAX_ERROR,
+                                "Excessive input after the JSON AST object: expected end of query or ';' "
+                                "during clickhouse_json deserialization");
+                    }
+                }
+            }
             else
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            {
+                /// Single-statement mode: the balanced-object scanner above does not run, so a trailing
+                /// `;` delimiter would otherwise reach `Poco::JSON::Parser` and be rejected as excess
+                /// input. Strip one optional trailing `;` (and surrounding whitespace) before parsing,
+                /// mirroring the SQL path and the server `executeQuery` clickhouse_json branch.
+                while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                    --json_end;
+                if (json_end > pos && json_end[-1] == ';')
+                {
+                    --json_end;
+                    while (json_end > pos && isWhitespaceASCII(json_end[-1]))
+                        --json_end;
+                }
+            }
+
+            /// In multiquery mode `max_length` is 0 above, so the early guard is skipped even
+            /// though this branch scans and deserializes the JSON client-side. Enforce
+            /// `max_query_size` against the actual JSON slice now that its end is known, so the
+            /// JSON path matches the single-statement, server, and `clickhouse-local` paths.
+            if (const size_t max_query_size = settings[Setting::max_query_size];
+                max_query_size != 0 && static_cast<size_t>(json_end - pos) > max_query_size)
+                throw Exception(ErrorCodes::SYNTAX_ERROR,
+                    "Max query size exceeded (can be increased with the `max_query_size` setting)");
+
+            res = IAST::createFromJSON(String(pos, json_end),
+                settings[Setting::max_ast_depth],
+                settings[Setting::max_ast_elements]);
+
+            /// `createFromJSON` enforces depth/element limits via counters during construction,
+            /// but some `readJSON` implementations build extra AST nodes (e.g. `ASTIdentifier`
+            /// children from strings) that bypass those counters. Re-check the assembled AST,
+            /// mirroring the server path (`checkASTSizeLimits` in `executeQuery`).
+            if (settings[Setting::max_ast_depth])
+                res->checkDepth(settings[Setting::max_ast_depth]);
+            if (settings[Setting::max_ast_elements])
+                res->checkSize(settings[Setting::max_ast_elements]);
+
+            pos = json_end;
         }
         catch (const Exception & e)
         {
-            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception.reset(e.clone());
-            return nullptr;
-        }
-
-        if (!res)
-        {
-            error_stream << std::endl << message << std::endl << std::endl;
-            return nullptr;
+            if (is_interactive || ignore_error)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+            throw;
         }
     }
     else
     {
         if (dialect == Dialect::kusto)
-            res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
+        else if (dialect == Dialect::prql)
+            parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        else if (dialect == Dialect::promql)
+            parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+        else if (dialect == Dialect::polyglot)
+            parser = std::make_unique<ParserPolyglotQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], settings[Setting::polyglot_dialect], end, settings[Setting::allow_experimental_polyglot_dialect]);
         else
-            res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+
+        if (is_interactive || ignore_error)
+        {
+            String message;
+            try
+            {
+                if (dialect == Dialect::kusto)
+                    res = tryParseKQLQuery(*parser, pos, end, message, nullptr, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                else
+                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            }
+            catch (const Exception & e)
+            {
+                error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+                client_exception.reset(e.clone());
+                return nullptr;
+            }
+
+            if (!res)
+            {
+                error_stream << std::endl << message << std::endl << std::endl;
+                return nullptr;
+            }
+        }
+        else
+        {
+            if (dialect == Dialect::kusto)
+                res = parseKQLQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            else
+                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
     }
 
     return res;
@@ -1276,6 +1445,38 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
+{
+    if (!current_query_parsed_as_json_dialect)
+        return;
+
+    /// The client parsed this query as JSON (`clickhouse_json` dialect), but the server re-parses the
+    /// outbound text using the session `dialect`. Determine the form of the text actually being sent:
+    /// the original JSON body starts with `{` (after optional leading whitespace), whereas a client-side
+    /// AST->SQL rewrite (`formatWithSecretsOneLine` for old-server query parameters or
+    /// `allow_merge_tree_settings`) and the `SET` escape produce SQL. Pin the transport dialect so the
+    /// server parses the text the same way the client did.
+    size_t i = 0;
+    while (i < outbound_query.size() && isWhitespaceASCII(outbound_query[i]))
+        ++i;
+    const bool outbound_is_json = i < outbound_query.size() && outbound_query[i] == '{';
+
+    if (outbound_is_json)
+    {
+        /// Keep the JSON body parsed as JSON even if a JSON `SET dialect = ...` or
+        /// `SET allow_experimental_json_ast_dialect = 0` in this very query already changed the session
+        /// settings on the client side. The SET still takes effect for subsequent queries (it is applied
+        /// to the server session and re-applied to the client context after this query completes).
+        client_context->setSetting("dialect", String("clickhouse_json"));
+        client_context->setSetting("allow_experimental_json_ast_dialect", true);
+    }
+    else
+    {
+        /// The client serialized the AST back to SQL; tell the server to parse SQL, not JSON.
+        client_context->setSetting("dialect", String("clickhouse"));
+    }
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
@@ -1429,6 +1630,9 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
+                /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to
+                /// match before sending so the server parses it the same way the client did.
+                pinOutboundDialectForJSONDialect(query);
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
@@ -1999,6 +2203,9 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
+    /// before sending so the server parses it the same way the client did.
+    pinOutboundDialectForJSONDialect(query);
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
@@ -2507,6 +2714,10 @@ void ClientBase::processParsedSingleQuery(
             client_context->setSettings(old_settings);
             connection->setFormatSettings(getFormatSettings(client_context));
         });
+        /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
+        /// in-query `SET` (which may change `dialect`/`allow_experimental_json_ast_dialect`). The outbound
+        /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
+        current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         connection->setFormatSettings(getFormatSettings(client_context));
 

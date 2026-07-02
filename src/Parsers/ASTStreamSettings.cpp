@@ -1,4 +1,6 @@
 #include <Parsers/ASTStreamSettings.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -52,6 +54,22 @@ void ASTStreamSettings::formatImpl(WriteBuffer & ostr, const FormatSettings &, F
         ostr << "CURSOR ";
         formatNested(ostr, tree.get());
     }
+}
+
+void ASTStreamSettings::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "StreamSettings");
+
+    if (settings.cursor_tree.has_value())
+        w.writeFieldValue("cursor_tree", Field(settings.cursor_tree.value()));
+}
+
+void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    if (r.has("cursor_tree"))
+        settings.cursor_tree = r.readField("cursor_tree").safeGet<Map>();
 }
 
 }

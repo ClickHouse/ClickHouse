@@ -1,8 +1,18 @@
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 String ASTDeleteQuery::getID(char delim) const
 {
@@ -59,6 +69,48 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     ostr << " WHERE ";
     predicate->format(ostr, settings, state, frame);
+}
+
+void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "DeleteQuery");
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    w.writeChild("database", database);
+    w.writeChild("table", table);
+    w.writeChild("partition", partition);
+    w.writeChild("predicate", predicate);
+    /// `DELETE` is parsed by `ParserDeleteQuery`, not `ParserQueryWithOutput`, so the only
+    /// supported output-suffix clause is the query-local `SETTINGS`. Do not serialize the
+    /// full output options (`INTO OUTFILE` / `FORMAT` / `COMPRESSION`), which the SQL parser
+    /// can never produce for this query and which would break the JSON round-trip contract.
+    w.writeChild("settings_ast", settings_ast);
+}
+
+void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    cluster = r.getString("cluster");
+    /// `database`/`table` are parser-produced identifiers; `getDatabase`/`getTable` read them via
+    /// `tryGetIdentifierNameInto` (empty for non-identifiers), so reject other node types here.
+    database = r.readChildOfType<ASTIdentifier>("database");
+    if (database)
+        children.push_back(database);
+    table = r.readChildOfType<ASTIdentifier>("table");
+    if (!table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'table' in DeleteQuery JSON");
+    children.push_back(table);
+    partition = r.readChild("partition");
+    if (partition)
+        children.push_back(partition);
+    predicate = r.readChild("predicate");
+    if (!predicate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'predicate' in DeleteQuery JSON");
+    children.push_back(predicate);
+    /// Only the query-local `SETTINGS` clause is supported here (see `writeJSON`).
+    settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
+    if (settings_ast)
+        children.push_back(settings_ast);
 }
 
 }

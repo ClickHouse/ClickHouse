@@ -2,9 +2,25 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTConstraintDeclaration.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Storages/DataDestinationType.h>
 #include <base/scope_guard.h>
 #include <Common/quoteString.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -12,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int BAD_ARGUMENTS;
 }
 
 String ASTAlterCommand::getID(char delim) const
@@ -74,6 +91,438 @@ ASTPtr ASTAlterCommand::clone() const
         res->refresh = res->children.emplace_back(refresh->clone()).get();
 
     return res;
+}
+
+void ASTAlterCommand::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "AlterCommand");
+    w.writeInt("command_type", static_cast<Int64>(type));
+
+    w.writeBool("detach", detach);
+    w.writeBool("part", part);
+    w.writeBool("clear_column", clear_column);
+    w.writeBool("clear_index", clear_index);
+    w.writeBool("clear_statistics", clear_statistics);
+    w.writeBool("clear_projection", clear_projection);
+    w.writeBool("if_not_exists", if_not_exists);
+    w.writeBool("if_exists", if_exists);
+    w.writeBool("first", first);
+    w.writeBool("replace", replace);
+
+    if (type == ASTAlterCommand::MOVE_PARTITION)
+        w.writeString("move_destination_type", std::string(magic_enum::enum_name(move_destination_type)));
+
+    if (!move_destination_name.empty())
+        w.writeString("move_destination_name", move_destination_name);
+    if (!from.empty())
+        w.writeString("from", from);
+    if (!with_name.empty())
+        w.writeString("with_name", with_name);
+    if (!from_database.empty())
+        w.writeString("from_database", from_database);
+    if (!from_table.empty())
+        w.writeString("from_table", from_table);
+    if (!to_database.empty())
+        w.writeString("to_database", to_database);
+    if (!to_table.empty())
+        w.writeString("to_table", to_table);
+    if (!snapshot_name.empty())
+        w.writeString("snapshot_name", snapshot_name);
+    if (!execute_command_name.empty())
+        w.writeString("execute_command_name", execute_command_name);
+    if (!remove_property.empty())
+        w.writeString("remove_property", remove_property);
+
+    w.writeChild("col_decl", col_decl);
+    w.writeChild("column", column);
+    w.writeChild("order_by", order_by);
+    w.writeChild("sample_by", sample_by);
+    w.writeChild("index_decl", index_decl);
+    w.writeChild("index", index);
+    w.writeChild("constraint_decl", constraint_decl);
+    w.writeChild("constraint", constraint);
+    w.writeChild("projection_decl", projection_decl);
+    w.writeChild("projection", projection);
+    w.writeChild("statistics_decl", statistics_decl);
+    w.writeChild("partition", partition);
+    w.writeChild("predicate", predicate);
+    w.writeChild("update_assignments", update_assignments);
+    w.writeChild("comment", comment);
+    w.writeChild("ttl", ttl);
+    w.writeChild("settings_changes", settings_changes);
+    w.writeChild("settings_resets", settings_resets);
+    w.writeChild("select", select);
+    w.writeChild("sql_security", sql_security);
+    w.writeChild("rename_to", rename_to);
+    w.writeChild("refresh", refresh);
+    w.writeChild("snapshot_desc", snapshot_desc);
+    w.writeChild("execute_args", execute_args);
+    /// `ALTER TABLE ... MODIFY COLUMN x ADD ENUM VALUES (...)` stores the new enum values here and
+    /// `formatImpl` emits the `ADD ENUM VALUES` clause for them; serialize it so the JSON round-trip
+    /// does not silently drop the clause and change the command's semantics.
+    w.writeChild("add_enum_values", add_enum_values);
+}
+
+void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    if (!r.has("command_type"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
+    Int64 command_type_value = r.getInt("command_type");
+    auto command_type_opt = magic_enum::enum_cast<Type>(static_cast<std::underlying_type_t<Type>>(command_type_value));
+    if (!command_type_opt || static_cast<Int64>(*command_type_opt) != command_type_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: {}", command_type_value);
+    type = *command_type_opt;
+
+    detach = r.getBool("detach");
+    part = r.getBool("part");
+    clear_column = r.getBool("clear_column");
+    clear_index = r.getBool("clear_index");
+    clear_statistics = r.getBool("clear_statistics");
+    clear_projection = r.getBool("clear_projection");
+    if_not_exists = r.getBool("if_not_exists");
+    if_exists = r.getBool("if_exists");
+    first = r.getBool("first");
+    replace = r.getBool("replace");
+
+    if (r.has("move_destination_type"))
+    {
+        String move_dest_type_str = r.getString("move_destination_type");
+        auto move_dest_opt = magic_enum::enum_cast<DataDestinationType>(move_dest_type_str);
+        if (!move_dest_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown move_destination_type: '{}'", move_dest_type_str);
+        move_destination_type = *move_dest_opt;
+    }
+
+    move_destination_name = r.getString("move_destination_name");
+    from = r.getString("from");
+    with_name = r.getString("with_name");
+    from_database = r.getString("from_database");
+    from_table = r.getString("from_table");
+    to_database = r.getString("to_database");
+    to_table = r.getString("to_table");
+    snapshot_name = r.getString("snapshot_name");
+    execute_command_name = r.getString("execute_command_name");
+    remove_property = r.getString("remove_property");
+
+    /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
+    /// are arbitrary expressions/lists with no single parser-produced node type, so they are
+    /// restored generically.
+    auto readRawChild = [&](const char * key, IAST *& field)
+    {
+        auto child = r.readChild(key);
+        if (child)
+        {
+            field = child.get();
+            children.push_back(std::move(child));
+        }
+    };
+
+    /// The remaining children are parser-owned concrete node types that `AlterCommand::parse` and
+    /// `MutationCommands` downcast unconditionally (e.g. `col_decl` to `ASTColumnDeclaration`, the
+    /// `*_decl` fields to their declaration nodes, `column`/`index`/`constraint`/`projection`/
+    /// `rename_to` to `ASTIdentifier`, `settings_changes` to `ASTSetQuery`, `sql_security` to
+    /// `ASTSQLSecurity`). Restoring them generically would let a wrong node type from malformed
+    /// `clickhouse_json` reach those downcasts as an internal cast error instead of a user-facing
+    /// `BAD_ARGUMENTS`, so validate the type at the JSON boundary.
+    auto readTypedChild = [&]<typename T>(const char * key, IAST *& field)
+    {
+        auto child = r.readChildOfType<T>(key);
+        if (child)
+        {
+            field = child.get();
+            children.push_back(std::move(child));
+        }
+    };
+
+    readTypedChild.operator()<ASTColumnDeclaration>("col_decl", col_decl);
+    readTypedChild.operator()<ASTIdentifier>("column", column);
+    readRawChild("order_by", order_by);
+    readRawChild("sample_by", sample_by);
+    readTypedChild.operator()<ASTIndexDeclaration>("index_decl", index_decl);
+    readTypedChild.operator()<ASTIdentifier>("index", index);
+    readTypedChild.operator()<ASTConstraintDeclaration>("constraint_decl", constraint_decl);
+    readTypedChild.operator()<ASTIdentifier>("constraint", constraint);
+    readTypedChild.operator()<ASTProjectionDeclaration>("projection_decl", projection_decl);
+    readTypedChild.operator()<ASTIdentifier>("projection", projection);
+    readTypedChild.operator()<ASTStatisticsDeclaration>("statistics_decl", statistics_decl);
+    readRawChild("partition", partition);
+    readRawChild("predicate", predicate);
+    /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
+    /// downcasts each child to `ASTAssignment`).
+    readTypedChild.operator()<ASTExpressionList>("update_assignments", update_assignments);
+    if (update_assignments)
+        for (const auto & assignment : update_assignments->children)
+            if (!assignment || !assignment->as<ASTAssignment>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER UPDATE 'update_assignments' must contain only assignments during AST JSON deserialization");
+    /// `comment` (COMMENT COLUMN / MODIFY COMMENT / MODIFY DATABASE COMMENT) is parsed by
+    /// `ParserStringLiteral`; `AlterCommands` reads `comment->as<ASTLiteral &>().value.safeGet<String>()`,
+    /// so require a string literal (not merely an `ASTLiteral`) here.
+    if (auto comment_child = r.readStringLiteralChild("comment"))
+    {
+        comment = comment_child.get();
+        children.push_back(std::move(comment_child));
+    }
+    readRawChild("ttl", ttl);
+    readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
+    /// `settings_resets` is an `ASTExpressionList` of `ASTIdentifier` (the reset setting names).
+    readTypedChild.operator()<ASTExpressionList>("settings_resets", settings_resets);
+    if (settings_resets)
+        for (const auto & setting : settings_resets->children)
+            if (!setting || !setting->as<ASTIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER 'settings_resets' must contain only setting identifiers during AST JSON deserialization");
+    /// `select` (MODIFY QUERY) is an `ASTSelectWithUnionQuery`; `refresh` (MODIFY REFRESH) an `ASTRefreshStrategy`.
+    readTypedChild.operator()<ASTSelectWithUnionQuery>("select", select);
+    readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
+    readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
+    readRawChild("snapshot_desc", snapshot_desc);
+    readRawChild("execute_args", execute_args);
+
+    readTypedChild.operator()<ASTRefreshStrategy>("refresh", refresh);
+
+    /// `ADD ENUM VALUES (...)` is parser-produced as an `ASTExpressionList`; `formatImpl` emits it
+    /// for `MODIFY_COLUMN`, so it must round-trip through JSON (see `writeJSON`).
+    add_enum_values = r.readChildOfType<ASTExpressionList>("add_enum_values");
+    if (add_enum_values)
+        children.push_back(add_enum_values);
+
+    /// Validate that all children required by `formatImpl` for this command type are present.
+    /// Without this, a malformed JSON could produce a command whose `formatImpl` dereferences a null member.
+    auto require = [&](const IAST * field, const char * field_name)
+    {
+        if (!field)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Missing required '{}' field for ALTER command of type '{}' during AST JSON deserialization",
+                field_name, magic_enum::enum_name(type));
+    };
+
+    switch (type)
+    {
+        case ASTAlterCommand::ADD_COLUMN:
+            require(col_decl, "col_decl");
+            break;
+        case ASTAlterCommand::DROP_COLUMN:
+            require(column, "column");
+            break;
+        case ASTAlterCommand::MODIFY_COLUMN:
+        {
+            require(col_decl, "col_decl");
+            /// `MODIFY COLUMN` has exactly one parser sub-form: `REMOVE <prop>`, `MODIFY SETTING ...`,
+            /// `RESET SETTING ...`, `ADD ENUM VALUES (...)`, or the plain modify (optionally `FIRST`/
+            /// `AFTER`). `formatImpl` prints only the first matching sub-form, but `AlterCommand::parse`
+            /// still copies the hidden fields (`metadata.columns.modify` applies `first`/`after_column`,
+            /// `settings_changes`, `settings_resets`), so a payload could execute a reorder or setting
+            /// reset that the formatted SQL hides. Reject parser-impossible combinations: at most one
+            /// sub-form, and `first`/`column` (AFTER) only for the plain modify form.
+            const int sub_forms = static_cast<int>(!remove_property.empty()) + static_cast<int>(settings_changes != nullptr)
+                + static_cast<int>(settings_resets != nullptr) + static_cast<int>(add_enum_values != nullptr);
+            if (sub_forms > 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` cannot combine REMOVE / MODIFY SETTING / RESET SETTING / ADD ENUM VALUES during AST JSON deserialization");
+            if (sub_forms == 1 && (first || column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` 'first'/'column' (AFTER) are only valid for the plain modify form during AST JSON deserialization");
+            if (first && column)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`MODIFY COLUMN` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
+            break;
+        }
+        case ASTAlterCommand::MATERIALIZE_COLUMN:
+            require(column, "column");
+            break;
+        case ASTAlterCommand::COMMENT_COLUMN:
+            require(column, "column");
+            require(comment, "comment");
+            break;
+        case ASTAlterCommand::MODIFY_COMMENT:
+        case ASTAlterCommand::MODIFY_DATABASE_COMMENT:
+            require(comment, "comment");
+            break;
+        case ASTAlterCommand::MODIFY_ORDER_BY:
+            require(order_by, "order_by");
+            break;
+        case ASTAlterCommand::MODIFY_SAMPLE_BY:
+            require(sample_by, "sample_by");
+            break;
+        case ASTAlterCommand::ADD_INDEX:
+            require(index_decl, "index_decl");
+            /// The parser produces either `FIRST` or `AFTER <index>`, never both. `formatImpl` prints
+            /// only `FIRST`, but `AlterCommand::apply` lets `after_index_name` override the `first`
+            /// insertion position, so a payload with both would format as `ADD INDEX ... FIRST` while
+            /// inserting after another index. Reject the parser-impossible combination.
+            if (first && index)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`ADD INDEX` cannot set both 'first' (FIRST) and 'column' (AFTER) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::DROP_INDEX:
+        case ASTAlterCommand::MATERIALIZE_INDEX:
+            require(index, "index");
+            break;
+        case ASTAlterCommand::ADD_STATISTICS:
+        case ASTAlterCommand::MODIFY_STATISTICS:
+            require(statistics_decl, "statistics_decl");
+            /// `ADD`/`MODIFY STATISTICS` are parsed with `ParserStatisticsDeclaration` (a `TYPE` list);
+            /// `AlterCommand::parse` unconditionally calls `ASTStatisticsDeclaration::getTypeNames`, which
+            /// asserts `types != nullptr`. Reject the no-types declaration shape here.
+            if (!statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ADD/MODIFY STATISTICS requires a TYPE list ('statistics_decl' must have 'types') during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::MATERIALIZE_STATISTICS:
+            /// `MATERIALIZE STATISTICS ALL` is parser-produced with a null declaration (`writeJSON` omits
+            /// it and `formatImpl` emits `ALL`); the column-list form carries one. Allow the null form, but
+            /// reject a `TYPE` list when a declaration is present (parser-impossible:
+            /// `ParserStatisticsDeclarationWithoutTypes`).
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::DROP_STATISTICS:
+            /// `CLEAR STATISTICS ALL` (`clear_statistics`) is parser-produced with a null declaration; plain
+            /// `DROP STATISTICS` and the non-`ALL` `CLEAR STATISTICS <cols>` form always carry a column-list
+            /// declaration. A `TYPE` list is parser-impossible for any of them.
+            if (!clear_statistics)
+                require(statistics_decl, "statistics_decl");
+            if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "DROP/CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::ADD_CONSTRAINT:
+            require(constraint_decl, "constraint_decl");
+            break;
+        case ASTAlterCommand::DROP_CONSTRAINT:
+            require(constraint, "constraint");
+            break;
+        case ASTAlterCommand::ADD_PROJECTION:
+            require(projection_decl, "projection_decl");
+            break;
+        case ASTAlterCommand::DROP_PROJECTION:
+        case ASTAlterCommand::MATERIALIZE_PROJECTION:
+            require(projection, "projection");
+            break;
+        case ASTAlterCommand::DROP_PARTITION:
+        case ASTAlterCommand::DROP_DETACHED_PARTITION:
+        case ASTAlterCommand::FORGET_PARTITION:
+        case ASTAlterCommand::ATTACH_PARTITION:
+        case ASTAlterCommand::FREEZE_PARTITION:
+            require(partition, "partition");
+            break;
+        case ASTAlterCommand::REPLACE_PARTITION:
+            /// `[ATTACH|REPLACE] PARTITION ... FROM [db.]table` — the parser always parses a source table
+            /// (`from_database` is optional, defaulting to the current database). `formatImpl` emits
+            /// `FROM <from_table>`, so an empty `from_table` would format a parser-impossible `FROM `.
+            require(partition, "partition");
+            if (from_table.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "REPLACE/ATTACH PARTITION FROM requires a non-empty 'from_table' during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::FETCH_PARTITION:
+            /// `FETCH PART[ITION] ... FROM '<path>'` — the parser always requires the `FROM` path; an empty
+            /// path is never a valid source. `formatImpl` emits `FROM <from>`.
+            require(partition, "partition");
+            if (from.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "FETCH PARTITION requires a non-empty 'from' (FROM path) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::UNFREEZE_PARTITION:
+            /// `UNFREEZE PARTITION ... WITH NAME '<name>'` — unlike `FREEZE`, the parser requires `WITH NAME`,
+            /// so the backup name must be present. `formatImpl` only emits `WITH NAME` for a non-empty name.
+            require(partition, "partition");
+            if (with_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNFREEZE PARTITION requires a non-empty 'with_name' (WITH NAME) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::UNFREEZE_ALL:
+            /// `UNFREEZE WITH NAME '<name>'` — the parser requires `WITH NAME` for the all-partitions form too.
+            if (with_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNFREEZE requires a non-empty 'with_name' (WITH NAME) during AST JSON deserialization");
+            break;
+        case ASTAlterCommand::MOVE_PARTITION:
+            require(partition, "partition");
+            /// `writeJSON` only emits `move_destination_type` for `MOVE_PARTITION`, so it must be present here.
+            if (!r.has("move_destination_type"))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Missing required 'move_destination_type' field for ALTER command of type 'MOVE_PARTITION' "
+                    "during AST JSON deserialization");
+            switch (move_destination_type)
+            {
+                case DataDestinationType::DISK:
+                case DataDestinationType::VOLUME:
+                case DataDestinationType::SHARD:
+                    if (move_destination_name.empty())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Missing required 'move_destination_name' field for ALTER command of type 'MOVE_PARTITION' "
+                            "with move_destination_type '{}' during AST JSON deserialization",
+                            magic_enum::enum_name(move_destination_type));
+                    break;
+                case DataDestinationType::TABLE:
+                    if (to_table.empty())
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Missing required 'to_table' field for ALTER command of type 'MOVE_PARTITION' "
+                            "with move_destination_type 'TABLE' during AST JSON deserialization");
+                    break;
+                default:
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Unsupported move_destination_type '{}' for ALTER command of type 'MOVE_PARTITION' "
+                        "during AST JSON deserialization",
+                        magic_enum::enum_name(move_destination_type));
+            }
+            break;
+        case ASTAlterCommand::DELETE:
+            require(predicate, "predicate");
+            break;
+        case ASTAlterCommand::UPDATE:
+            require(update_assignments, "update_assignments");
+            require(predicate, "predicate");
+            break;
+        case ASTAlterCommand::MODIFY_TTL:
+            require(ttl, "ttl");
+            break;
+        case ASTAlterCommand::MODIFY_SETTING:
+        case ASTAlterCommand::MODIFY_DATABASE_SETTING:
+            require(settings_changes, "settings_changes");
+            break;
+        case ASTAlterCommand::RESET_SETTING:
+            require(settings_resets, "settings_resets");
+            break;
+        case ASTAlterCommand::MODIFY_QUERY:
+            require(select, "select");
+            break;
+        case ASTAlterCommand::MODIFY_REFRESH:
+            require(refresh, "refresh");
+            break;
+        case ASTAlterCommand::RENAME_COLUMN:
+            require(column, "column");
+            require(rename_to, "rename_to");
+            break;
+        case ASTAlterCommand::MODIFY_SQL_SECURITY:
+            require(sql_security, "sql_security");
+            break;
+        default:
+            break;
+    }
+
+    /// `IN PARTITION` is parser-produced only for the `CLEAR` forms (and the materialize forms), never for
+    /// the metadata-only `DROP COLUMN/INDEX/STATISTICS/PROJECTION` variants. `formatImpl` would emit a
+    /// parser-impossible `DROP ... IN PARTITION`, and `AlterCommand::apply` skips metadata removal whenever
+    /// a partition is present (and `tryConvertToMutationCommand` reparses the formatted text). Reject a
+    /// `partition` on the drop variants (`clear_*` flag false); `CLEAR`/materialize forms keep it.
+    if (partition)
+    {
+        if ((type == ASTAlterCommand::DROP_COLUMN && !clear_column)
+            || (type == ASTAlterCommand::DROP_INDEX && !clear_index)
+            || (type == ASTAlterCommand::DROP_STATISTICS && !clear_statistics)
+            || (type == ASTAlterCommand::DROP_PROJECTION && !clear_projection))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' (IN PARTITION) is only valid for the CLEAR/MATERIALIZE forms, not a metadata DROP, during AST JSON deserialization");
+    }
 }
 
 
@@ -348,6 +797,11 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "ATTACH " << (part ? "PART " : "PARTITION ")
                      ;
         partition->format(ostr, settings, state, frame);
+        /// `ATTACH PART '...' FROM '<path>'` stores the source path in `from` (the parser only sets it for
+        /// the PART form). `PartitionCommand::parse` consumes it as `from_path`, so the path must be emitted
+        /// for the JSON round trip; otherwise the formatted SQL would hide the source the command uses.
+        if (part && !from.empty())
+            ostr << " FROM " << DB::quote << from;
     }
     else if (type == ASTAlterCommand::MOVE_PARTITION)
     {
@@ -761,6 +1215,102 @@ ASTPtr ASTAlterQuery::clone() const
     cloneTableOptions(*res);
 
     return res;
+}
+
+void ASTAlterQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "AlterQuery");
+
+    w.writeString("database", getDatabase());
+    w.writeString("table", getTable());
+
+    /// Also serialize the database/table ASTPtr members so that parameterized targets
+    /// such as `ALTER TABLE {tbl:Identifier} ...` are preserved (the string form above
+    /// only captures plain identifiers).
+    w.writeChild("database_ast", database);
+    w.writeChild("table_ast", table);
+
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+
+    const char * obj_type = "UNKNOWN";
+    if (alter_object == AlterObjectType::TABLE)
+        obj_type = "TABLE";
+    else if (alter_object == AlterObjectType::DATABASE)
+        obj_type = "DATABASE";
+    w.writeString("alter_object", std::string_view(obj_type));
+
+    w.writeChild("command_list", command_list);
+    writeOutputOptionsJSON(w);
+}
+
+void ASTAlterQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// Prefer the full AST form of the database/table targets when present, so that
+    /// parameterized targets such as `ALTER TABLE {tbl:Identifier} ...` are preserved.
+    /// Fall back to the plain-identifier string form otherwise. These slots are parser-produced
+    /// identifiers; `getDatabase`/`getTable` read them via `tryGetIdentifierNameInto`, so reject
+    /// other node types here.
+    if (auto database_ast = r.readIdentifierChild("database_ast"))
+        set(database, database_ast);
+    else
+    {
+        String db = r.getString("database");
+        if (!db.empty())
+            setDatabase(db);
+    }
+
+    if (auto table_ast = r.readIdentifierChild("table_ast"))
+        set(table, table_ast);
+    else
+    {
+        String tbl = r.getString("table");
+        if (!tbl.empty())
+            setTable(tbl);
+    }
+
+    cluster = r.getString("cluster");
+
+    if (!r.has("alter_object"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'alter_object' field in `AlterQuery` during AST JSON deserialization");
+    String obj_type = r.getString("alter_object");
+    if (obj_type == "TABLE")
+        alter_object = AlterObjectType::TABLE;
+    else if (obj_type == "DATABASE")
+        alter_object = AlterObjectType::DATABASE;
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown alter_object value: '{}'", obj_type);
+
+    auto child = r.readChild("command_list");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_list' field in `AlterQuery` during AST JSON deserialization");
+    /// `formatQueryImpl` and `forEachPointerToChild` both cast `command_list` to `ASTExpressionList`,
+    /// and later ALTER handling downcasts every element to `ASTAlterCommand`.
+    if (!child->as<ASTExpressionList>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must be an ExpressionList during AST JSON deserialization");
+    for (const auto & command : child->children)
+        if (!command || !command->as<ASTAlterCommand>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'command_list' of `AlterQuery` must contain only alter commands during AST JSON deserialization");
+    set(command_list, child);
+
+    /// Validate the target against the parser invariants: `ALTER TABLE` always has a table
+    /// target, while `ALTER DATABASE` has only a database target and never a table.
+    if (alter_object == AlterObjectType::TABLE)
+    {
+        if (!table)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'TABLE' must specify a target table during AST JSON deserialization");
+    }
+    else if (alter_object == AlterObjectType::DATABASE)
+    {
+        if (!database)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'DATABASE' must specify a target database during AST JSON deserialization");
+        if (table)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`AlterQuery` with alter_object 'DATABASE' must not specify a target table during AST JSON deserialization");
+    }
+
+    readOutputOptionsJSON(r);
 }
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

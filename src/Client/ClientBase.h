@@ -143,6 +143,13 @@ protected:
     void processOrdinaryQuery(String query, ASTPtr parsed_query);
     void processInsertQuery(String query, ASTPtr parsed_query);
 
+    /// In `clickhouse_json` dialect the client parses JSON locally and then sends a query string that the
+    /// server re-parses using the session `dialect`. Pin the outbound `dialect` (and the experimental
+    /// gate) to match the form of `outbound_query` actually being sent — JSON body vs. SQL produced by a
+    /// client-side AST rewrite — so the server parses it the same way the client did. No-op outside
+    /// `clickhouse_json`. The change is temporary (the caller restores the saved settings after the query).
+    void pinOutboundDialectForJSONDialect(const String & outbound_query);
+
     void processParsedSingleQuery(
         std::string_view query_,
         ASTPtr parsed_query,
@@ -513,6 +520,11 @@ protected:
 
     bool allow_repeated_settings = false;
     bool allow_merge_tree_settings = false;
+
+    /// True when the current query text was parsed via the `clickhouse_json` dialect JSON path. Captured
+    /// before any in-query `SET` is applied, so `pinOutboundDialectForJSONDialect` can keep the outbound
+    /// transport dialect consistent with the outbound text even if a JSON `SET dialect=...` changed it.
+    bool current_query_parsed_as_json_dialect = false;
 
     std::atomic_bool cancelled = false;
     std::atomic_bool cancelled_printed = false;

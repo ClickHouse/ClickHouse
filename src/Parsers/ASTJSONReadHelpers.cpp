@@ -1,0 +1,285 @@
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
+
+#include <algorithm>
+#include <limits>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
+{
+    ASTPtr child = readChild(key);
+    if (child && !dynamic_cast<const ASTIdentifier *>(child.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected an identifier for key '{}' during AST JSON deserialization", key);
+    return child;
+}
+
+ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const
+{
+    ASTPtr child = readChild(key);
+    if (!child)
+        return nullptr;
+    const auto * literal = child->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a string literal for key '{}' during AST JSON deserialization", key);
+    return child;
+}
+
+namespace
+{
+
+/// Compute the maximum bracket nesting depth of a `Field::restoreFromDump` payload.
+/// `restoreFromDump` recursively parses `Array_[...]`, `Tuple_(...)`, `Map_(...)` and
+/// `AggregateFunctionState_(...)` payloads; without a depth bound, a hostile JSON
+/// `value` string can drive unbounded recursion regardless of the JSON object depth.
+/// Quoted strings (single quotes, with backslash escapes) are skipped so that brackets
+/// inside string literals do not count.
+size_t computeFieldDumpNestingDepth(std::string_view dump)
+{
+    size_t depth = 0;
+    size_t max_depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (char c : dump)
+    {
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '\'')
+                in_string = false;
+            continue;
+        }
+        if (c == '\'')
+            in_string = true;
+        else if (c == '[' || c == '(')
+        {
+            ++depth;
+            max_depth = std::max(max_depth, depth);
+        }
+        else if ((c == ']' || c == ')') && depth > 0)
+            --depth;
+    }
+    return max_depth;
+}
+
+}
+
+Field JSONObjectReader::readFieldFromObject(const Poco::JSON::Object & obj)
+{
+    return readFieldFromObjectImpl(obj, 0);
+}
+
+Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, size_t depth)
+{
+    /// Bound the recursion over structured `Field` values (Array/Tuple/Map). These nested
+    /// JSON levels live inside a single `Literal` AST node and add no AST nodes, so the
+    /// AST depth/element limits do not stop them.
+    if (size_t max_depth = getJSONDeserializationMaxDepth(); max_depth > 0 && depth > max_depth)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
+            max_depth);
+
+    /// Count every `Field` value (scalar or structured) against the element-count budget too, so a
+    /// wide literal payload (e.g. one huge `Array`) cannot bypass `max_ast_elements` while adding no
+    /// AST nodes.
+    countJSONDeserializationElement();
+
+    /// `field_type` is `Field::getTypeName()` of the original value, always emitted as a JSON
+    /// string by `writeFieldJSON`. Validate it explicitly so a missing or non-string
+    /// `field_type` is rejected as `BAD_ARGUMENTS` instead of throwing a raw `Poco` exception.
+    if (!obj.has("field_type") || !obj.get("field_type").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field JSON requires a string 'field_type' during AST JSON deserialization");
+    String field_type = obj.getValue<String>("field_type");
+
+    if (field_type == "Null")
+    {
+        if (obj.isNull("value"))
+            return Field(Null{});
+        /// The writer encodes a `Null`-category field as JSON null, or the string sentinels
+        /// `-Inf`/`+Inf` for the negative/positive infinity boundary values. Any other `value`
+        /// is malformed input the writer cannot produce, so reject it instead of silently
+        /// collapsing it to `NULL`.
+        auto value_var = obj.get("value");
+        if (value_var.isString())
+        {
+            const String & val = value_var.extract<String>();
+            if (val == "-Inf")
+                return Field(NEGATIVE_INFINITY);
+            if (val == "+Inf")
+                return Field(POSITIVE_INFINITY);
+        }
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected 'value' for Null field during AST JSON deserialization (expected null, '-Inf', or '+Inf')");
+    }
+    /// The scalar branches below validate the exact JSON type emitted by `writeFieldJSON`
+    /// before extracting. `Poco::Dynamic::Var` otherwise coerces freely (e.g. the string
+    /// `"yes"` becomes `true`, `"123"` becomes a number), which would let malformed
+    /// `clickhouse_json` deserialize into a different valid literal instead of being
+    /// rejected at the boundary. A JSON boolean is reported as `isInteger()`/`isNumeric()`
+    /// too (`bool` is integral in Poco), so the numeric branches exclude `isBoolean()`.
+    /// `isInteger()` is also true for signed values, so a payload like `{"field_type":"UInt64","value":-1}`
+    /// (or an out-of-`Int64`-range unsigned number) reaches `getValue` and throws a raw
+    /// `Poco::RangeException`; catch it and surface a controlled `BAD_ARGUMENTS` like the scalar helpers.
+    if (field_type == "UInt64")
+    {
+        const auto value_var = obj.get("value");
+        if (!value_var.isInteger() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an integer 'value' for UInt64 field during AST JSON deserialization");
+        try
+        {
+            return Field(static_cast<UInt64>(obj.getValue<Poco::UInt64>("value")));
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'value' for UInt64 field is out of range during AST JSON deserialization");
+        }
+    }
+    if (field_type == "Int64")
+    {
+        const auto value_var = obj.get("value");
+        if (!value_var.isInteger() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected an integer 'value' for Int64 field during AST JSON deserialization");
+        try
+        {
+            return Field(static_cast<Int64>(obj.getValue<Poco::Int64>("value")));
+        }
+        catch (const Poco::Exception &)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'value' for Int64 field is out of range during AST JSON deserialization");
+        }
+    }
+    if (field_type == "Float64")
+    {
+        /// Non-finite values (`nan`, `inf`, `-inf`) are encoded as string sentinels by the
+        /// writer because they are not valid JSON numbers. Finite values are bare numbers.
+        auto value_var = obj.get("value");
+        if (value_var.isString())
+        {
+            String val = value_var.extract<String>();
+            if (val == "nan")
+                return Field(std::numeric_limits<double>::quiet_NaN());
+            if (val == "+Inf")
+                return Field(std::numeric_limits<double>::infinity());
+            if (val == "-Inf")
+                return Field(-std::numeric_limits<double>::infinity());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected string sentinel '{}' for Float64 `value` during AST JSON deserialization", val);
+        }
+        if (!value_var.isNumeric() || value_var.isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a number or string sentinel 'value' for Float64 field during AST JSON deserialization");
+        return Field(obj.getValue<double>("value"));
+    }
+    if (field_type == "Bool")
+    {
+        if (!obj.get("value").isBoolean())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a boolean 'value' for Bool field during AST JSON deserialization");
+        return Field(obj.getValue<bool>("value"));
+    }
+    if (field_type == "String")
+    {
+        if (!obj.get("value").isString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a string 'value' for String field during AST JSON deserialization");
+        return Field(obj.getValue<String>("value"));
+    }
+
+    if (field_type == "Array")
+    {
+        auto json_arr = obj.getArray("value");
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Array field during AST JSON deserialization");
+        Array arr;
+        /// Bound the reserve by the remaining element budget so an untrusted array length cannot force
+        /// a large allocation before `countJSONDeserializationElement` rejects the payload below.
+        arr.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
+        {
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Array field during AST JSON deserialization", i);
+            arr.push_back(readFieldFromObjectImpl(*elem, depth + 1));
+        }
+        return Field(std::move(arr));
+    }
+    if (field_type == "Tuple")
+    {
+        auto json_arr = obj.getArray("value");
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Tuple field during AST JSON deserialization");
+        Tuple tup;
+        tup.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
+        {
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Tuple field during AST JSON deserialization", i);
+            tup.push_back(readFieldFromObjectImpl(*elem, depth + 1));
+        }
+        return Field(std::move(tup));
+    }
+    if (field_type == "Map")
+    {
+        auto json_arr = obj.getArray("value");
+        if (!json_arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected JSON array for `value` of Map field during AST JSON deserialization");
+        Map map;
+        map.reserve(std::min<size_t>(json_arr->size(), getJSONDeserializationRemainingElements()));
+        for (unsigned int i = 0; i < json_arr->size(); ++i)
+        {
+            auto elem = json_arr->getObject(i);
+            if (!elem)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in Map field during AST JSON deserialization", i);
+            map.push_back(readFieldFromObjectImpl(*elem, depth + 1));
+        }
+        return Field(std::move(map));
+    }
+
+    /// For complex types, use Field::restoreFromDump. Validate the JSON scalar type strictly first,
+    /// like the scalar branches above, so a non-string `value` is rejected with `BAD_ARGUMENTS`
+    /// instead of being coerced into a dump string.
+    if (!obj.has("value") || !obj.get("value").isString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a string 'value' (Field dump) for field type '{}' during AST JSON deserialization", field_type);
+    String dump_str = obj.getValue<String>("value");
+
+    /// `Field::restoreFromDump` recursively parses nested `Array_`/`Tuple_`/`Map_` dumps
+    /// without an internal depth limit, so a hostile JSON payload could trigger unbounded
+    /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
+    /// against the same depth bound used for AST node construction.
+    if (size_t max_depth = getJSONDeserializationMaxDepth();
+        max_depth > 0 && computeFieldDumpNestingDepth(dump_str) > max_depth)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field dump payload exceeds maximum AST depth limit ({}) during JSON AST deserialization",
+            max_depth);
+
+    Field result = Field::restoreFromDump(dump_str);
+    /// `field_type` is `Field::getTypeName()` of the original value, and the dump string embeds
+    /// its own type. Reject an unknown or inconsistent `field_type` (e.g. `{"field_type":"Bogus"}`)
+    /// instead of letting the dump payload silently decide the resulting literal's type.
+    if (result.getTypeName() != field_type)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Field 'value' dump of type '{}' does not match declared field_type '{}' during AST JSON deserialization",
+            result.getTypeName(), field_type);
+    return result;
+}
+
+}

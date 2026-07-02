@@ -1,14 +1,26 @@
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <IO/WriteHelpers.h>
+#include <base/EnumReflection.h>
 #include <Core/UUID.h>
+
+#include <unordered_set>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -214,6 +226,11 @@ ASTPtr ASTViewTargets::clone() const
             res->set(target.inner_engine, target.inner_engine->clone());
         if (target.inner_columns)
             res->set(target.inner_columns, target.inner_columns->clone());
+        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
+        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
+        /// dangles into the original's children.
+        if (target.table_ast)
+            res->set(target.table_ast, target.table_ast->clone());
     }
     return res;
 }
@@ -326,4 +343,146 @@ void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             target.table_ast.reset();
 }
+
+void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    auto arr = r.getArray("targets");
+    if (!arr)
+        return;
+    /// The SQL parser builds `targets` through setters (`setTableID`, `setInnerEngine`, `setInnerColumns`, ...) that
+    /// merge by `ViewTarget::Kind`, so it can never produce two targets of the same kind. JSON input could append
+    /// duplicates, which would make formatting (`tryGetTarget` sees only the first match) disagree with execution and
+    /// access checks (which iterate every entry in `targets`). Reject duplicates to match the parser-produced shape.
+    std::unordered_set<ViewTarget::Kind> seen_kinds;
+    for (unsigned int i = 0; i < arr->size(); ++i)
+    {
+        /// Each view target is a non-AST struct; count it against `max_ast_elements`.
+        countJSONDeserializationElement();
+        auto target_obj = arr->getObject(i);
+        if (!target_obj)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'targets' array during AST JSON deserialization", i);
+        ViewTarget target;
+        /// Read scalar fields through `JSONObjectReader` so a wrong JSON scalar type is rejected with
+        /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a table name).
+        JSONObjectReader target_reader(*target_obj);
+        String kind_str = target_reader.getString("kind");
+        auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
+        if (!kind_opt)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
+        target.kind = *kind_opt;
+        if (!seen_kinds.insert(target.kind).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization; each kind may appear at most once", kind_str, i);
+        if (target_obj->has("table_name"))
+        {
+            /// Restore the `StorageID` parts separately (see `writeJSON`); the database may be empty
+            /// (`TO dst`) and names may contain dots, so do not reconstruct by splitting a full name.
+            const String database = target_reader.getString("table_database");
+            /// Unlike `inner_uuid` (emitted as `INNER UUID '...'`), `formatTarget` prints only `db.table` for a
+            /// `table_id` target, so a `table_uuid` would be dropped by `formatQueryFromJSON` while the JSON AST
+            /// still resolves the `StorageID` by `UUID`. Reject it at the boundary (fail closed) instead of hiding
+            /// semantic state behind a lossy round trip.
+            if (target_obj->has("table_uuid"))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "ASTViewTargets JSON must not carry a 'table_uuid': a `TO` target with a UUID cannot be "
+                    "formatted back to SQL faithfully during AST JSON deserialization");
+            target.table_id = StorageID(database, target_reader.getString("table_name"), UUIDHelpers::Nil);
+        }
+        if (target_obj->has("inner_uuid"))
+        {
+            String uuid_str = target_reader.getString("inner_uuid");
+            target.inner_uuid = parseFromString<UUID>(uuid_str);
+        }
+        if (target_obj->has("inner_engine"))
+        {
+            auto engine_obj = target_obj->getObject("inner_engine");
+            if (!engine_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.inner_engine = IAST::createFromJSON(*engine_obj);
+            if (!target.inner_engine->as<ASTStorage>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_engine' is not a storage definition at index {} in 'targets' array during AST JSON deserialization", i);
+            children.push_back(target.inner_engine);
+        }
+        if (target_obj->has("inner_columns"))
+        {
+            auto columns_obj = target_obj->getObject("inner_columns");
+            if (!columns_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.inner_columns = IAST::createFromJSON(*columns_obj);
+            if (!target.inner_columns->as<ASTColumns>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'inner_columns' is not a columns definition at index {} in 'targets' array during AST JSON deserialization", i);
+            children.push_back(target.inner_columns);
+        }
+        if (target_obj->has("table_ast"))
+        {
+            auto table_ast_obj = target_obj->getObject("table_ast");
+            if (!table_ast_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not an object at index {} in 'targets' array during AST JSON deserialization", i);
+            target.table_ast = IAST::createFromJSON(*table_ast_obj);
+            if (!target.table_ast->as<ASTTableIdentifier>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'table_ast' is not a table identifier at index {} in 'targets' array during AST JSON deserialization", i);
+            children.push_back(target.table_ast);
+        }
+        targets.push_back(std::move(target));
+    }
+}
+
+void ASTViewTargets::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "ViewTargets");
+    if (!targets.empty())
+    {
+        w.writeKey("targets");
+        out << '[';
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            if (i > 0)
+                out << ',';
+            const auto & target = targets[i];
+            out << '{';
+            out << "\"kind\":";
+            writeJSONString(toString(target.kind), out, w.getFormatSettings());
+            if (!target.table_id.empty())
+            {
+                /// Serialize the `StorageID` parts separately instead of `getFullTableName()`: the
+                /// latter throws for a database-less target (`TO dst`) and a `db.table` join is
+                /// ambiguous for identifiers that themselves contain dots.
+                out << ",\"table_database\":";
+                writeJSONString(target.table_id.database_name, out, w.getFormatSettings());
+                out << ",\"table_name\":";
+                writeJSONString(target.table_id.table_name, out, w.getFormatSettings());
+                if (target.table_id.uuid != UUIDHelpers::Nil)
+                {
+                    out << R"(,"table_uuid":")";
+                    writeUUIDText(target.table_id.uuid, out);
+                    out << '"';
+                }
+            }
+            if (target.inner_uuid != UUIDHelpers::Nil)
+            {
+                out << R"(,"inner_uuid":")";
+                writeUUIDText(target.inner_uuid, out);
+                out << '"';
+            }
+            if (target.inner_engine)
+            {
+                out << ",\"inner_engine\":";
+                target.inner_engine->writeJSON(out);
+            }
+            if (target.inner_columns)
+            {
+                out << ",\"inner_columns\":";
+                target.inner_columns->writeJSON(out);
+            }
+            if (target.table_ast)
+            {
+                out << ",\"table_ast\":";
+                target.table_ast->writeJSON(out);
+            }
+            out << '}';
+        }
+        out << ']';
+    }
+}
+
 }

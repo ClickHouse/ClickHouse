@@ -311,6 +311,7 @@ enum class Dialect : uint8_t
     prql,
     promql,
     polyglot,
+    clickhouse_json,
 };
 
 DECLARE_SETTING_ENUM(Dialect)

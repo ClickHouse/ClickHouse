@@ -1,14 +1,26 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <base/EnumReflection.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+
+#include <algorithm>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
     using Kind = ASTBackupQuery::Kind;
@@ -326,7 +338,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
     backup_name->format(ostr, fs);
 
-    if (settings || base_backup_name)
+    if (settings || base_backup_name || cluster_host_ids)
         formatSettings(settings, base_backup_name, cluster_host_ids, ostr, fs);
 }
 
@@ -342,6 +354,314 @@ ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterAST
 IAST::QueryKind ASTBackupQuery::getQueryKind() const
 {
     return kind == Kind::BACKUP ? QueryKind::Backup : QueryKind::Restore;
+}
+
+namespace
+{
+    using Element = ASTBackupQuery::Element;
+    using ElementType = ASTBackupQuery::ElementType;
+
+    void writeElementJSON(const Element & e, JSONObjectWriter & w)
+    {
+        WriteBuffer & out = w.getOut();
+        const FormatSettings & fs = w.getFormatSettings();
+        out << "{\"type\":" << static_cast<Int64>(e.type);
+        if (!e.table_name.empty())
+        {
+            out << ",\"table_name\":";
+            writeJSONString(e.table_name, out, fs);
+        }
+        if (!e.database_name.empty())
+        {
+            out << ",\"database_name\":";
+            writeJSONString(e.database_name, out, fs);
+        }
+        if (!e.new_table_name.empty())
+        {
+            out << ",\"new_table_name\":";
+            writeJSONString(e.new_table_name, out, fs);
+        }
+        if (!e.new_database_name.empty())
+        {
+            out << ",\"new_database_name\":";
+            writeJSONString(e.new_database_name, out, fs);
+        }
+        if (e.partitions)
+        {
+            out << ",\"partitions\":[";
+            bool first = true;
+            for (const auto & p : *e.partitions)
+            {
+                if (!first) out << ',';
+                first = false;
+                p->writeJSON(out);
+            }
+            out << ']';
+        }
+        if (!e.except_tables.empty())
+        {
+            out << ",\"except_tables\":[";
+            bool first = true;
+            for (const auto & [db, tbl] : e.except_tables)
+            {
+                if (!first) out << ',';
+                first = false;
+                out << "{\"database\":";
+                writeJSONString(db, out, fs);
+                out << ",\"table\":";
+                writeJSONString(tbl, out, fs);
+                out << '}';
+            }
+            out << ']';
+        }
+        if (!e.except_databases.empty())
+        {
+            out << ",\"except_databases\":[";
+            bool first = true;
+            for (const auto & db : e.except_databases)
+            {
+                if (!first) out << ',';
+                first = false;
+                writeJSONString(db, out, fs);
+            }
+            out << ']';
+        }
+        out << '}';
+    }
+
+    Element readElementJSON(const Poco::JSON::Object & elem_obj, size_t element_index)
+    {
+        /// Each backup/restore element is a non-AST struct; count it against the same element budget
+        /// as AST nodes so a tiny-AST payload cannot carry millions of elements past `max_ast_elements`.
+        countJSONDeserializationElement();
+        Element e;
+        /// Read the scalar fields through `JSONObjectReader` so they are validated strictly (an exact
+        /// JSON integer/string), like the AST helpers above. Reading directly through `Poco::getValue`
+        /// coerces scalar types, so malformed `clickhouse_json` (e.g. a number where a name is expected)
+        /// would build a different valid AST instead of being rejected with `BAD_ARGUMENTS`.
+        JSONObjectReader elem_reader(elem_obj);
+        if (!elem_obj.has("type"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'type' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+        Int64 type_value = elem_reader.getInt("type");
+        auto type_opt = magic_enum::enum_cast<ElementType>(static_cast<std::underlying_type_t<ElementType>>(type_value));
+        if (!type_opt || static_cast<Int64>(*type_opt) != type_value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE element type at index {}: {}", element_index, type_value);
+        e.type = *type_opt;
+        e.table_name = elem_reader.getString("table_name");
+        e.database_name = elem_reader.getString("database_name");
+        e.new_table_name = elem_obj.has("new_table_name") ? elem_reader.getString("new_table_name") : e.table_name;
+        e.new_database_name = elem_obj.has("new_database_name") ? elem_reader.getString("new_database_name") : e.database_name;
+        if (elem_obj.has("partitions"))
+        {
+            auto arr = elem_obj.getArray("partitions");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'partitions' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            ASTs partitions;
+            /// Cap the reserve by the remaining element budget; each partition AST is counted by
+            /// `createFromJSON` below, but the reserve runs off the untrusted array length first.
+            partitions.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                auto p_obj = arr->getObject(i);
+                if (!p_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'partitions' array at element index {} during AST JSON deserialization", i, element_index);
+                partitions.push_back(IAST::createFromJSON(*p_obj));
+            }
+            e.partitions = std::move(partitions);
+        }
+        if (elem_obj.has("except_tables"))
+        {
+            auto arr = elem_obj.getArray("except_tables");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_tables' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Count each non-AST entry against the element budget (memory guard).
+                countJSONDeserializationElement();
+                auto t_obj = arr->getObject(i);
+                if (!t_obj)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'except_tables' array at element index {} during AST JSON deserialization", i, element_index);
+                JSONObjectReader t_reader(*t_obj);
+                String db = t_reader.getString("database");
+                String tbl = t_reader.getString("table");
+                e.except_tables.emplace(std::move(db), std::move(tbl));
+            }
+        }
+        if (elem_obj.has("except_databases"))
+        {
+            auto arr = elem_obj.getArray("except_databases");
+            if (!arr)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'except_databases' is not a JSON array at element index {} during AST JSON deserialization", element_index);
+            for (unsigned int i = 0; i < arr->size(); ++i)
+            {
+                /// Count each non-AST entry against the element budget (memory guard).
+                countJSONDeserializationElement();
+                auto var = arr->get(i);
+                if (!var.isString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Element at index {} of 'except_databases' at element index {} is not a string during AST JSON deserialization", i, element_index);
+                e.except_databases.insert(var.extract<String>());
+            }
+        }
+
+        /// Validate per `ElementType` that the required fields are present and that no field
+        /// invalid for the type is supplied. `formatElement` reproduces only a type-specific
+        /// subset of these fields, so accepting the others would let `clickhouse_json` carry data
+        /// that the formatted SQL drops while `BackupEntriesCollector`/`RestorerFromBackup` still
+        /// act on it — for example a `partitions` list on a `TEMPORARY TABLE`, which the parser
+        /// never produces and `formatElement` omits, but the backup/restore logic would honour.
+        auto reject_field = [&](const char * key, const char * type_name)
+        {
+            if (elem_obj.has(key))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Field '{}' is not valid for BACKUP/RESTORE element type {} at index {} during AST JSON deserialization",
+                    key, type_name, element_index);
+        };
+        switch (e.type)
+        {
+            case ElementType::TABLE:
+                /// Valid: table_name, database_name, new_table_name, new_database_name, partitions.
+                if (e.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("except_tables", "TABLE");
+                reject_field("except_databases", "TABLE");
+                break;
+            case ElementType::TEMPORARY_TABLE:
+                /// Valid: table_name, new_table_name. A temporary table has no database and
+                /// `formatElement` prints neither a database nor `PARTITIONS`/`EXCEPT`.
+                if (e.table_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'table_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("database_name", "TEMPORARY_TABLE");
+                reject_field("new_database_name", "TEMPORARY_TABLE");
+                reject_field("partitions", "TEMPORARY_TABLE");
+                reject_field("except_tables", "TEMPORARY_TABLE");
+                reject_field("except_databases", "TEMPORARY_TABLE");
+                break;
+            case ElementType::DATABASE:
+                /// Valid: database_name, new_database_name, except_tables.
+                if (e.database_name.empty())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'database_name' for BACKUP/RESTORE element at index {} during AST JSON deserialization", element_index);
+                reject_field("table_name", "DATABASE");
+                reject_field("new_table_name", "DATABASE");
+                reject_field("partitions", "DATABASE");
+                reject_field("except_databases", "DATABASE");
+                break;
+            case ElementType::ALL:
+                /// Valid: except_databases, except_tables.
+                reject_field("table_name", "ALL");
+                reject_field("database_name", "ALL");
+                reject_field("new_table_name", "ALL");
+                reject_field("new_database_name", "ALL");
+                reject_field("partitions", "ALL");
+                break;
+        }
+
+        return e;
+    }
+}
+
+void ASTBackupQuery::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "BackupQuery");
+    w.writeInt("kind", static_cast<Int64>(kind));
+    w.writeChild("backup_name", backup_name);
+    w.writeChild("base_backup_name", base_backup_name);
+    w.writeChild("base_snapshot_name", base_snapshot_name);
+    w.writeChild("settings", settings);
+    w.writeChild("cluster_host_ids", cluster_host_ids);
+    if (!cluster.empty())
+        w.writeString("cluster", cluster);
+    if (!elements.empty())
+    {
+        w.writeKey("elements");
+        WriteBuffer & buf = w.getOut();
+        buf << '[';
+        for (size_t i = 0; i < elements.size(); ++i)
+        {
+            if (i > 0) buf << ',';
+            writeElementJSON(elements[i], w);
+        }
+        buf << ']';
+    }
+    w.writeChildren(children);
+    writeOutputOptionsJSON(w);
+}
+
+void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+    if (!r.has("kind"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'kind' field in `BackupQuery` during AST JSON deserialization");
+    Int64 kind_value = r.getInt("kind");
+    auto kind_opt = magic_enum::enum_cast<Kind>(static_cast<std::underlying_type_t<Kind>>(kind_value));
+    if (!kind_opt || static_cast<Int64>(*kind_opt) != kind_value)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown BACKUP/RESTORE kind: {}", kind_value);
+    kind = *kind_opt;
+    /// `backup_name`, `base_backup_name` and `base_snapshot_name` are parser-owned `ASTFunction`
+    /// children (`ParserBackupQuery::parseBackupName` marks them as `BACKUP_NAME`). Restoring them
+    /// with the generic child path would let a wrong node type reach `IAST::set` as an internal cast
+    /// error; validate by type so malformed `clickhouse_json` is rejected with `BAD_ARGUMENTS`.
+    auto backup_name_child = r.readChildOfType<ASTFunction>("backup_name");
+    if (!backup_name_child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'backup_name' for `BackupQuery` during AST JSON deserialization");
+    set(backup_name, backup_name_child);
+    auto base_backup_name_child = r.readChildOfType<ASTFunction>("base_backup_name");
+    if (base_backup_name_child)
+        set(base_backup_name, base_backup_name_child);
+    auto base_snapshot_name_child = r.readChildOfType<ASTFunction>("base_snapshot_name");
+    if (base_snapshot_name_child)
+    {
+        /// `FROM SNAPSHOT` is parser-producible only for `BACKUP` (`ParserBackupQuery` gates it on
+        /// `kind == Kind::BACKUP`). A `RESTORE` carrying `base_snapshot_name` would format the
+        /// parser-impossible `RESTORE FROM SNAPSHOT ...` and restore an empty `elements` set, so
+        /// reject the combination at the JSON boundary.
+        if (kind != Kind::BACKUP)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'base_snapshot_name' (FROM SNAPSHOT) is only valid for BACKUP, not RESTORE, during AST JSON deserialization");
+        set(base_snapshot_name, base_snapshot_name_child);
+    }
+    /// `settings` is parser-produced as an `ASTSetQuery`; `BackupSettings`/`RestoreSettings` do
+    /// `query.settings->as<const ASTSetQuery &>().changes`, so reject any other node type here.
+    settings = r.readChildOfType<ASTSetQuery>("settings");
+    if (settings)
+        children.push_back(settings);
+    cluster_host_ids = r.readChild("cluster_host_ids");
+    if (cluster_host_ids)
+        children.push_back(cluster_host_ids);
+    cluster = r.getString("cluster");
+
+    /// `elements` is empty precisely for `BACKUP/RESTORE FROM SNAPSHOT ... TO ...`: `ParserBackupQuery`
+    /// skips `parseElements` in that branch (`base_snapshot_name` set) and `formatQueryImpl` formats
+    /// the snapshot form without touching `elements`. Every other shape carries at least one element.
+    /// `writeJSON` mirrors this by omitting the `elements` key when the vector is empty, so the reader
+    /// must accept its own output: require a non-empty `elements` array only when there is no
+    /// `base_snapshot_name`, and reject elements alongside a snapshot as a parser-impossible shape.
+    auto arr = r.getArray("elements");
+    if (base_snapshot_name)
+    {
+        if (arr && arr->size() != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`BACKUP/RESTORE FROM SNAPSHOT` must not carry 'elements' during AST JSON deserialization");
+    }
+    else
+    {
+        if (!arr)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' for `BackupQuery` during AST JSON deserialization");
+        if (arr->size() == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty 'elements' array for `BackupQuery` during AST JSON deserialization");
+    }
+    if (arr)
+    {
+        /// Cap the reserve by the remaining element budget; `readElementJSON` counts each element,
+        /// but the reserve would otherwise run off the untrusted array length first.
+        elements.reserve(std::min<size_t>(arr->size(), getJSONDeserializationRemainingElements()));
+        for (unsigned int i = 0; i < arr->size(); ++i)
+        {
+            auto elem_obj = arr->getObject(i);
+            if (!elem_obj)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'elements' array during AST JSON deserialization", i);
+            elements.push_back(readElementJSON(*elem_obj, i));
+        }
+    }
+    readOutputOptionsJSON(r);
 }
 
 }
