@@ -9,6 +9,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageInMemory.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
@@ -77,6 +78,8 @@ std::string MetadataStorageFactory::getCompatibilityMetadataTypeHint(
             return "local";
         case ObjectStorageType::Web:
             return "web";
+        case ObjectStorageType::BorrowFromCache:
+            return "memory";
         default:
             return "";
     }
@@ -104,6 +107,29 @@ MetadataStoragePtr MetadataStorageFactory::create(
     const std::string & compatibility_type_hint) const
 {
     const auto type = getMetadataType(config, config_prefix, compatibility_type_hint);
+
+    /// `borrow_from_cache` object storage loses all data on restart,
+    /// so it must use in-memory metadata; any persistent metadata type would leave stale entries.
+    /// The check is based on the actual object storage type rather than the compatibility hint,
+    /// because the hint is only set when `metadata_type` is missing from the config.
+    const auto object_storage_type = object_storages->takePointingTo(cluster->getLocalLocation())->getType();
+    if (object_storage_type == ObjectStorageType::BorrowFromCache && type != "memory")
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Object storage type `borrow_from_cache` requires metadata_type='memory', got '{}'", type);
+    }
+
+    /// The inverse direction: in-memory metadata is lost on restart, so it is only sound with an
+    /// object storage that is also non-durable. With a durable backend (`s3`, `azure_blob_storage`,
+    /// `local_blob_storage`, etc.) a restart would make the data inaccessible while leaking the
+    /// underlying blobs, which have no remaining metadata path for cleanup. Fail close instead.
+    if (type == "memory" && object_storage_type != ObjectStorageType::BorrowFromCache)
+    {
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Metadata type `memory` requires object_storage_type='borrow_from_cache', "
+                        "because in-memory metadata is lost on restart and would orphan blobs in durable object storage");
+    }
+
     const auto it = registry.find(type);
 
     if (it == registry.end())
@@ -223,6 +249,25 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
     });
 }
 
+static void registerMetadataStorageInMemory(MetadataStorageFactory & factory)
+{
+    factory.registerMetadataStorageType("memory", [](
+        const std::string & /* name */,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ClusterConfigurationPtr & cluster,
+        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+    {
+        checkSingleLocation(cluster);
+
+        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
+        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
+        auto key_generator = local_object_storage->createKeyGenerator();
+
+        return std::make_shared<MetadataStorageInMemory>(std::move(key_compatibility_prefix), std::move(key_generator));
+    });
+}
+
 static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & factory)
 {
     factory.registerMetadataStorageType("web_index", [](
@@ -249,6 +294,7 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
+    registerMetadataStorageInMemory(factory);
     registerMetadataStorageFromIndexPages(factory);
 #if CLICKHOUSE_CLOUD
     registerMetadataStorageFromKeeper(factory);

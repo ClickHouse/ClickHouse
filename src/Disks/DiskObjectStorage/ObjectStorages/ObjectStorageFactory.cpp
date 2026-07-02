@@ -18,7 +18,10 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/BorrowFromCache/BorrowFromCacheObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
+
+#include <Interpreters/FileCache/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -72,7 +75,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
-    bool skip_access_check) const
+    bool skip_access_check,
+    bool attach) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -92,7 +96,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, skip_access_check);
+    return it->second(name, config, config_prefix, context, skip_access_check, attach);
 }
 
 #if USE_AWS_S3
@@ -132,7 +136,8 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
@@ -162,7 +167,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* skip_access_check */) -> ObjectStoragePtr
+           bool /* skip_access_check */,
+           bool /* attach */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -185,7 +191,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -223,7 +230,8 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -250,7 +258,8 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* skip_access_check */,
+        bool /* attach */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
@@ -269,6 +278,35 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local", creator);
     factory.registerObjectStorageType("local_plain", creator);
     factory.registerObjectStorageType("local_plain_rewritable", creator);
+}
+
+static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
+{
+    factory.registerObjectStorageType("borrow_from_cache", [](
+        const std::string & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const ContextPtr & /* context */,
+        bool /* skip_access_check */,
+        bool attach) -> ObjectStoragePtr
+    {
+        auto cache_name = config.getString(config_prefix + ".cache_name");
+
+        /// The cache is resolved lazily (see `BorrowFromCacheObjectStorage`). On a fresh `CREATE`
+        /// the referenced cache must already exist, so fail loudly if it is missing. On `ATTACH`
+        /// (server restart or an explicit `ATTACH`) the cache may not be registered yet: custom
+        /// DDL disks are materialized lazily and in an unspecified order, so the cache-creating
+        /// disk can load after this one, or it may have been dropped entirely. A `borrow_from_cache`
+        /// table is ephemeral by design -- its data lives only in node-local cache segments that do
+        /// not survive a restart -- so the reattached table is necessarily empty. Bringing the disk
+        /// up read-only when the cache is absent (instead of throwing) lets the empty table load
+        /// without aborting server startup; the disk becomes writable once the cache appears.
+        if (!attach && !FileCacheFactory::instance().tryGet(cache_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Filesystem cache '{}' not found for borrow_from_cache object storage '{}'", cache_name, name);
+
+        return std::make_shared<BorrowFromCacheObjectStorage>(name, cache_name);
+    });
 }
 
 void registerObjectStorages();
@@ -291,6 +329,7 @@ void registerObjectStorages()
 
     registerWebObjectStorage(factory);
     registerLocalObjectStorage(factory);
+    registerBorrowFromCacheObjectStorage(factory);
 }
 
 void ObjectStorageFactory::clearRegistry()

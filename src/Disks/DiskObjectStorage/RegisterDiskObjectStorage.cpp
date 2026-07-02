@@ -27,7 +27,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & /* map */,
-        bool, bool) -> DiskPtr
+        bool attach, bool) -> DiskPtr
     {
         const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
@@ -44,14 +44,14 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const std::string object_storage_config_prefix = config_prefix + ".locations." + location;
                 const bool local = config.getBool(object_storage_config_prefix + ".local");
                 const bool enabled = config.getBool(object_storage_config_prefix + ".enabled");
-                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled);
+                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled, attach);
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
         }
         else
         {
-            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check);
+            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check, attach);
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }
