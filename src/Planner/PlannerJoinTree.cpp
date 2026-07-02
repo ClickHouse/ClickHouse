@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -198,19 +197,10 @@ NameSet checkAccessRights(const TableNode & table_node, const Names & column_nam
         /// the subcolumn name at the analyzer stage. Column-level grants, however, are stored
         /// and checked against top-level storage column names only. Map each subcolumn name to
         /// its parent storage column so that `GRANT SELECT(t)` implicitly covers `t.a`, `t.b`, etc.
-        NameSet storage_columns_set;
-        for (const auto & column : storage_snapshot->metadata->getColumns())
-            storage_columns_set.insert(column.name);
-
-        Names normalized_column_names;
-        normalized_column_names.reserve(column_names.size());
-        for (const auto & name : column_names)
-        {
-            auto storage_column = Nested::tryGetColumnNameInStorage(name, storage_columns_set);
-            normalized_column_names.push_back(storage_column ? std::move(*storage_column) : name);
-        }
-
-        query_context->checkAccess(AccessType::SELECT, storage_id, normalized_column_names);
+        query_context->checkAccess(
+            AccessType::SELECT,
+            storage_id,
+            storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
     }
 
     return {};

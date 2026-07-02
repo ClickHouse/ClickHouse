@@ -402,18 +402,22 @@ void StorageMaterializedView::readImpl(
     auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
+    /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them
+    /// back to top-level storage columns before the access checks below.
+    auto columns_for_access_check = target_storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names);
+
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
     if (!getInMemoryMetadataPtr(local_context, false)->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr(local_context, false)->select.select_table_id, column_names);
+        context->checkAccess(AccessType::SELECT, getInMemoryMetadataPtr(local_context, false)->select.select_table_id, columns_for_access_check);
 
     auto storage_id = storage->getStorageID();
 
     /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
     if (!has_inner_table && !storage_id.empty() && getInMemoryMetadataPtr(local_context, false)->sql_security_type)
-        context->checkAccess(AccessType::SELECT, storage_id, column_names);
+        context->checkAccess(AccessType::SELECT, storage_id, columns_for_access_check);
 
     auto src_table_query_info = query_info;
     src_table_query_info.initial_storage_snapshot = storage_snapshot;

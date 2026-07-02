@@ -784,6 +784,26 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
+Names ColumnsDescription::getColumnNamesInStorageForAccessCheck(const Names & column_names) const
+{
+    Names result;
+    result.reserve(column_names.size());
+    NameSet seen;
+    for (const auto & name : column_names)
+    {
+        /// If `name` resolves to a subcolumn, `getNameInStorage` returns its parent
+        /// storage column; otherwise (real column or unknown name) it is kept as-is.
+        String name_in_storage = name;
+        if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+            name_in_storage = column->getNameInStorage();
+
+        if (seen.insert(name_in_storage).second)
+            result.push_back(std::move(name_in_storage));
+    }
+
+    return result;
+}
+
 std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);

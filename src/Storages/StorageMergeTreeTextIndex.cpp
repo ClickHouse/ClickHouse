@@ -436,7 +436,11 @@ void StorageMergeTreeTextIndex::readImpl(
 {
     auto source_storage_id = source_table->getStorageID();
     auto required_columns = text_index->getColumnsRequiredForIndexCalc();
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        source_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(required_columns));
     /// If the row policy filter references any column required for building the index,
     /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
     auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);

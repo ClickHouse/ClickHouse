@@ -398,7 +398,10 @@ void StorageMergeTreeIndex::readImpl(
         }
     }
 
-    context->checkAccess(AccessType::SELECT, source_table->getStorageID(), columns_from_storage);
+    context->checkAccess(
+        AccessType::SELECT,
+        source_table->getStorageID(),
+        storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage));
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 

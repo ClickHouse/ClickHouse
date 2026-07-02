@@ -6,7 +6,6 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/NestedUtils.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
@@ -438,20 +437,11 @@ void checkAccessRightsForSelect(
     /// column names only, so `GRANT SELECT(t)` must implicitly cover `t.a`, `t.b`, etc.
     if (table_metadata)
     {
-        NameSet storage_columns_set;
-        for (const auto & column : table_metadata->getColumns())
-            storage_columns_set.insert(column.name);
-
-        const auto & required_columns = syntax_analyzer_result.requiredSourceColumnsForAccessCheck();
-        Names normalized_columns;
-        normalized_columns.reserve(required_columns.size());
-        for (const auto & name : required_columns)
-        {
-            auto storage_column = Nested::tryGetColumnNameInStorage(name, storage_columns_set);
-            normalized_columns.push_back(storage_column ? std::move(*storage_column) : name);
-        }
-
-        context->checkAccess(AccessType::SELECT, table_id, normalized_columns);
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            table_metadata->getColumns().getColumnNamesInStorageForAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck()));
     }
     else
     {

@@ -330,7 +330,10 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
+        local_context->checkAccess(
+            AccessType::SELECT,
+            destination->getStorageID(),
+            storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
