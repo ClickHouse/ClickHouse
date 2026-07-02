@@ -5,6 +5,9 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <ostream>
+#include <streambuf>
+
 #if USE_DATASKETCHES
 
 namespace DB
@@ -22,6 +25,39 @@ namespace ErrorCodes
 /// And sketch the size is 152kb.
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
+
+namespace
+{
+
+class StdStreamBufFromWriteBuffer : public std::streambuf
+{
+public:
+    explicit StdStreamBufFromWriteBuffer(WriteBuffer & out_) : out(out_) {}
+
+protected:
+    std::streamsize xsputn(const char * s, std::streamsize count) override
+    {
+        if (count <= 0)
+            return 0;
+
+        out.write(s, static_cast<size_t>(count));
+        return count;
+    }
+
+    int_type overflow(int_type ch) override
+    {
+        if (traits_type::eq_int_type(ch, traits_type::eof()))
+            return traits_type::not_eof(ch);
+
+        out.write(traits_type::to_char_type(ch));
+        return ch;
+    }
+
+private:
+    WriteBuffer & out;
+};
+
+}
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
@@ -77,9 +113,17 @@ void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
 {
-    Sketch::vector_bytes bytes = sketch.serialize();
-    writeIntBinary(static_cast<UInt64>(bytes.size()), buf);
-    buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    writeIntBinary(static_cast<UInt64>(sketch.get_serialized_size_bytes()), buf);
+
+    StdStreamBufFromWriteBuffer stream_buf(buf);
+    std::ostream stream(&stream_buf);
+    stream.exceptions(std::ios::badbit | std::ios::failbit);
+    sketch.serialize(stream);
+}
+
+std::optional<UInt64> StatisticsCountMinSketch::getSerializedSize() const
+{
+    return sizeof(UInt64) + sketch.get_serialized_size_bytes();
 }
 
 void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
