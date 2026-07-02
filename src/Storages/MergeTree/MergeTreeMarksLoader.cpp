@@ -1,6 +1,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -41,6 +43,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
+    extern const int NO_FILE_IN_DATA_PART;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -150,7 +153,29 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
         return res;
     }
 
-    size_t file_size = data_part_storage->getFileSize(mrk_path);
+    /// Convert a missing marks file (whether absent up front or vanished mid-read) into a diagnosable
+    /// typed error. Invoked from the error path only, so a successful load pays nothing.
+    auto throw_if_marks_file_missing = [&]
+    {
+        throwIfMarksFileMissing(
+            *data_part_storage,
+            data_part_reader->getChecksums(),
+            data_part_reader->getColumns(),
+            data_part_reader->getPartName(),
+            mrk_path);
+    };
+
+    size_t file_size = 0;
+    try
+    {
+        file_size = data_part_storage->getFileSize(mrk_path);
+    }
+    catch (...)
+    {
+        throw_if_marks_file_missing();
+        throw;
+    }
+
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(num_columns_in_mark);
     size_t expected_uncompressed_size = mark_size * marks_count;
 
@@ -176,12 +201,20 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             file_size,
             expected_uncompressed_size);
 
-    auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
     std::unique_ptr<ReadBuffer> reader;
-    if (!index_granularity_info.mark_type.compressed)
-        reader = std::move(buffer);
-    else
-        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    try
+    {
+        auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
+        if (!index_granularity_info.mark_type.compressed)
+            reader = std::move(buffer);
+        else
+            reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    }
+    catch (...)
+    {
+        throw_if_marks_file_missing();
+        throw;
+    }
 
     if (!index_granularity_info.mark_type.adaptive)
     {
@@ -305,6 +338,54 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         },
         *load_marks_threadpool,
         ThreadName::LOAD_MARKS);
+}
+
+void throwIfMarksFileMissing(
+    const IDataPartStorage & data_part_storage,
+    const MergeTreeDataPartChecksums & checksums,
+    const NamesAndTypesList & columns,
+    const String & part_name,
+    const String & mrk_path)
+{
+    if (data_part_storage.existsFile(mrk_path))
+        return;
+
+    const bool listed_in_checksums = checksums.files.contains(mrk_path);
+
+    WriteBufferFromOwnString checksums_files;
+    for (const auto & [name, _] : checksums.files)
+    {
+        if (checksums_files.count())
+            checksums_files << ", ";
+        checksums_files << name;
+    }
+
+    WriteBufferFromOwnString on_disk_files;
+    try
+    {
+        for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
+        {
+            if (on_disk_files.count())
+                on_disk_files << ", ";
+            on_disk_files << it->name();
+        }
+    }
+    catch (...)
+    {
+        on_disk_files << "<failed to list directory: " << getCurrentExceptionMessage(false) << ">";
+    }
+
+    throw Exception(
+        ErrorCodes::NO_FILE_IN_DATA_PART,
+        "Marks file '{}' does not exist on disk in part '{}' at '{}'. The file is {} in the part's checksums. "
+        "Part columns: [{}]. Checksums files: [{}]. Files on disk: [{}].",
+        mrk_path,
+        part_name,
+        data_part_storage.getFullPath(),
+        listed_in_checksums ? "listed" : "NOT listed",
+        columns.toString(),
+        checksums_files.str(),
+        on_disk_files.str());
 }
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)
