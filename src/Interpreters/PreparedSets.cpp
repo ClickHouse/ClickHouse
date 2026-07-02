@@ -24,6 +24,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -57,6 +58,19 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
     return false;
 }
 
+/// Extract a subplan and carry over the parent plan's resources and settings.
+/// `QueryPlan::extractSubplan` only moves the node tree; without this the new sub-plan loses
+/// `interpreter_context`, table locks, storage holders, and `max_threads`/`concurrency_control`,
+/// which keep storage and contexts alive for the delayed build that runs later.
+std::unique_ptr<QueryPlan> extractSubplanInheritingResources(QueryPlan & parent_plan, QueryPlan::Node * subplan_root)
+{
+    auto extracted = std::make_unique<QueryPlan>(parent_plan.extractSubplan(subplan_root));
+    extracted->addResources(parent_plan.detachResources());
+    extracted->setMaxThreads(parent_plan.getMaxThreads());
+    extracted->setConcurrencyControl(parent_plan.getConcurrencyControl());
+    return extracted;
+}
+
 }
 
 namespace Setting
@@ -76,6 +90,13 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SET_SIZE_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+    extern const char future_set_from_subquery_skip_inplace_build[];
 }
 
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
@@ -245,12 +266,17 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
     ASTPtr ast_,
     std::unique_ptr<QueryPlan> source_,
+    QueryPlanBuilder query_plan_builder_,
     StoragePtr external_table,
     std::shared_ptr<FutureSetFromSubquery> external_table_set_,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table_set(std::move(external_table_set_)), source(std::move(source_))
+    : hash(hash_)
+    , ast(std::move(ast_))
+    , external_table_set(std::move(external_table_set_))
+    , source(std::move(source_))
+    , query_plan_builder(std::move(query_plan_builder_))
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
@@ -305,7 +331,72 @@ void FutureSetFromSubquery::setQueryPlan(std::unique_ptr<QueryPlan> source_)
     set_and_key->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
 }
 
-void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_)
+void FutureSetFromSubquery::setQueryPlanBuilder(QueryPlanBuilder query_plan_builder_)
+{
+    query_plan_builder = std::move(query_plan_builder_);
+}
+
+SetAndKeyPtr FutureSetFromSubquery::createTemporarySetAndKeyForInplaceBuild(bool keep_explicit_set_elements) const
+{
+    auto result = std::make_shared<SetAndKey>();
+    result->key = set_and_key->key;
+
+    size_t max_elements_to_fill = set_and_key->set->max_elements_to_fill;
+    if (set_and_key->external_table)
+        max_elements_to_fill = 0;
+
+    result->set = std::make_shared<Set>(set_and_key->set->limits, max_elements_to_fill, set_and_key->set->transform_null_in);
+    result->set->setHeader(source->getCurrentHeader()->getColumnsWithTypeAndName());
+
+    if (keep_explicit_set_elements || set_and_key->external_table)
+        result->set->fillSetElements();
+
+    return result;
+}
+
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::createQueryPlanForRetry(const ContextPtr & context) const
+{
+    if (source)
+    {
+        try
+        {
+            return std::make_unique<QueryPlan>(source->clone());
+        }
+        catch (const Exception & e)
+        {
+            /// Many `IQueryPlanStep` subclasses do not implement `clone`. If the original plan cannot be
+            /// cloned, fall back to rebuilding it via `query_plan_builder`. If neither path is available,
+            /// the caller's fallback uses `extractSubplan` on the executed plan instead.
+            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+        }
+    }
+
+    if (!query_plan_builder)
+        return nullptr;
+
+    auto restored_source = query_plan_builder(context);
+    if (!restored_source)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Query plan builder returned empty source query plan for set {}",
+            set_and_key->key);
+
+    return restored_source;
+}
+
+void FutureSetFromSubquery::restoreQueryPlanForRetry(std::unique_ptr<QueryPlan> source_for_retry)
+{
+    if (!source_for_retry)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot restore empty source query plan for set {} after failed in-place build",
+            set_and_key->key);
+
+    setQueryPlan(std::move(source_for_retry));
+}
+
+void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external_table_, const SizeLimits & network_transfer_limits)
 {
     const auto & set = *set_and_key->set;
 
@@ -344,10 +435,29 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     }
 
     Chunk set_chunk(std::move(converted_columns), set.getTotalRowCount());
+
+    const size_t rows_to_transfer = set_chunk.getNumRows();
+    const size_t bytes_to_transfer = set_chunk.bytes();
+
     auto pipeline = QueryPipeline(external_table_->write({}, metadata, nullptr, /*async_insert=*/false));
     PushingPipelineExecutor executor(pipeline);
     executor.push(std::move(set_chunk));
     executor.finish();
+
+    /// Enforce `max_rows_to_transfer` / `max_bytes_to_transfer` on this in-place
+    /// external-table write path. The streaming `CreatingSetsTransform` checks
+    /// these limits *after* pushing each block, so the block that crosses the
+    /// threshold is still transferred and only later blocks are skipped. Here we
+    /// write the deduplicated set as a single chunk, so we likewise push first
+    /// and check afterwards: with `transfer_overflow_mode = 'throw'` an over-limit
+    /// set raises; with `'break'` the chunk has already been written, mirroring
+    /// the streaming path that keeps the blocks transferred before the limit was
+    /// hit (and avoiding dropping the whole table at the exact boundary, since
+    /// `SizeLimits::softCheck` uses `>=`).
+    network_transfer_limits.check(
+        rows_to_transfer, bytes_to_transfer,
+        "IN/JOIN external table",
+        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
@@ -357,7 +467,10 @@ void FutureSetFromSubquery::setExternalTable(StoragePtr external_table_)
         if (!set_and_key->set->hasExplicitSetElements())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to attach external table to a ready set without explicit elements");
 
-        buildExternalTableFromInplaceSet(external_table_);
+        /// Attaching an external table to an already-built set preserves prior behavior:
+        /// the set elements have already passed in-set size limits, and the network
+        /// transfer limits do not apply at attachment time.
+        buildExternalTableFromInplaceSet(external_table_, SizeLimits{});
     }
 
     set_and_key->external_table = std::move(external_table_);
@@ -395,6 +508,17 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
+    /// For `GLOBAL IN`, our `source` reads from a temporary external table that the
+    /// `external_table_set` producer is responsible for populating. If the producer's
+    /// in-place build stopped early (e.g. `transfer_overflow_mode = 'break'` or the
+    /// `future_set_from_subquery_skip_inplace_build` failpoint), the producer set is
+    /// not created and that external table is still empty. Building our set now would
+    /// read the empty table, cache an empty set, and skip the delayed fallback. Defer
+    /// to the delayed path instead, which rebuilds the producer plan and fills the
+    /// table before our set is built.
+    if (external_table_set && !external_table_set->get())
+        return;
+
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
     /// They will be decorrelated and executed as part of the outer query instead.
     if (source && hasCorrelatedExpressions(source->getRootNode()))
@@ -402,12 +526,34 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-
-    if (!plan)
+    if (set_and_key->set->isCreated())
         return;
+
+    if (!source)
+        return;
+
+    /// For a `GLOBAL IN` set backed by an external table, the in-place build writes the
+    /// *deduplicated* set to the external table (see `buildExternalTableFromInplaceSet`),
+    /// so it cannot account for the full materialized subquery payload that
+    /// `max_rows_to_transfer` / `max_bytes_to_transfer` limit: a subquery of many duplicate
+    /// rows collapses to a few set elements and slips under the limit, even though the
+    /// streaming `CreatingSetsTransform` would ship (and reject) the full payload. When these
+    /// limits are active, defer to the streaming path, which checks them per source block on
+    /// the raw payload. `source` is left intact so the delayed build can run it.
+    if (set_and_key->external_table && network_transfer_limits.hasLimits())
+        return;
+
+    auto source_for_retry = createQueryPlanForRetry(context);
+    auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(false);
+    auto plan = std::move(source);
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        inplace_set_and_key,
+        network_transfer_limits,
+        /*prepared_sets_cache=*/nullptr);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
 
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
@@ -419,7 +565,45 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
-    executor.execute();
+
+    bool skip_inplace_build = false;
+    fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
+    if (!skip_inplace_build)
+        executor.execute();
+
+    /// A `GLOBAL IN` external table must be populated independently of the in-set size
+    /// limits. The streaming `CreatingSetsTransform` keeps writing rows to the table even
+    /// after `max_rows_in_set` / `max_bytes_in_set` with `set_overflow_mode = 'break'`
+    /// truncates the local set. Building the table from a truncated in-place set instead
+    /// would ship fewer rows to remote servers and make `GLOBAL IN` miss matches. Treat a
+    /// truncated set with an external table as a failed in-place build and defer to the
+    /// delayed streaming path, which fills the table in full.
+    const bool truncated_with_external_table
+        = set_and_key->external_table && inplace_set_and_key->set->isTruncated();
+
+    if (!inplace_set_and_key->set->isCreated() || truncated_with_external_table)
+    {
+        if (source_for_retry)
+        {
+            restoreQueryPlanForRetry(std::move(source_for_retry));
+        }
+        else
+        {
+            auto * root = plan->getRootNode();
+            if (!root || root->step->getName() != "CreatingSet" || root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore source query plan for set {} after failed in-place build without retry snapshot",
+                    set_and_key->key);
+
+            setQueryPlan(extractSubplanInheritingResources(*plan, root->children.front()));
+        }
+        return;
+    }
+
+    set_and_key->set = std::move(inplace_set_and_key->set);
+    if (set_and_key->external_table)
+        buildExternalTableFromInplaceSet(set_and_key->external_table, network_transfer_limits);
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
     pipeline.finalizeWriteInQueryResultCache();
@@ -446,6 +630,16 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
             set_and_key->set = set;
             return set_and_key->set;
         }
+
+        /// No ordered set was returned. If the producer set was not created at all
+        /// (its in-place build stopped early), the temporary `GLOBAL IN` external
+        /// table this set reads from is still empty. Defer to the delayed path
+        /// instead of building an empty ordered set that would be cached and skip
+        /// the fallback. (When the producer set *is* created but simply has no
+        /// explicit elements for index use, the table was populated, so we may
+        /// continue building our own set below.)
+        if (!external_table_set->get())
+            return nullptr;
     }
 
     /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
@@ -455,13 +649,28 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
 
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
-    auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    auto plan = build(network_transfer_limits, prepared_sets_cache);
-    if (!plan)
+    if (!source)
         return nullptr;
 
-    set_and_key->set->fillSetElements();
+    /// See the matching comment in `buildSetInplace`: an in-place build of a `GLOBAL IN`
+    /// external-table set deduplicates before writing the external table, so it cannot enforce
+    /// `max_rows_to_transfer` / `max_bytes_to_transfer` on the full materialized payload. Defer
+    /// to the streaming path, which enforces these limits per source block.
+    if (set_and_key->external_table && network_transfer_limits.hasLimits())
+        return nullptr;
+
+    auto source_for_retry = createQueryPlanForRetry(context);
+    auto inplace_set_and_key = createTemporarySetAndKeyForInplaceBuild(true);
+    auto plan = std::move(source);
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        plan->getCurrentHeader(),
+        inplace_set_and_key,
+        network_transfer_limits,
+        /*prepared_sets_cache=*/nullptr);
+    creating_set->setStepDescription("Create set for subquery");
+    plan->addStep(std::move(creating_set));
+
     auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
@@ -472,14 +681,45 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
             executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
-    executor.execute();
+
+    bool skip_inplace_build = false;
+    fiu_do_on(FailPoints::future_set_from_subquery_skip_inplace_build, skip_inplace_build = true;);
+    if (!skip_inplace_build)
+        executor.execute();
 
     /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
     /// timeout_overflow_mode set to `break`, no exception is thrown, and the executor just stops executing
     /// the pipeline without setting `set_and_key->set->is_created` to true.
-    if (!set_and_key->set->isCreated())
-        return nullptr;
+    ///
+    /// A truncated set with a `GLOBAL IN` external table is likewise treated as a failed in-place build:
+    /// the table must hold all rows the streaming path would transfer, not just the rows that fit before
+    /// `max_rows_in_set` / `max_bytes_in_set` with `set_overflow_mode = 'break'` truncated the local set.
+    const bool truncated_with_external_table
+        = set_and_key->external_table && inplace_set_and_key->set->isTruncated();
 
+    if (!inplace_set_and_key->set->isCreated() || truncated_with_external_table)
+    {
+        if (source_for_retry)
+        {
+            restoreQueryPlanForRetry(std::move(source_for_retry));
+        }
+        else
+        {
+            auto * root = plan->getRootNode();
+            if (!root || root->step->getName() != "CreatingSet" || root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot restore source query plan for set {} after failed ordered in-place build without retry snapshot",
+                    set_and_key->key);
+
+            setQueryPlan(extractSubplanInheritingResources(*plan, root->children.front()));
+        }
+        return nullptr;
+    }
+
+    set_and_key->set = std::move(inplace_set_and_key->set);
+    if (set_and_key->external_table)
+        buildExternalTableFromInplaceSet(set_and_key->external_table, network_transfer_limits);
     logProcessorProfile(context, pipeline.getProcessors());
 
     /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
@@ -542,13 +782,14 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     const Hash & key,
     ASTPtr ast,
     std::unique_ptr<QueryPlan> source,
+    FutureSetFromSubquery::QueryPlanBuilder query_plan_builder,
     StoragePtr external_table,
     FutureSetFromSubqueryPtr external_table_set,
     const Settings & settings)
 {
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
-        key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
+        key, std::move(ast), std::move(source), std::move(query_plan_builder), std::move(external_table), std::move(external_table_set),
         settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);

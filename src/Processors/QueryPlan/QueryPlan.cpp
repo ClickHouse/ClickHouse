@@ -4,6 +4,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 
 #include <IO/Operators.h>
@@ -1118,7 +1119,19 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
         auto & frame = nodes_to_process.back();
         if (frame.children.size() == frame.node->children.size())
         {
-            frame.clone->step = frame.node->step->clone();
+            auto & clone_depth = IQueryPlanStep::getCloneDepth();
+            ++clone_depth;
+            try
+            {
+                frame.clone->step = frame.node->step->clone();
+            }
+            catch (...)
+            {
+                --clone_depth;
+                throw;
+            }
+            --clone_depth;
+            frame.clone->step->step_index = frame.node->step->step_index;
             frame.clone->children = std::move(frame.children);
             nodes_to_process.pop_back();
         }
@@ -1141,6 +1154,9 @@ void QueryPlan::cloneInplace(Node * node_to_replace, Node * subplan_root)
 QueryPlan QueryPlan::clone() const
 {
     QueryPlan result;
+    result.resources.append(resources);
+    result.max_threads = max_threads;
+    result.concurrency_control = concurrency_control;
     result.nodes.emplace_back(Node{ .step = {}, .children = {} });
     auto * current_subplan_copy_root = &result.nodes.back();
 
@@ -1170,6 +1186,13 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         if (frame.children.size() == frame.node->children.size())
         {
             frame.clone->step = frame.node->step->clone();
+            /// Most `clone` implementations are copy-constructor based, so they copy `step_index`
+            /// from the source step. `materializeQueryPlanReferences` duplicates the same subplan
+            /// into several reference sites, so each copy must get a fresh `step_index` to keep
+            /// `step_uniq_id` unique within the plan. Allocate one the same way the
+            /// `IQueryPlanStep` constructor does (unlike `cloneInplace`, this path must not
+            /// preserve the source index).
+            frame.clone->step->step_index = CurrentThread::isInitialized() ? CurrentThread::get().getNextPlanStepIndex() : 0;
             frame.clone->children = std::move(frame.children);
             nodes_to_process.pop_back();
         }

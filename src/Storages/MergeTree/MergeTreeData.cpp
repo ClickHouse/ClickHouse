@@ -1857,8 +1857,18 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (valid)
     {
         virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, parts);
-        VirtualColumnUtils::filterBlockWithExpression(
-            VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), local_context), virtual_columns_block);
+
+        auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), local_context);
+
+        /// `buildFilterExpression` builds subquery sets in-place. A `GLOBAL IN` set backed by a temporary
+        /// external table may decline the in-place build -- it defers to the streaming path so that
+        /// `max_rows_to_transfer` is enforced on the full payload -- and is then left not ready. This
+        /// synchronous evaluator has no streaming fallback, so it cannot execute `IN` against a not-ready
+        /// set. Skip the partition-count optimization and let the normal read path build the set instead.
+        if (VirtualColumnUtils::hasUnbuiltSubquerySet(filter_expression->getActionsDAG()))
+            return {};
+
+        VirtualColumnUtils::filterBlockWithExpression(filter_expression, virtual_columns_block);
         part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
         if (part_values.empty())
             return 0;
@@ -9222,8 +9232,22 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         const auto * predicate = filter_dag->getOutputs().at(0);
 
         // Generate valid expressions for filtering
-        VirtualColumnUtils::filterBlockWithPredicate(
-            predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
+        auto split_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            predicate, &virtual_columns_block, query_context, /*allow_partial_result=*/true);
+        if (split_dag)
+        {
+            auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*split_dag), query_context);
+
+            /// `buildFilterExpression` builds subquery sets in-place. A `GLOBAL IN` set backed by a temporary
+            /// external table may decline the in-place build -- it defers to the streaming path so that
+            /// `max_rows_to_transfer` is enforced on the full payload -- and is then left not ready. This
+            /// projection-analysis path has no streaming fallback, so it cannot execute `IN` against a
+            /// not-ready set. Decline the min-max-count projection and let the normal read path build the set.
+            if (VirtualColumnUtils::hasUnbuiltSubquerySet(filter_expression->getActionsDAG()))
+                return {};
+
+            VirtualColumnUtils::filterBlockWithExpression(filter_expression, virtual_columns_block);
+        }
 
         rows = virtual_columns_block.rows();
         part_name_column = virtual_columns_block.getByName("_part").column;
