@@ -51,6 +51,7 @@ public:
         MergeTreeSettingsPtr table_settings_,
         const ASTPtr & predicate_,
         const OptionalVectorSearchParameters & vector_search_parameters_,
+        std::unordered_map<String, MarkRanges> requested_ranges_,
         ContextPtr context_)
         : ISource(header_)
         , WithContext(context_)
@@ -63,6 +64,7 @@ public:
         , vector_search_parameters(vector_search_parameters_)
         , data_parts(std::move(data_parts_))
         , table_settings(std::move(table_settings_))
+        , requested_ranges(std::move(requested_ranges_))
     {
     }
 
@@ -180,7 +182,23 @@ protected:
             filter_dag.emplace(std::move(actions));
         }
 
-        const auto & parts_ranges = RangesInDataParts{data_parts};
+        RangesInDataParts parts_ranges{data_parts};
+        for (auto & part_ranges : parts_ranges)
+        {
+            auto it = requested_ranges.find(part_ranges.data_part->name);
+            if (it == requested_ranges.end())
+                continue;
+
+            /// Ranges are sorted at parse time, so checking the last end suffices. An out-of-bounds
+            /// analysis range would dereference the primary index outside the loaded window.
+            size_t marks_count = part_ranges.data_part->index_granularity->getMarksCountWithoutFinal();
+            if (!it->second.empty() && it->second.back().end > marks_count)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Mark range ({}, {}) exceeds {} marks of part {}",
+                    it->second.back().begin, it->second.back().end, marks_count, part_ranges.data_part->name);
+
+            part_ranges.ranges = it->second;
+        }
 
         const StorageSnapshotPtr storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
@@ -216,6 +234,7 @@ protected:
             .find_exact_ranges = false,
             .is_parallel_reading_from_replicas = false,
             .has_projections = false,
+            .load_partial_primary_key = !requested_ranges.empty(),
             .result = analysis_result,
         };
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
@@ -231,6 +250,7 @@ private:
     OptionalVectorSearchParameters vector_search_parameters;
     MergeTreeData::DataPartsVector data_parts;
     MergeTreeSettingsPtr table_settings;
+    std::unordered_map<String, MarkRanges> requested_ranges;
 
     bool analyzed = false;
 };
@@ -289,6 +309,7 @@ void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & 
         storage->table_settings,
         storage->predicate,
         storage->vector_search_parameters,
+        storage->requested_ranges,
         context)));
 }
 
@@ -301,6 +322,7 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
     std::vector<String> parts_,
+    VectorWithMemoryTracking<MarkRanges> parts_ranges_,
     const ASTPtr & predicate_,
     const OptionalVectorSearchParameters & vector_search_parameters_)
     : StorageWithCommonVirtualColumns(table_id_)
@@ -316,7 +338,20 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
     if (!parts_.empty())
     {
-        std::unordered_set<String> parts_set(std::make_move_iterator(parts_.begin()), std::make_move_iterator(parts_.end()));
+        chassert(parts_.size() == parts_ranges_.size());
+        std::unordered_set<String> parts_set;
+        parts_set.reserve(parts_.size());
+        for (size_t i = 0; i < parts_.size(); ++i)
+        {
+            const bool with_ranges = !parts_ranges_[i].empty();
+            const bool duplicate = !parts_set.insert(parts_[i]).second;
+            /// Repeating a part with explicit ranges is ambiguous and would otherwise silently
+            /// drop all but the first entry; bare duplicates keep the historical silent dedup.
+            if (duplicate && (with_ranges || requested_ranges.contains(parts_[i])))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate part {} in the parts argument", parts_[i]);
+            if (with_ranges)
+                requested_ranges.emplace(parts_[i], std::move(parts_ranges_[i]));
+        }
         std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !parts_set.contains(part->name); });
     }
 

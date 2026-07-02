@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
@@ -16,6 +17,7 @@ public:
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
         std::vector<String> parts_,
+        VectorWithMemoryTracking<MarkRanges> parts_ranges_,
         const ASTPtr & primary_key_predicate_,
         const OptionalVectorSearchParameters & vector_search_parameters_);
 
@@ -41,6 +43,8 @@ private:
     MergeTreeSettingsPtr table_settings;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
+    /// Absolute mark ranges to analyze per part; parts without an entry are analyzed whole.
+    std::unordered_map<String, MarkRanges> requested_ranges;
 };
 
 }

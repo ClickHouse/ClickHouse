@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <DataTypes/DataTypeArray.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Types.h>
@@ -43,41 +44,77 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-/// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
-/// While for non-analyzer there is no _CAST
-static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
+/// The parts argument is either an `Array(String)` of part names (each analyzed whole) or an
+/// `Array(Tuple(String, Array(Tuple(UInt64, UInt64))))` of (name, absolute mark ranges) - the
+/// latter used to distribute mark segments of a part across replicas. `parts` and `parts_ranges`
+/// are filled in parallel; an empty ranges entry means "whole part".
+static void extractPartsAndRanges(const ASTPtr & argument, const ContextPtr & context, Strings & parts, VectorWithMemoryTracking<MarkRanges> & parts_ranges)
 {
-    ASTPtr array = argument;
-    if (const auto * func = array->as<ASTFunction>())
-    {
-        if (func->name == "_CAST" && func->arguments) /// _CAST([], 'Array(String)')
-            array = func->arguments->children.at(0);
-        else if (func->name == "array") /// array(ExpressionList)
-            array = func->arguments;
-        else
-            array = ASTPtr();
-    }
+    Field value = evaluateConstantExpressionAsLiteral(argument, context)->as<ASTLiteral &>().value;
+    if (value.getType() != Field::Types::Array)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array, got: {}", argument->formatForLogging());
 
-    if (array)
+    for (const auto & element : value.safeGet<Array>())
     {
-        if (const auto * literal = array->as<ASTLiteral>())
+        if (element.getType() == Field::Types::String)
         {
-            Strings result;
-            for (const auto & element : literal->value.safeGet<Array>())
-                result.push_back(element.safeGet<String>());
-            return result;
+            parts.push_back(element.safeGet<String>());
+            parts_ranges.emplace_back();
+            continue;
         }
 
-        if (const auto * expr_list = array->as<ASTExpressionList>())
-        {
-            Strings result;
-            for (const auto & element : expr_list->children)
-                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
-            return result;
-        }
-    }
+        if (element.getType() != Field::Types::Tuple)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Each part must be a String or a (name, ranges) tuple, got: {}", element.getTypeName());
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
+        const auto & part_tuple = element.safeGet<Tuple>();
+        if (part_tuple.size() != 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Part tuple must be (name, ranges), got {} elements", part_tuple.size());
+
+        if (part_tuple[0].getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Part name must be a String, got: {}", part_tuple[0].getTypeName());
+        parts.push_back(part_tuple[0].safeGet<String>());
+
+        if (part_tuple[1].getType() != Field::Types::Array)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Part ranges must be an array of (begin, end) tuples, got: {}", part_tuple[1].getTypeName());
+
+        MarkRanges ranges;
+        for (const auto & range_field : part_tuple[1].safeGet<Array>())
+        {
+            if (range_field.getType() != Field::Types::Tuple)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range must be a (begin, end) tuple, got: {}", range_field.getTypeName());
+            const auto & range_tuple = range_field.safeGet<Tuple>();
+            if (range_tuple.size() != 2)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range tuple must be (begin, end)");
+            for (const auto & bound : range_tuple)
+                if (bound.getType() != Field::Types::UInt64)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Mark range bound must be an unsigned integer, got: {}", bound.getTypeName());
+
+            const UInt64 range_begin = range_tuple[0].safeGet<UInt64>();
+            const UInt64 range_end = range_tuple[1].safeGet<UInt64>();
+            /// Checked before constructing MarkRange: its constructor asserts begin <= end, and a
+            /// reversed range would underflow size_t mark arithmetic downstream.
+            if (range_begin >= range_end)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid mark range ({}, {}) for part {}: begin must be less than end",
+                    range_begin, range_end, parts.back());
+            ranges.push_back(MarkRange{range_begin, range_end});
+        }
+
+        /// The rest of the analysis (range coalescing, ranged index load) requires sorted,
+        /// non-intersecting ranges.
+        std::sort(ranges.begin(), ranges.end(), [](const MarkRange & a, const MarkRange & b) { return a.begin < b.begin; });
+        for (size_t i = 1; i < ranges.size(); ++i)
+        {
+            if (ranges[i].begin < ranges[i - 1].end)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Intersecting mark ranges ({}, {}) and ({}, {}) for part {}",
+                    ranges[i - 1].begin, ranges[i - 1].end, ranges[i].begin, ranges[i].end, parts.back());
+        }
+        parts_ranges.push_back(std::move(ranges));
+    }
 }
 
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
@@ -119,6 +156,7 @@ private:
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
     Strings parts;
+    VectorWithMemoryTracking<MarkRanges> parts_ranges;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
@@ -159,7 +197,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
         predicate = args[1]->clone();
 
     if (args.size() > 2)
-        parts = extractParts(args[2], context);
+        extractPartsAndRanges(args[2], context, parts, parts_ranges);
 
     if (args.size() > 3)
     {
@@ -188,7 +226,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
         predicate = args[2]->clone();
 
     if (args.size() > 3)
-        parts = extractParts(args[3], context);
+        extractPartsAndRanges(args[3], context, parts, parts_ranges);
 
     if (args.size() > 4)
     {
@@ -266,6 +304,7 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
         std::move(source_table),
         std::move(columns),
         parts,
+        parts_ranges,
         predicate,
         vector_search_parameters);
     res->startup();
