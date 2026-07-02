@@ -6,7 +6,7 @@ set -euo pipefail
 # (commented on or reviewed) - by fanning out a pool of workers, each running
 # the `/continue-pr` skill in its own git worktree. By default all three
 # categories are selected; restrict with --mine / --assigned / --related (which
-# may be combined).
+# may be combined). PRs carrying the `hold` label are always skipped.
 #
 # Instead of statically splitting the PRs across shards, the main process keeps
 # a shared work queue of all of those PRs and hands the next PR to whichever
@@ -546,20 +546,21 @@ fetch_prs()
     #   --related   -> contributed to by me      (--commenter, --reviewed-by)
     # The searches are unioned, deduplicated by PR number, and sorted by last
     # update (oldest first), so a PR matching several categories is processed
-    # only once.
+    # only once. PRs carrying the `hold` label are skipped.
     {
         if (( MODE_MINE )); then
-            gh search prs --repo "$REPO" --state open --author      @me --limit 1000 --json number,title,updatedAt
+            gh search prs --repo "$REPO" --state open --author      @me --limit 1000 --json number,title,updatedAt,labels
         fi
         if (( MODE_ASSIGNED )); then
-            gh search prs --repo "$REPO" --state open --assignee    @me --limit 1000 --json number,title,updatedAt
+            gh search prs --repo "$REPO" --state open --assignee    @me --limit 1000 --json number,title,updatedAt,labels
         fi
         if (( MODE_RELATED )); then
-            gh search prs --repo "$REPO" --state open --commenter   @me --limit 1000 --json number,title,updatedAt
-            gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 --json number,title,updatedAt
+            gh search prs --repo "$REPO" --state open --commenter   @me --limit 1000 --json number,title,updatedAt,labels
+            gh search prs --repo "$REPO" --state open --reviewed-by @me --limit 1000 --json number,title,updatedAt,labels
         fi
     } | jq -s -r '
         add
+        | map(select((.labels // []) | map(.name) | index("hold") | not))
         | unique_by(.number)
         | sort_by(.updatedAt)
         | .[] | "\(.number)\t\(.title)"
