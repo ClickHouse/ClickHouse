@@ -116,9 +116,8 @@ DataTypes Set::getElementTypes(DataTypes types, bool transform_null_in)
 {
     for (auto & type : types)
     {
-        /// Strip LowCardinality recursively to match what setHeader/insertFromColumns do:
-        /// insertFromColumns calls convertToFullIfNeeded which recursively strips LC from
-        /// compound types like Tuple(LowCardinality(T), ...).
+        /// Strip LowCardinality recursively to match what insertFromColumns does:
+        /// it calls recursiveRemoveLowCardinality on the column side.
         type = recursiveRemoveLowCardinality(type);
 
         if (!transform_null_in)
@@ -162,9 +161,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
         }
 
         /// Strip LowCardinality recursively from set_elements_types so they match what
-        /// convertToFullIfNeeded (which is recursive) does to columns in insertFromColumns.
-        /// Without this, compound types like Tuple(LowCardinality(T), ...) keep LowCardinality
-        /// in the type while the column has it stripped, causing type/column mismatches later.
+        /// recursiveRemoveLowCardinality does to columns in insertFromColumns.
         set_elements_types.back() = recursiveRemoveLowCardinality(set_elements_types.back());
     }
 
@@ -242,7 +239,7 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        holder.materialized_columns.emplace_back(columns.at(i)->convertToFullIfNeeded());
+        holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
     }
 

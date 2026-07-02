@@ -368,7 +368,7 @@ void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_colum
     src_columns.clear();
     src_columns.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        src_columns.push_back(columns[i]->convertToFullIfNeeded());
+        src_columns.push_back(columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 }
 
 void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)

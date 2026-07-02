@@ -136,8 +136,8 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         auto equals_result = BuildAndExecuteFunction(
             equals_resolver, {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}, arr_elements_count);
         /// equals() on tuples with nullable components may return ColumnConst(Nullable(UInt8)).
-        /// convertToFullIfNeeded() unwraps ColumnConst so removeNullable can strip the Nullable layer.
-        auto else_col = removeNullable(equals_result->convertToFullIfNeeded());
+        /// convertToFullIfWrapped() unwraps ColumnConst so removeNullable can strip the Nullable layer.
+        auto else_col = removeNullable(equals_result->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
         /// equals() returns Nullable(Nothing) when comparison is impossible (a Variant operand
         /// whose alternatives are all incompatible with the other argument, with
         /// `variant_throw_on_type_mismatch` disabled). removeNullable then yields a ColumnNothing
@@ -162,7 +162,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
 
     /// The filter can end up as ColumnConst or ColumnNullable when comparing tuples
     /// with NULL components during constant folding. Normalize to a plain ColumnUInt8.
-    filter_col = filter_col->convertToFullIfNeeded();
+    filter_col = filter_col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     if (const auto * nullable_filter = checkAndGetColumn<ColumnNullable>(filter_col.get()))
     {
         /// NULL in filter means comparison was indeterminate (e.g., tuple with NULL component).
