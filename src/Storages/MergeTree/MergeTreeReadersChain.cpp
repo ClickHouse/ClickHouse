@@ -556,6 +556,11 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
+    /// `result_header`/`read_result` come from the chain's anchor (first) reader. A filter-only reader
+    /// (lazy materialization's MergeTreeReaderIndex) produces no data columns, so patch join-key columns
+    /// are read by a later reader and are unavailable here for range pruning.
+    const bool result_has_data_columns = !range_readers.front().getReader()->producesFilterOnly();
+
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
@@ -567,7 +572,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         }
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch, result_has_data_columns);
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
