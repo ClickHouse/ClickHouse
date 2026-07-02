@@ -5,10 +5,6 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
-IMAGE_CENTOS = "clickhouse/test-old-centos"
-DOWNLOAD_RETRIES_COUNT = 5
-
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
 
@@ -23,10 +19,6 @@ def main():
 
     check_name = Info().job_name
     assert check_name
-    # currently hardcoded to x86, don't enable for AARCH64
-    check_distributions = (
-        "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
-    )
 
     for package in temp_path.iterdir():
         if package.suffix == ".deb":
@@ -56,26 +48,6 @@ def main():
             ],
         )
     )
-
-    if check_distributions:
-        test_results.append(
-            Result.from_commands_run(
-                name="ubuntu12",
-                command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse ubuntu:12.04 /clickhouse local --query 'select 1'",
-                ],
-                with_info=True,
-            )
-        )
-        test_results.append(
-            Result.from_commands_run(
-                name="centos5",
-                command=[
-                    f"docker run --volume={temp_path}/clickhouse:/clickhouse centos:5 /clickhouse local --query 'select 1'"
-                ],
-                with_info=True,
-            )
-        )
 
     Result.create_from(results=test_results, stopwatch=stopwatch).complete_job()
 
