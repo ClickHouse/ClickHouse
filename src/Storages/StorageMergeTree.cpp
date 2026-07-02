@@ -1708,7 +1708,9 @@ bool StorageMergeTree::merge(
         /// which publishes new metadata and registers the rename mutation atomically under
         /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
         /// metadata without also seeing the pending rename mutation. See #80648.
-        metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        metadata_snapshot = metadata_snapshot_handle;
 
         return selectPartsToMerge(
             metadata_snapshot,
@@ -2020,7 +2022,9 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         /// Pairs with `StorageMergeTree::alter`, which updates in-memory metadata and
         /// inserts rename mutations atomically under this mutex. See #80648.
-        metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
+        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        metadata_snapshot = metadata_snapshot_handle;
 
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
