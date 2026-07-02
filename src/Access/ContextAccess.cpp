@@ -347,11 +347,13 @@ void ContextAccess::initialize()
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
-        [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+        [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
         {
             auto ptr = weak_ptr.lock();
             if (!ptr)
                 return;
+            /// All changes are for the same user id; the last one reflects its current state.
+            const auto & entity = changes.back().entity;
             UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
             std::lock_guard lock2{ptr->mutex};
             ptr->setUser(changed_user);
@@ -430,7 +432,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         subscription_for_initial_user_change = access_control->subscribeForChanges(
             *params.initial_user_id,
-            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> &)
             {
                 if (auto ptr = weak_ptr.lock())
                 {
