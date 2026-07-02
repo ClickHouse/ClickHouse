@@ -144,15 +144,27 @@ SELECT * FROM t_skip_empty_mutate ORDER BY key;
 DROP TABLE t_skip_empty_mutate;
 
 -- ============================================================================
--- CASE 5: Nullable columns — NULL is the type default for Nullable.
+-- CASE 5: Type coverage — Nullable, Array, Tuple, LowCardinality, FixedString,
+-- Map, Date, DateTime, Date32 all handled correctly in one table.
 -- ============================================================================
-DROP TABLE IF EXISTS t_skip_empty_nullable;
+DROP TABLE IF EXISTS t_skip_empty_types;
 
-CREATE TABLE t_skip_empty_nullable
+CREATE TABLE t_skip_empty_types
 (
     key UInt64,
-    val Nullable(UInt64),
-    val2 Nullable(String)
+    n Nullable(UInt64),
+    n2 Nullable(String),
+    arr1 Array(UInt64),
+    arr2 Array(String),
+    t1 Tuple(UInt64, String),
+    t2 Tuple(a UInt64, b Float64),
+    lc1 LowCardinality(String),
+    lc2 LowCardinality(String),
+    fs FixedString(4),
+    m Map(String, UInt64),
+    d Date,
+    dt DateTime('UTC'),
+    d32 Date32
 )
 ENGINE = MergeTree
 ORDER BY key
@@ -162,27 +174,27 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          serialization_info_version = 'with_missing_columns',
          enable_block_number_column = 0, enable_block_offset_column = 0;
 
--- Both nullable cols are NULL (default) → should be skipped
-INSERT INTO t_skip_empty_nullable (key, val, val2) VALUES (1, NULL, NULL);
+-- All type-default values → all non-key columns should be skipped
+-- (except d32 whose type-default is 1900-01-01 ≠ inserted 1970-01-01)
+INSERT INTO t_skip_empty_types VALUES (1, NULL, NULL, [], [], (0,''), (0,0), '', '', '\0\0\0\0', map(), '1970-01-01', '1970-01-01 00:00:00', '1970-01-01');
 
-SELECT 'case5_columns_in_part';
+SELECT 'case5_types_columns_in_part';
 SELECT column FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_skip_empty_nullable' AND active
+WHERE database = currentDatabase() AND table = 't_skip_empty_types' AND active
 ORDER BY column;
 
--- Data reads back correctly
-SELECT 'case5_data';
-SELECT * FROM t_skip_empty_nullable ORDER BY key;
+SELECT 'case5_types_data';
+SELECT * FROM t_skip_empty_types ORDER BY key;
 
--- Insert with non-default values, merge, verify
-INSERT INTO t_skip_empty_nullable (key, val, val2) VALUES (2, 42, 'hello');
+-- Insert with non-default values, merge, verify correctness
+INSERT INTO t_skip_empty_types VALUES (2, 42, 'hello', [10,20], ['a','b'], (42,'hi'), (7,3.14), 'foo', 'bar', 'abcd', map('x',1), '2024-01-01', '2024-01-01 12:00:00', '2024-01-01');
 
-OPTIMIZE TABLE t_skip_empty_nullable FINAL;
+OPTIMIZE TABLE t_skip_empty_types FINAL;
 
-SELECT 'case5_post_merge';
-SELECT * FROM t_skip_empty_nullable ORDER BY key;
+SELECT 'case5_types_post_merge';
+SELECT * FROM t_skip_empty_types ORDER BY key;
 
-DROP TABLE t_skip_empty_nullable;
+DROP TABLE t_skip_empty_types;
 
 -- ============================================================================
 -- CASE 6: Key columns CAN be skipped (primary.idx has values baked in).
@@ -251,86 +263,6 @@ SELECT 'case7_data';
 SELECT key, a, b, c FROM t_skip_empty_default_expr ORDER BY key;
 
 DROP TABLE t_skip_empty_default_expr;
-
--- ============================================================================
--- CASE 8: Array columns — empty array [] is the type-default.
--- ============================================================================
-DROP TABLE IF EXISTS t_skip_empty_array;
-
-CREATE TABLE t_skip_empty_array
-(
-    key UInt64,
-    arr1 Array(UInt64),
-    arr2 Array(String)
-)
-ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         ratio_of_defaults_for_sparse_serialization = 1.0,
-         skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_missing_columns',
-         enable_block_number_column = 0, enable_block_offset_column = 0;
-
--- Both arrays are empty (default) → should be skipped
-INSERT INTO t_skip_empty_array (key, arr1, arr2) VALUES (1, [], []);
-
-SELECT 'case8_columns_in_part';
-SELECT column FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_skip_empty_array' AND active
-ORDER BY column;
-
-SELECT 'case8_data';
-SELECT * FROM t_skip_empty_array ORDER BY key;
-
--- Insert with non-default values, merge, verify
-INSERT INTO t_skip_empty_array (key, arr1, arr2) VALUES (2, [10, 20], ['a', 'b']);
-
-OPTIMIZE TABLE t_skip_empty_array FINAL;
-
-SELECT 'case8_post_merge';
-SELECT * FROM t_skip_empty_array ORDER BY key;
-
-DROP TABLE t_skip_empty_array;
-
--- ============================================================================
--- CASE 9: Tuple columns — (0, '') is the type-default for Tuple(UInt64, String).
--- ============================================================================
-DROP TABLE IF EXISTS t_skip_empty_tuple;
-
-CREATE TABLE t_skip_empty_tuple
-(
-    key UInt64,
-    t1 Tuple(UInt64, String),
-    t2 Tuple(a UInt64, b Float64)
-)
-ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         ratio_of_defaults_for_sparse_serialization = 1.0,
-         skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_missing_columns',
-         enable_block_number_column = 0, enable_block_offset_column = 0;
-
--- Both tuples are type-defaults → should be skipped
-INSERT INTO t_skip_empty_tuple (key, t1, t2) VALUES (1, (0, ''), (0, 0));
-
-SELECT 'case9_columns_in_part';
-SELECT column FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_skip_empty_tuple' AND active
-ORDER BY column;
-
-SELECT 'case9_data';
-SELECT * FROM t_skip_empty_tuple ORDER BY key;
-
--- Insert with non-default values, merge, verify
-INSERT INTO t_skip_empty_tuple (key, t1, t2) VALUES (2, (42, 'hello'), (7, 3.14));
-
-OPTIMIZE TABLE t_skip_empty_tuple FINAL;
-
-SELECT 'case9_post_merge';
-SELECT * FROM t_skip_empty_tuple ORDER BY key;
-
-DROP TABLE t_skip_empty_tuple;
 
 -- ============================================================================
 -- CASE 10: ColumnSparse — when the source table uses sparse serialization,
@@ -431,47 +363,6 @@ SELECT 'case11_post_merge';
 SELECT * FROM t_skip_empty_compact ORDER BY key;
 
 DROP TABLE t_skip_empty_compact;
-
--- ============================================================================
--- CASE 12: LowCardinality column — hasOnlyTypeDefaults uses the generic
--- isDefaultAt loop, which works through the dictionary.
--- ============================================================================
-DROP TABLE IF EXISTS t_skip_empty_lc;
-
-CREATE TABLE t_skip_empty_lc
-(
-    key UInt64,
-    lc1 LowCardinality(String),
-    lc2 LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY key
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         ratio_of_defaults_for_sparse_serialization = 1.0,
-         skip_empty_columns_on_insert = 1,
-         serialization_info_version = 'with_missing_columns',
-         enable_block_number_column = 0, enable_block_offset_column = 0;
-
--- lc1='' (default), lc2='' (default) → both should be skipped
-INSERT INTO t_skip_empty_lc (key, lc1, lc2) VALUES (1, '', '');
-
-SELECT 'case12_columns_in_part';
-SELECT column FROM system.parts_columns
-WHERE database = currentDatabase() AND table = 't_skip_empty_lc' AND active
-ORDER BY column;
-
-SELECT 'case12_data';
-SELECT * FROM t_skip_empty_lc ORDER BY key;
-
--- Insert non-default, merge
-INSERT INTO t_skip_empty_lc (key, lc1, lc2) VALUES (2, 'hello', 'world');
-
-OPTIMIZE TABLE t_skip_empty_lc FINAL;
-
-SELECT 'case12_post_merge';
-SELECT * FROM t_skip_empty_lc ORDER BY key;
-
-DROP TABLE t_skip_empty_lc;
 
 -- ============================================================================
 -- CASE 13: Vertical merge — explicitly enable vertical merge algorithm and
