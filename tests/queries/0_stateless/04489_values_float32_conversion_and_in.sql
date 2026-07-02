@@ -73,3 +73,31 @@ CREATE TABLE t_values_insert_float (x Float32) ENGINE = Memory;
 INSERT INTO t_values_insert_float SETTINGS input_format_values_deduce_templates_of_expressions = 0 VALUES (1 / 3);
 SELECT x = CAST(1 / 3, 'Float32') FROM t_values_insert_float;
 DROP TABLE t_values_insert_float;
+
+SELECT '-- the default templated INSERT ... VALUES path accepts inexact-float literals in complex types (issue #43144)';
+-- With `input_format_values_deduce_templates_of_expressions = 1` (the default), an expression such as
+-- `arrayConcat([0.1], [])` makes the parser deduce an expression template. The captured array literal
+-- gets its own deduced type `Array(Float64)`, so the per-row `convertFieldToType` in
+-- `ConstantExpressionTemplate::parseLiteralAndAssertType` targets `Array(Float64)` (a lossless
+-- Float64 -> Float64 conversion); the narrowing to the `Array(Float32)` column happens afterwards in
+-- `evaluateAll` via `CAST` (nearest value). So these inexact-float rows are accepted and rounded, not
+-- rejected or turned into NULL, even though the template path never passes `convert_inexact_floats`.
+DROP TABLE IF EXISTS t_values_template_float;
+CREATE TABLE t_values_template_float (x Array(Float32)) ENGINE = Memory;
+INSERT INTO t_values_template_float SETTINGS input_format_values_deduce_templates_of_expressions = 1 VALUES (arrayConcat([0.1], [])), (arrayConcat([0.2], [])), (arrayConcat([0.123456789], []));
+SELECT x, x = CAST([0.1], 'Array(Float32)') OR x = CAST([0.2], 'Array(Float32)') OR x = CAST([0.123456789], 'Array(Float32)') AS matches_cast, has(x, NULL) AS has_null FROM t_values_template_float ORDER BY x;
+DROP TABLE t_values_template_float;
+
+SELECT '-- same for a Tuple(Float32, Float32) column via the templated path';
+DROP TABLE IF EXISTS t_values_template_tuple;
+CREATE TABLE t_values_template_tuple (x Tuple(Float32, Float32)) ENGINE = Memory;
+INSERT INTO t_values_template_tuple SETTINGS input_format_values_deduce_templates_of_expressions = 1 VALUES (tuple(0.1, 0.2)), (tuple(0.3, 0.4));
+SELECT x, x = CAST((0.1, 0.2), 'Tuple(Float32, Float32)') OR x = CAST((0.3, 0.4), 'Tuple(Float32, Float32)') AS matches_cast FROM t_values_template_tuple ORDER BY x;
+DROP TABLE t_values_template_tuple;
+
+SELECT '-- same for a scalar Float32 column via the templated path';
+DROP TABLE IF EXISTS t_values_template_scalar;
+CREATE TABLE t_values_template_scalar (x Float32) ENGINE = Memory;
+INSERT INTO t_values_template_scalar SETTINGS input_format_values_deduce_templates_of_expressions = 1 VALUES (0.1 + 0), (0.2 + 0);
+SELECT x, x = CAST(0.1, 'Float32') OR x = CAST(0.2, 'Float32') AS matches_cast FROM t_values_template_scalar ORDER BY x;
+DROP TABLE t_values_template_scalar;

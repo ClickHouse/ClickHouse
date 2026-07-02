@@ -30,3 +30,13 @@
 16777216	Float32
 -- INSERT ... VALUES with an inexact-float expression rounds to the nearest value, like the streaming literal path
 1
+-- the default templated INSERT ... VALUES path accepts inexact-float literals in complex types (issue #43144)
+[0.1]	1	0
+[0.12345679]	1	0
+[0.2]	1	0
+-- same for a Tuple(Float32, Float32) column via the templated path
+(0.1,0.2)	1
+(0.3,0.4)	1
+-- same for a scalar Float32 column via the templated path
+0.1	1
+0.2	1
