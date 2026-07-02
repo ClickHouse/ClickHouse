@@ -288,3 +288,27 @@ SELECT count() FROM tab WHERE hasAllTokens(val, 'utfub');   -- 0
 SELECT count() FROM tab WHERE hasAllTokens(val, 'etf');     -- 2
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '12. ilike: the dictionary-scan optimization bails out when a postprocessor is configured, so results are identical with use_text_index_like_evaluation_by_dictionary_scan off and on.';
+-- The postprocessor strips the 'ing' suffix, so the index dictionary stores transformed tokens
+-- ('running' -> 'runn'). ILIKE '%running%' on the raw value is true for row 1; if the optimization
+-- wrongly used the index it would search '%running%' against 'runn', miss, and drop the row.
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = replaceRegexpAll(val, 'ing$', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'running walking'), (2, 'cat dog');
+
+SELECT count() FROM tab WHERE val ILIKE '%running%'     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;  -- 1
+SELECT count() FROM tab WHERE val ILIKE '%running%'     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 1;  -- 1
+SELECT count() FROM tab WHERE val ILIKE '%RUNNING%'     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;  -- 1
+SELECT count() FROM tab WHERE val ILIKE '%RUNNING%'     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 1;  -- 1
+SELECT count() FROM tab WHERE val NOT ILIKE '%running%' SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0;  -- 1
+SELECT count() FROM tab WHERE val NOT ILIKE '%running%' SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 1;  -- 1
+
+DROP TABLE tab;
