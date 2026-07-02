@@ -196,8 +196,10 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (dynamic_cast<const BroadcastExchangeStep *>(expression_plan_step))
     {
         auto bytes_per_row = group->statistics->estimated_bytes_per_row;
-        /// Each node receives a full copy.
-        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row;
+        /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
+        /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
+        const Float64 receiver_count = Float64(std::max<size_t>(1, expression->properties.distribution.node_count));
+        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row * receiver_count;
         total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
     }
     else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
