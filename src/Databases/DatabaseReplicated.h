@@ -196,12 +196,26 @@ private:
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;
 
 
-    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr);
+    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it observed in the
+    /// pre-read of `/max_log_ptr` (in `DatabaseReplicatedWorker`) so that a `DROP`+recreate at the
+    /// same Keeper path between that read and the snapshot inside this call is rejected with
+    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` instead of silently substituting metadata from a
+    /// different database instance. Pass `0` from callers that have not pre-observed an identity.
+    void recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
+                            int64_t expected_max_log_ptr_czxid = 0);
 
-    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const;
+    std::map<String, String> tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
+                                                              int64_t expected_max_log_ptr_czxid = 0) const;
 
+    /// `expected_max_log_ptr_czxid` lets the caller pin the database identity it
+    /// observed before this call: if it is non-zero, the snapshot is aborted with
+    /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` when the `czxid` of `/max_log_ptr`
+    /// at function entry differs (the database was dropped and recreated at the same
+    /// Keeper path between the caller's read and the snapshot). Pass `0` from
+    /// callers that have not pre-observed an identity.
     std::map<String, String> getConsistentMetadataSnapshotImpl(const ZooKeeperPtr & zookeeper, const FilterByNameFunction & filter_by_table_name,
-                                                               size_t max_retries, UInt32 & max_log_ptr) const;
+                                                               size_t max_retries, UInt32 & max_log_ptr,
+                                                               int64_t expected_max_log_ptr_czxid = 0) const;
 
     static ASTPtr parseQueryFromMetadata(
         ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
