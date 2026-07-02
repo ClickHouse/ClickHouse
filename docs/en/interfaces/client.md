@@ -790,6 +790,7 @@ With the configuration above, the ID of a query is shown in the following format
 speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
 ```
 
+<a id="configuration_files"></a>
 ## Configuration files {#configuration-files}
 
 ClickHouse Client uses the first existing file of the following:

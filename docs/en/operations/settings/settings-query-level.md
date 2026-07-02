@@ -77,6 +77,7 @@ The setting is now back to its default:
 └─────────┘
 ```
 
+<a id="custom_settings"></a>
 ## Custom settings {#custom-settings}
 
 In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
