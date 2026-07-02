@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 71
+    version: int = 72
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -621,7 +621,10 @@ brew install \
     urllib3 \
     unidiff \
     dohq-artifactory \
-    pyjwt
+    pyjwt \
+    numpy==2.3.2 \
+    pandas==2.3.3 \
+    scipy==1.16.1
 
 # GitHub Actions runner: wipe and re-extract so the next iteration of the
 # runner loop registers with a fresh `config.sh`.

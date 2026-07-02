@@ -32,6 +32,11 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
     SYSTEM WAIT FAILPOINT rmt_merge_selecting_task_pause_when_scheduled PAUSE;
     SYSTEM ENABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
+"
+# The mutation entry reaches the in-memory queue asynchronously; wait for it before resuming
+# merge selecting, otherwise the resumed selection pass may run before the entry is registered.
+wait_for_mutation_created "rmt" "0000000000"
+$CLICKHOUSE_CLIENT --query "
     SYSTEM NOTIFY FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
     SYSTEM WAIT FAILPOINT rmt_mutate_task_pause_in_prepare PAUSE;
 
