@@ -13,11 +13,10 @@ Expression ((Project names + Projection))
       ReadFromSystemNumbers
 ------------------
 (Expression)
-ExpressionTransform × 2
+ExpressionTransform
   (Aggregating)
-  Resize 1 → 2
-    AggregatingTransform
-      (Expression)
-      ExpressionTransform
-        (ReadFromSystemNumbers)
-        NumbersRange 0 → 1
+  AggregatingTransform
+    (Expression)
+    ExpressionTransform
+      (ReadFromSystemNumbers)
+      NumbersRange 0 → 1

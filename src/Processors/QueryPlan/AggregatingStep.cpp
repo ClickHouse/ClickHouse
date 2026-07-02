@@ -344,6 +344,15 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
     pipeline.dropTotalsAndExtremes();
 
+    /// Capture the number of input streams before any pipeline transformation,
+    /// used below to cap post-aggregation resize via std::min(input_streams, max_threads).
+    /// Rationale: if the input has fewer streams than max_threads the data volume is
+    /// typically small, and expanding only adds Resize-processor lock contention.
+    /// Note: the grouping-sets branch does not use this cap — there, stream count after
+    /// aggregation collapses to grouping_sets_size (typically 2-3) and is unrelated to
+    /// data volume, so it intentionally fans out to max_threads.
+    const size_t input_streams = pipeline.getNumStreams();
+
     bool allow_to_use_two_level_group_by = pipeline.getNumStreams() > 1 || params.max_bytes_before_external_group_by != 0;
 
     /// optimize_aggregation_in_order
@@ -474,7 +483,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             chassert(ports.size() == grouping_sets_size);
             auto output_header = transform_params->getHeader();
             if (group_by_use_nulls)
-                convertToNullable(output_header, params.keys);
+                convertToNullable(output_header, transform_params->params.keys);
 
             for (size_t set_counter = 0; set_counter < grouping_sets_size; ++set_counter)
             {
@@ -492,9 +501,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         });
 
         /// After grouping sets aggregation, the stream count equals grouping_sets_size (typically 2-3),
-        /// which is artificially low and unrelated to data volume. Always expand to the full max_threads
-        /// (ignoring the read-stream-reduced cap) so downstream steps can process the result in parallel.
-        pipeline.resize(params.max_threads);
+        /// which is artificially low and unrelated to data volume. Expand to max_threads so downstream
+        /// steps can process the result in parallel.
+        pipeline.resize(max_threads);
 
         aggregating = collector.detachProcessors(0);
         return;
@@ -508,7 +517,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         {
             /// We don't really care about optimality of this sorting, because it's required only in fairly marginal cases.
             SortingStep::fullSortStreams(
-                pipeline, SortingStep::Settings(params.max_block_size), sort_description_for_merging, 0 /* limit */);
+                pipeline, SortingStep::Settings(transform_params->params.max_block_size), sort_description_for_merging, 0 /* limit */);
         }
 
         if (pipeline.getNumStreams() > 1)
@@ -545,7 +554,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             {
                 pipeline.addSimpleTransform([&](const SharedHeader & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
-                pipeline.resize(max_threads);
+                pipeline.resize(std::min(input_streams, max_threads));
                 aggregating_in_order = collector.detachProcessors(0);
                 return;
             }
@@ -699,7 +708,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : std::min(input_streams, max_threads), false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(0);
     }
@@ -708,7 +717,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         pipeline.addSimpleTransform([&](const SharedHeader & header)
                                     { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
 
-        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
+        pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : std::min(input_streams, max_threads));
 
         aggregating = collector.detachProcessors(0);
     }
