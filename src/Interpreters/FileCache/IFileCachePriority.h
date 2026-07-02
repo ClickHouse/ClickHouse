@@ -453,7 +453,15 @@ public:
 
     virtual void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard>) {}
 
-    using OnEvictCallback = std::function<void(const FileSegment & segment)>;
+    /// Invoked by `EvictionCandidates::evict` for each successfully-evicted
+    /// segment.
+    using OnEvictCallback = std::function<void(const FileSegment & segment, const UserID & user_id)>;
+    virtual void setOnEvictCallback(OnEvictCallback callback)
+    {
+        chassert(!on_evict_callback, "on_evict_callback cannot be set twice");
+        on_evict_callback = std::move(callback);
+    }
+    const OnEvictCallback & getOnEvictCallback() const { return on_evict_callback; }
 
 protected:
     IFileCachePriority(QueueType queue_type_, size_t max_size_, size_t max_elements_);
@@ -478,6 +486,8 @@ protected:
     const QueueType queue_type;
     std::atomic<size_t> max_size = 0;
     std::atomic<size_t> max_elements = 0;
+
+    OnEvictCallback on_evict_callback;
 
     /// Fire `invalidate_notifier` once a queue accumulates this many pending invalidated entries.
     std::atomic<size_t> invalidated_threshold = 0;

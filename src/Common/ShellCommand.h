@@ -66,6 +66,8 @@ public:
 
         bool pipe_stdin_only = false;
 
+        size_t pipe_capacity = 0;
+
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
 
         /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
