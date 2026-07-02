@@ -262,9 +262,9 @@ void DistributedAsyncInsertDirectoryQueue::run()
             break;
     }
 
-    /// Decay error_count on any non-failing run (drain or idle poll) so the backoff relaxes
-    /// after recovery even without traffic; skip on error so it keeps growing during an outage.
-    if (!had_error)
+    /// Decay error_count on a non-failing, unblocked run so the backoff relaxes after recovery.
+    /// Skip on error (keep growing during an outage) and while sends are stopped (preserve backoff).
+    if (!had_error && !monitor_blocker.isCancelled())
     {
         const auto now = std::chrono::system_clock::now();
         std::lock_guard status_lock(status_mutex);
