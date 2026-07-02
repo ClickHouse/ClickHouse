@@ -1,10 +1,13 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
+#include <functional>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -27,6 +30,9 @@ using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 class MergeTreeSkipIndexReader
 {
 public:
+    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
+    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
         std::optional<KeyCondition> & key_condition_rpn_template_,
@@ -35,6 +41,10 @@ public:
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
         MergeTreeReaderSettings reader_settings_,
+        DynamicPredicateBuilder dynamic_predicate_builder_,
+        bool prune_primary_key_,
+        MergeTreeIndices dynamic_skip_indexes_,
+        ContextPtr context_,
         LoggerPtr log_);
 
     SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
@@ -49,6 +59,11 @@ private:
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
     MergeTreeReaderSettings reader_settings;
+
+    DynamicPredicateBuilder dynamic_predicate_builder;
+    bool prune_primary_key = false;
+    MergeTreeIndices dynamic_skip_indexes;
+    ContextPtr context;
     LoggerPtr log;
 
     std::atomic_bool is_cancelled = false;

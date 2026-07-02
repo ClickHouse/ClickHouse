@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 
 namespace CurrentMetrics
 {
@@ -33,6 +35,10 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
+    DynamicPredicateBuilder dynamic_predicate_builder_,
+    bool prune_primary_key_,
+    MergeTreeIndices dynamic_skip_indexes_,
+    ContextPtr context_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
     , key_condition_rpn_template(key_condition_rpn_template_)
@@ -41,6 +47,10 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
     , reader_settings(std::move(reader_settings_))
+    , dynamic_predicate_builder(std::move(dynamic_predicate_builder_))
+    , prune_primary_key(prune_primary_key_)
+    , dynamic_skip_indexes(std::move(dynamic_skip_indexes_))
+    , context(std::move(context_))
     , log(std::move(log_))
 {
 }
@@ -107,6 +117,68 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
                         ranges.getNumberOfMarks(), total_granules, part.data_part->name);
         total_granules = ranges.getNumberOfMarks();
+    }
+
+    /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
+    if (dynamic_predicate_builder && !ranges.empty())
+    {
+        ActionsDAG predicate_dag;
+        const ActionsDAG::Node * predicate = dynamic_predicate_builder(predicate_dag);
+        if (predicate)
+        {
+            const size_t granules_before = ranges.getNumberOfMarks();
+            ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
+
+            if (prune_primary_key)
+            {
+                const auto & primary_key = metadata_snapshot->getPrimaryKey();
+                KeyCondition dynamic_key_condition(filter_dag, context, primary_key.column_names, primary_key.expression);
+
+                RangesInDataPart part_for_pk = part;
+                part_for_pk.ranges = ranges;
+                ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                    part_for_pk,
+                    metadata_snapshot,
+                    dynamic_key_condition,
+                    /*part_offset_condition=*/std::nullopt,
+                    /*total_offset_condition=*/std::nullopt,
+                    /*exact_ranges=*/nullptr,
+                    context->getSettingsRef(),
+                    log);
+            }
+
+            MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
+            for (const auto & index_helper : dynamic_skip_indexes)
+            {
+                if (ranges.empty())
+                    break;
+                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
+                    continue;
+
+                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+                if (!condition || condition->alwaysUnknownOrTrue())
+                    continue;
+
+                auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+                    index_helper,
+                    condition,
+                    key_condition_rpn_template,
+                    part.data_part,
+                    ranges,
+                    part.read_hints,
+                    reader_settings,
+                    mark_cache.get(),
+                    uncompressed_cache.get(),
+                    vector_similarity_index_cache.get(),
+                    /*use_skip_indexes_for_disjunctions=*/false,
+                    no_disjunctions,
+                    log);
+                ranges = std::move(filtered_ranges);
+            }
+
+            LOG_DEBUG(log, "Dynamic read-time predicate dropped {}/{} granules in part {}",
+                granules_before - ranges.getNumberOfMarks(), granules_before, part.data_part->name);
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedMarks, ranges.getNumberOfMarks());

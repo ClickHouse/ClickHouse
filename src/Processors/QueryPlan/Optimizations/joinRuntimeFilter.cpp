@@ -2,6 +2,8 @@
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -382,7 +384,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                /*allow_to_use_not_exact_filter_=*/false);
+                /*allow_to_use_not_exact_filter_=*/false,
+                /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -446,7 +449,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+                    /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 
@@ -493,6 +497,61 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
 
     return true;
+}
+
+void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.enable_join_runtime_filters_index_analysis)
+        return;
+
+    /// We only care about the __applyFilter FilterStep that runtime-filter push-down planted above a read.
+    auto * filter_step = typeid_cast<FilterStep *>(node.step.get());
+    if (!filter_step || node.children.size() != 1)
+        return;
+
+    QueryPlan::Node * child = node.children.front();
+    ReadFromMergeTree * read_step = nullptr;
+    while (child)
+    {
+        if ((read_step = typeid_cast<ReadFromMergeTree *>(child->step.get())))
+            break;
+        const bool passthrough = child->children.size() == 1
+            && (typeid_cast<ExpressionStep *>(child->step.get()) || typeid_cast<FilterStep *>(child->step.get()));
+        if (!passthrough)
+            break;
+        child = child->children.front();
+    }
+    if (!read_step)
+        return;
+
+    /// After push-down the key column is already in the read step's namespace, so no remapping is needed.
+    for (const auto & dag_node : filter_step->getExpression().getNodes())
+    {
+        if (dag_node.type != ActionsDAG::ActionType::FUNCTION || !dag_node.function_base)
+            continue;
+        if (dag_node.function_base->getName() != "__applyFilter" || dag_node.children.size() != 2)
+            continue;
+
+        /// Argument 0: const String label whose VALUE is the runtime filter rendezvous key.
+        const auto * label = dag_node.children[0];
+        if (!label->column || !isColumnConst(*label->column))
+            continue;
+        const Field id_field = (*label->column)[0];
+        if (id_field.getType() != Field::Types::String)
+            continue;
+
+        /// Argument 1: the probe key column, possibly wrapped in a CAST.
+        const auto * key_arg = dag_node.children[1];
+        while (key_arg->type == ActionsDAG::ActionType::FUNCTION && key_arg->function_base
+               && (key_arg->function_base->getName() == "CAST" || key_arg->function_base->getName() == "_CAST")
+               && !key_arg->children.empty())
+            key_arg = key_arg->children.front();
+
+        if (key_arg->type != ActionsDAG::ActionType::INPUT)
+            continue;
+
+        read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(id_field.safeGet<String>(), key_arg->result_name, key_arg->result_type);
+    }
 }
 
 }

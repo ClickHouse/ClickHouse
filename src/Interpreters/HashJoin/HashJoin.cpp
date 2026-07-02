@@ -2634,7 +2634,8 @@ void HashJoin::publishSharedRuntimeFilters()
             existing->getFilterColumnTargetType(),
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
-            probe_fn);
+            probe_fn,
+            existing->getRecordedKeyRanges());
         /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
         LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
         lookup->replace(filter_key, std::move(filter));
