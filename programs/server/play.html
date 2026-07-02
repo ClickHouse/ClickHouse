@@ -4659,6 +4659,12 @@ async function restoreFromHistory(state, token) {
 
     if (!result.ok) {
         is_error = true;
+        /// Hide the idle logo for the whole error branch, matching the live single-query error
+        /// path (`postSingle` hides it once at the top of its `!result.response_ok` block, for
+        /// both JSON exceptions and plain-text errors). Restoring a JSON exception previously
+        /// left the logo showing, so a reloaded/switched-back error tab looked different from the
+        /// original run.
+        logoEl.style.display = 'none';
 
         let has_exception = false;
         for (const line of result.data.split('\n')) {
@@ -4670,7 +4676,6 @@ async function restoreFromHistory(state, token) {
         }
         if (!has_exception) {
             resultEl.renderError(result.data);
-            logoEl.style.display = 'none';
         }
 
         progressEl.clear();
@@ -5297,7 +5302,15 @@ window.onpopstate = function(event) {
     } else {
         tab.result = null;
     }
-    restoreFromHistory(event.state, token).then(() => { if (token === request_num) renderTabBar(); });
+    restoreFromHistory(event.state, token).then(() => {
+        if (token !== request_num) return; /// a newer navigation/run superseded this one
+        /// Mirror `activateTab`: always recolor the page (and thus the active-tab slab) to this
+        /// tab's query. `restoreFromHistory` only recolors on its full-result path, so a
+        /// Back/Forward into a result-less, error, or large/image-result tab would otherwise keep
+        /// the previously active tab's hue even though the active tab has changed.
+        document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
+        renderTabBar();
+    });
     scheduleSave();
 };
 
