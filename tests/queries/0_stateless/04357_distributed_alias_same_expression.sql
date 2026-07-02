@@ -63,6 +63,75 @@ SELECT a1, a2, b FROM dist_same_expr ORDER BY dt DESC LIMIT 1;
 SELECT a1, a2 FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1;
 
+-- GROUP BY on duplicate ALIAS columns under two-level / memory-efficient distributed aggregation. The shard inlines
+-- a1, a2 into the same expression and deduplicates the GROUP BY to a single key before computing its two-level bucket
+-- numbers, while the initiator keeps a1 and a2 distinct. The initiator must therefore merge (and bucket) by only the
+-- single collapsed key, otherwise equal groups coming from different shards land in different two-level buckets and are
+-- never merged - returning a group once per shard with a split count instead of one merged row.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 1;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 ORDER BY a1
+    SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1, prefer_localhost_replica = 0, distributed_aggregation_memory_efficient = 0;
+
+-- GROUP BY duplicate ALIAS columns WITH ROLLUP / WITH CUBE. The merge over the collapsed key set must reconstruct the
+-- duplicate key columns back into the canonical aggregated layout (all GROUP BY keys first, then the aggregate-state
+-- columns) before the ROLLUP/CUBE step, which reads the merged block positionally (the first keys_size columns as keys,
+-- the rest as aggregate states). If the dropped duplicate key were appended after the aggregate states instead, the
+-- count() state would be read as key #2 and the reconstructed a2 as the aggregate state, throwing 'Bad cast ... to
+-- ColumnAggregateFunction' or producing wrong rollup/cube totals.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH CUBE ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0;
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY a1, a2 WITH ROLLUP ORDER BY a1, a2, c
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
+
+-- GROUP BY GROUPING SETS over duplicate ALIAS columns collapsed by a Distributed shard. When a single grouping set
+-- contains both a collapsed duplicate and its representative (here (a1, a2)), the shard deduplicates the set to one key
+-- before computing its two-level bucket numbers, while the initiator's per-grouping-set Aggregator buckets by the full
+-- key list. With a single-level/two-level partial mix this would silently split groups across buckets. Reconstructing
+-- the collapsed keys through the grouping-sets merge machinery is not implemented, so the combination is rejected
+-- rather than returning wrong results. The rejection is a plan-time decision, so it fires regardless of settings.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1, a2), (a1)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- A grouping set that keeps a single key per set ((a1), (a2)) is safe: each set buckets by one key consistently with
+-- the shard, so it is not rejected and returns merged results.
+SELECT a1, a2, count() AS c FROM dist_same_expr GROUP BY GROUPING SETS ((a1), (a2)) ORDER BY a1, a2
+    SETTINGS prefer_localhost_replica = 0;
+
+-- With three (or more) ALIAS columns all expanding to the same expression, a grouping set can hold two collapsed
+-- duplicates without naming the representative (the first expected column for that shard column). Each used key must
+-- therefore be canonicalized through the collapse map before checking for a repeat, otherwise a set like (a2, a3) -
+-- which the shard still collapses to one key while the initiator buckets it by two - would slip past the rejection and
+-- silently split groups across two-level buckets. The representative being absent from the unsafe set must not hide it.
+DROP TABLE IF EXISTS local_same_expr3;
+DROP TABLE IF EXISTS dist_same_expr3;
+CREATE TABLE local_same_expr3
+(
+    dt DateTime,
+    x UInt8,
+    a1 String ALIAS toString(x),
+    a2 String ALIAS toString(x),
+    a3 String ALIAS toString(x)
+)
+ENGINE = MergeTree() ORDER BY dt;
+CREATE TABLE dist_same_expr3 AS local_same_expr3
+ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), local_same_expr3, rand());
+INSERT INTO local_same_expr3 (dt, x) VALUES ('2024-01-01 00:00:00', 7);
+
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2, a3)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a2, a3), (a1)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0, group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1; -- { serverError NOT_IMPLEMENTED }
+-- Three single-key grouping sets stay safe: no set repeats a collapsed representative, so the combination is not rejected.
+SELECT a1, a2, a3, count() AS c FROM dist_same_expr3 GROUP BY GROUPING SETS ((a1), (a2), (a3)) ORDER BY a1, a2, a3
+    SETTINGS prefer_localhost_replica = 0;
+
+DROP TABLE dist_same_expr3;
+DROP TABLE local_same_expr3;
+
 -- The collapse may happen inside a subquery that feeds an outer query. The subquery's distributed read is
 -- renumbered independently from the initiator's query tree, so reconciling the collapsed shard header by column
 -- name has to account for the differing `__tableN` table aliases.
