@@ -1,0 +1,6 @@
+select 1	5
+select correlated	5
+projection only	5
+where only	5
+where and projection	5
+aggregate in projection	5
