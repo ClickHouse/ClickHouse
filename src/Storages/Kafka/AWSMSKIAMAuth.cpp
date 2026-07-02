@@ -229,6 +229,11 @@ void setupAuthentication(
                     LOG_ERROR(context->log, "Failed to set OAuth token: {}", errstr);
                     rd_kafka_oauthbearer_set_token_failure(handle.get_handle(), errstr);
                 }
+                else
+                {
+                    LOG_INFO(context->log, "AWS MSK IAM token refreshed successfully (region={}, expires in {}s)",
+                        context->region, TOKEN_LIFETIME.count());
+                }
             }
             catch (const std::exception & e)
             {
