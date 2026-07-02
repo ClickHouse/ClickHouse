@@ -17,12 +17,14 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <limits>
 
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/PipeFDs.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -58,6 +60,7 @@ namespace ErrorCodes
     extern const int CANNOT_WAITPID;
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
+    extern const int BAD_ARGUMENTS;
 }
 
 ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
@@ -125,7 +128,12 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_seconds)
     for (auto & [_, fd] : read_fds)
         fd.close();
 
-    return waitForPid(pid, timeout_in_seconds);
+    bool process_terminated_normally = waitForPid(pid, timeout_in_seconds);
+
+    if (process_terminated_normally && config.register_in_udf_process_registry)
+        UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
+
+    return process_terminated_normally;
 }
 
 void ShellCommand::logCommand(const char * filename, char * const argv[])
@@ -180,6 +188,32 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
     for (size_t i = 0; i < config.write_fds.size(); ++i)
         write_pipe_fds.emplace_back(std::make_unique<PipeFDs>());
+
+    if (config.pipe_capacity)
+    {
+        if (config.pipe_capacity > static_cast<size_t>(std::numeric_limits<int>::max()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Pipe capacity {} exceeds maximum supported value {}",
+                config.pipe_capacity,
+                std::numeric_limits<int>::max());
+
+        int pipe_capacity = static_cast<int>(config.pipe_capacity);
+
+        pipe_stdin.tryIncreaseSize(pipe_capacity);
+
+        if (!config.pipe_stdin_only)
+        {
+            pipe_stdout.tryIncreaseSize(pipe_capacity);
+            pipe_stderr.tryIncreaseSize(pipe_capacity);
+        }
+
+        for (const auto & fds : read_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+
+        for (const auto & fds : write_pipe_fds)
+            fds->tryIncreaseSize(pipe_capacity);
+    }
 
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
@@ -243,6 +277,9 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         pipe_stdout.fds_rw[0],
         pipe_stderr.fds_rw[0],
         config));
+
+    if (config.register_in_udf_process_registry)
+        res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
 
     for (size_t i = 0; i < config.read_fds.size(); ++i)
     {
@@ -350,6 +387,8 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
             /// moment the child is reaped — before any operation that can throw — so the
             /// destructor never waits on or signals an unrelated process.
             wait_called = true;
+            if (config.register_in_udf_process_registry)
+                UDFProcessRegistry::instance().removeIfGenerationMatches(pid, udf_registry_generation);
             if (config.collect_resource_usage)
             {
                 child_user_time_us = static_cast<UInt64>(local_rusage.ru_utime.tv_sec) * 1000000ULL
