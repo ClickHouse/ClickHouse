@@ -3296,8 +3296,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
