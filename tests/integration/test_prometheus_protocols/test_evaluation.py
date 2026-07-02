@@ -1,3 +1,6 @@
+import math
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +14,10 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+# The bit pattern Prometheus uses to mark a series as stale (a quiet NaN with a special payload).
+STALE_NAN = struct.unpack(">d", bytes.fromhex("7ff0000000000002"))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -424,6 +431,24 @@ def send_test_data():
         ]
     )
 
+    # A counter that goes stale at 110 (Prometheus stale marker) and then has regular `NaN` samples at 130
+    # and 140. Used to check that stale markers are dropped while regular `NaN` samples are kept.
+    send_data(
+        [
+            (
+                {"__name__": "stale_counter_values", "case": "stale-nan"},
+                {
+                    100: 2,
+                    110: STALE_NAN,
+                    120: 1,
+                    130: math.nan,
+                    140: math.nan,
+                    150: 3,
+                },
+            ),
+        ]
+    )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -693,6 +718,45 @@ def test_instant_selectors():
                 "[('__name__','test')]",
                 "1970-01-01 00:02:11.000",
                 "3",
+            ]
+        ],
+    )
+
+
+def test_instant_selector_with_multiple_name_matchers():
+    # A selector with more than one `__name__` matcher is valid in Prometheus and must round-trip through
+    # native lowering: the selector is serialized and reparsed for the `timeSeriesSelector` table function.
+    # Serializing it by hoisting the metric name (`test{__name__!="other"}`) would set the metric name twice
+    # and fail to reparse, so the whole query would error instead of selecting `test`.
+    do_query_test(
+        '{__name__="test", __name__!="other"}',
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "test"}, "value": [130, "3"]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "1970-01-01 00:02:10.000",
+                "3",
+            ]
+        ],
+    )
+
+
+def test_range_query_drops_stale_marker():
+    # A `query_range` over an instant selector builds its grid via `last_over_time`, which keeps the latest
+    # sample at each step - including a Prometheus stale marker. Stale markers mean "no sample here", so the
+    # step at 110 (the stale marker) must be dropped from the matrix, while the regular `NaN` samples at 130
+    # and 140 must remain visible.
+    do_range_query_test(
+        "stale_counter_values",
+        100,
+        150,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_counter_values", "case": "stale-nan"}, "values": [[100, "2"], [120, "1"], [130, "NaN"], [140, "NaN"], [150, "3"]]}]}',
+        [
+            [
+                "[('__name__','stale_counter_values'),('case','stale-nan')]",
+                "[('1970-01-01 00:01:40.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',3)]",
             ]
         ],
     )
