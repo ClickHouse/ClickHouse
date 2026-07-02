@@ -47,7 +47,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.code_review,
+        JobConfigs.code_review.set_run_after(STYLE_AND_FAST_TESTS),
         JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
@@ -80,8 +80,13 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
+        # Per-arch Bugfix Validation Checks (functional + integration tests on
+        # both amd64 and aarch64). Each per-arch variant has
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
+        # the aggregate decision (validate iff at least one arch passed) lives
+        # in the `new_tests_check.py` workflow post-hook below.
+        *JobConfigs.bugfix_validation_ft_pr_jobs,
+        *JobConfigs.bugfix_validation_it_jobs,
         *[
             j.set_run_after(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
@@ -144,6 +149,9 @@ workflow = Workflow.Config(
         ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.sqlstorm_test_job.set_run_after(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),

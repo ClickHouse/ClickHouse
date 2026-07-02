@@ -21,6 +21,7 @@ namespace DB
 {
 
 class PipelineExecutor;
+class QueryStatus;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
@@ -235,8 +236,6 @@ private:
         struct WatchState
         {
             std::atomic_bool should_reread_znodes {true};
-            std::atomic_bool root_watch_active {false};
-            std::atomic_bool children_watch_active {false};
         };
 
         CoordinationZnode root_znode;
@@ -252,6 +251,13 @@ private:
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,
         /// but we still use the same in-memory structs (CoordinationZnode etc), as if it's coordinated (with one replica).
         bool coordinated = false;
+
+        /// Permanent, non-resumable "coordination unavailable" state. Set when a coordinated view is
+        /// attached/restored on a Keeper missing feature flags required for coordination (MULTI_READ,
+        /// CREATE_IF_NOT_EXISTS). The view stays Disabled and refuses to resume; `coordinated` is left
+        /// true so it never silently degrades into an uncoordinated local refresh (which would corrupt
+        /// the replicated target table of a non-APPEND view in a Replicated database).
+        bool unavailable = false;
 
         bool read_only = false;
         String path;
@@ -274,7 +280,7 @@ private:
             Finished,
         };
 
-        /// Protects interrupt_execution and executor.
+        /// Protects interrupt_execution, executor and executing_query_status.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
@@ -282,6 +288,9 @@ private:
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
+        /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
+        /// killed. Set/cleared together with `executor`.
+        std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;

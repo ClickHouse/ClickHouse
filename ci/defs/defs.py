@@ -77,17 +77,17 @@ SECRETS = [
     azure_secret,
     chcache_secret,
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-id",
+        name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.clickhouse-app-key",
+        name="/github-app/clickhouse-gh.clickhouse-app-key",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
     Secret.Config(
-        name="woolenwolf_gh_app.installation_id",
+        name="/github-app/clickhouse-gh.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
         region="us-east-1",
     ),
@@ -304,16 +304,22 @@ DOCKERS = [
 class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_DEBUG = "amd_debug"
     AMD_RELEASE = "amd_release"
+    # sccache-warmup variants of the release builds (MasterCI only): PR-style
+    # cmake flags (no official-build flag, debug symbols stripped, no PGO/BOLT),
+    # but built on master so the shared sccache is populated read-write for
+    # read-only PR builds to reuse. See build_clickhouse.py and
+    # PR_CACHE_WARMUP_BUILD_TYPES.
+    AMD_RELEASE_PR_CACHE_WARMUP = "amd_release_pr_cache_warmup"
     AMD_BINARY = "amd_binary"
     AMD_ASAN_UBSAN = "amd_asan_ubsan"
     AMD_TSAN = "amd_tsan"
     AMD_MSAN = "amd_msan"
     ARM_RELEASE = "arm_release"
+    ARM_RELEASE_PR_CACHE_WARMUP = "arm_release_pr_cache_warmup"
     ARM_DEBUG = "arm_debug"
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
     ARM_MSAN = "arm_msan"
-    ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
     PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
@@ -355,15 +361,38 @@ class JobNames:
     DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQL_LOGIC_TEST = "SQLLogic test"
+    SQL_STORM_TEST = "SQLStorm test"
     SQLANCER = "SQLancer"
+    # No "++": the job name becomes the GitHub Actions job id via
+    # Utils.normalize_string, and '+' is not a valid id character.
+    SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
     BUILDOCKER = "BuildDockers"
     BUGFIX_VALIDATE = "Bugfix validation"
-    BUGFIX_VALIDATE_IT = "Bugfix validation (integration tests)"
-    BUGFIX_VALIDATE_FT = "Bugfix validation (functional tests)"
+    # Per-arch bugfix validation jobs. Each runs the new/modified test on
+    # master HEAD and on the PR, and reports one of three top-level statuses:
+    #   * `OK`     : bug reproduced on master HEAD AND fixed on PR (validated)
+    #   * `SKIPPED`: bug did not reproduce on master HEAD on this arch
+    #                (no-repro: another arch can still validate)
+    #   * `ERROR`  : infrastructure error / inconclusive run (no signal)
+    # The runners (`ci/jobs/functional_tests.py`,
+    # `ci/jobs/integration_test_job.py`) propagate `SKIPPED` to the top-level
+    # `R` directly so the post-hook does not treat the no-repro case as
+    # validated; see `invert_bugfix_validation_status`.
+    # Per-arch jobs are configured with `allow_failure=True` so a genuine
+    # `ERROR` (sanitizer assert, OOM, runner termination) does not block PR
+    # merge on its own. The merge-blocking decision is made by the
+    # `new_tests_check.py` post-hook, which uses strict `is_success` (`OK` or
+    # `XFAIL`); `SKIPPED`/`ERROR`/`FAIL` per-arch jobs do NOT count as a
+    # validation. The bug is considered validated as long as AT LEAST ONE
+    # per-arch job is strict-success.
+    BUGFIX_VALIDATE_FT_AMD = "Bugfix validation (functional tests, amd64)"
+    BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
+    BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
+    BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -401,7 +430,6 @@ class ArtifactNames:
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
     CH_ARM_MSAN = "CH_ARM_MSAN"
-    CH_ARM_UBSAN = "CH_ARM_UBSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -418,6 +446,7 @@ class ArtifactNames:
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
     FAST_TEST = "FAST_TEST"
+
     UNITTEST_AMD_ASAN_UBSAN = "UNITTEST_AMD_ASAN_UBSAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -433,7 +462,6 @@ class ArtifactNames:
     DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
     DEB_ARM_TSAN = "DEB_ARM_TSAN"
     DEB_ARM_MSAN = "DEB_ARM_MSAN"
-    DEB_ARM_UBSAN = "DEB_ARM_UBSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -454,7 +482,12 @@ class ArtifactNames:
 
 
 LLVM_FT_NUM_BATCHES = 3
-LLVM_IT_NUM_BATCHES = 5
+LLVM_IT_NUM_BATCHES = 8
+# The old-analyzer + s3 + DatabaseReplicated + WasmEdge parallel variant runs the
+# whole stateless suite un-batched and is the slowest job in CI (main run alone
+# ~1h40m-2h10m under coverage instrumentation). It is split into batches so each
+# shard finishes well inside the runner lease and is not torn down mid-job.
+LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES = 3
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -463,17 +496,23 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for 6 jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_sequential",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel",
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_sequential",
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DatabaseReplicated + WasmEdge, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
+    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
+    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_sequential",
 ]
 
 LLVM_IT_ARTIFACTS_LIST = [
-    # default.profdata files for 5 batches from Integration tests
+    # default.profdata files for the batches from Integration tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_it_{batch}"
     for total_batches in (LLVM_IT_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
@@ -495,7 +534,6 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_ASAN_UBSAN,
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
-    ArtifactNames.CH_ARM_UBSAN,
 ]
 
 
@@ -519,7 +557,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_ASAN_UBSAN,
             ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_ARM_MSAN,
-            ArtifactNames.CH_ARM_UBSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -539,7 +576,7 @@ class ArtifactConfigs:
         name="...",
         type=Artifact.Type.S3,
         path=[
-            f"./*.profdata",
+            "./*.profdata",
         ],
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
@@ -564,7 +601,6 @@ class ArtifactConfigs:
             ArtifactNames.DEB_ARM_ASAN_UBSAN,
             ArtifactNames.DEB_ARM_TSAN,
             ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_ARM_UBSAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(
