@@ -666,7 +666,21 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 
     for (size_t i = 0; i < rows; ++i)
     {
-        prev_offset += sizes[start + i];
+        const UInt64 size = sizes[start + i];
+
+        /// `size` comes from a separate sub-stream and is untrusted: a corrupt/desynced sizes stream
+        /// would otherwise reach `data.resize()` and abort in Allocator::checkSize. Same bound as the
+        /// single-stream path (deserializeBinaryImpl).
+        static constexpr size_t max_string_size = 16_GiB;
+        if (size > max_string_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
+                "inconsistent; the part is likely truncated or corrupted.",
+                size,
+                max_string_size);
+
+        prev_offset += size;
         offsets.push_back(prev_offset);
     }
 }
