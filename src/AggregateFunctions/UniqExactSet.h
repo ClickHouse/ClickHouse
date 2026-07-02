@@ -314,9 +314,12 @@ public:
     size_t size() const { return isSingleLevel() ? asSingleLevel().size() : asTwoLevel().size(); }
 
     /// To convert set to two level before merging (we cannot just call convertToTwoLevel() on right hand side set, because it is declared const).
+    /// This is `const` and may run concurrently for the same source set: ROLLUP/CUBE/GROUPING SETS merge the same state into
+    /// several destinations, and with several threads those merges happen at the same time. So it must not mutate `*this`.
+    /// The copy-on-write that protects a shared `two_level_set` from in-place mutation is done on the destination side in
+    /// `asTwoLevelChecked` (before any mutation), so handing out the shared pointer here is safe.
     std::shared_ptr<TwoLevelSet> getTwoLevelSet() const
     {
-        doDeepCopyIfNeeded();
         return two_level_set ? two_level_set : std::make_shared<TwoLevelSet>(asSingleLevel());
     }
 
@@ -344,8 +347,11 @@ private:
     TwoLevelSet & asTwoLevel() { return *two_level_set; }
     const TwoLevelSet & asTwoLevel() const { return *two_level_set; }
 
-    /// Needed when a row can participate in more than one merge, e.g., ROLLUP/CUBE
-    void doDeepCopyIfNeeded() const
+    /// Needed when a row can participate in more than one merge, e.g., ROLLUP/CUBE: the destination may share its `two_level_set`
+    /// with the source (see the fast path in `merge`). Fork a private copy before mutating it in place, so the shared instance,
+    /// which may still be read concurrently by other merges, is never modified. Only called from the mutable (destination) path,
+    /// and `*this` is thread-local there, so reading `use_count` and reassigning the pointer is not racy.
+    void doDeepCopyIfNeeded()
     {
         if (two_level_set && two_level_set.use_count() > 1)
         {
@@ -357,6 +363,6 @@ private:
     }
 
     SingleLevelSet single_level_set;
-    mutable std::shared_ptr<TwoLevelSet> two_level_set;
+    std::shared_ptr<TwoLevelSet> two_level_set;
 };
 }
