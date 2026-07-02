@@ -192,6 +192,12 @@ public:
     /// Set a setting by name
     virtual void set(std::string_view name, const Field & value);
 
+    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
+    /// built-in setting. Used to transport query parameters (whose user-chosen names may match a
+    /// setting name) through the `Settings` serialization without parsing the value as the colliding
+    /// setting's type. Only valid when `Traits::allow_custom_settings`.
+    void setCustom(std::string_view name, const Field & value);
+
     /// Get the value of a setting
     Field get(std::string_view name) const;
 
@@ -381,6 +387,17 @@ void BaseSettings<TTraits>::set(std::string_view name, const Field & value)
         accessor.setValue(*this, index, value);
     else
         getCustomSetting(name) = value;
+}
+
+template <typename TTraits>
+void BaseSettings<TTraits>::setCustom(std::string_view name, const Field & value)
+{
+    /// Deliberately do NOT resolve aliases here. Custom fields carry user-chosen names — query
+    /// parameters are transported this way — and must be preserved exactly. Resolving an alias would
+    /// store e.g. a `--param_enable_analyzer` value under the canonical `allow_experimental_analyzer`,
+    /// so `SELECT {enable_analyzer:String}` could no longer find it. Genuine custom settings are not
+    /// aliases of built-in settings, so skipping resolution is a no-op for them.
+    getCustomSetting(name) = value;
 }
 
 template <typename TTraits>
@@ -686,7 +703,24 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
         bool is_important = (flags & Flags::IMPORTANT);
         bool is_custom = (flags & Flags::CUSTOM);
 
-        if (index != static_cast<size_t>(-1))
+        if (is_custom && Traits::allow_custom_settings)
+        {
+            /// Honor the wire `CUSTOM` flag even when `name` collides with a built-in setting, rather
+            /// than coercing the value into that setting's typed slot. Query parameters are transported
+            /// through this `Settings` serialization, and a parameter whose name matches a built-in
+            /// setting (e.g. `--param_page` now that `page` is a real `Double` setting) must round-trip
+            /// as a string-valued custom field — otherwise a non-numeric value like `foo` would throw
+            /// while being parsed as the setting's type. A correctly-formed real settings packet never
+            /// flags a built-in setting as custom, so only such parameters take this branch.
+            ///
+            /// Store under the original wire name (`read_name`), not the alias-resolved `name`: a query
+            /// parameter whose name is a setting *alias* (e.g. `enable_analyzer`, an alias of
+            /// `allow_experimental_analyzer`) must round-trip under the user's chosen name so that
+            /// `SELECT {enable_analyzer:String}` can find it. `read_name` equals `name` for any
+            /// non-alias custom field, so this is exact for genuine custom settings.
+            getCustomSetting(read_name).parseFromString(BaseSettingsHelpers::readString(in));
+        }
+        else if (index != static_cast<size_t>(-1))
         {
             if (is_custom)
             {
@@ -698,10 +732,6 @@ void BaseSettings<TTraits>::read(ReadBuffer & in, SettingsWriteFormat format)
                 accessor.setValueString(*this, index, BaseSettingsHelpers::readString(in));
             else
                 accessor.readBinary(*this, index, in);
-        }
-        else if (is_custom && Traits::allow_custom_settings)
-        {
-            getCustomSetting(name).parseFromString(BaseSettingsHelpers::readString(in));
         }
         else if (is_important)
         {

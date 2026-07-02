@@ -396,6 +396,12 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    /// Filters supplied out-of-band by the HTTP interface (URL path filters, repeated `?filter=`
+    /// parameters, unrecognized URL parameters as filters), already combined with `AND`. Kept
+    /// separate from the `filter` setting so it composes with — rather than being overwritten by —
+    /// an in-query `SETTINGS filter = ...` clause when query-construction settings are applied.
+    String http_combined_filter;
+
     TemporaryTablesMapping external_tables_mapping;
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
@@ -1146,6 +1152,9 @@ public:
 
     String getInsertFormat() const;
     void setInsertFormat(const String & name);
+
+    const String & getHTTPCombinedFilter() const;
+    void setHTTPCombinedFilter(const String & filter);
 
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);

@@ -3,6 +3,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -188,8 +189,17 @@ void SelectStreamFactory::createForShardImpl(
                 shard_header = header;
         }
 
+        /// Strip initiator-only settings from the query text forwarded to the shard. The AST carries them
+        /// from a nested `SETTINGS` clause, and on the analyzer path from `QueryNode::settings_changes`,
+        /// which `queryNodeToDistributedSelectQuery` (`QueryNode::toAST`) materializes into the SELECT's
+        /// `SETTINGS`. They are irrelevant to the remote query and can trip `UNKNOWN_SETTING` on an older
+        /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
+        /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
+        auto forwarded_query = query_ast->clone();
+        stripInitiatorOnlySettingsFromQuery(forwarded_query);
+
         remote_shards.emplace_back(Shard{
-            .query = query_ast,
+            .query = forwarded_query,
             .query_tree = query_tree,
             .planner_context = planner_context,
             .query_plan = std::move(query_plan),

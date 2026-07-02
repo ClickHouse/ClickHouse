@@ -56,6 +56,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -1740,6 +1741,19 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.select && create.isView())
     {
+        /// Query-construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` /
+        /// `page`) shape a result and are materialized by wrapping the query as a derived table during
+        /// direct execution. A stored view definition cannot support them equivalently: its columns are
+        /// inferred (below, before any wrapping) so `select` would change the result schema versus the
+        /// stored metadata; the per-`UNION`-arm pass is not applied; and a refreshable materialized view
+        /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
+        /// definition rather than shaping inconsistently — put them on the query that reads the view.
+        if (hasConstructionSettings(*create.select))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
+                "are not supported in a {} definition. Specify them on the query that reads the view instead.",
+                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
+
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);

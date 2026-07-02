@@ -1,0 +1,79 @@
+-- Tags: no-old-analyzer
+-- The `EXPLAIN SYNTAX` below renders differently under the old analyzer, which expands `*` and pushes
+-- the predicate into the subquery, so this test runs only with the (default) new analyzer. The numeric
+-- assertions are analyzer-independent (the construction settings are applied by wrapping in `executeQuery`).
+
+-- Tests the query-construction settings (`select` / `filter` / `order` / `sort` and
+-- `limit` / `offset` / `page`). They shape a query's *result*, materialized by wrapping the
+-- (sub)query as a derived table in `executeQuery` rather than folded into the query tree by the
+-- analyzer. A `SETTINGS` clause applies to its own scope (not to deeper subqueries); session/user
+-- settings apply only to the outermost query; the query explained by `EXPLAIN` is wrapped too.
+-- They follow the same scope rules as any other setting on `INSERT ... SELECT` / `CREATE ... AS SELECT`:
+-- a setting in the source `SELECT`'s own `SETTINGS` clause shapes it (so it is effective), while a
+-- setting on the `INSERT` / `CREATE` statement itself does not propagate into the `SELECT`.
+
+SELECT '-- page in a subquery SETTINGS is translated to offset (page 2, limit 10 -> rows 10..19)';
+SELECT min(number), max(number), count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 10, page = 2);
+
+SELECT '-- page in a subquery SETTINGS without limit is rejected (not silently dropped)';
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS page = 2); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- limit/offset in a subquery SETTINGS cap the subquery result';
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5);
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 5, offset = 3);
+
+SELECT '-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected';
+SELECT count() FROM ((SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL (SELECT number FROM numbers(100) SETTINGS limit = 2)); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)';
+SELECT count() FROM (SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 1) UNION ALL SELECT * FROM (SELECT number FROM numbers(100) SETTINGS limit = 2));
+
+SELECT '-- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)';
+SELECT count() FROM (SELECT number FROM numbers(5) UNION ALL SELECT number FROM numbers(5) SETTINGS limit = 3);
+
+SELECT '-- a construction setting on the INSERT statement itself does not propagate to the SELECT (all 10 rows)';
+DROP TABLE IF EXISTS t_construction_settings;
+CREATE TABLE t_construction_settings (x UInt64) ENGINE = Memory;
+INSERT INTO t_construction_settings SETTINGS limit = 2 SELECT number FROM numbers(10);
+SELECT count() FROM t_construction_settings;
+
+SELECT '-- but a construction setting on the source SELECT is effective (2 rows)';
+TRUNCATE TABLE t_construction_settings;
+INSERT INTO t_construction_settings SELECT number FROM numbers(10) SETTINGS limit = 2;
+SELECT count() FROM t_construction_settings;
+DROP TABLE t_construction_settings;
+
+SELECT '-- filter in a subquery SETTINGS filters that subquery (numbers 6..9 -> 4)';
+SELECT count() FROM (SELECT number FROM numbers(10) SETTINGS filter = 'number > 5');
+
+SELECT '-- select in a subquery SETTINGS projects that subquery';
+SELECT a FROM (SELECT number AS a, number * 2 AS b FROM numbers(3) SETTINGS select = 'a') ORDER BY a;
+
+SELECT '-- order in a subquery SETTINGS orders that subquery';
+SELECT groupArray(number) FROM (SELECT number FROM numbers(3) SETTINGS order = '-number');
+
+SELECT '-- a setting on the outermost query applies only to its scope, not to the subquery (count = 10, not 3)';
+SELECT count() FROM (SELECT number FROM numbers(10)) SETTINGS limit = 3;
+
+SELECT '-- EXPLAIN wraps the explained query so its plan matches execution';
+EXPLAIN SYNTAX SELECT number FROM numbers(10) SETTINGS filter = 'number > 5';
+
+SELECT '-- a construction setting on the source SELECT of CREATE ... AS SELECT is effective (3 rows)';
+DROP TABLE IF EXISTS t_create_as_select;
+CREATE TABLE t_create_as_select ENGINE = Memory AS SELECT number FROM numbers(10) SETTINGS limit = 3;
+SELECT count() FROM t_create_as_select;
+DROP TABLE IF EXISTS t_create_as_select;
+
+-- Repeated construction settings: `ParserSetQuery` appends one entry per occurrence, so the consumer must
+-- use the effective (last-wins) value and erase *every* occurrence, or a leftover re-caps the query.
+SELECT '-- repeated nested `limit`: last value wins and every occurrence is consumed (5, not 3)';
+SELECT count() FROM (SELECT number FROM numbers(100) SETTINGS limit = 3, limit = 5);
+SELECT '-- repeated nested `select`: last value wins (projects `b`, not `a`)';
+SELECT b FROM (SELECT number AS a, number * 2 AS b FROM numbers(3) SETTINGS select = 'a', select = 'b') ORDER BY b;
+SELECT '-- repeated top-level `limit`: last value wins and no leftover re-caps the wrapped query (7 rows)';
+SELECT number FROM numbers(100) ORDER BY number SETTINGS limit = 3, limit = 5, limit = 7;
+
+SELECT '-- a `= DEFAULT` reset after a value makes the construction setting absent (subquery returns all 10)';
+SELECT count() FROM (SELECT number FROM numbers(10) SETTINGS limit = 3, limit = DEFAULT);
+SELECT '-- the same construction setting in both the SELECT-local and trailing query-level SETTINGS is rejected';
+SELECT number FROM numbers(10) SETTINGS limit = 5 FORMAT TSV SETTINGS limit = 2; -- { serverError BAD_ARGUMENTS }

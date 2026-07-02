@@ -5,6 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
@@ -131,6 +132,12 @@ void IStorageCluster::read(
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);
 
+    /// Strip initiator-only settings from the forwarded query text as well: the inter-server settings
+    /// packet is stripped in `ReadFromCluster::updateSettings`, but `query_to_send` is also serialized via
+    /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
+    /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 
     auto reading = std::make_unique<ReadFromCluster>(
@@ -237,6 +244,12 @@ ContextPtr ReadFromCluster::updateSettings(const Settings & settings)
 
     /// Cluster table functions should always skip unavailable shards.
     new_settings[Setting::skip_unavailable_shards] = true;
+
+    /// Strip the initiator-only settings (the query-shaping settings, the result-serialisation
+    /// settings, and `database`): they are materialized on the initiator and must not be forwarded
+    /// to the remote servers, where they would re-shape the per-shard subquery a second time or
+    /// break it (e.g. `format = 'Null'`). This mirrors the `Distributed` fan-out.
+    ClusterProxy::stripInitiatorOnlySettings(new_settings);
 
     auto new_context = Context::createCopy(context);
     new_context->setSettings(new_settings);

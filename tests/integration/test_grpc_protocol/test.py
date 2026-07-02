@@ -66,6 +66,7 @@ def query_common(
     password="",
     query_id="123",
     session_id="",
+    database="",
     stream_output=False,
     channel=None,
 ):
@@ -93,6 +94,7 @@ def query_common(
             password=password,
             query_id=query_id,
             session_id=session_id,
+            database=database,
             next_query_info=bool(input_data),
         )
 
@@ -280,6 +282,112 @@ def test_output_format():
         query("SELECT a FROM t ORDER BY a", output_format="JSONEachRow")
         == '{"a":1}\n{"a":2}\n{"a":3}\n'
     )
+
+
+def test_format_settings():
+    # The `format` / `input_format` / `output_format` settings are global format overrides that must
+    # work on every protocol, including gRPC (the resolution mirrors the server query path).
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1),(2),(3)")
+    # `output_format` overrides the gRPC `output_format` field (TabSeparated) and the query FORMAT clause.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"output_format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a FORMAT TabSeparated",
+            settings={"output_format": "JSONEachRow"},
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # The generic `format` setting applies to output too.
+    assert (
+        query("SELECT a FROM t ORDER BY a", settings={"format": "JSONEachRow"})
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    # `input_format` selects the INSERT input format, overriding the query FORMAT clause.
+    query("DROP TABLE IF EXISTS t_in")
+    query("CREATE TABLE t_in (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in FORMAT TabSeparated",
+        input_data="1,2\n3,4\n",
+        settings={"input_format": "CSV"},
+    )
+    assert query("SELECT a, b FROM t_in ORDER BY a") == "1\t2\n3\t4\n"
+    query("DROP TABLE t_in")
+    # An in-query `SETTINGS` clause must take effect too: it is applied by `executeQuery` after the
+    # `QueryInfo.settings`, so the formats are re-resolved from the final settings (otherwise the
+    # pre-`SETTINGS` snapshot would win and the in-query setting would be ignored on gRPC).
+    assert (
+        query(
+            "SELECT a FROM t ORDER BY a SETTINGS output_format = 'JSONEachRow' FORMAT TabSeparated"
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE IF EXISTS t_in2")
+    query("CREATE TABLE t_in2 (a UInt8, b UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_in2 SETTINGS input_format = 'CSV' FORMAT TabSeparated",
+        input_data="5,6\n7,8\n",
+    )
+    assert query("SELECT a, b FROM t_in2 ORDER BY a") == "5\t6\n7\t8\n"
+    query("DROP TABLE t_in2")
+    query("DROP TABLE t")
+
+
+def test_database_setting():
+    # An explicit `QueryInfo.database` must win over a `database` value arriving via `QueryInfo.settings`
+    # (or a user profile): gRPC mirrors it into the `database` setting so `executeQuery`'s
+    # post-`SETTINGS` re-application of `database` does not switch the query back to the inherited one.
+    query("DROP DATABASE IF EXISTS grpc_db1")
+    query("DROP DATABASE IF EXISTS grpc_db2")
+    query("CREATE DATABASE grpc_db1")
+    query("CREATE DATABASE grpc_db2")
+    query("CREATE TABLE grpc_db1.t (x String) ENGINE = Memory")
+    query("CREATE TABLE grpc_db2.t (x String) ENGINE = Memory")
+    query("INSERT INTO grpc_db1.t VALUES ('from_db1')")
+    query("INSERT INTO grpc_db2.t VALUES ('from_db2')")
+    # The explicit database field selects grpc_db2 even though the settings say grpc_db1.
+    assert (
+        query("SELECT x FROM t", database="grpc_db2", settings={"database": "grpc_db1"})
+        == "from_db2\n"
+    )
+    # And it works on its own.
+    assert query("SELECT x FROM t", database="grpc_db1") == "from_db1\n"
+    query("DROP DATABASE grpc_db1")
+    query("DROP DATABASE grpc_db2")
+
+
+def test_input_function_format_settings():
+    # The input() table function initializes its reader during planning (inside executeQuery), before any
+    # post-execution step, so an in-query SETTINGS input_format must be applied before executeQuery. Here
+    # the INSERT has no FORMAT clause (would default to Values), and input_format = 'CSV' must win.
+    query("DROP TABLE IF EXISTS t_inp")
+    query("CREATE TABLE t_inp (a UInt8) ENGINE = Memory")
+    query(
+        "INSERT INTO t_inp SELECT * FROM input('a UInt8') SETTINGS input_format = 'CSV'",
+        input_data="1\n2\n3\n",
+    )
+    assert query("SELECT a FROM t_inp ORDER BY a") == "1\n2\n3\n"
+    query("DROP TABLE t_inp")
+
+
+def test_default_format_setting():
+    # `default_format` is the output fallback when there is no output_format/format setting, no FORMAT
+    # clause and no gRPC output_format field. It must be re-resolved from the final settings, so pass an
+    # empty gRPC output_format here.
+    query("DROP TABLE IF EXISTS t_df")
+    query("CREATE TABLE t_df (a UInt8) ENGINE = Memory")
+    query("INSERT INTO t_df VALUES (1),(2),(3)")
+    assert (
+        query(
+            "SELECT a FROM t_df ORDER BY a SETTINGS default_format = 'JSONEachRow'",
+            output_format="",
+        )
+        == '{"a":1}\n{"a":2}\n{"a":3}\n'
+    )
+    query("DROP TABLE t_df")
 
 
 def test_totals_and_extremes():

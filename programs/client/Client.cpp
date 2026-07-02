@@ -1101,6 +1101,22 @@ void Client::processConfig()
     rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
     default_database = config().getString("database", "");
+    /// `default_database` may have come from a config file (or a named connection in that file)
+    /// rather than the `--database` CLI option. The `database` setting needs to know either
+    /// way, so it ships with every query the client runs.
+    if (!default_database.empty() && !cmd_settings->isChanged("database"))
+    {
+        cmd_settings->set("database", default_database);
+        /// `processConfig` runs after `processOptions` already copied `cmd_settings` into `global_context`
+        /// and `client_context`, and the later TCP sends read `client_context->getSettingsRef()[database]`,
+        /// not `cmd_settings`. Apply the mirrored value to the live contexts too (mirroring what
+        /// `setDefaultFormatsAndCompressionFromConfiguration` now does for the format settings), so a
+        /// config / named-connection `database` is not overridden by a stale profile value in `executeQuery`.
+        if (global_context)
+            global_context->setSetting("database", default_database);
+        if (client_context)
+            client_context->setSetting("database", default_database);
+    }
     inline_insert_data = config().getBool("inline-insert-data", false);
 
     if (inline_insert_data)

@@ -29,6 +29,8 @@
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/MatcherNode.h>
@@ -62,10 +64,11 @@ namespace Setting
     extern const SettingsBool any_join_distinct_right_table_keys;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 
@@ -272,37 +275,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     auto select_settings = select_query_typed.settings();
     SettingsChanges settings_changes;
 
-    /// We are going to remove settings LIMIT and OFFSET and
-    /// further replace them with corresponding expression nodes
-    UInt64 limit = 0;
-    UInt64 offset = 0;
-
-    /// Remove global settings limit and offset
-    if (const auto & settings_ref = updated_context->getSettingsRef(); settings_ref[Setting::limit] || settings_ref[Setting::offset])
-    {
-        Settings settings = updated_context->getSettingsCopy();
-        limit = settings[Setting::limit];
-        offset = settings[Setting::offset];
-        settings[Setting::limit] = 0;
-        settings[Setting::offset] = 0;
-        updated_context->setSettings(settings);
-    }
-
     if (select_settings)
     {
         auto & set_query = select_settings->as<ASTSetQuery &>();
 
-        /// Remove expression settings limit and offset
-        if (auto * limit_field = set_query.changes.tryGet("limit"))
-        {
-            limit = limit_field->safeGet<UInt64>();
-            set_query.changes.removeSetting("limit");
-        }
-        if (auto * offset_field = set_query.changes.tryGet("offset"))
-        {
-            offset = offset_field->safeGet<UInt64>();
-            set_query.changes.removeSetting("offset");
-        }
+        /// `limit` / `offset` settings are materialized earlier by wrapping the query — including
+        /// subqueries that carry the setting in their own `SETTINGS` clause — as a derived table with an
+        /// outer `LIMIT` / `OFFSET` (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`
+        /// in `executeQuery` for directly executed queries; the `StorageView` constructor for a stored
+        /// view's inner query, which bypasses `executeQuery`). By the time the query tree is built the
+        /// settings are therefore already consumed; drop any that remain so they are not re-applied to
+        /// this (sub)query's context — the query tree's `LIMIT` / `OFFSET` come from the SQL clauses below.
+        set_query.changes.removeSetting("limit");
+        set_query.changes.removeSetting("offset");
 
         if (!set_query.changes.empty())
         {
@@ -485,77 +470,15 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         current_query_tree->getLimitByNode() = buildExpressionList(select_limit_by, current_context);
 
     /// Combine limit expression with limit and offset settings into final limit expression
-    /// The sequence of application is the following - offset expression, limit expression, offset setting, limit setting.
-    /// Since offset setting is applied after limit expression, but we want to transfer settings into expression
-    /// we must decrease limit expression by offset setting and then add offset setting to offset expression.
-    ///    select_limit - limit expression
-    ///    limit        - limit setting
-    ///    offset       - offset setting
-    ///
-    /// if select_limit
-    ///   -- if offset >= select_limit                (expr 0)
-    ///      then (0) (0 rows)
-    ///   -- else if limit > 0                        (expr 1)
-    ///      then min(select_limit - offset, limit)   (expr 2)
-    ///   -- else
-    ///      then (select_limit - offset)             (expr 3)
-    /// else if limit > 0
-    ///    then limit
-    ///
-    /// offset = offset + of_expr
-    auto select_limit = select_query_typed.limitLength();
-    if (select_limit)
-    {
-        /// Shortcut
-        if (offset == 0 && limit == 0)
-        {
-            current_query_tree->getLimit() = buildExpression(select_limit, current_context);
-        }
-        else
-        {
-            /// expr 3
-            auto expr_3 = std::make_shared<FunctionNode>("minus");
-            expr_3->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-            expr_3->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
+    /// `LIMIT` / `OFFSET` come straight from the SQL clauses. The `limit` / `offset` settings are no
+    /// longer folded in here — they are materialized as an outer query's `LIMIT` / `OFFSET` by the
+    /// subquery-wrapping in `executeQuery` (`applyQueryConstructionSettings` for the top-level query,
+    /// `wrapNestedConstructionSettings` for subqueries that carry the setting in their `SETTINGS`
+    /// clause), so combining with the setting is left to the optimizer's limit push-down.
+    if (auto select_limit = select_query_typed.limitLength())
+        current_query_tree->getLimit() = buildExpression(select_limit, current_context);
 
-            /// expr 2
-            auto expr_2 = std::make_shared<FunctionNode>("least");
-            expr_2->getArguments().getNodes().push_back(expr_3->clone());
-            expr_2->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(limit));
-
-            /// expr 0
-            auto expr_0 = std::make_shared<FunctionNode>("greaterOrEquals");
-            expr_0->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-            expr_0->getArguments().getNodes().push_back(buildExpression(select_limit, current_context));
-
-            /// expr 1
-            auto expr_1 = std::make_shared<ConstantNode>(limit > 0);
-
-            auto function_node = std::make_shared<FunctionNode>("multiIf");
-            function_node->getArguments().getNodes().push_back(expr_0);
-            function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(0));
-            function_node->getArguments().getNodes().push_back(expr_1);
-            function_node->getArguments().getNodes().push_back(expr_2);
-            function_node->getArguments().getNodes().push_back(expr_3);
-
-            current_query_tree->getLimit() = std::move(function_node);
-        }
-    }
-    else if (limit > 0)
-        current_query_tree->getLimit() = std::make_shared<ConstantNode>(limit);
-
-    /// Combine offset expression with offset setting into final offset expression
-    auto select_offset = select_query_typed.limitOffset();
-    if (select_offset && offset)
-    {
-        auto function_node = std::make_shared<FunctionNode>("plus");
-        function_node->getArguments().getNodes().push_back(buildExpression(select_offset, current_context));
-        function_node->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(offset));
-        current_query_tree->getOffset() = std::move(function_node);
-    }
-    else if (offset)
-        current_query_tree->getOffset() = std::make_shared<ConstantNode>(offset);
-    else if (select_offset)
+    if (auto select_offset = select_query_typed.limitOffset())
         current_query_tree->getOffset() = buildExpression(select_offset, current_context);
 
     return current_query_tree;
@@ -937,9 +860,22 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
           */
         if (!is_subquery)
         {
-            String implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
+            const String & implicit_table = context->getSettingsRef()[Setting::implicit_table_at_top_level];
             if (!implicit_table.empty())
-                return std::make_shared<IdentifierNode>(Identifier(implicit_table));
+            {
+                /// Parse the value as a (possibly back-quoted) compound identifier rather than splitting
+                /// the raw string on every `.`. This lets a single name part contain a literal dot when
+                /// it is back-quoted — e.g. `db`.`my.table` resolves to database `db`, table `my.table`,
+                /// not the three parts `db`, `my`, `table`. A plain unquoted `db.table` parses to the
+                /// same parts as before, so existing callers are unaffected.
+                const auto & settings = context->getSettingsRef();
+                ParserCompoundIdentifier parser;
+                ASTPtr identifier_ast = parseQuery(
+                    parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
+                    "implicit_table_at_top_level setting",
+                    settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                return std::make_shared<IdentifierNode>(Identifier(identifier_ast->as<ASTIdentifier &>().name_parts));
+            }
         }
 
         return std::make_shared<IdentifierNode>(Identifier("system.one"));

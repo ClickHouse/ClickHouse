@@ -1,0 +1,52 @@
+-- page in a subquery SETTINGS is translated to offset (page 2, limit 10 -> rows 10..19)
+10	19	10
+-- page in a subquery SETTINGS without limit is rejected (not silently dropped)
+-- limit/offset in a subquery SETTINGS cap the subquery result
+5
+5
+-- an arm-local setting on a non-last arm plus SETTINGS on the last arm is ambiguous and rejected
+-- nesting per-arm settings in subqueries applies them per arm unambiguously (1 + 2 = 3)
+3
+-- a trailing query-level SETTINGS limit still caps the whole union (3, not 5 + 3)
+3
+-- a construction setting on the INSERT statement itself does not propagate to the SELECT (all 10 rows)
+10
+-- but a construction setting on the source SELECT is effective (2 rows)
+2
+-- filter in a subquery SETTINGS filters that subquery (numbers 6..9 -> 4)
+4
+-- select in a subquery SETTINGS projects that subquery
+0
+1
+2
+-- order in a subquery SETTINGS orders that subquery
+[2,1,0]
+-- a setting on the outermost query applies only to its scope, not to the subquery (count = 10, not 3)
+10
+-- EXPLAIN wraps the explained query so its plan matches execution
+SELECT *
+FROM
+(
+    SELECT number
+    FROM numbers(10)
+)
+WHERE greater(number, 5)
+-- a construction setting on the source SELECT of CREATE ... AS SELECT is effective (3 rows)
+3
+-- repeated nested `limit`: last value wins and every occurrence is consumed (5, not 3)
+5
+-- repeated nested `select`: last value wins (projects `b`, not `a`)
+0
+2
+4
+-- repeated top-level `limit`: last value wins and no leftover re-caps the wrapped query (7 rows)
+0
+1
+2
+3
+4
+5
+6
+-- a `= DEFAULT` reset after a value makes the construction setting absent (subquery returns all 10)
+10
+-- the same construction setting in both the SELECT-local and trailing query-level SETTINGS is rejected

@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -372,7 +373,16 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings settings = context->getSettingsCopy();
+        Settings settings = context->getSettingsCopy();
+        /// Strip the initiator-only settings (the query-shaping `select` / `filter` / `order` / `sort`
+        /// / `limit` / `offset` / `page`, the result-serialisation `format` / `input_format` /
+        /// `output_format` / `default_format` / `compression`, and `database`) before sending them to
+        /// the shard. They are irrelevant to a remote `INSERT` (the rows are already shaped and sent as
+        /// `Native` blocks), and forwarding the new ones breaks rolling upgrades: an older shard
+        /// rejects the settings packet with `UNKNOWN_SETTING`. `database` in particular must be left
+        /// off so a `Distributed` table created with an empty database argument resolves the remote
+        /// table against the shard's own default database.
+        ClusterProxy::stripInitiatorOnlySettings(settings);
 
         size_t rows = shard_block.rows();
 
@@ -863,7 +873,17 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             WriteBufferFromOwnString header_buf;
             writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
             writeStringBinary(query_string, header_buf);
-            context->getSettingsRef().write(header_buf);
+            {
+                /// Strip the initiator-only settings (query-shaping, result-serialisation, and
+                /// `database`; see `stripInitiatorOnlySettings`) before persisting them in the queue
+                /// file. They are replayed on the connection to the remote shard, which must resolve an
+                /// unqualified remote table against its own default database and never needs the
+                /// query-shaping / format settings for a `Native`-block `INSERT`; forwarding the new
+                /// ones would make an older shard reject the replayed settings with `UNKNOWN_SETTING`.
+                Settings insert_settings = context->getSettingsCopy();
+                ClusterProxy::stripInitiatorOnlySettings(insert_settings);
+                insert_settings.write(header_buf);
+            }
 
             /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
             /// as a trailing header field below, so that older binaries draining these queue files read

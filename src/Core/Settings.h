@@ -151,6 +151,9 @@ struct Settings
     Field get(std::string_view name) const;
 
     void set(std::string_view name, const Field & value);
+    /// Forcibly store `name` as a custom (string-valued) field, even when it collides with a
+    /// built-in setting. Used to transport query parameters (whose names may match a setting name).
+    void setCustom(std::string_view name, const Field & value);
     void setDefaultValue(std::string_view name);
 
     VectorWithMemoryTracking<String> getHints(const String & name) const;

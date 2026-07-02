@@ -24,6 +24,8 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
 }
 
 namespace ErrorCodes
@@ -49,7 +51,16 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
-    if (ast_insert_query->format.empty())
+    const Settings & settings = context->getSettingsRef();
+
+    /// Allow `format` / `input_format` settings to override the FORMAT specified in the INSERT query.
+    String resolved_format = ast_insert_query->format;
+    if (!settings[Setting::input_format].value.empty())
+        resolved_format = settings[Setting::input_format].value;
+    else if (!settings[Setting::format].value.empty())
+        resolved_format = settings[Setting::format].value;
+
+    if (resolved_format.empty())
     {
         if (input_function)
             throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -60,10 +71,8 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         ? getReadBufferFromASTInsertQuery(ast)
         : std::make_unique<EmptyReadBuffer>();
 
-    const Settings & settings = context->getSettingsRef();
-
     /// Create a source from input buffer using format from query
-    auto format = context->getInputFormat(ast_insert_query->format, *input_buffer, header,
+    auto format = context->getInputFormat(resolved_format, *input_buffer, header,
                                           settings[Setting::max_insert_block_size], std::nullopt,
                                           settings[Setting::max_insert_block_size_bytes],
                                           settings[Setting::min_insert_block_size_rows],

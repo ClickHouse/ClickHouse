@@ -10,6 +10,9 @@
 #include <Server/StaticRequestHandler.h>
 #include <Server/WebUIRequestHandler.h>
 #include <Server/WebTerminalRequestHandler.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <boost/algorithm/string/predicate.hpp>
 #if CLICKHOUSE_CLOUD
 #include <Server/CloudReadinessHandler.h>
 #endif
@@ -147,11 +150,18 @@ static inline auto createHandlersFactoryFromConfig(
         }
     }
 
+    /// Process configured rules first, then fall back to defaults. This guarantees that a
+    /// configured rule (e.g. a redirect for `/upyachka` or a dynamic-query handler under a URL
+    /// prefix like `/api/v1`) takes precedence over the built-in catch-all dynamic handler that
+    /// `<defaults/>` registers. Without this ordering, when the config is split across multiple
+    /// files (config.d/) the merged child-key iteration order is not insertion order, and the
+    /// default catch-all may be registered before the user's rule, breaking it.
+    bool has_defaults = std::find(keys.begin(), keys.end(), "defaults") != keys.end();
     for (const auto & key : keys)
     {
         if (key == "defaults")
         {
-            addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
+            /// Defer.
         }
         else if (startsWith(key, "rule"))
         {
@@ -291,6 +301,11 @@ static inline auto createHandlersFactoryFromConfig(
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: "
                 "{}.{}, must be 'rule' or 'defaults'", prefix, key);
     }
+
+    /// All configured rules are now registered. Add defaults (which includes the catch-all
+    /// dynamic-query handler) last so they only match what the configured rules didn't.
+    if (has_defaults)
+        addDefaultHandlersFactory(*main_handler_factory, server, config, async_metrics);
 
     return main_handler_factory;
 }
@@ -465,33 +480,94 @@ void addDefaultHandlersFactory(
     factory.addPathToHints("/webterminal");
     factory.addHandler(webterminal_handler);
 
-    auto dynamic_creator = [&server] () -> std::unique_ptr<DynamicQueryHandler>
-    {
-        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query");
-    };
-    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
-    query_handler->addFilter([](const auto & request)
-        {
-            bool path_matches_get_or_head = startsWith(request.getURI(), "?")
-                            || startsWith(request.getURI(), "/?")
-                            || startsWith(request.getURI(), "/query?");
-            bool is_get_or_head_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
-                            || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
-
-            bool path_matches_post_or_options = path_matches_get_or_head
-                             || request.getURI() == "/"
-                             || request.getURI().empty();
-            bool is_post_or_options_request = request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-                                    || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS;
-
-            return (path_matches_get_or_head && is_get_or_head_request) || (path_matches_post_or_options && is_post_or_options_request);
-        }
-    );
-    factory.addHandler(query_handler);
-
+    /// Register Prometheus BEFORE the dynamic query handler. The dynamic handler's catch-all
+    /// path match (gated by the `http_allow_*_as_path` settings) would otherwise shadow
+    /// `/metrics` and other prometheus endpoints.
     /// createPrometheusHandlerFactoryForHTTPRuleDefaults() can return nullptr if prometheus protocols must not be served on http port.
     if (auto prometheus_handler = createPrometheusHandlerFactoryForHTTPRuleDefaults(server, config, async_metrics))
         factory.addHandler(prometheus_handler);
+
+    auto path_hints = factory.getPathHints();
+    auto dynamic_creator = [&server, path_hints] () -> std::unique_ptr<DynamicQueryHandler>
+    {
+        return std::make_unique<DynamicQueryHandler>(server, HTTPHandlerConnectionConfig{}, "query", std::nullopt, "", path_hints);
+    };
+    /// Path-as-file routing is gated by a single server-level flag (`http_allow_path_requests`,
+    /// default off), evaluated here at routing time — before authentication, where the connecting
+    /// user is unknown. The per-user `http_allow_database_as_path` / `http_allow_table_as_file` /
+    /// `http_allow_filters_as_path` settings then control, after authentication, whether a routed
+    /// path is actually interpreted (see `HTTPHandler::processQuery`). When the server flag is off,
+    /// path requests are not claimed at all, so unknown paths keep returning a plain pre-auth 404
+    /// (`NotFoundHandler`).
+    const bool allow_path_requests = config.getBool("http_allow_path_requests", false);
+    auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(dynamic_creator));
+    query_handler->addFilter([allow_path_requests](const auto & request)
+        {
+            const auto & uri = request.getURI();
+            const auto & method = request.getMethod();
+            bool is_get_or_head = method == Poco::Net::HTTPRequest::HTTP_GET
+                               || method == Poco::Net::HTTPRequest::HTTP_HEAD;
+            bool is_post_or_options = method == Poco::Net::HTTPRequest::HTTP_POST
+                                   || method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
+            /// An `OPTIONS` request is a CORS preflight (and the web-UI connectivity health-check).
+            /// `HTTPHandler::handleRequest` answers it via `processOptionsRequest` before
+            /// authentication and without running a query, so it must always be claimed here —
+            /// regardless of the URL shape and independent of `http_allow_path_requests`. Otherwise an
+            /// `OPTIONS` preflight to a path the page will later GET (e.g. `/play`, `/db/table`)
+            /// reaches no handler and the browser treats the connection as broken.
+            if (method == Poco::Net::HTTPRequest::HTTP_OPTIONS)
+                return true;
+
+            /// Existing routing: explicit query-string forms (`?...`, `/?...`, `/query?...`) plus an
+            /// empty or "/" POST.
+            bool original_get_match = startsWith(uri, "?")
+                                   || startsWith(uri, "/?")
+                                   || startsWith(uri, "/query?");
+            bool original_post_match = original_get_match || uri == "/" || uri.empty();
+            if ((is_get_or_head && original_get_match) || (is_post_or_options && original_post_match))
+                return true;
+            if (!is_get_or_head && !is_post_or_options)
+                return false;
+
+            /// Everything below is the path-as-file extension. Skip it unless path requests are
+            /// allowed server-wide, so unknown paths fall through to `NotFoundHandler` (HTTP 404)
+            /// exactly as before this PR. (The path features are still gated again per-user inside
+            /// `HTTPHandler::processQuery`; this server-level flag is only the routing-time gate.)
+            if (!allow_path_requests)
+                return false;
+
+            /// Skip the path-as-file routing for clients sending an `Authorization` header with a
+            /// scheme ClickHouse does not implement (e.g. `AWS4-HMAC-SHA256`, used by
+            /// `clickhouse-local`'s S3 client when probing paths like `/nonexistent`). The dynamic
+            /// handler would otherwise reject the request with `AUTHENTICATION_FAILED` (HTTP 403)
+            /// before it has a chance to look up the path against the catalog; the
+            /// `NotFoundHandler` fallback returns a plain 404 the S3 client is already prepared to
+            /// handle as non-retriable. Supported schemes (Basic, Negotiate) still get the
+            /// dynamic-handler treatment.
+            if (request.has("Authorization"))
+            {
+                const auto & auth_header = request.get("Authorization");
+                std::string_view scheme = auth_header;
+                auto sep = scheme.find(' ');
+                if (sep != std::string_view::npos)
+                    scheme = scheme.substr(0, sep);
+                /// `Authorization: never` is a supported sentinel that makes `authenticateUserByHTTP`
+                /// ignore credentials (see `03362_basic_auth_interactive_not_with_authorization_never`);
+                /// let it through so a path-style request is handled the same way the query-string
+                /// route is, instead of falling through to `NotFoundHandler`.
+                if (!boost::iequals(scheme, "Basic") && !boost::iequals(scheme, "Negotiate") && !boost::iequals(auth_header, "never"))
+                    return false;
+            }
+
+            /// Path-as-file routing: accept any single-component or multi-segment path so the
+            /// dynamic handler can either resolve it as a database/table/filter reference or
+            /// surface the combined handler+catalog hints on a typo. The actual interpretation
+            /// (and "is this really a database?" check) happens inside the handler.
+            return true;
+        }
+    );
+    factory.addHandler(query_handler);
 }
 
 }

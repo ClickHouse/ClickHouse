@@ -1,0 +1,4 @@
+-- data fully landed on the shards
+10	45
+-- at least one shard-side INSERT ran, and none of them carry the initiator-only settings
+1	0	0	0	0

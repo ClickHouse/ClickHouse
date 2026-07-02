@@ -6,6 +6,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -52,6 +53,42 @@ namespace ClusterProxy
 {
 
 class SelectStreamFactory;
+
+/// `database` is an initiator-only setting: it selects the default database for the user's query
+/// (the equivalent of `USE`), and a remote server applies it the same way. But a query sent to a
+/// remote server as part of a distributed query (a `Distributed` fan-out, a cluster table function,
+/// parallel replicas) must resolve an unqualified table against the server's own default database —
+/// set from the cluster config (`default_database` per replica) or from the connection. Forwarding
+/// `database` would make the remote server `USE` the initiator's database first, reading the wrong
+/// same-named table or failing with `UNKNOWN_TABLE` (and would also attribute the secondary queries
+/// to the initiator's database in `system.query_log`). Strip it from every set of settings that is
+/// sent along with such a query.
+void stripDatabaseSetting(Settings & settings);
+
+/// Reset every "initiator-only" setting — the query-shaping settings (`select`, `order`, `sort`,
+/// `filter`, `limit`, `offset`, `page`, `additional_result_filter`), the result-serialisation
+/// settings (`format`, `output_format`, `default_format`, `compression`), and the HTTP/path-only
+/// settings (`http_allow_database_as_path`, `http_allow_table_as_file`, `http_allow_filters_as_path`,
+/// `http_allow_filters_as_unrecognized_url_parameters`, `implicit_table_at_top_level`), plus
+/// `database` (via `stripDatabaseSetting`). These are materialized on the initiator and must not be
+/// forwarded to remote servers, where they would re-shape the per-shard subquery a second time, break
+/// it (see the `format = 'Null'` case in the implementation), or — for the settings new to this
+/// feature — be rejected as `UNKNOWN_SETTING` by an older shard during a rolling upgrade. Shared by
+/// the `Distributed` fan-out, the `*Cluster` table functions (`IStorageCluster`), and the optimized
+/// `parallel_distributed_insert_select` paths in `StorageDistributed`.
+void stripInitiatorOnlySettings(Settings & settings);
+
+/// True for exactly the settings reset by `stripInitiatorOnlySettings`. Used to also strip those
+/// settings from a query's own `SETTINGS` clause before the query *text* is forwarded to a shard (the
+/// optimized `parallel_distributed_insert_select` paths in `StorageDistributed` send a formatted query
+/// string, not just a settings packet).
+bool isInitiatorOnlySettingName(std::string_view name);
+
+/// Strip the initiator-only settings (the `isInitiatorOnlySettingName` names, in both the `name = value`
+/// and `name = DEFAULT` forms) from a query's own query-level `SETTINGS` clauses, so they are not carried
+/// in the forwarded query *text*. Used by `IStorageCluster::read`, whose `ReadFromCluster` sends the query
+/// via `formatWithSecretsOneLine()` in addition to the (already stripped) inter-server settings packet.
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 
 /// Update settings for Distributed query.
 ///

@@ -29,13 +29,22 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
+#include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -57,6 +66,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
@@ -209,6 +219,17 @@ namespace Setting
     extern const SettingsUInt64Auto insert_quorum;
     extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsString format;
+    extern const SettingsString output_format;
+    extern const SettingsString database;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsDouble page;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
 }
 
 namespace ServerSetting
@@ -1121,6 +1142,922 @@ private:
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
 
+/// Convert a comma-separated `sort` setting (identifiers / positional references with optional
+/// `+`/`-` prefix) into an `ORDER BY` expression string, e.g. `a,-b,2` -> `a ASC, b DESC, 2`.
+static String convertSortToOrderBy(const String & sort)
+{
+    String result;
+    auto flush_one = [&](String item)
+    {
+        while (!item.empty() && (item.front() == ' ' || item.front() == '\t'))
+            item.erase(0, 1);
+        while (!item.empty() && (item.back() == ' ' || item.back() == '\t'))
+            item.pop_back();
+        if (item.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Empty element in `sort` setting (a stray, leading, or trailing comma?). "
+                "Each element must be a column name or a positive positional reference.");
+
+        String direction = " ASC";
+        String name = item;
+        if (item[0] == '-')
+        {
+            direction = " DESC";
+            name = item.substr(1);
+        }
+        else if (item[0] == '+')
+            name = item.substr(1);
+
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty identifier in `sort` setting");
+
+        const bool all_digits = std::all_of(name.begin(), name.end(), isNumericASCII);
+        /// Positional references are 1-based, so reject a zero position (e.g. `sort=0`), which would
+        /// otherwise become a constant `ORDER BY 0` no-op instead of a clear error.
+        if (all_digits && name.find_first_not_of('0') == String::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Positional reference in `sort` setting must be a positive integer (1-based), got '{}'. "
+                "Use `order` for complex expressions.", name);
+        if (!all_digits)
+            for (char c : name)
+                if (!isAlphaNumericASCII(c) && c != '_')
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid character '{}' in identifier '{}' in `sort` setting. Use `order` for complex expressions.", c, name);
+
+        if (!result.empty())
+            result += ", ";
+        /// Positional references emit as bare numbers so `sort=1,-2` becomes `ORDER BY 1, 2 DESC`.
+        result += all_digits ? name : backQuoteIfNeed(name);
+        result += direction;
+    };
+
+    String current;
+    for (char c : sort)
+    {
+        if (c == ',')
+        {
+            flush_one(current);
+            current.clear();
+        }
+        else
+            current += c;
+    }
+    flush_one(current);
+    return result;
+}
+
+
+/// Decode a `limit` / `offset` setting value (as it appears in a `SETTINGS` clause) into `Float64`.
+/// The settings are `Double`, so the value may be negative or fractional; the raw parsed field can
+/// be any numeric type or a quoted string.
+static Float64 fieldToLimitOffsetFloat(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Float64: return f.safeGet<Float64>();
+        case Field::Types::UInt64: return static_cast<Float64>(f.safeGet<UInt64>());
+        case Field::Types::Int64: return static_cast<Float64>(f.safeGet<Int64>());
+        case Field::Types::String: return parseFromString<Float64>(f.safeGet<String>());
+        default:
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
+    }
+}
+
+/// Translate the `page` setting into `limit` / `offset` (`offset = limit * (page - 1)`), in place.
+/// A negative `page` selects from the tail (`page = -1` is the last page). Mirrors the validation
+/// and arithmetic applied to the top-level query in `applyQueryConstructionSettings`, so the `page`
+/// setting behaves the same whether it appears on the top-level query or on a (sub)query's own
+/// `SETTINGS` clause.
+static void translatePageToLimitOffset(Float64 page, Float64 & limit, Float64 & offset)
+{
+    if (page == 0)
+        return;
+    if (limit == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` requires `limit` to be set (got page={}, limit=0).", page);
+    if (offset != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` cannot be combined with `offset` (got page={}, offset={}).", page, offset);
+    if (limit < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+            "Use a positive `limit` with `page` for pagination, or a negative `limit` alone for tail selection.", page, limit);
+
+    if (page > 0)
+    {
+        offset = limit * (page - 1);
+    }
+    else
+    {
+        offset = limit * (page + 1);
+        limit = -limit;
+    }
+}
+
+/// Build `SELECT [select_expr] FROM (inner) [WHERE filter_expr] [ORDER BY order_expr]
+/// [LIMIT limit] [OFFSET offset]` and return it as an `ASTSelectWithUnionQuery`, with `inner` as the
+/// derived-table subquery. An empty `select_expr` means `SELECT *`; a zero `limit` / `offset` is
+/// omitted (and the SQL `LIMIT` grammar handles negative/fractional values natively). This is the
+/// shared core that materializes the construction settings, used both for the top-level query (from
+/// the context, in `applyQueryConstructionSettings`) and for each (sub)query / `UNION` arm that
+/// carries them in its own `SETTINGS` clause.
+static ASTPtr wrapAsConstructedSelect(
+    ASTPtr inner,
+    const String & select_expr,
+    const String & filter_expr,
+    const String & order_expr,
+    Float64 limit,
+    Float64 offset,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    auto parse_component = [&](IParser & parser, const String & text, const char * what) -> ASTPtr
+    {
+        return parseQuery(parser, text.data(), text.data() + text.size(),
+            fmt::format("query construction ({})", what), max_query_size, max_parser_depth, max_parser_backtracks);
+    };
+
+    auto outer_select = make_intrusive<ASTSelectQuery>();
+
+    ASTPtr select_list;
+    if (select_expr.empty())
+    {
+        select_list = make_intrusive<ASTExpressionList>();
+        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+    }
+    else
+    {
+        ParserNotEmptyExpressionList select_parser(/* allow_alias_without_as_keyword= */ true);
+        select_list = parse_component(select_parser, select_expr, "`select` setting");
+    }
+    outer_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+
+    /// The derived-table subquery must hold an `ASTSelectWithUnionQuery`. A bare `ASTSelectQuery`
+    /// (e.g. a single `UNION` arm passed by the per-arm wrapper) is wrapped in a one-element union.
+    if (!inner->as<ASTSelectWithUnionQuery>())
+    {
+        auto inner_union = make_intrusive<ASTSelectWithUnionQuery>();
+        inner_union->list_of_selects = make_intrusive<ASTExpressionList>();
+        inner_union->list_of_selects->children.push_back(std::move(inner));
+        inner_union->children.push_back(inner_union->list_of_selects);
+        inner = std::move(inner_union);
+    }
+    auto subquery = make_intrusive<ASTSubquery>(std::move(inner));
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = subquery;
+    table_expression->children.push_back(subquery);
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = table_expression;
+    tables_element->children.push_back(table_expression);
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+    outer_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    if (!filter_expr.empty())
+    {
+        ParserExpression filter_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::WHERE, parse_component(filter_parser, filter_expr, "`filter` setting"));
+    }
+    if (!order_expr.empty())
+    {
+        ParserOrderByExpressionList order_parser;
+        outer_select->setExpression(ASTSelectQuery::Expression::ORDER_BY, parse_component(order_parser, order_expr, "`order` / `sort` setting"));
+    }
+    if (limit != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(Field(limit)));
+    if (offset != 0)
+        outer_select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(Field(offset)));
+
+    auto outer_union = make_intrusive<ASTSelectWithUnionQuery>();
+    outer_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    outer_union->list_of_selects->children.push_back(std::move(outer_select));
+    outer_union->children.push_back(outer_union->list_of_selects);
+    return outer_union;
+}
+
+/// The construction settings (`select` / `filter` / `order` / `sort` and `limit` / `offset` / `page`)
+/// read from a single `SETTINGS` clause. `page` is translated to `limit` / `offset`, `sort` is
+/// converted to `order` (and conflicts with an explicit `order`).
+struct ConstructionSettings
+{
+    String select_expr;
+    String filter_expr;
+    String order_expr;
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool present = false;
+
+    bool empty() const
+    {
+        return select_expr.empty() && filter_expr.empty() && order_expr.empty() && limit == 0 && offset == 0;
+    }
+};
+
+/// A `SETTINGS` node carries three independent payloads: `changes` (`name = value`), `default_settings`
+/// (`name = DEFAULT` resets) and `query_parameters`. Construction-settings consumption only removes from
+/// `changes`, so a node may only be pruned once all three are empty — otherwise a `… = DEFAULT` reset or
+/// a query parameter sitting alongside a construction setting would be silently dropped from the
+/// (sub)query scope, changing its settings contract.
+static bool isEmptySetQuery(const ASTSetQuery & set_query)
+{
+    return set_query.changes.empty() && set_query.default_settings.empty() && set_query.query_parameters.empty();
+}
+
+/// Read and remove the construction settings from a single `SETTINGS` clause into `out` (accumulating
+/// across clauses; the last non-empty value of each wins). Throws on `sort` + `order` together.
+static void takeConstructionSettingsFromSetQuery(ASTSetQuery & set_query, ConstructionSettings & out)
+{
+    /// Take a construction setting's *effective* value and erase ALL its occurrences. `ParserSetQuery`
+    /// appends one entry per occurrence and normal setting application is last-wins, so read the last
+    /// match (to agree with the effective value) and remove every copy — `SettingsChanges::removeSetting`
+    /// erases only the first, and any leftover would be re-consumed by `wrapNestedConstructionSettings` /
+    /// re-applied by the analyzer and cap the derived subquery a second time.
+    auto take_all = [&](std::string_view name) -> std::optional<Field>
+    {
+        std::optional<Field> result;
+        std::erase_if(set_query.changes, [&](const SettingChange & change)
+        {
+            if (change.name != name)
+                return false;
+            result = change.value;
+            return true;
+        });
+        /// A `name = DEFAULT` reset lives in `default_settings` and is applied after all `changes`
+        /// (`InterpreterSetQuery` runs `resetSettingsToDefaultValue` last), so it wins: the effective
+        /// construction value becomes the setting's default (absent). Erase the reset and drop any captured
+        /// `changes` value, so e.g. `limit = 3, limit = DEFAULT` leaves no construction limit.
+        bool has_reset = false;
+        std::erase_if(set_query.default_settings, [&](const String & reset_name)
+        {
+            if (reset_name != name)
+                return false;
+            has_reset = true;
+            return true;
+        });
+        if (has_reset)
+            result = std::nullopt;
+        return result;
+    };
+
+    auto take_string = [&](std::string_view name, String & dst)
+    {
+        if (auto value = take_all(name))
+        {
+            dst = value->safeGet<String>();
+            out.present = true;
+        }
+    };
+
+    take_string("select", out.select_expr);
+    take_string("filter", out.filter_expr);
+
+    String order_expr;
+    String sort_expr;
+    take_string("order", order_expr);
+    take_string("sort", sort_expr);
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+    if (!order_expr.empty())
+        out.order_expr = order_expr;
+
+    Float64 limit = 0;
+    Float64 offset = 0;
+    bool has_limit_offset = false;
+    if (auto value = take_all("limit"))
+    {
+        limit = fieldToLimitOffsetFloat(*value);
+        has_limit_offset = true;
+    }
+    if (auto value = take_all("offset"))
+    {
+        offset = fieldToLimitOffsetFloat(*value);
+        has_limit_offset = true;
+    }
+    if (auto value = take_all("page"))
+    {
+        translatePageToLimitOffset(fieldToLimitOffsetFloat(*value), limit, offset);
+        has_limit_offset = true;
+    }
+    if (has_limit_offset)
+    {
+        out.limit = limit;
+        out.offset = offset;
+        out.present = true;
+    }
+}
+
+/// Read and remove the construction settings from a (sub)query's own query-level `SETTINGS` clauses
+/// into `out`. A single `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery`
+/// (`settings()`); a `UNION … SETTINGS …` keeps it on the union node (`settings_ast`). Both are
+/// consumed so the subquery's own interpreter does not re-apply them on top of the wrapping.
+static void takeNestedConstructionSettings(ASTSelectWithUnionQuery & select_union, ConstructionSettings & out)
+{
+    auto take = [&](ASTPtr & settings_ptr, ASTSelectQuery * owner_select)
+    {
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return;
+        takeConstructionSettingsFromSetQuery(*set_query, out);
+        if (isEmptySetQuery(*set_query))
+        {
+            settings_ptr.reset();
+            if (owner_select)
+                owner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+        }
+    };
+
+    take(select_union.settings_ast, nullptr);
+    if (select_union.list_of_selects)
+    {
+        for (auto & select_child : select_union.list_of_selects->children)
+        {
+            if (auto * inner_select = select_child->as<ASTSelectQuery>())
+            {
+                ASTPtr inner_settings = inner_select->settings();
+                take(inner_settings, inner_select);
+            }
+        }
+    }
+}
+
+static bool isConstructionSettingName(std::string_view name)
+{
+    return name == "select" || name == "filter" || name == "order" || name == "sort"
+        || name == "limit" || name == "offset" || name == "page";
+}
+
+/// True if any `SETTINGS` clause anywhere in the AST subtree carries a query-construction setting
+/// (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`). Exposed (via
+/// `QueryConstructionSettings.h`) so a stored view's inner query — which bypasses this file's wrapping
+/// — can cheaply decide whether it needs construction-settings materialization before execution.
+bool hasConstructionSettings(const IAST & ast)
+{
+    if (const auto * set_query = ast.as<ASTSetQuery>())
+        for (const auto & change : set_query->changes)
+            if (isConstructionSettingName(change.name))
+                return true;
+    for (const auto & child : ast.children)
+        if (child && hasConstructionSettings(*child))
+            return true;
+    return false;
+}
+
+/// Recursively materialize the construction settings (`select` / `filter` / `order` / `sort` and
+/// `limit` / `offset` / `page`) that a nested (sub)query carries in its OWN `SETTINGS` clause, by
+/// wrapping that subquery as a derived table — the same way the top-level query is handled by
+/// `applyQueryConstructionSettings`. A `SETTINGS` clause therefore applies to its own scope: it caps
+/// / filters / orders that subquery's result, but does not affect deeper subqueries or the outer
+/// query. The session/user settings are NOT read here — they apply only to the outermost query (from
+/// the context, in `applyQueryConstructionSettings`).
+void wrapNestedConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    if (!ast)
+        return;
+
+    /// `INSERT … SELECT` and an *immediate* `CREATE … AS SELECT` (`CREATE TABLE … AS SELECT`, or a
+    /// `POPULATE`d materialized view) run their source `SELECT` right now, so a construction setting
+    /// the source `SELECT` carries in its own `SETTINGS` clause must be materialized onto it — exactly
+    /// as for a standalone `SELECT` (e.g. `INSERT INTO a SELECT … SETTINGS limit = 1` inserts one row).
+    /// The source `SELECT` is stored both as the `select` member and in `children`; recurse into the
+    /// member and keep the matching `children` entry in sync, so the rewrite is visible where
+    /// `InterpreterInsertQuery` / `InterpreterCreateQuery` read it. Settings on the `INSERT` / `CREATE`
+    /// node itself (not on the source `SELECT`) are left alone — like any setting, they do not
+    /// propagate into the `SELECT`, so they have no effect on the result it produces.
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapNestedConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        /// A view definition (ordinary / materialized / window, including a `POPULATE` materialized view)
+        /// cannot carry construction settings — that is rejected in `InterpreterCreateQuery`. Do NOT wrap
+        /// a view's source `SELECT` here: a `POPULATE` materialized view is an immediate-insert `CREATE`,
+        /// so without the `!isView()` guard its `SETTINGS` would be materialized and removed here, and the
+        /// rejection (which checks the stored `SELECT`) would no longer fire. Only a non-view
+        /// immediate-insert `CREATE` (`CREATE TABLE … AS SELECT`) is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapNestedConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        /// `ALTER … MODIFY QUERY` stores a (materialized) view's query as a *definition*: its
+        /// construction settings (trailing, nested-subquery, or per-`UNION`-arm) are rejected in
+        /// `AlterCommand::parse` (mirroring the `CREATE VIEW` guard), not materialized. Skip ONLY this
+        /// command's `SELECT`. The generic recursion below still reaches every other ALTER command, so
+        /// executable mutation predicates / update expressions — e.g.
+        /// `DELETE WHERE id IN (SELECT … SETTINGS limit = …)` — keep getting their nested construction
+        /// settings materialized as before (otherwise `limit`/`offset` would be stripped downstream and
+        /// the mutation would run uncapped).
+        return;
+    }
+
+    /// Bottom-up: handle inner-most subqueries before their parents.
+    for (auto & child : ast->children)
+        wrapNestedConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+
+    auto * select_union = ast->as<ASTSelectWithUnionQuery>();
+    if (!select_union || select_union->out_file)
+        return;
+
+    ConstructionSettings cs;
+    takeNestedConstructionSettings(*select_union, cs);
+    if (!cs.present || cs.empty())
+        return;
+
+    ast = wrapAsConstructedSelect(
+        ast, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+        max_query_size, max_parser_depth, max_parser_backtracks);
+}
+
+/// Independently apply the construction settings that a `UNION` arm carries in its own `SETTINGS`
+/// clause. The parser attaches a query-level *trailing* `SETTINGS` clause only to the last arm, so a
+/// construction setting on a NON-last arm is unambiguously per-arm — e.g.
+/// `(SELECT … SETTINGS limit = 1) UNION ALL (SELECT … SETTINGS filter = 'x')`. When that is the case,
+/// every arm that carries one is wrapped as a derived table with its own
+/// `SELECT` / `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET`, so each arm is shaped independently instead
+/// of the caps collapsing into a single one on the whole union. This runs before the query's own
+/// `SETTINGS` clause is applied to the context, so the per-arm values are removed from the AST and
+/// never leak into the context as (spurious) query-level settings.
+///
+/// When only the last arm carries the setting, it is indistinguishable from a query-level trailing
+/// `SETTINGS` clause (the grammar produces the same AST), so it is intentionally left to the
+/// query-level handling (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`).
+static void wrapPerArmConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    if (!ast)
+        return;
+
+    /// Descend into an `INSERT … SELECT` / immediate `CREATE … AS SELECT` source `SELECT` and keep the
+    /// `select` member in sync, so per-arm settings on a source `UNION` are materialized too (see
+    /// `wrapNestedConstructionSettings`).
+    if (auto * insert_query = ast->as<ASTInsertQuery>())
+    {
+        if (insert_query->select)
+        {
+            ASTPtr old_select = insert_query->select;
+            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (insert_query->select != old_select)
+                for (auto & child : insert_query->children)
+                    if (child == old_select)
+                    {
+                        child = insert_query->select;
+                        break;
+                    }
+        }
+        return;
+    }
+    if (auto * create_query = ast->as<ASTCreateQuery>())
+    {
+        /// As in `wrapNestedConstructionSettings`: skip a view definition (construction settings in one
+        /// are rejected in `InterpreterCreateQuery`); only a non-view immediate-insert `CREATE` is wrapped.
+        if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
+        {
+            ASTPtr select_ptr = create_query->select->ptr();
+            wrapPerArmConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (select_ptr.get() != create_query->select)
+                create_query->replace(create_query->select, select_ptr);
+        }
+        return;
+    }
+    if (const auto * alter_command = ast->as<ASTAlterCommand>();
+        alter_command && alter_command->type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        /// As in `wrapNestedConstructionSettings`: skip ONLY a `MODIFY QUERY` command's stored view
+        /// `SELECT` (its construction settings — including one on a non-last `UNION` arm — are rejected
+        /// in `AlterCommand::parse`). Keep descending into the rest of the ALTER so mutation predicates
+        /// / update expressions still have their nested construction settings materialized.
+        return;
+    }
+
+    /// Bottom-up: handle inner-most unions before their parents.
+    for (auto & child : ast->children)
+        wrapPerArmConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+
+    auto * select_union = ast->as<ASTSelectWithUnionQuery>();
+    if (!select_union || !select_union->list_of_selects)
+        return;
+    auto & arms = select_union->list_of_selects->children;
+    if (arms.size() < 2)
+        return;
+
+    auto arm_construction_settings = [](ASTSelectQuery * select) -> ASTSetQuery *
+    {
+        if (!select)
+            return nullptr;
+        ASTPtr settings_ptr = select->settings();
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (set_query
+            && (set_query->changes.tryGet("select") || set_query->changes.tryGet("filter")
+                || set_query->changes.tryGet("order") || set_query->changes.tryGet("sort")
+                || set_query->changes.tryGet("limit") || set_query->changes.tryGet("offset")
+                || set_query->changes.tryGet("page")))
+            return set_query;
+        return nullptr;
+    };
+
+    /// Per-arm mode is triggered only by a non-last arm carrying one of these settings.
+    bool per_arm = false;
+    for (size_t i = 0; i + 1 < arms.size(); ++i)
+        if (arm_construction_settings(arms[i]->as<ASTSelectQuery>()))
+            per_arm = true;
+    if (!per_arm)
+        return;
+
+    /// Once per-arm mode is on, the LAST arm's own `SETTINGS` is ambiguous: for an unparenthesized union
+    /// the parser carries the trailing *query-level* `SETTINGS` on the last arm, which is indistinguishable
+    /// in the AST from a parenthesized arm-local `SETTINGS`. Treating it as arm-local would silently
+    /// re-scope a whole-union cap — e.g. `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = 3` would cap
+    /// each arm (1 + 3) instead of the whole union (3). Reject the mixed form rather than guess. Per-arm
+    /// settings on a union whose last arm has no settings, or nesting each arm's settings in a subquery
+    /// (`… FROM (SELECT … SETTINGS …)`), remain available and unambiguous.
+    if (arm_construction_settings(arms.back()->as<ASTSelectQuery>()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Ambiguous query-construction `SETTINGS` in a UNION: a non-last arm carries an arm-local "
+            "construction setting while the last arm also carries `SETTINGS`, whose scope (per-arm vs "
+            "whole-union) cannot be determined from the query. Nest each arm's settings in a subquery, "
+            "or apply a whole-union cap via an outer query, to make the scope explicit.");
+
+    for (auto & arm : arms)
+    {
+        auto * select = arm->as<ASTSelectQuery>();
+        auto * set_query = arm_construction_settings(select);
+        if (!set_query)
+            continue;
+
+        ConstructionSettings cs;
+        takeConstructionSettingsFromSetQuery(*set_query, cs);
+        if (isEmptySetQuery(*set_query))
+            select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+        if (cs.empty())
+            continue;
+
+        arm = wrapAsConstructedSelect(
+            arm, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
+            max_query_size, max_parser_depth, max_parser_backtracks);
+    }
+}
+
+/// Apply the query-construction settings (`select`/`filter`/`order`/`sort`) by wrapping the parsed
+/// query AST as a derived table, and translate the `page` setting into `limit`/`offset`. The
+/// wrapping is composed from AST nodes (never by concatenating query text), so a trailing `;`, a
+/// top-level `FORMAT` clause, comments, or operator precedence in the base query are handled
+/// correctly. Settings that have no effect (the AST is not a `SELECT`/`UNION`) are left to apply
+/// elsewhere or ignored. This runs after the query's own `SETTINGS` clause has been applied, so
+/// these settings are first-class on every protocol.
+static void applyQueryConstructionSettings(
+    ASTPtr & ast,
+    ContextMutablePtr context,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    /// The construction settings shape a query's *result*. `INSERT … SELECT`, `CREATE … AS SELECT`
+    /// and similar queries do not return a result to the client — their `SELECT` feeds the inserted /
+    /// created table — so the construction settings are irrelevant to them and intentionally left
+    /// unapplied here (and the nested wrappers stop at those query kinds). Only the result-producing
+    /// `SELECT` / `UNION` (and, below, the query explained by `EXPLAIN`) is wrapped.
+
+    /// `EXPLAIN <query> SETTINGS …` carries the construction settings on the `ASTExplainQuery`; the
+    /// explained query is what actually runs. Apply the construction settings to it so the explained
+    /// plan matches what `EXPLAIN`-less execution of the same query would do (otherwise e.g.
+    /// `EXPLAIN SELECT * FROM t SETTINGS filter = 'a > 0'` would plan the unfiltered query).
+    if (auto * explain_query = ast->as<ASTExplainQuery>())
+    {
+        if (const ASTPtr & explained = explain_query->getExplainedQuery())
+        {
+            ASTPtr wrapped = explained;
+            applyQueryConstructionSettings(wrapped, context, max_query_size, max_parser_depth, max_parser_backtracks);
+            if (wrapped != explained)
+                explain_query->replaceExplainedQuery(wrapped);
+        }
+        return;
+    }
+
+    /// The construction settings shape a query's *result*, so they apply only to a result-producing
+    /// `SELECT` / `UNION` (the `EXPLAIN`-ed query is handled above; `INSERT … SELECT` / `CREATE … AS
+    /// SELECT` and other non-result queries are intentionally left untouched). Bail out for any other
+    /// query kind BEFORE validating or applying `page` / `order` / `sort`: otherwise a repair statement
+    /// such as `SET page = 0` — run while the session still carries `page` from a previous query —
+    /// would hit the `page requires limit` check below and fail before `InterpreterSetQuery` clears it.
+    auto * base_select = ast->as<ASTSelectWithUnionQuery>();
+    if (!base_select)
+        return;
+
+    const auto & settings = context->getSettingsRef();
+
+    /// `page` is sugar over `limit`/`offset`: `offset = limit * (page - 1)`.
+    if (const Float64 page = settings[Setting::page]; page != 0)
+    {
+        const Float64 limit = settings[Setting::limit];
+        if (limit == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` requires `limit` to be set (got page={}, limit=0).", page);
+        if (settings[Setting::offset] != 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with `offset` (got page={}, offset={}).", page, settings[Setting::offset].value);
+        if (limit < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `page` cannot be combined with a negative `limit` (got page={}, limit={}). "
+                "Use a positive `limit` with `page` for pagination, or a negative `limit` alone for tail selection.", page, limit);
+
+        SettingsChanges page_change;
+        if (page > 0)
+            page_change.setSetting("offset", limit * (page - 1));
+        else
+        {
+            page_change.setSetting("limit", -limit);
+            page_change.setSetting("offset", limit * (page + 1));
+        }
+        context->checkSettingsConstraints(page_change, SettingSource::QUERY);
+        context->applySettingsChanges(page_change);
+    }
+
+    const String & select_expr = settings[Setting::select];
+    String order_expr = settings[Setting::order];
+    const String & sort_expr = settings[Setting::sort];
+
+    /// The effective filter is the `filter` setting composed (with `AND`) with the HTTP-supplied
+    /// filters kept in the context channel. Keeping them separate lets an in-query
+    /// `SETTINGS filter = ...` override the `filter` setting without dropping the URL-path / `?filter=`
+    /// filters supplied out-of-band by the HTTP interface (which would otherwise be lost).
+    String filter_expr = settings[Setting::filter];
+    if (const String & http_filter = context->getHTTPCombinedFilter(); !http_filter.empty())
+        filter_expr = filter_expr.empty() ? http_filter : "(" + filter_expr + ") AND (" + http_filter + ")";
+
+    /// `limit` / `offset` are `Double` settings (they may be negative for tail selection or
+    /// fractional for a share of the result). They are applied like every other query-modification
+    /// setting: by wrapping the base query as a derived table and putting a `LIMIT`/`OFFSET` on the
+    /// outer query. This way the cap applies to the *final* result (correct for `UNION`), the
+    /// SQL `LIMIT` grammar handles the negative/fractional values natively, and combining with an
+    /// explicit `LIMIT` in the base query is left to the optimizer's limit push-down — instead of
+    /// the brittle arithmetic combining that used to fold the setting into the base query's clause.
+    const Float64 limit_setting = settings[Setting::limit];
+    const Float64 offset_setting = settings[Setting::offset];
+
+    if (select_expr.empty() && filter_expr.empty() && order_expr.empty() && sort_expr.empty()
+        && limit_setting == 0 && offset_setting == 0)
+        return;
+
+    if (!sort_expr.empty() && !order_expr.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings `sort` and `order` cannot be specified together.");
+    if (order_expr.empty() && !sort_expr.empty())
+        order_expr = convertSortToOrderBy(sort_expr);
+
+    /// `INTO OUTFILE`, `FORMAT`, `SETTINGS` and the `INTO OUTFILE` compression options are
+    /// top-level-only output options; detach them from the base and re-attach them to the outer
+    /// query, so they shape the final (wrapped) result. The base `SETTINGS` were already applied
+    /// to the context above.
+    ASTPtr base_out_file = base_select->out_file;
+    ASTPtr base_format = base_select->format_ast;
+    ASTPtr base_settings = base_select->settings_ast;
+    ASTPtr base_compression = base_select->compression;
+    ASTPtr base_compression_level = base_select->compression_level;
+    const bool base_outfile_with_stdout = base_select->isIntoOutfileWithStdout();
+    const bool base_outfile_append = base_select->isOutfileAppend();
+    const bool base_outfile_truncate = base_select->isOutfileTruncate();
+    base_select->reset(base_select->out_file);
+    base_select->reset(base_select->format_ast);
+    base_select->reset(base_select->settings_ast);
+    base_select->reset(base_select->compression);
+    base_select->reset(base_select->compression_level);
+    base_select->setIsIntoOutfileWithStdout(false);
+    base_select->setIsOutfileAppend(false);
+    base_select->setIsOutfileTruncate(false);
+
+    /// Reject a construction setting that appears in BOTH the query's own (`SELECT`-local) `SETTINGS` and
+    /// the trailing query-level `SETTINGS` (e.g. `... SETTINGS limit = 5 FORMAT TSV SETTINGS limit = 2`).
+    /// Normal application makes the SELECT-local clause win (it is applied last), but the reattached-settings
+    /// merge treats the query-level clause as the outer scope — so the two precedences disagree. Reject
+    /// rather than silently pick one, matching the `sort`+`order` and ambiguous UNION-arm rejections.
+    if (base_settings)
+    {
+        if (const auto * trailing = base_settings->as<ASTSetQuery>())
+        {
+            const ASTSetQuery * local = nullptr;
+            if (base_select->list_of_selects && !base_select->list_of_selects->children.empty())
+                if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+                    if (auto last_settings = last_select->settings())
+                        local = last_settings->as<ASTSetQuery>();
+            if (local)
+            {
+                static constexpr std::string_view construction_names[] = {
+                    "select", "filter", "order", "sort", "limit", "offset", "page"};
+                auto mentions = [](const ASTSetQuery & s, std::string_view name)
+                {
+                    if (s.changes.tryGet(name))
+                        return true;
+                    for (const auto & reset_name : s.default_settings)
+                        if (reset_name == name)
+                            return true;
+                    return false;
+                };
+                for (std::string_view name : construction_names)
+                    if (mentions(*trailing, name) && mentions(*local, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Construction setting `{}` is set in both the query's own `SETTINGS` clause and the "
+                            "trailing query-level `SETTINGS` clause; set it in only one.", name);
+            }
+        }
+    }
+
+    /// All construction settings (`select` / `filter` / `order` / `sort` / `limit` / `offset` / `page`)
+    /// are consumed here — materialized into the outer wrapper's `SELECT` / `WHERE` / `ORDER BY` /
+    /// `LIMIT` / `OFFSET` below. Strip them from every `SETTINGS` clause carried by the base query so
+    /// they are not applied a second time, either by the base query's interpreter (the analyzer reads
+    /// `limit` / `offset` from the query's own `SETTINGS` clause) or by the later
+    /// `wrapNestedConstructionSettings` pass — the query-level `SETTINGS` clause is re-attached to the
+    /// outer wrapper below, and that pass would otherwise re-consume the construction settings still in
+    /// it and wrap the query a second time (e.g. `SETTINGS select = 'number AS x'` would expose only
+    /// `x` in the first wrap and then fail to resolve `number` in the second). A single
+    /// `SELECT … SETTINGS …` keeps the clause on the inner `ASTSelectQuery` (`settings()`), while a
+    /// `UNION … SETTINGS …` or the `… FORMAT … SETTINGS …` suffix keeps it on the union node
+    /// (`settings_ast`), so both locations have to be handled.
+    auto strip_construction_settings = [](ASTPtr & settings_ptr)
+    {
+        auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
+        if (!set_query)
+            return;
+        /// Erase ALL occurrences of each construction setting (`ParserSetQuery` appends one entry per
+        /// occurrence, and `removeSetting` would drop only the first — a leftover would be re-consumed by
+        /// the later `wrapNestedConstructionSettings` pass and cap the wrapped query a second time).
+        std::erase_if(set_query->changes, [](const SettingChange & change)
+        {
+            return change.name == "select" || change.name == "filter" || change.name == "order"
+                || change.name == "sort" || change.name == "limit" || change.name == "offset"
+                || change.name == "page";
+        });
+        if (isEmptySetQuery(*set_query))
+            settings_ptr.reset();
+    };
+
+    strip_construction_settings(base_settings);
+    for (auto & select_child : base_select->list_of_selects->children)
+    {
+        if (auto * inner_select = select_child->as<ASTSelectQuery>())
+        {
+            if (ASTPtr inner_settings = inner_select->settings())
+            {
+                strip_construction_settings(inner_settings);
+                if (!inner_settings)
+                    inner_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+            }
+        }
+    }
+
+    /// The trailing `SETTINGS` clause of the base query is the *query-level* `SETTINGS` clause: the
+    /// parser attaches it to the last `SELECT` of the union, and that is where
+    /// `InterpreterSetQuery::applySettingsFromQuery` reads the query-level settings from. Keep it
+    /// query-level by detaching it from the (now nested) base query and merging it into the outer
+    /// query's `SETTINGS`. Otherwise a query-level setting would silently change meaning by becoming
+    /// subquery-level — e.g. `use_query_cache` on a subquery is an explicit opt-in for the Planner's
+    /// subquery-level query result cache.
+    if (!base_select->list_of_selects->children.empty())
+    {
+        if (auto * last_select = base_select->list_of_selects->children.back()->as<ASTSelectQuery>())
+        {
+            if (ASTPtr last_settings = last_select->settings())
+            {
+                last_select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
+                if (!base_settings)
+                    base_settings = last_settings;
+                else
+                {
+                    /// Both can be present (e.g. `(SELECT … SETTINGS a = 1) SETTINGS b = 2`); the
+                    /// union-level clause is the outer one, so it wins on conflicts. Merge all three
+                    /// `ASTSetQuery` carriers — `changes` (`name = value`), `default_settings`
+                    /// (`name = DEFAULT`) and `query_parameters` — so a reset or a query parameter carried
+                    /// only by the inner arm is not dropped from the wrapped query's settings contract.
+                    auto & base_set = base_settings->as<ASTSetQuery &>();
+                    auto & last_set = last_settings->as<ASTSetQuery &>();
+
+                    /// A setting named in `base` (as a value or a DEFAULT reset) already wins, so carry
+                    /// over only the inner arm's settings that `base` does not mention.
+                    auto base_mentions_setting = [&](std::string_view name)
+                    {
+                        if (base_set.changes.tryGet(name))
+                            return true;
+                        for (const auto & reset_name : base_set.default_settings)
+                            if (reset_name == name)
+                                return true;
+                        return false;
+                    };
+
+                    for (const auto & change : last_set.changes)
+                        if (!base_mentions_setting(change.name))
+                            base_set.changes.push_back(change);
+                    for (const auto & reset_name : last_set.default_settings)
+                        if (!base_mentions_setting(reset_name))
+                            base_set.default_settings.push_back(reset_name);
+                    for (const auto & param : last_set.query_parameters)
+                    {
+                        bool exists = false;
+                        for (const auto & base_param : base_set.query_parameters)
+                            if (base_param.first == param.first)
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            base_set.query_parameters.push_back(param);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Materialize `implicit_table_at_top_level` into the base query *before* it is wrapped.
+    /// The setting (set e.g. by the HTTP path interface for `/db/t?query=SELECT x`) makes a
+    /// top-level FROM-less `SELECT` read from the path table. The analyzer applies it only to a
+    /// non-subquery FROM-less `SELECT` (`QueryTreeBuilder::buildJoinTree`), but the wrapping below
+    /// turns the base query into a derived-table subquery `SELECT * FROM (SELECT x)`. A single-arm
+    /// base then becomes a subquery (`buildSelectWithUnionExpression` forwards `is_subquery = true`
+    /// to the lone arm), so `SELECT x` would fall back to `system.one` and `x` would not resolve
+    /// against `db.t`. Splice the table in as an explicit `FROM` on every FROM-less arm of the base
+    /// so it keeps reading from the path table once nested. The setting itself is left set: it is a
+    /// no-op for the outer wrapper (which now has a `FROM`) and still covers any FROM-less arm that is
+    /// not a plain `ASTSelectQuery` (e.g. a nested parenthesized union), matching the analyzer, whose
+    /// multi-arm path builds each arm as a non-subquery regardless.
+    if (const String & implicit_table = settings[Setting::implicit_table_at_top_level]; !implicit_table.empty())
+    {
+        ASTPtr tables_template;
+        for (auto & select_child : base_select->list_of_selects->children)
+        {
+            auto * inner_select = select_child->as<ASTSelectQuery>();
+            if (!inner_select || inner_select->tables())
+                continue;
+            if (!tables_template)
+            {
+                ParserTablesInSelectQuery tables_parser;
+                tables_template = parseQuery(
+                    tables_parser, implicit_table.data(), implicit_table.data() + implicit_table.size(),
+                    "implicit_table_at_top_level setting", max_query_size, max_parser_depth, max_parser_backtracks);
+            }
+            inner_select->setExpression(ASTSelectQuery::Expression::TABLES, tables_template->clone());
+        }
+    }
+
+    /// Build `SELECT [select] FROM (base) [WHERE filter] [ORDER BY order] [LIMIT][OFFSET]` from the
+    /// effective (session + top-level `SETTINGS`) construction settings — the outermost scope.
+    ASTPtr outer_union_ast = wrapAsConstructedSelect(
+        ast, select_expr, filter_expr, order_expr, limit_setting, offset_setting,
+        max_query_size, max_parser_depth, max_parser_backtracks);
+
+    /// Re-attach the top-level-only output options (`INTO OUTFILE`, `FORMAT`, the query-level
+    /// `SETTINGS`, and the `INTO OUTFILE` compression) to the outer (wrapped) query so they shape the
+    /// final result.
+    auto & outer_union = outer_union_ast->as<ASTSelectWithUnionQuery &>();
+    if (base_out_file)
+        outer_union.set(outer_union.out_file, base_out_file);
+    if (base_format)
+        outer_union.set(outer_union.format_ast, base_format);
+    if (base_settings)
+        outer_union.set(outer_union.settings_ast, base_settings);
+    if (base_compression)
+        outer_union.set(outer_union.compression, base_compression);
+    if (base_compression_level)
+        outer_union.set(outer_union.compression_level, base_compression_level);
+    outer_union.setIsIntoOutfileWithStdout(base_outfile_with_stdout);
+    outer_union.setIsOutfileAppend(base_outfile_append);
+    outer_union.setIsOutfileTruncate(base_outfile_truncate);
+
+    ast = std::move(outer_union_ast);
+
+    /// The `limit` / `offset` settings are now materialized as the outer query's `LIMIT`/`OFFSET`.
+    /// Clear them so the downstream interpreter / analyzer does not apply them a second time (which
+    /// would otherwise double-cap the result and re-introduce the combining behavior we just removed).
+    if (limit_setting != 0 || offset_setting != 0)
+    {
+        context->setSetting("limit", Field(static_cast<Float64>(0)));
+        context->setSetting("offset", Field(static_cast<Float64>(0)));
+    }
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1473,9 +2410,61 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            /// Construction settings in a non-last `UNION` arm's own `SETTINGS` clause are per-arm;
+            /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
+            /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
+            /// values are not read into the context as (spurious) query-level settings.
+            wrapPerArmConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
+            /// change the database that unqualified names resolve to, not just be stored as a string.
+            /// Apply it here — after all SETTINGS have been resolved — so every protocol (native TCP,
+            /// in-query `SETTINGS database='db'`, and the HTTP `database` URL parameter / header) gets
+            /// the same behavior. Previously only `HTTPHandler` honored it, via a one-off
+            /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
+            /// URL *path*, which is already applied before we reach here.
+            if (const String & database_setting = settings[Setting::database];
+                !database_setting.empty() && database_setting != context->getCurrentDatabase())
+            {
+                context->setCurrentDatabase(database_setting);
+            }
+
+            /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`/`page`) on the
+            /// parsed AST. Doing it here — rather than by rewriting the query text in the HTTP handler
+            /// — avoids a parse/serialize/parse round-trip and makes these first-class settings on
+            /// every protocol (HTTP URL parameters, an in-query `SETTINGS` clause, the native TCP
+            /// protocol). The HTTP-only `compression` setting (response-body shaping) is the only one
+            /// that is still consumed before execution by `HTTPHandler`.
+            applyQueryConstructionSettings(out_ast, context,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// A subquery's OWN `SETTINGS` clause (e.g. `… FROM (SELECT … SETTINGS filter = 'a > 0',
+            /// limit = 5)` or `view(SELECT … SETTINGS limit = 5)`) shapes that subquery's scope. It is
+            /// not reachable via the top-level wrapping above (which only handles the outermost,
+            /// session-derived settings), so materialize each subquery's own construction settings
+            /// here. A `SETTINGS` clause therefore applies to its own scope only — not to deeper
+            /// subqueries, and not to the outer query.
+            wrapNestedConstructionSettings(out_ast,
+                max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// The construction settings above (`select` / `filter` / `order` / `sort`, top-level, per-arm,
+            /// and nested) are parsed into ASTs only here — after the single `ReplaceQueryParameterVisitor`
+            /// pass that runs on the parsed query text. Their snippets may themselves reference query
+            /// parameters (e.g. HTTP `&filter=number<{n:UInt64}&param_n=3`, or an in-query
+            /// `SETTINGS filter = 'number < {n:UInt64}'`), so substitute parameters once more on the
+            /// now-wrapped AST. The first pass is gated on the query *text* containing `{`, of which the
+            /// snippets are not part, so this second pass is required even when the base query has none.
+            if (const auto & query_parameters = context->getQueryParameters(); !query_parameters.empty())
+            {
+                ReplaceQueryParameterVisitor visitor(query_parameters);
+                visitor.visit(out_ast);
+            }
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -2045,6 +3034,23 @@ std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalA
 }
 
 
+/// Resolve the output format taking into account explicit overrides via `format`/`output_format` settings.
+/// The override wins over the FORMAT clause in the query and over the default format from Context.
+static String resolveOutputFormatName(const ContextPtr & context, const ASTQueryWithOutput * ast_query_with_output)
+{
+    const auto & settings = context->getSettingsRef();
+    const String & format_override = settings[Setting::format];
+    const String & output_format_override = settings[Setting::output_format];
+
+    if (!output_format_override.empty())
+        return output_format_override;
+    if (!format_override.empty())
+        return format_override;
+    if (ast_query_with_output && ast_query_with_output->format_ast != nullptr)
+        return getIdentifierName(ast_query_with_output->format_ast);
+    return context->getDefaultFormat();
+}
+
 static bool isReadOnlyQuery(const ASTPtr & ast)
 {
     auto kind = ast->getQueryKind();
@@ -2281,9 +3287,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
-        String format_name = ast_query_with_output->format_ast
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+        String format_name = resolveOutputFormatName(context, ast_query_with_output);
 
         const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
         if (boost::iequals(format_name, "Null") && !(ast->as<ASTExplainQuery>() && ignore_null_for_explain))
@@ -2464,9 +3468,7 @@ void executeQuery(
             try
             {
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-                format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                    ? getIdentifierName(ast_query_with_output->format_ast)
-                    : context->getDefaultFormat();
+                format_name = resolveOutputFormatName(context, ast_query_with_output);
 
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
@@ -2560,9 +3562,7 @@ void executeQuery(
         else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
-            format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
-                ? getIdentifierName(ast_query_with_output->format_ast)
-                : context->getDefaultFormat();
+            format_name = resolveOutputFormatName(context, ast_query_with_output);
 
             const bool ignore_null_for_explain = context->getSettingsRef()[Setting::ignore_format_null_for_explain];
             if (boost::iequals(format_name, "Null") && ast->as<ASTExplainQuery>() && ignore_null_for_explain)

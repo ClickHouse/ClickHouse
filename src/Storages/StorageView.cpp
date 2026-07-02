@@ -25,6 +25,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>

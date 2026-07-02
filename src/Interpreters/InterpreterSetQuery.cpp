@@ -20,9 +20,46 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace Setting
 {
     extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsString input_format;
+    extern const SettingsString format;
+}
+
+namespace
+{
+/// `compression` shapes the HTTP *response body*: `HTTPHandler` sets up the response buffers from it
+/// before the query runs, so by the time an in-query `SETTINGS` clause is interpreted the buffers
+/// are already fixed and the setting has no effect. Reject it with a clear message instead of
+/// silently ignoring it; it must be supplied via the HTTP URL parameter, the URL path file
+/// extension, or a user profile. (The query-construction settings `select`/`filter`/`order`/`sort`/
+/// `page` are applied by the engine on the parsed AST, so they *do* work via an in-query SETTINGS
+/// clause and are not rejected here.)
+void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
+{
+    /// Both in-query forms set the setting: `name = value` lands in `changes`, `name = DEFAULT` in
+    /// `default_settings`. A bare `compression = DEFAULT` would otherwise slip through and silently
+    /// reset the setting after the response buffers were already built, so reject both forms.
+    auto reject = [](std::string_view name)
+    {
+        if (name == "compression")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting 'compression' shapes the HTTP response body and is consumed before the query "
+                "is executed, so it has no effect when set via an in-query SETTINGS clause. Set it via "
+                "the `compression` HTTP URL parameter, a compressed file extension in the URL path, or "
+                "a user profile instead.");
+    };
+    for (const auto & change : set_query.changes)
+        reject(change.name);
+    for (const auto & name : set_query.default_settings)
+        reject(name);
+}
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -41,7 +78,10 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
+    {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+        rejectHTTPOnlyConstructionSettings(ast);
+    }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
@@ -149,6 +189,14 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         context_->setInsertFormat(insert_query->format);
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        /// Let `input_format` / `format` override the FORMAT used for `input()` schema inference too
+        /// (mirrors `getSourceFromASTInsertQuery`, which resolves the reader format the same way).
+        /// This runs after the INSERT's own `SETTINGS` clause is applied, so a
+        /// `SETTINGS input_format = ...` on the INSERT is taken into account.
+        if (const auto & s = context_->getSettingsRef(); !s[Setting::input_format].value.empty())
+            context_->setInsertFormat(s[Setting::input_format]);
+        else if (!s[Setting::format].value.empty())
+            context_->setInsertFormat(s[Setting::format]);
     }
     else if (const auto * backup_query = ast->as<ASTBackupQuery>())
     {

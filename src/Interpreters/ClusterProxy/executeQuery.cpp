@@ -16,6 +16,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -37,6 +38,9 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 
+#include <string_view>
+#include <unordered_set>
+
 
 namespace ProfileEvents
 {
@@ -52,7 +56,12 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
-    extern const SettingsUInt64 limit;
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_filters_as_path;
+    extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
@@ -65,7 +74,19 @@ namespace Setting
     extern const SettingsUInt64 max_network_bytes;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble offset;
+    extern const SettingsDouble page;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsString output_format;
+    extern const SettingsString default_format;
+    extern const SettingsString compression;
+    extern const SettingsString database;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString additional_result_filter;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -103,6 +124,169 @@ namespace ErrorCodes
 
 namespace ClusterProxy
 {
+
+void stripDatabaseSetting(Settings & settings)
+{
+    /// Also reset a `database` that is merely *marked* changed (e.g. explicitly reset to the
+    /// default with `SET database = ''`), so the inter-server packet does not carry it.
+    if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
+    {
+        settings[Setting::database] = "";
+        settings[Setting::database].changed = false;
+    }
+}
+
+void stripInitiatorOnlySettings(Settings & settings)
+{
+    /// All of the settings below are interpreted only at the initiator: they either shape the
+    /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
+    /// `additional_result_filter`) or shape how the result is serialised to the user
+    /// (`format`, `output_format`, `default_format`, `compression`). Forwarding them to remote
+    /// shards is at best wasted work and at worst breaks distributed queries — `format = 'Null'`,
+    /// for example, sets `null_format = true` on each shard, suppressing TCP `sendData` and
+    /// producing empty blocks; `getStructureOfRemoteTable` then `continue`s without throwing
+    /// `NetException`, leaving `fail_messages` empty and surfacing as
+    /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
+    /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
+    /// here so the inter-server `Settings` packet does not carry them. This is shared by the
+    /// `Distributed` fan-out and the `*Cluster` table functions (`IStorageCluster`), which both
+    /// materialize these settings on the initiator before reaching the remote servers.
+    if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
+    {
+        settings[Setting::offset] = 0;
+        settings[Setting::offset].changed = false;
+    }
+    if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
+    {
+        settings[Setting::limit] = 0;
+        settings[Setting::limit].changed = false;
+    }
+    if (settings[Setting::page].changed || settings[Setting::page] != 0)
+    {
+        settings[Setting::page] = 0;
+        settings[Setting::page].changed = false;
+    }
+    if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
+    {
+        settings[Setting::select] = "";
+        settings[Setting::select].changed = false;
+    }
+    if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
+    {
+        settings[Setting::order] = "";
+        settings[Setting::order].changed = false;
+    }
+    if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
+    {
+        settings[Setting::sort] = "";
+        settings[Setting::sort].changed = false;
+    }
+    if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
+    {
+        settings[Setting::filter] = "";
+        settings[Setting::filter].changed = false;
+    }
+    if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
+    {
+        settings[Setting::additional_result_filter] = "";
+        settings[Setting::additional_result_filter].changed = false;
+    }
+    if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
+    {
+        settings[Setting::format] = "";
+        settings[Setting::format].changed = false;
+    }
+    if (settings[Setting::input_format].changed || !settings[Setting::input_format].value.empty())
+    {
+        settings[Setting::input_format] = "";
+        settings[Setting::input_format].changed = false;
+    }
+    if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
+    {
+        settings[Setting::output_format] = "";
+        settings[Setting::output_format].changed = false;
+    }
+    if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
+    {
+        settings[Setting::default_format] = "";
+        settings[Setting::default_format].changed = false;
+    }
+    if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
+    {
+        settings[Setting::compression] = "";
+        settings[Setting::compression].changed = false;
+    }
+
+    /// The HTTP/path-only settings are interpreted exclusively by the HTTP query-construction path on
+    /// the initiator (`http_allow_database_as_path`, `http_allow_table_as_file`,
+    /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`) or only
+    /// rewrite a FROM-less top-level query before it is wrapped (`implicit_table_at_top_level`, which
+    /// is already cleared for subqueries). They are irrelevant on a remote TCP query, and — for the
+    /// settings introduced here — forwarding them to an older shard during a rolling upgrade triggers
+    /// `UNKNOWN_SETTING`. Strip them in the shared helper so every remote path has the same contract.
+    if (settings[Setting::http_allow_database_as_path].changed || settings[Setting::http_allow_database_as_path])
+    {
+        settings[Setting::http_allow_database_as_path] = false;
+        settings[Setting::http_allow_database_as_path].changed = false;
+    }
+    if (settings[Setting::http_allow_table_as_file].changed || settings[Setting::http_allow_table_as_file])
+    {
+        settings[Setting::http_allow_table_as_file] = false;
+        settings[Setting::http_allow_table_as_file].changed = false;
+    }
+    if (settings[Setting::http_allow_filters_as_path].changed || settings[Setting::http_allow_filters_as_path])
+    {
+        settings[Setting::http_allow_filters_as_path] = false;
+        settings[Setting::http_allow_filters_as_path].changed = false;
+    }
+    if (settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed
+        || settings[Setting::http_allow_filters_as_unrecognized_url_parameters])
+    {
+        settings[Setting::http_allow_filters_as_unrecognized_url_parameters] = false;
+        settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed = false;
+    }
+    if (settings[Setting::implicit_table_at_top_level].changed || !settings[Setting::implicit_table_at_top_level].value.empty())
+    {
+        settings[Setting::implicit_table_at_top_level] = "";
+        settings[Setting::implicit_table_at_top_level].changed = false;
+    }
+
+    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
+    /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
+    /// the shard must resolve it against its own default database.
+    stripDatabaseSetting(settings);
+}
+
+/// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
+/// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
+/// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
+/// shard: a forwarded query string — the optimized `parallel_distributed_insert_select` paths in
+/// `StorageDistributed`, and `IStorageCluster`'s `formatWithSecretsOneLine()` — would otherwise carry an
+/// initiator-only setting written in the user's `SETTINGS` clause, getting it re-applied or, for the
+/// settings new to the HTTP table-as-file feature, rejected as `UNKNOWN_SETTING` by an older shard during
+/// a rolling upgrade.
+constexpr std::string_view initiator_only_setting_names[] = {
+    "select", "order", "sort", "filter", "limit", "offset", "page", "additional_result_filter",
+    "format", "input_format", "output_format", "default_format", "compression",
+    "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
+    "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+    "database",
+};
+
+bool isInitiatorOnlySettingName(std::string_view name)
+{
+    for (std::string_view candidate : initiator_only_setting_names)
+        if (candidate == name)
+            return true;
+    return false;
+}
+
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
+{
+    /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
+    /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
+    removeSettingsFromQuery(query, initiator_only_setting_names);
+}
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
@@ -186,16 +370,9 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::skip_unavailable_shards].changed = true;
     }
 
-    if (settings[Setting::offset])
-    {
-        new_settings[Setting::offset] = 0;
-        new_settings[Setting::offset].changed = false;
-    }
-    if (settings[Setting::limit])
-    {
-        new_settings[Setting::limit] = 0;
-        new_settings[Setting::limit].changed = false;
-    }
+    /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
+    /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
+    stripInitiatorOnlySettings(new_settings);
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
@@ -554,6 +731,17 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
+    /// Strip the initiator-only settings (the query-shaping and result-serialisation settings, and
+    /// `database`) before sending the query to the secondary replicas: they are materialized on the
+    /// initiator and must not be re-applied per replica (which would re-shape the already-shaped
+    /// per-replica query or break it, e.g. `format = 'Null'`). This mirrors the `Distributed`
+    /// fan-out and the `*Cluster` table functions; see `stripInitiatorOnlySettings`.
+    {
+        Settings new_settings = context_mutable->getSettingsCopy();
+        stripInitiatorOnlySettings(new_settings);
+        context_mutable->setSettings(new_settings);
+    }
+
     return context_mutable;
 }
 
@@ -703,6 +891,13 @@ void executeQueryWithParallelReplicas(
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
         storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
+    /// Strip initiator-only settings from the query text forwarded to the replicas (same contract as the
+    /// `Distributed` fan-out): the AST carries them from a nested `SETTINGS` clause and, on the analyzer
+    /// path, from `QueryNode::settings_changes` materialized by `queryNodeToDistributedSelectQuery`
+    /// (`QueryNode::toAST`). The per-replica context packet is stripped in `updateContextForParallelReplicas`.
+    auto forwarded_query_ast = query_ast->clone();
+    stripInitiatorOnlySettingsFromQuery(forwarded_query_ast);
+
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
@@ -758,7 +953,7 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -798,7 +993,7 @@ void executeQueryWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -1139,6 +1334,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
         insert_ast->select = std::move(select_ast);
+        /// The per-shard context packet is stripped in `updateContextForParallelReplicas`, but the
+        /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
+        /// (both `changes` and `default_settings`) from it too.
+        stripInitiatorOnlySettingsFromQuery(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
