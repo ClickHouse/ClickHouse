@@ -428,6 +428,11 @@ protected:
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
 
+    /// A pinned point-in-time storage snapshot to read instead of taking a fresh one, keyed by table uuid.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE` to populate the view from the exact data
+    /// captured at the moment the view was subscribed to new inserts. See InterpreterCreateQuery.
+    std::unordered_map<UUID, StorageSnapshotPtr> pinned_storage_snapshots;
+
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -1878,6 +1883,11 @@ public:
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
+
+    /// A pinned storage snapshot to be returned by the table's getStorageSnapshot instead of a fresh one.
+    /// Used by atomic `CREATE MATERIALIZED VIEW ... POPULATE`.
+    void setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot);
+    StorageSnapshotPtr getPinnedStorageSnapshot(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
 

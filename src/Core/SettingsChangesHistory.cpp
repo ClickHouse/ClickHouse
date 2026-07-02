@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"materialized_views_populate_atomically", false, true, "New setting that makes `CREATE MATERIALIZED VIEW ... POPULATE` atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted during population are neither missed nor duplicated. Set to `false` for the legacy non-atomic behavior."},
             {"s3_validate_etag_on_read", false, true, "New setting to detect concurrent in-place overwrites of S3/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."},
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},

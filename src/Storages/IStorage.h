@@ -179,6 +179,13 @@ public:
     /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
     virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
+    /// Returns true if a storage snapshot captured now can be read later and is guaranteed to return
+    /// exactly the data that existed at capture time, even if the table is concurrently written or merged.
+    /// Used for atomic `CREATE MATERIALIZED VIEW ... POPULATE`, which pins such a snapshot and populates
+    /// the view from it (see InterpreterCreateQuery). True for the MergeTree family, which retains the
+    /// pinned data parts for the lifetime of the snapshot.
+    virtual bool supportsPinnedSnapshot() const { return false; }
+
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }

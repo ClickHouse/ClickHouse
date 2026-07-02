@@ -143,6 +143,7 @@ namespace Setting
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsBool restore_replace_external_engines_to_null;
@@ -1856,6 +1857,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!created)   /// Table already exists
         return {};
 
+    /// A materialized view with POPULATE subscribes to new inserts of its source table and, at the same
+    /// time, must be filled with the data that already exists in the source. Doing these two steps
+    /// independently is racy: a row inserted concurrently can be routed to the view and also appear in the
+    /// population snapshot (duplicated), or be routed nowhere and miss the snapshot (lost). To make it
+    /// atomic we register the subscription and pin a snapshot of the source together under a brief
+    /// exclusive lock, then populate from the pinned snapshot. See fillMaterializedViewAtomically.
+    if (shouldPopulateMaterializedViewAtomically(create))
+    {
+        if (auto result = fillMaterializedViewAtomically(create))
+            return std::move(*result);
+    }
+
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
@@ -2318,7 +2331,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// If table has dependencies - add them to the graph
         addTableDependencies(create, query_ptr, getContext());
 
-        /// Try fill temporary table
+        /// Try fill temporary table. Note: POPULATE here uses the legacy, non-atomic population - the
+        /// atomic path is only wired into the plain CREATE flow, not the create-or-replace flow (which
+        /// populates a temporary table and then atomically swaps it in via EXCHANGE/RENAME).
         BlockIO fill_io = fillTableIfNeeded(create);
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
@@ -2488,6 +2503,138 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     }
 
     return {};
+}
+
+bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const
+{
+    /// `CREATE OR REPLACE` / `REPLACE` go through doCreateOrReplaceTable, which populates a temporary table
+    /// and then atomically swaps it in via EXCHANGE/RENAME. Coordinating the exclusive-lock cut with that
+    /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
+    /// the legacy non-atomic population; only the plain CREATE flow is atomic.
+    return create.isCreateQueryWithImmediateInsertSelect()
+        && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
+        && !create.replace_table && !create.replace_view
+        && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
+}
+
+StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCreateQuery & create)
+{
+    auto context = getContext();
+
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+
+    /// The view is fed by inserts into a single source table (its `FROM` table); that table is what we must
+    /// subscribe to and snapshot atomically. If the view has no such single source (e.g. it selects from a
+    /// subquery, a table function, or a join without a clear driving table), there is nothing to race
+    /// against, so atomic population does not apply.
+    if (!ref_dependencies.mv_from_dependency)
+        return nullptr;
+
+    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+
+    /// The source does not exist yet: let the regular path run the population query and produce its
+    /// natural error, instead of inventing a different one here.
+    if (!source)
+        return nullptr;
+
+    /// Some sources (views, `Distributed`, `Merge`, `Buffer`, `Log` family, ...) cannot provide a pinned
+    /// point-in-time snapshot, or are not in an `Atomic` database so the snapshot cannot be addressed by
+    /// UUID. We cannot populate atomically from them, so fall back to the legacy non-atomic population
+    /// (the previous behavior) instead of failing - this keeps existing `POPULATE` queries working. The
+    /// fallback is best-effort, so record in the log that rows inserted during the population may be
+    /// missed or duplicated.
+    if (!source->supportsPinnedSnapshot() || source->getStorageID().uuid == UUIDHelpers::Nil)
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {} non-atomically because its source table {} (engine {}) does not "
+            "support reading a pinned point-in-time snapshot. Rows inserted into the source during the "
+            "population may be missed or duplicated in the view.",
+            qualified_name.getFullName(), source->getStorageID().getNameForLogs(), source->getName());
+        return nullptr;
+    }
+
+    return source;
+}
+
+std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create)
+{
+    auto source = getValidatedAtomicPopulateSource(create);
+    if (!source)
+        return {};
+
+    auto context = getContext();
+    QualifiedTableName qualified_name{create.getDatabase(), create.getTable()};
+    auto ref_dependencies = getDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr, context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), qualified_name, query_ptr);
+    auto source_uuid = source->getStorageID().uuid;
+
+    /// Subscribe the view to new inserts and capture a snapshot of the existing source data together, under
+    /// a brief exclusive lock on the source. An INSERT into the source holds a shared lock on it from before
+    /// it decides which views to push to until after its part is committed. So the exclusive lock drains all
+    /// in-flight inserts (their data is now in the snapshot and they did not see the view yet) and blocks new
+    /// ones (which, once we release, will see the view and will not be in the snapshot). Every concurrently
+    /// inserted row therefore lands on exactly one side of the cut.
+    ///
+    /// The snapshot is captured via `getStorageSnapshot`, which does not take the table's shared lock, so it
+    /// does not conflict with the exclusive lock we hold here. The population pipeline is built and executed
+    /// afterwards, without holding the lock, and reads the pinned snapshot.
+    ///
+    /// We must disable `enable_shared_storage_snapshot_in_query`: with it on, an earlier `getStorageSnapshot`
+    /// of the source (taken while validating the view's SELECT, before we acquire the lock) is cached on the
+    /// query and would be returned here, defeating the point of capturing under the lock. With it off the
+    /// capture below is fresh - taken under the lock, after in-flight inserts have drained. The population
+    /// read still uses the pinned snapshot (it takes priority over both the cache and a fresh capture).
+    auto populate_context = Context::createCopy(context);
+    populate_context->setSetting("enable_shared_storage_snapshot_in_query", false);
+
+    /// The pinned snapshot lives only in this server's contexts (`populate_context` and its query context,
+    /// pinned below). The population must therefore read the source locally, from that pinned snapshot. If
+    /// the internal `INSERT ... SELECT` is instead dispatched to remote replicas (parallel replicas) or
+    /// through a distributed write, those remote executions do not carry the pin: they read a fresh
+    /// snapshot of the source - which breaks the exactly-once cut, because rows inserted concurrently with
+    /// the population are then read remotely and also delivered to the view live - and they would re-send
+    /// `INSERT INTO` the just-created view on other replicas. Force the local pinned-snapshot path by
+    /// disabling `parallel_distributed_insert_select` and parallel-replica reading for this insert.
+    populate_context->setSetting("parallel_distributed_insert_select", Field{0});
+    populate_context->setSetting("enable_parallel_replicas", Field{0});
+
+    StorageSnapshotPtr snapshot;
+    {
+        auto source_lock = source->lockExclusively(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+        DatabaseCatalog::instance().addDependencies(
+            qualified_name,
+            ref_dependencies.dependencies,
+            loading_dependencies,
+            TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()});
+
+        auto source_metadata = source->getInMemoryMetadataPtr(populate_context, false);
+        snapshot = source->getStorageSnapshot(source_metadata, populate_context);
+    }
+
+    /// Pin the snapshot so the population's SELECT reads exactly the captured data. The population's
+    /// SELECT is analyzed and executed under contexts derived from the shared query context
+    /// (`getQueryContext()`), so the pin must live there: a pin stored only on `populate_context` (a
+    /// copy) is not seen by those reads, which would then take a fresh snapshot of the source and read
+    /// rows inserted concurrently with the population - rows that are also delivered to the view live,
+    /// duplicating them. Set it on `populate_context` too (harmless) for any read that uses it directly.
+    populate_context->setPinnedStorageSnapshot(source_uuid, snapshot);
+    if (populate_context->hasQueryContext())
+        populate_context->getQueryContext()->setPinnedStorageSnapshot(source_uuid, snapshot);
+
+    auto insert = make_intrusive<ASTInsertQuery>();
+    insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
+    insert->select = create.select->clone();
+
+    return InterpreterInsertQuery(
+               insert,
+               populate_context,
+               populate_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
+               /* no_squash */ false,
+               /* no_destination */ false,
+               /* async_insert */ false)
+        .execute();
 }
 
 void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr local_context, const String & cluster_name)

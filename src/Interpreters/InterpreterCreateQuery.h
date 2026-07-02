@@ -118,6 +118,26 @@ private:
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
+    /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
+    /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
+    bool shouldPopulateMaterializedViewAtomically(const ASTCreateQuery & create) const;
+
+    /// Resolves the single source table that an atomically populated materialized view is subscribed to,
+    /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not
+    /// apply: the view has no single source table, the source does not exist yet, or the source cannot be
+    /// pinned (a view, `Distributed`, `Merge`, `Log` family, or a table not in an `Atomic` database). In the
+    /// last case it logs a warning; the caller then falls back to the legacy non-atomic population.
+    StoragePtr getValidatedAtomicPopulateSource(const ASTCreateQuery & create);
+
+    /// Atomically populate a freshly created materialized view: subscribe the view to new inserts of its
+    /// source table and capture a pinned snapshot of the existing source data together, under a brief
+    /// exclusive lock on the source, then populate the view from that snapshot without holding the lock.
+    /// This guarantees every row inserted concurrently with the population is delivered to the view exactly
+    /// once. Returns std::nullopt when atomic population does not apply - there is no single source table to
+    /// subscribe to, the source does not exist yet, or it cannot provide a pinned snapshot (see
+    /// getValidatedAtomicPopulateSource); the caller then falls back to the regular, non-atomic path.
+    std::optional<BlockIO> fillMaterializedViewAtomically(const ASTCreateQuery & create);
+
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
     /// Update create query with columns description from storage if query doesn't have it.

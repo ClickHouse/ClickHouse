@@ -8313,6 +8313,17 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
     return it != partition_id_to_max_block.end() ? it->second : nullptr;
 }
 
+void Context::setPinnedStorageSnapshot(const UUID & table_uuid, StorageSnapshotPtr snapshot)
+{
+    pinned_storage_snapshots[table_uuid] = std::move(snapshot);
+}
+
+StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) const
+{
+    auto it = pinned_storage_snapshots.find(table_uuid);
+    return it != pinned_storage_snapshots.end() ? it->second : nullptr;
+}
+
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;

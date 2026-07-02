@@ -1695,10 +1695,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                     ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'ENGINE'");
 
             if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-            if (s_empty.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
@@ -1727,10 +1725,8 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         else
         {
             if (s_populate.ignore(pos, expected))
-                throw Exception(
-                    ErrorCodes::SYNTAX_ERROR, "When creating a materialized view you can't declare both 'TO [db].[table]' and 'POPULATE'");
-
-            if (s_empty.ignore(pos, expected))
+                is_populate = true;
+            else if (s_empty.ignore(pos, expected))
             {
                 if (!refresh_strategy)
                     throw Exception(
