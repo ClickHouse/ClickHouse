@@ -5,7 +5,6 @@
 -- See PR https://github.com/ClickHouse/ClickHouse/pull/100035 thread r3221074323.
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 
 DROP TABLE IF EXISTS tab_dup;
 

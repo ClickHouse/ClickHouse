@@ -200,13 +200,16 @@ String FunctionDocumentation::examplesAsString() const
     for (const auto & [name, query, result] : examples)
     {
         res += "**" + name + "**" + "\n\n";
-        res += "```sql title=""Query""\n";
-        res += boost::algorithm::trim_copy(query) + "\n";
-        res += "```\n\n";
-        res += "```response title=""Response""\n";
-        res += boost::algorithm::trim_copy(result) + "\n";
-        res += "```";
-        res += "\n\n";
+
+        const String trimmed_query = boost::algorithm::trim_copy(query);
+        if (!trimmed_query.empty())
+            res += "```sql title=""Query""\n" + trimmed_query + "\n```\n\n";
+
+        /// Only emit the response block when there is a response; otherwise an empty example
+        /// (e.g. for some internal functions) would render as an empty code box.
+        const String trimmed_result = boost::algorithm::trim_copy(result);
+        if (!trimmed_result.empty())
+            res += "```response title=""Response""\n" + trimmed_result + "\n```\n\n";
     }
     return res;
 }

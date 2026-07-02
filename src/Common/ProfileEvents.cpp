@@ -860,6 +860,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheOvercommitCandidatesIterationSteps, "Number of outer iterations the overcommit eviction loop ran beyond its first pass to satisfy a reservation's deficit", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time", ValueType::Microseconds) \
+    M(FilesystemCacheLockOriginPoolMicroseconds, "Lock filesystem cache shared origin pool time", ValueType::Microseconds) \
     M(FilesystemCachePriorityWriteLockMicroseconds, "Lock filesystem cache time for write to priority queue", ValueType::Microseconds) \
     M(FilesystemCachePriorityReadLockMicroseconds, "Lock filesystem cache time for read in priority queue", ValueType::Microseconds) \
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
@@ -940,6 +941,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
+    M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
