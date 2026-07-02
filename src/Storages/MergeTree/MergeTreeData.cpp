@@ -7939,7 +7939,7 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     const ASTPtr & predicate, ContextPtr query_context) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     if (!metadata_snapshot->hasPartitionKey())
         return std::nullopt;
 
@@ -7961,7 +7961,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     if (!predicate_node)
         return std::nullopt;
 
-    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context);
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context, /* boolean_context */ true);
 
     PartitionPruner partition_pruner(
         metadata_snapshot,

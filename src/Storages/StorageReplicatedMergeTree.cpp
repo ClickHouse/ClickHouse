@@ -83,6 +83,7 @@
 #include <Databases/DatabaseReplicated.h>
 
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
