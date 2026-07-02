@@ -1460,6 +1460,8 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
@@ -1503,14 +1505,36 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
+        /// Coerce the cached column to the outer-`LowCardinality` shape the function was actually built
+        /// for, instead of blindly stripping the wrapper. The chain builder strips `LowCardinality` only
+        /// from the initial key type, so after a step like `CAST(s, 'LowCardinality(String)')` the next
+        /// function's declared argument type is itself `LowCardinality(...)`. `FunctionCast` keeps LC
+        /// dictionaries (`useDefaultImplementationForLowCardinalityColumns = false`) and `typeid_cast`-es
+        /// the column to the declared shape, so the column wrapper must match. Mirrors
+        /// `applyFunctionChainToColumn`; touches only the outer level, preserving inner LowCardinality.
+        if (args[0].type && func)
+        {
+            auto argument_type = getArgumentTypeOfMonotonicFunction(*func);
+            if (argument_type && argument_type->lowCardinality() && !args[0].column->lowCardinality())
+            {
+                auto lc_col = argument_type->createColumn();
+                auto full_col = args[0].column->convertToFullColumnIfConst();
+                assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full_col, 0, full_col->size());
+                args[0].column = std::move(lc_col);
+                args[0].type = argument_type;
+            }
+            else if (argument_type && !argument_type->lowCardinality() && args[0].column->lowCardinality())
+            {
+                args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
+                args[0].type = removeLowCardinality(args[0].type);
+            }
+        }
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column = func->execute(args, (*columns)[result_idx].type, columns->front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
 }
-
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
