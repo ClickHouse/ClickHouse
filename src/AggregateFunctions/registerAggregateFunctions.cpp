@@ -21,6 +21,7 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupConcat(AggregateFunctionFactory &);
+void registerAggregateFunctionGroupBloomFilter(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupFormat(AggregateFunctionFactory &);
 void registerAggregateFunctionMVTEncode(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
@@ -135,6 +136,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionGroupArrayIntersect(factory);
         registerAggregateFunctionGroupConcat(factory);
+        registerAggregateFunctionGroupBloomFilter(factory);
         registerAggregateFunctionGroupFormat(factory);
         registerAggregateFunctionMVTEncode(factory);
         registerAggregateFunctionsQuantile(factory);

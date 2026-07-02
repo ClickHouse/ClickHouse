@@ -106,7 +106,7 @@ private:
 
             /// Zero-sized nested state (aggregate over Nothing): the zero-byte arena
             /// allocation does not advance, so new_state aliases old_state. There is no
-            /// data to migrate, and merge() with aliasing source/destination is undefined.
+            /// data to migrate, and `merge` with aliasing source/destination is undefined.
             if (nested_size_of_data != 0)
             {
                 for (i = 0; i < old_size; ++i)
@@ -272,7 +272,7 @@ public:
 
         /// Zero-sized nested state (aggregate over Nothing): every element aliases the same
         /// zero-byte arena slot (alignedAlloc(0) does not advance), so nested_state ==
-        /// rhs_nested_state. There is nothing to merge, and merge() with aliasing
+        /// rhs_nested_state. There is nothing to merge, and `merge` with aliasing
         /// source/destination is undefined.
         if (nested_size_of_data == 0)
             return;

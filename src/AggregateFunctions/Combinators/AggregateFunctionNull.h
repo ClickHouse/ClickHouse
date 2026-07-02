@@ -255,6 +255,7 @@ public:
             }
             else
             {
+                nested_function->throwIfCannotProduceFinalizedResult();
                 to_concrete.insertDefault();
             }
         }
