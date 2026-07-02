@@ -140,9 +140,20 @@ struct ObjectStorageCatalogInitializationOptions
     struct OneLakeOptions
     {
         bool use_blob_endpoint = true;
+        String tenant_id;
+        String client_id;
+        String client_secret;
+    };
+
+    struct BigLakeOptions
+    {
+        String adc_client_id;
+        String adc_client_secret;
+        String adc_refresh_token;
     };
 
     std::optional<OneLakeOptions> onelake;
+    std::optional<BigLakeOptions> biglake;
 };
 
 /// Base class for catalog implementation.

@@ -310,6 +310,9 @@ std::optional<ObjectStorageCatalogInitializationOptions> OneLakeCatalog::getObje
     ObjectStorageCatalogInitializationOptions options;
     options.onelake = ObjectStorageCatalogInitializationOptions::OneLakeOptions{
         .use_blob_endpoint = onelake_use_blob_endpoint,
+        .tenant_id = tenant_id,
+        .client_id = client_id,
+        .client_secret = client_secret,
     };
     return options;
 }
@@ -428,6 +431,18 @@ BigLakeCatalog::BigLakeCatalog(
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
+}
+
+
+std::optional<ObjectStorageCatalogInitializationOptions> BigLakeCatalog::getObjectStorageInitializationOptions() const
+{
+    ObjectStorageCatalogInitializationOptions options;
+    options.biglake = ObjectStorageCatalogInitializationOptions::BigLakeOptions{
+        .adc_client_id = google_adc_client_id,
+        .adc_client_secret = google_adc_client_secret,
+        .adc_refresh_token = google_adc_refresh_token,
+    };
+    return options;
 }
 
 DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const

@@ -5,7 +5,6 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/assert_cast.h>
-#include <Databases/DataLake/RestCatalog.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -883,26 +882,22 @@ void StorageAzureConfiguration::fromAST(
     const ObjectStorageInitializationContext * initialization_context)
 {
     AzureStorageParsedArguments parsed_arguments;
-    if (initialization_context && initialization_context->catalog
-        && initialization_context->catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+
+    auto catalog_options = initialization_context && initialization_context->catalog
+        ? initialization_context->catalog->getObjectStorageInitializationOptions()
+        : std::nullopt;
+
+    if (catalog_options && catalog_options->onelake)
     {
-        auto onelake_catalog = std::dynamic_pointer_cast<DataLake::OneLakeCatalog>(initialization_context->catalog);
-        if (!onelake_catalog)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not OneLake type");
-
-        auto options = initialization_context->catalog->getObjectStorageInitializationOptions();
-        const bool use_blob_endpoint = options && options->onelake
-            ? options->onelake->use_blob_endpoint
-            : true;
-
+        const auto & onelake_catalog = *catalog_options->onelake;
         parsed_arguments.initializeForOneLake(
             engine_args,
             context,
-            use_blob_endpoint);
+            onelake_catalog.use_blob_endpoint);
         parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-            onelake_catalog->getTenantId(),
-            onelake_catalog->getClientId(),
-            onelake_catalog->getClientSecret()
+            onelake_catalog.tenant_id,
+            onelake_catalog.client_id,
+            onelake_catalog.client_secret
         );
     }
     else

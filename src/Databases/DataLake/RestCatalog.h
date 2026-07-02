@@ -232,6 +232,8 @@ public:
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
+    std::optional<ObjectStorageCatalogInitializationOptions> getObjectStorageInitializationOptions() const override;
+
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
     const std::string google_project_id;
