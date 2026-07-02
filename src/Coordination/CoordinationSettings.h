@@ -34,24 +34,35 @@ struct CoordinationSettings
     ~CoordinationSettings();
 
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void dump(WriteBufferFromOwnString & buf) const;
+    void updateHotReloadableSettings(const CoordinationSettings & new_settings);
 
     COORDINATION_SETTINGS_SUPPORTED_TYPES(CoordinationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
+    uint64_t version = 0;
+
 private:
+    friend struct KeeperConfigurationAndSettings;
+
     std::unique_ptr<CoordinationSettingsImpl> impl;
 };
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 
-/// Coordination settings + some other parts of keeper configuration
-/// which are not stored in settings. Allows to dump configuration
-/// with 4lw commands.
-struct KeeperConfigurationAndSettings
+/// Non-"settings" parts of keeper server configuration (server identity, ports, etc.).
+/// CoordinationSettings live separately in KeeperContext.
+/// (What's the difference between "settings" and "configuration"? In this case, there's not much.
+///  Fields of KeeperConfiguration are taken from keeper_server.* nodes of the config, while
+///  elements of CoordinationSettings are taken from keeper_server.coordination_settings.* .
+///  And CoordinationSettings are usually equal across all servers, while KeeperConfiguration are different.)
+/// Not to be confused with KeeperServerConfig (which contains the list of all servers in the cluster)
+/// and KeeperConfigurationWrapper.
+struct KeeperConfiguration
 {
     static constexpr int NOT_EXIST = -1;
     static const String DEFAULT_FOUR_LETTER_WORD_CMD;
 
-    KeeperConfigurationAndSettings();
+    KeeperConfiguration();
     int server_id;
 
     bool enable_ipv6;
@@ -63,12 +74,11 @@ struct KeeperConfigurationAndSettings
     String super_digest;
 
     bool standalone_keeper;
-    CoordinationSettings coordination_settings;
 
     void dump(WriteBufferFromOwnString & buf) const;
-    static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+    static std::shared_ptr<KeeperConfiguration> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 };
 
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
+using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
 }

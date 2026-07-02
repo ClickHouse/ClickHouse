@@ -204,7 +204,9 @@ function wait_for_queries_to_finish()
 function random_str()
 {
     local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+    # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
+    # bytes from /dev/urandom under a UTF-8 locale.
+    LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
 function query_with_retry()
@@ -251,7 +253,7 @@ function with_lock()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

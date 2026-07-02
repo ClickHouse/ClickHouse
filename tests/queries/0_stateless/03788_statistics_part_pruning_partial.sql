@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 -- This test validates Statistics-based part pruning functionality when some parts have MinMax statistics
 -- and other parts don't (parts inserted before statistics were added).
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning_partial;
 
@@ -18,6 +19,7 @@ SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Part 1 (OLD): id [0, 99], value [0, 99] - Partition 0
 INSERT INTO test_stats_pruning_partial SELECT number, number FROM numbers(100);

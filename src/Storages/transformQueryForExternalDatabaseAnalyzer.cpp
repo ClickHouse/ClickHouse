@@ -44,7 +44,7 @@ public:
                 /// The code is ugly - how to convert artbitrary Field to proper string representation?
                 /// (maybe we can just consider numbers as unix timestamps?)
                 auto result_column = result_type->createColumnConst(1, constant_node->getValue());
-                const IColumn & inner_column = assert_cast<const ColumnConst &>(*result_column).getDataColumn();
+                const IColumn & inner_column = result_column->getDataColumn();
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());

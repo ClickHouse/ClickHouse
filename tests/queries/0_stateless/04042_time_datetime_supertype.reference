@@ -1,5 +1,5 @@
 Time + DateTime supertype
-DateTime
+DateTime64(0)
 Time + DateTime64 supertype
 DateTime64(3)
 DateTime64(6)

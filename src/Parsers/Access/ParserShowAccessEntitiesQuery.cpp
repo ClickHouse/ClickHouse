@@ -1,5 +1,6 @@
 #include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/Access/parseAccessEntityName.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -41,7 +42,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!ParserKeyword{Keyword::SHOW}.ignore(pos, expected))
         return false;
 
-    AccessEntityType type;
+    AccessEntityType type = {};
     bool all = false;
     bool current_quota = false;
     bool current_roles = false;
@@ -84,7 +85,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
             else
                 database_and_table_name.emplace(database, table_name);
         }
-        else if (parseIdentifierOrStringLiteral(pos, expected, short_name))
+        else if (!atQueryOutputTail(pos, expected) && parseIdentifierOrStringLiteral(pos, expected, short_name))
         {
         }
         else

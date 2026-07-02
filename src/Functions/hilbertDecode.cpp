@@ -1,4 +1,5 @@
 #include <limits>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/BitHelpers.h>
 #include <Functions/hilbertDecode2DLUT.h>
@@ -7,7 +8,7 @@
 namespace DB
 {
 
-class FunctionHilbertDecode : public FunctionSpaceFillingCurveDecode<2, 0, 32>
+class FunctionHilbertDecode final : public FunctionSpaceFillingCurveDecode<2, 0, 32>
 {
 public:
     static constexpr auto name = "hilbertDecode";
@@ -20,7 +21,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        size_t num_dimensions;
+        size_t num_dimensions = 0;
         const auto * col_const = typeid_cast<const ColumnConst *>(arguments[0].column.get());
         const auto * mask = typeid_cast<const ColumnTuple *>(col_const->getDataColumnPtr().get());
         if (mask)

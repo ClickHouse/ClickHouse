@@ -35,24 +35,20 @@ String ASTInsertQuery::getTable() const
 
 void ASTInsertQuery::setDatabase(const String & name)
 {
-    if (name.empty())
-        database.reset();
-    else
-        database = make_intrusive<ASTIdentifier>(name);
+    reset(database);
+    if (!name.empty())
+        set(database, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTInsertQuery::setTable(const String & name)
 {
-    if (name.empty())
-        table.reset();
-    else
-        table = make_intrusive<ASTIdentifier>(name);
+    reset(table);
+    if (!name.empty())
+        set(table, make_intrusive<ASTIdentifier>(name));
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     ostr << "INSERT INTO" << " ";
     if (table_function)
     {
@@ -123,7 +119,12 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     if (select)
     {
         ostr << delim;
+        /// Disable FROM-first syntax to avoid parsing ambiguity with INSERT ... FROM INFILE.
+        /// Only affects the immediate SELECT, not nested subqueries.
+        bool was_disable_from_first_syntax = frame.disable_from_first_syntax;
+        frame.disable_from_first_syntax = true;
         select->format(ostr, settings, state, frame);
+        frame.disable_from_first_syntax = was_disable_from_first_syntax;
 
         /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
         /// the FORMAT clause must be preserved in the formatted output.

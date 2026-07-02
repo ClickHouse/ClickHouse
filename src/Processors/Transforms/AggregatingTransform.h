@@ -121,7 +121,7 @@ public:
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:

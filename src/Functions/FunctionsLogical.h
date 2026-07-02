@@ -5,7 +5,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -185,7 +184,7 @@ struct NotImpl
 };
 
 template <typename Impl, typename Name>
-class FunctionAnyArityLogical : public IFunction
+class FunctionAnyArityLogical final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -206,6 +205,7 @@ public:
     }
     ColumnPtr executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const;
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isNameInsensitive() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
 
@@ -233,7 +233,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr & result_type) const override
     {
-        assert(!values.empty());
+        chassert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (Impl::specialImplementationForNulls())
@@ -273,7 +273,7 @@ public:
 
 
 template <template <typename> class Impl, typename Name>
-class FunctionUnaryLogical : public IFunction
+class FunctionUnaryLogical final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -293,6 +293,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool isNameInsensitive() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override;
 

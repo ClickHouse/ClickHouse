@@ -62,6 +62,40 @@ Tests fallback when threshold (text_index_like_max_postings_to_read) is exceeded
 7547
 92453
 92453
+Test results are same with/without the like optimization with array tokenizer
+-- without optimization
+[1,2,3,4]
+[1,2,3,4]
+[]
+[]
+[4]
+[1]
+[3]
+-- with optimization
+[1,2,3,4]
+[1,2,3,4]
+[]
+[]
+[4]
+[1]
+[3]
+Text index analysis for ILIKE with array tokenizer
+-- Text index for ILIKE function with array tokenizer should choose none for non-existent token
+Description: text GRANULARITY 100000000
+Parts: 0/4
+Granules: 0/4096
+-- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 1024/4096
+-- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules (uppercase pattern, case-insensitive)
+Description: text GRANULARITY 100000000
+Parts: 1/4
+Granules: 1024/4096
+-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 4096 granules
+Description: text GRANULARITY 100000000
+Parts: 4/4
+Granules: 4096/4096
 Test results are same with/without the optimization with expression index
 -- without optimization
 [1,3]

@@ -4,8 +4,10 @@
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsTierType.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
 namespace boost
@@ -60,7 +62,9 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
-    M(CLASS_NAME, SearchOrphanedPartsDisks)
+    M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
+    M(CLASS_NAME, SearchOrphanedPartsDisks) \
+    M(CLASS_NAME, TextIndexPostingListCodec)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
@@ -83,15 +87,20 @@ struct MergeTreeSettings
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
     void applyChange(const SettingChange & change);
-    std::vector<std::string_view> getAllRegisteredNames() const;
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
+    std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
+    SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;

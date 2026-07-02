@@ -4,7 +4,6 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/range.h>
 
@@ -22,7 +21,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany : public IFunction
+struct FunctionBitTestMany final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -89,7 +88,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -113,7 +112,7 @@ private:
         }
         if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 

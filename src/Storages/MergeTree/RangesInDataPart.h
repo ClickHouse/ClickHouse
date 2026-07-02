@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
 #include <deque>
+#include <memory>
+#include <unordered_map>
 
 namespace DB
 {
@@ -82,11 +84,18 @@ struct PartOffsetRanges : public std::vector<PartOffsetRange>
     }
 };
 
+struct IMergeTreeIndexGranule;
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
+using IndexGranulesMap = std::unordered_map<String, MergeTreeIndexGranulePtr>;
+
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
 {
     /// Currently only information related to vector search
     std::optional<NearestNeighbours> vector_search_results;
+    /// Pre-computed index granules for indexes that are
+    /// created for the whole part. For example, text indexes.
+    IndexGranulesMap index_granules;
 };
 
 struct RangesInDataPart
@@ -113,7 +122,8 @@ struct RangesInDataPart
         const DataPartPtr & parent_part_,
         size_t part_index_in_query_,
         size_t part_starting_offset_in_query_,
-        const MarkRanges & ranges_);
+        const MarkRanges & ranges_,
+        const RangesInDataPartReadHints & read_hints_);
 
     explicit RangesInDataPart(
         const DataPartPtr & data_part_,

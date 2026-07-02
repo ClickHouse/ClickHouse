@@ -7,6 +7,7 @@ namespace DB
 
 template <typename T1, typename T2> using AggregateFunctionCovar = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, CovarMoments>>;
 
+void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsCovar(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description covarSamp_description = R"(

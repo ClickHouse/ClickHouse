@@ -13,6 +13,7 @@
 #include <Generator.h>
 #include <Stats.h>
 
+#include <barrier>
 #include <filesystem>
 
 using Ports = std::vector<UInt16>;
@@ -21,29 +22,42 @@ using Strings = std::vector<std::string>;
 struct BenchmarkContext
 {
 public:
-    void initializeFromConfig(const Poco::Util::AbstractConfiguration & config);
-
-    void startup(Coordination::ZooKeeper & zookeeper);
-    void cleanup(Coordination::ZooKeeper & zookeeper);
-
-private:
     struct Node
     {
         StringGetter name;
         std::optional<StringGetter> data;
+        std::optional<std::string> tag;
         std::vector<std::shared_ptr<Node>> children;
         size_t repeat_count = 0;
 
         std::shared_ptr<Node> clone() const;
 
-        void createNode(Coordination::ZooKeeper & zookeeper, const std::string & parent_path, const Coordination::ACLs & acls) const;
+        void createNodes(
+            Coordination::ZooKeeper & zookeeper,
+            Coordination::Requests & batch,
+            const std::string & parent_path,
+            const Coordination::ACLs & acls,
+            TaggedPaths & tagged_paths) const;
         void dumpTree(int level = 0) const;
     };
 
+    void initializeFromConfig(const Poco::Util::AbstractConfiguration & config);
+
+    void startup(Coordination::ZooKeeper & zookeeper);
+    void cleanup(Coordination::ZooKeeper & zookeeper);
+
+    const TaggedPaths & getTaggedPaths() const { return tagged_paths; }
+    TaggedPaths & getTaggedPaths() { return tagged_paths; }
+    const std::vector<std::shared_ptr<Node>> & getRootNodes() const { return root_nodes; }
+    const Coordination::ACLs & getDefaultAcls() const { return default_acls; }
+
+private:
     static std::shared_ptr<Node> parseNode(const std::string & key, const Poco::Util::AbstractConfiguration & config);
 
     std::vector<std::shared_ptr<Node>> root_nodes;
     Coordination::ACLs default_acls;
+    TaggedPaths tagged_paths;
+    bool use_remove_recursive = true;
 };
 
 class Runner
@@ -51,7 +65,7 @@ class Runner
 private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
     {
-        size_t thread_idx;
+        size_t thread_idx = 0;
         Stats thread_info;
     };
 
@@ -137,6 +151,12 @@ private:
     Stopwatch delay_watch;
 
     std::vector<ThreadState> threads;
+
+    /// Barrier so all threads finish generator initialization (which resolves
+    /// `children_of` paths via ZooKeeper listing) before any thread starts
+    /// executing requests. Without this, early threads mutate the tree while
+    /// late threads are still initializing, causing stale path caches.
+    std::unique_ptr<std::barrier<>> generator_init_barrier;
 
     std::mutex mutex; // for writing to stdout
 

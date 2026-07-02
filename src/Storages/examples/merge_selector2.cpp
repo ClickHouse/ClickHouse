@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <ostream>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
  * Usage:
@@ -19,7 +20,7 @@ clickhouse-client --query="
     WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector2(int, char **)
 {
     using namespace DB;
 
@@ -36,8 +37,8 @@ int main(int, char **)
 
     while (!in.eof())
     {
-        size_t size;
-        time_t age;
+        size_t size = {};
+        time_t age = {};
         std::string name;
 
         in >> name >> "\t" >> size >> "\t" >> age >> "\n";

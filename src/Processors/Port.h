@@ -26,6 +26,7 @@ extern const int LOGICAL_ERROR;
 class Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
     friend class IProcessor;
 
 public:
@@ -223,6 +224,7 @@ public:
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
+    bool hasUpdateInfo() const { return update_info != nullptr; }
 
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
@@ -274,6 +276,7 @@ protected:
 class InputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     OutputPort * output_port = nullptr;
@@ -397,6 +400,7 @@ public:
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     InputPort * input_port = nullptr;
@@ -490,5 +494,6 @@ using OutputPorts = std::list<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);
+void disconnect(OutputPort & output, InputPort & input);
 
 }

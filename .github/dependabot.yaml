@@ -99,3 +99,22 @@ updates:
     open-pull-requests-limit: 0
     ignore:
       - dependency-name: "*"
+
+  # Disable Dependabot for all Rust (cargo) dependencies.
+  # Rust crates are pinned via Cargo.lock and built reproducibly; updates must be
+  # done manually together with lockfile and vendored-source refreshes.
+  - package-ecosystem: "cargo"
+    directory: "/rust/chcache"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/rust/workspace"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: "*"
