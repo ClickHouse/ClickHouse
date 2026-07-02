@@ -1215,7 +1215,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         params.grace_hash_join_initial_buckets,
                         params.grace_hash_join_max_buckets,
                         params.max_threads,
-                        stats_collecting_params);
+                        stats_collecting_params,
+                        params.trustworthy_rhs_key_ndv);
                 }
             }
 
@@ -1235,7 +1236,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
             if (use_parallel_hash)
             {
-                return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
+                return std::make_shared<ConcurrentHashJoin>(
+                    table_join,
+                    params.max_threads,
+                    right_table_expression_header,
+                    stats_collecting_params,
+                    /*any_take_last_row_=*/false,
+                    /*external_join_threshold_=*/0,
+                    params.trustworthy_rhs_key_ndv);
             }
         }
 
@@ -1289,7 +1297,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.grace_hash_join_initial_buckets,
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
-                    stats_collecting_params);
+                    stats_collecting_params,
+                    params.trustworthy_rhs_key_ndv);
             }
 
             return std::make_shared<SpillingHashJoin>(

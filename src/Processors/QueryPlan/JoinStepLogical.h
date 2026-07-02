@@ -137,17 +137,27 @@ public:
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
+    /// Column statistics of the right (build) input relation, before this join's `min(left, right)`
+    /// equi-key clamp. Used to size the build hash map: `result_column_stats` holds the post-join output
+    /// stats, which underestimate the build-side distinct-key count when the probe side has fewer
+    /// distinct keys. Populated only when the build input is a single DP leaf (a base relation, or a
+    /// derived/subquery input whose stats carry no `uniq` provenance); empty for join sub-tree build
+    /// inputs, so the deferred-build NDV shortcut stays restricted to the simple, reliable case (see
+    /// `extractTrustworthyRightKeyNdv`).
+    const std::unordered_map<String, ColumnStats> & getRightInputColumnStats() const { return right_input_column_stats; }
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::optional<UInt64> left_rows_ = {},
         std::optional<UInt64> right_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {})
+        std::unordered_map<String, ColumnStats> column_stats_ = {},
+        std::unordered_map<String, ColumnStats> right_input_column_stats_ = {})
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
         left_rows_estimation = left_rows_;
         right_rows_estimation = right_rows_;
         result_column_stats = std::move(column_stats_);
+        right_input_column_stats = std::move(right_input_column_stats_);
     }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
@@ -204,6 +214,8 @@ protected:
     std::optional<UInt64> left_rows_estimation = {};
     std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
+    /// Right (build) input relation column stats, before this join's equi-key min-clamp. See getter.
+    std::unordered_map<String, ColumnStats> right_input_column_stats = {};
     UInt64 right_hash_table_cache_key = 0;
 
     String left_table_label;

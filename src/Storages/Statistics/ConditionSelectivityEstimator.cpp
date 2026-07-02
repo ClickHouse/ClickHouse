@@ -192,8 +192,20 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, cardinality);
+        const UInt64 uniq_cardinality = estimator.estimateCardinality();
+        const UInt64 cardinality = std::min(result.rows, uniq_cardinality);
+        /// This is the *filtered* relation profile. The `num_distinct_values_from_uniq` flag gates the
+        /// parallel_hash deferred-build shortcut, which preallocates the build map to this count, so it
+        /// must stay true only while the stored value is genuinely a `uniq`-backed distinct count. Here
+        /// the value is `min(result.rows, uniq_cardinality)`. When `result.rows <= uniq_cardinality` the
+        /// row-count estimate clamps the value (the bot's concern): `result.rows` can come from default
+        /// selectivity factors of unrelated predicates, so the value is not uniq-backed and must not be
+        /// trusted. When `result.rows > uniq_cardinality` the filter keeps more rows than there are
+        /// distinct keys, so the value is the real `uniq` count and is a sound size to preallocate
+        /// (trusting it keeps the warm prealloc instead of a slower deferred build). The value still
+        /// feeds the join-order cost model unchanged regardless of provenance.
+        const bool from_uniq = estimator.hasUniqStatistic() && uniq_cardinality < result.rows;
+        result.column_stats.emplace(column_name, ColumnStats{.num_distinct_values = cardinality, .num_distinct_values_from_uniq = from_uniq});
     }
     return result;
 }
@@ -204,7 +216,9 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, estimator.estimateCardinality());
+        result.column_stats.emplace(
+            column_name,
+            ColumnStats{.num_distinct_values = estimator.estimateCardinality(), .num_distinct_values_from_uniq = estimator.hasUniqStatistic()});
     }
     return result;
 }
@@ -571,6 +585,11 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
 UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() const
 {
     return stats->estimateCardinality();
+}
+
+bool ConditionSelectivityEstimator::ColumnEstimator::hasUniqStatistic() const
+{
+    return stats && stats->hasUniqStatistic();
 }
 
 const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map

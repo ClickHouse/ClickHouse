@@ -7,10 +7,12 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -26,6 +28,8 @@
 
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/RowRefs.h>
+#include <Common/HashTable/Hash.h>
 #include <DataTypes/NullableUtils.h>
 #include <base/defines.h>
 #include <base/types.h>
@@ -58,6 +62,7 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event HashJoinPreallocatedElementsInHashTables;
+extern const Event HashJoinDeferredPreallocatedElementsInHashTables;
 }
 
 namespace CurrentMetrics
@@ -102,62 +107,152 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
+/// Reserve the buckets owned by `HashJoin` instance `ind` so that, summed across all slots and
+/// buckets, the maps hold `reserve_size` entries without rehashing. `reserve_size` is the global
+/// total (matching the statistics `ht_size` semantics): each owned bucket gets `reserve_size /
+/// NUM_BUCKETS`. Used both for statistics-driven preallocation and for the exact-size deferred
+/// build; the two report under distinct profile events (`prealloc_event`) so that the
+/// statistics-cache behaviour stays observable in isolation.
+///
+/// `cap_to_external_threshold` bounds the reserve to keep its bytes under `external_join_threshold /
+/// 2`. It is used by the streaming statistics-driven path, where the reserve happens up front and
+/// more rows then stream in (the spill trigger fires at `threshold / 2`), so an over-large hint must
+/// not pre-allocate past the cap. The deferred build passes `false`: its reserve runs at
+/// `onBuildPhaseFinish`, after the wrapping `SpillingHashJoin` has already approved the full
+/// projected footprint (`getProjectedTotalByteCount` < threshold) and decided not to spill, so
+/// reserving the full distinct-key count is known to fit and avoids rehashing (and its transient
+/// old+new buffer peak) during the replay.
+void reserveBucketsBySize(
+    HashJoin & hash_join,
+    size_t ind,
+    size_t reserve_size,
+    size_t slots,
+    size_t external_join_threshold,
+    bool cap_to_external_threshold,
+    ProfileEvents::Event prealloc_event)
+{
+    /// Each `HashJoin` instance "owns" a subset of buckets during the build phase, so we preallocate
+    /// only in the specific buckets of this instance.
+    size_t actual_reserve_size = reserve_size;
+    auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
+    {
+        APPLY_TO_MAP(
+            INVOKE_WITH_MAP,
+            type,
+            maps,
+            [&](auto & map)
+            {
+                using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+
+                if (external_join_threshold > 0 && cap_to_external_threshold)
+                {
+                    /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill
+                    /// memory cap. Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`),
+                    /// so each stored entry consumes 2 cells of capacity, and `bufSize` is then rounded
+                    /// up to the next power of two - a factor of up to 4x in the worst case. So each
+                    /// reserved entry occupies up to 4 × cell_size bytes of buffer. We keep total
+                    /// preallocated bytes (summed across all slots and buckets) under `threshold / 2`,
+                    /// leaving headroom for the eventual SpillingHashJoin trigger (also at `threshold /
+                    /// 2`) and for the conversion peak when handing data over to GraceHashJoin.
+                    const size_t budget_entries = external_join_threshold / (8 * cell_size);
+                    actual_reserve_size = std::min(reserve_size, budget_entries);
+                }
+
+                for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
+                    map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
+            })
+    };
+
+    const auto & right_data = hash_join.getJoinedData();
+    std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
+    ProfileEvents::increment(prealloc_event, actual_reserve_size / slots);
+}
+
 void reserveSpaceInHashMaps(
     HashJoin & hash_join,
     size_t ind,
     const StatsCollectingParams & stats_collecting_params,
     size_t slots,
-    size_t external_join_threshold)
+    size_t external_join_threshold,
+    std::optional<size_t> plan_key_ndv)
 {
+    /// Hash map is shared between all `HashJoin` instances, so the hinted size is the total size we
+    /// need to preallocate across all buckets of all hash maps. The cross-run statistics `ht_size`
+    /// hint takes precedence; otherwise a trustworthy plan distinct-key estimate is used. Both reserve
+    /// the same way (capped to the spill threshold, since more rows stream in after the reserve) and
+    /// report under the same profile event - this is the warm preallocation path.
+    std::optional<size_t> reserve_size;
     if (auto hint = getSizeHint(stats_collecting_params))
+        reserve_size = hint->ht_size;
+    else if (plan_key_ndv)
+        reserve_size = plan_key_ndv;
+
+    if (reserve_size)
+        reserveBucketsBySize(
+            hash_join,
+            ind,
+            *reserve_size,
+            slots,
+            external_join_threshold,
+            /*cap_to_external_threshold=*/true,
+            ProfileEvents::HashJoinPreallocatedElementsInHashTables);
+}
+
+/// Bytes the buffers of the two-level map buckets will occupy (summed across all slots; every bucket
+/// is owned by exactly one slot) once `num_entries` distinct keys are inserted, mirroring
+/// `reserveBucketsBySize` and `HashTableGrower::set`: each bucket gets `num_entries / NUM_BUCKETS`
+/// cells and its buffer grows to `2^(floor(log2(n - 1)) + 2)` cells, i.e. into [2n, 4n). Deliberately
+/// not capped by the `budget_entries` cap of `reserveBucketsBySize`: rehashes during the replay grow
+/// the buffers to this size regardless of the initial reserve. Used to project the memory footprint of
+/// a deferred build before committing to the replay (see `getProjectedTotalByteCount`). The caller
+/// passes the distinct-key estimate, since the map holds one cell per key, not per source row.
+size_t projectedTwoLevelMapBytes(const HashJoin & hash_join, size_t num_entries)
+{
+    size_t projected_bytes = 0;
+    auto compute = [&](auto & maps, HashJoin::Type type)
     {
-        /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
-        /// we need to preallocate in all buckets of all hash maps.
-        const size_t reserve_size = hint->ht_size;
+        APPLY_TO_MAP(
+            INVOKE_WITH_MAP,
+            type,
+            maps,
+            [&](auto & map)
+            {
+                using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
+                constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
 
-        /// When a `SpillingHashJoin` wraps us, `external_join_threshold` is the auto-spill memory cap.
-        /// Statistics-driven preallocation can reserve many gigabytes up front based on a previous larger
-        /// query, blowing past that cap before `SpillingHashJoin` ever runs its threshold check. We still
-        /// want preallocation - just bounded by the memory budget. We aim for about half of the threshold
-        /// so that the cap itself plus the live data plus the conversion peak still fit under it. When
-        /// running standalone (`external_join_threshold == 0`), the original full reserve is used.
+                const size_t per_bucket_elems = num_entries / map.NUM_BUCKETS;
+                /// Buckets that stay at their initial size are already accounted by `getTotalByteCount`.
+                if (per_bucket_elems <= 1)
+                    return;
+                const size_t per_bucket_buf_cells = 4ull << (63 - std::countl_zero(per_bucket_elems - 1));
+                projected_bytes = map.NUM_BUCKETS * per_bucket_buf_cells * cell_size;
+            })
+    };
+    const auto & right_data = hash_join.getJoinedData();
+    std::visit([&](auto & maps) { compute(maps, right_data->type); }, right_data->maps.at(0));
+    return projected_bytes;
+}
 
-        /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
-        /// we preallocate space only in the specific buckets of each `HashJoin` instance.
-        size_t actual_reserve_size = reserve_size;
-        auto reserve_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
-        {
-            APPLY_TO_MAP(
-                INVOKE_WITH_MAP,
-                type,
-                maps,
-                [&](auto & map)
-                {
-                    using BucketImpl = std::remove_cvref_t<decltype(map.impls[0])>;
-                    constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
+/// The distinct-key HyperLogLog (precision 12) has a ~1.6% standard error. We bias the distinct-key
+/// estimate by 1/16 (~6.25%, ~3.8 standard deviations) in the direction that keeps each use conservative.
+constexpr size_t NDV_ESTIMATE_MARGIN_DIVISOR = 16;
 
-                    if (external_join_threshold > 0)
-                    {
-                        /// Hash table buffers run at ~0.5 load factor (`maxFill = bufSize / 2`), so each
-                        /// stored entry consumes 2 cells of capacity, and `bufSize` is then rounded up to
-                        /// the next power of two - a factor of up to 4x in the worst case. So each reserved
-                        /// entry occupies up to 4 × cell_size bytes of buffer. We keep total preallocated
-                        /// bytes (summed across all slots and buckets) under `threshold / 2`, leaving
-                        /// headroom for the eventual SpillingHashJoin trigger (also at `threshold / 2`)
-                        /// and for the conversion peak when handing data over to GraceHashJoin.
-                        const size_t budget_entries = external_join_threshold / (8 * cell_size);
-                        actual_reserve_size = std::min(reserve_size, budget_entries);
-                    }
+/// Upper-biased distinct-key estimate, clamped to the source-row count. Used to size the reserve
+/// and the hash-table buffer projection: biasing up avoids an under-reserve (which would rehash).
+size_t ndvReserveEstimate(size_t raw_hll_sum, size_t total_rows)
+{
+    const size_t biased = raw_hll_sum + raw_hll_sum / NDV_ESTIMATE_MARGIN_DIVISOR;
+    return std::min(biased, total_rows);
+}
 
-                    for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
-                })
-        };
-
-        const auto & right_data = hash_join.getJoinedData();
-        std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, actual_reserve_size / slots);
-    }
+/// Lower-biased distinct-key estimate. Used only to bound the `RowRefList::Batch` arena: the number
+/// of duplicate rows is `source_rows - distinct_keys`, so a LOWER bound on distinct keys gives an
+/// UPPER bound on duplicate rows (and hence on the batch arena). Using the up-biased estimate here
+/// would shrink the duplicate count and under-count the arena.
+size_t ndvLowerBound(size_t raw_hll_sum)
+{
+    return raw_hll_sum - raw_hll_sum / NDV_ESTIMATE_MARGIN_DIVISOR;
 }
 
 template <typename HashTable>
@@ -182,7 +277,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     SharedHeader right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_,
-    size_t external_join_threshold_)
+    size_t external_join_threshold_,
+    std::optional<size_t> plan_key_ndv_)
     : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , any_take_last_row(any_take_last_row_)
@@ -195,6 +291,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
     , external_join_threshold(external_join_threshold_)
+    , plan_key_ndv(plan_key_ndv_)
 {
     hash_joins.resize(slots);
 
@@ -224,6 +321,58 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
+
+        /// Exact-size deferred build: when there is no statistics hint to preallocate from, buffer the
+        /// right blocks and size each two-level map to the estimated distinct-key count (merged HLL
+        /// shards over the scatter hashes) at build finish, avoiding rehashes during the build. Sizing by
+        /// distinct keys rather than source rows avoids over-allocating for duplicate-heavy build sides.
+        /// Skipped when statistics already provide a good hint (then the
+        /// streaming build + `reserveSpaceInHashMaps` is used), for `any_take_last_row`, and for
+        /// single-level maps (FixedHashMap is already exact-size and never rehashes). Size limits
+        /// (`max_rows_in_join` / `max_bytes_in_join`) do not disable the deferral under `throw`: the
+        /// buffering-time count over-counts duplicates (it sees source rows, not distinct-key cells)
+        /// and the buffering-time projection omits the `RowRefList` arena nodes, so the limits are
+        /// re-checked exactly against the real maps in `onBuildPhaseFinish` after the replay (see
+        /// `deferred_limits_check_requested`). This matters because common configurations set benign
+        /// limits (e.g. the CI test profile sets both to 10G). `break` mode is the exception: it
+        /// truncates the build when a limit is hit, which cannot be reproduced after a full replay,
+        /// so the deferral is disabled for it and the streaming build enforces it instead.
+        /// Coexists with a wrapping `SpillingHashJoin`: the spill threshold checks consult
+        /// `getProjectedTotalByteCount` (buffered blocks plus the projected size of the maps the
+        /// replay would build), so the wrapper switches to `GraceHashJoin` before a replay that
+        /// would overshoot the cap, and on a spill the buffers are handed over (see
+        /// `releaseSlotBlocks`) without building the in-memory map.
+        /// A trustworthy (`uniq`-backed) distinct-key estimate lets the streaming build preallocate the
+        /// maps exactly (see `reserveSpaceInHashMaps`), so there is no reason to defer: skip the
+        /// buffering. The cross-run statistics hint takes precedence (it disables the deferral via the
+        /// `getSizeHint` check below and reserves from `ht_size`), so only consult the plan NDV when no
+        /// such hint exists.
+        /// The optional already encodes trustworthiness: `extractTrustworthyRightKeyNdv` only sets it
+        /// from a real `uniq`-backed, non-zero distinct count (see `reserveSpaceInHashMaps`, which
+        /// keys off presence too), so presence alone is the condition.
+        const bool has_plan_key_ndv = plan_key_ndv.has_value();
+
+        const auto & size_limits = table_join->sizeLimits();
+        deferred_build = !any_take_last_row
+            && hash_joins[0]->data->twoLevelMapIsUsed()
+            && !getSizeHint(stats_collecting_params).has_value()
+            && !(size_limits.hasLimits() && size_limits.overflow_mode == OverflowMode::BREAK)
+            && !has_plan_key_ndv;
+
+        /// String-key maps copy every key into the arena at insert time; for the spill projection
+        /// those bytes are tracked at buffering time (other key types live in the cells, whose size
+        /// is projected from the row count alone).
+        const auto map_type = getData(hash_joins[0])->type;
+        track_buffered_key_bytes = deferred_build
+            && (map_type == HashJoin::Type::two_level_key_string || map_type == HashJoin::Type::two_level_key_fixed_string);
+
+        /// Distinct-key estimation shards for the deferred build (one per slot; see `NdvShard`).
+        if (deferred_build)
+        {
+            ndv_shards.resize(slots);
+            for (auto & shard : ndv_shards)
+                shard = std::make_unique<NdvShard>();
+        }
     }
     catch (...)
     {
@@ -282,7 +431,116 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
 
-    auto dispatched_blocks = dispatchBlock(table_join->getOnlyClause().key_names_right, std::move(right_block));
+    /// When the slot's `HashJoin` would pop a stored block that inserted no row (a `MapsOne` INNER/LEFT
+    /// build with no per-right-row flags - see `HashJoin::buildPopsZeroInsertBlocks`), the deferred build
+    /// may drop a per-slot block with no kept row instead of buffering it, so its early `max_bytes_in_join`
+    /// guard matches the streaming build (which never counts those popped blocks). The slots are
+    /// symmetric, so the shape is read once from slot 0; `deferred_build` short-circuits so the streaming
+    /// path never even evaluates it.
+    const bool skip_zero_insert_blocks = deferred_build && hash_joins[0]->data->buildPopsZeroInsertBlocks();
+
+    /// See `getProjectedTotalByteCount`: the replay copies these key bytes into the arena. Capture the
+    /// whole-block key bytes (and source row count) before `right_block` is moved into `dispatchBlock`.
+    /// With no block skipped, publish the whole-block total immediately, exactly as before. With
+    /// `skip_zero_insert_blocks`, defer publication to after the buffering loop so a slot whose block is
+    /// dropped (never replayed, so its keys are never arena-copied) contributes nothing.
+    size_t whole_block_key_bytes = 0;
+    const size_t source_block_rows = right_block.rows();
+    if (track_buffered_key_bytes)
+    {
+        for (const auto & name : table_join->getOnlyClause().key_names_right)
+            whole_block_key_bytes += right_block.getByName(name).column->byteSize();
+        if (!skip_zero_insert_blocks)
+            buffered_key_bytes.fetch_add(whole_block_key_bytes, std::memory_order_relaxed);
+    }
+
+    /// For the deferred build, gather the scatter hashes of the rows this block will actually insert
+    /// (non-NULL key, passing the right-side ON condition - see `selectDispatchBlock`) so they can be
+    /// fed - once, off the per-slot buffering mutex - into a round-robin distinct-key shard. When the
+    /// gate holds, also gather the per-slot keep flags so a block with no kept row can be dropped. For
+    /// the streaming build both stay empty and dispatch does no extra work.
+    std::vector<UInt64> block_key_hashes;
+    std::vector<UInt8> has_kept_row;
+    auto dispatched_blocks = dispatchBlock(
+        table_join->getOnlyClause().key_names_right, std::move(right_block),
+        deferred_build ? &block_key_hashes : nullptr,
+        skip_zero_insert_blocks ? &has_kept_row : nullptr);
+
+    if (deferred_build)
+    {
+        /// Update the distinct-key estimate from the insertable rows' hashes under a single shard lock
+        /// (not the per-slot buffering locks, and not once per row), then buffer the per-slot blocks.
+        feedDistinctKeyEstimator(block_key_hashes);
+
+        /// Buffer the per-slot blocks instead of inserting now; they are reserved exactly and replayed
+        /// at `onBuildPhaseFinish` (or handed to GraceHashJoin if the wrapper decides to spill).
+        /// `buffered_rows`/`buffered_bytes` keep the totals accurate, and the spill checks of the
+        /// wrapping `SpillingHashJoin` use `getProjectedTotalByteCount` on top of them to account
+        /// for the maps the replay would build.
+        size_t buffered_key_bytes_delta = 0;
+        for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+        {
+            auto & dispatched_block = dispatched_blocks[i];
+            if (!dispatched_block.rows())
+                continue;
+            /// The slot's `HashJoin` would pop this block - it inserts no row and stores no nullmap - so
+            /// the streaming build never counts its bytes. Drop it here too (do not buffer) so the early
+            /// `max_bytes_in_join` guard does not over-reject. Only reached when `skip_zero_insert_blocks`
+            /// holds; an empty `has_kept_row` is the all-kept fast path (nothing to skip).
+            if (skip_zero_insert_blocks && !has_kept_row.empty() && !has_kept_row[i])
+                continue;
+            auto & hash_join = hash_joins[i];
+            std::lock_guard lock(hash_join->mutex);
+            /// The shrink heuristic of `shrinkStoredBlocksToFit` measures query memory growth from a
+            /// baseline that the slot's `HashJoin` would otherwise capture only at replay time, when
+            /// all the buffered blocks are already part of the usage. Capture it before the first
+            /// block is buffered, as the streaming build effectively does.
+            if (hash_join->buffered_blocks.empty())
+                hash_join->data->captureMemoryUsageBaseline();
+            hash_join->buffered_rows += dispatched_block.rows();
+            hash_join->buffered_bytes += dispatched_block.allocatedBytes();
+            /// Arena key-byte share for the rows actually buffered, apportioned the same way
+            /// `ScatteredBlock::allocatedBytes` apportions the shared source block. A dropped slot adds
+            /// nothing. Accumulated only on the skip path; the no-skip path published the whole-block
+            /// total up front (byte-identical to before).
+            if (track_buffered_key_bytes && skip_zero_insert_blocks)
+                buffered_key_bytes_delta
+                    += source_block_rows ? whole_block_key_bytes * dispatched_block.rows() / source_block_rows : 0;
+            hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
+        }
+        if (track_buffered_key_bytes && skip_zero_insert_blocks)
+            buffered_key_bytes.fetch_add(buffered_key_bytes_delta, std::memory_order_relaxed);
+
+        /// Size limits cannot be enforced *exactly* here the way the streaming build does:
+        /// `getTotalRowCount` would count the buffered *source* rows (the streaming build checks
+        /// distinct-key map cells, so duplicates would over-count and reject queries the streaming
+        /// path accepts), and `getProjectedTotalByteCount` is only an estimate (the distinct-key count
+        /// and the exact `RowRefList` arena size are known only after the replay). Record that the
+        /// caller wants the limits enforced and re-check the real maps after the replay in
+        /// `onBuildPhaseFinish`. `break`
+        /// never reaches here (the deferral is disabled for it in the constructor, so the mode is
+        /// always `throw`); the replay itself inserts with `check_limits = false`. The spill
+        /// threshold is handled separately by the wrapping `SpillingHashJoin` via
+        /// `getProjectedTotalByteCount`.
+        if (check_limits && table_join->sizeLimits().hasLimits())
+        {
+            deferred_limits_check_requested.store(true, std::memory_order_relaxed);
+
+            /// The buffered block bytes are a lower bound on the final join footprint (the replay
+            /// only adds the maps and arena on top), so fail early on the byte cap once even that
+            /// lower bound crosses `max_bytes_in_join`, instead of buffering the whole right side
+            /// and only throwing at `onBuildPhaseFinish` (which could overshoot the join cap or hit
+            /// `max_memory_usage` first). Pass `rows = 0` so only the byte dimension can trip here:
+            /// the buffered source-row count over-counts distinct keys and must wait for the exact
+            /// post-replay check. The terminal `onBuildPhaseFinish` check still enforces both
+            /// dimensions exactly. This keeps the streaming build's incremental-byte-guard behavior.
+            if (table_join->sizeLimits().max_bytes)
+                table_join->sizeLimits().check(
+                    0, getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        }
+        return true;
+    }
+
     size_t blocks_left = 0;
     for (const auto & block : dispatched_blocks)
     {
@@ -313,7 +571,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold, plan_key_ndv);
                     hash_join->space_was_preallocated = true;
                 }
 
@@ -456,7 +714,10 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
+        /// A slot's rows live in exactly one place at a time: parked in `buffered_*` during a deferred
+        /// build, or in the hash map after the replay (or released to GraceHashJoin). Summing both is
+        /// always correct and never double-counts. For non-deferred builds `buffered_rows` is 0.
+        res += hash_join->data->getTotalRowCount() + hash_join->buffered_rows;
     }
     return res;
 }
@@ -467,7 +728,101 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
     for (const auto & hash_join : hash_joins)
     {
         std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
+        /// See `getTotalRowCount`: buffered bytes account for a deferred build still parked in memory,
+        /// so the wrapping `SpillingHashJoin` sees the real footprint and can trigger a spill.
+        res += hash_join->data->getTotalByteCount() + hash_join->buffered_bytes;
+    }
+    return res;
+}
+
+void ConcurrentHashJoin::feedDistinctKeyEstimator(const std::vector<UInt64> & block_key_hashes)
+{
+    if (block_key_hashes.empty())
+        return;
+    /// One shard per source block, chosen round-robin so concurrent callers rarely collide; the
+    /// shard lock is taken once for the whole block (not per row) and never overlaps the per-slot
+    /// buffering locks. Shards are merged (union) at build finish.
+    auto & shard = *ndv_shards[ndv_shard_round_robin.fetch_add(1, std::memory_order_relaxed) % ndv_shards.size()];
+    std::lock_guard lock(shard.mutex);
+    for (const auto h : block_key_hashes)
+        shard.hll.insert(h);
+}
+
+size_t ConcurrentHashJoin::sumBufferedDistinctKeyEstimates(size_t & total_buffered_rows) const
+{
+    total_buffered_rows = 0;
+    for (const auto & hash_join : hash_joins)
+    {
+        std::lock_guard lock(hash_join->mutex);
+        total_buffered_rows += hash_join->buffered_rows;
+    }
+    if (total_buffered_rows == 0)
+        return 0;
+
+    /// A key may have been fed into more than one shard (round-robin over source blocks), so the
+    /// shards are unioned via HLL merge rather than summed - merge de-duplicates across shards.
+    HyperLogLogWithSmallSetOptimization<UInt64, 16, 12> merged;
+    for (const auto & shard : ndv_shards)
+    {
+        std::lock_guard lock(shard->mutex);
+        merged.merge(shard->hll);
+    }
+    return merged.size();
+}
+
+size_t ConcurrentHashJoin::estimateBufferedDistinctKeys() const
+{
+    size_t total_buffered_rows = 0;
+    const size_t raw_ndv = sumBufferedDistinctKeyEstimates(total_buffered_rows);
+    if (total_buffered_rows == 0)
+        return 0;
+    return ndvReserveEstimate(raw_ndv, total_buffered_rows);
+}
+
+size_t ConcurrentHashJoin::getProjectedTotalByteCount() const
+{
+    /// The buffered bytes and the live maps are already summed by `getTotalByteCount`; on the
+    /// non-deferred path nothing is buffered, so this is the whole answer and the projection below
+    /// adds nothing.
+    size_t res = getTotalByteCount();
+
+    /// Merged distinct-key estimate over the shards (and the buffered source-row count). Zero rows are
+    /// buffered on the non-deferred path, so this then degenerates to `getTotalByteCount` exactly.
+    size_t total_buffered_rows = 0;
+    const size_t raw_ndv = sumBufferedDistinctKeyEstimates(total_buffered_rows);
+    if (total_buffered_rows > 0)
+    {
+        /// The hash-table buffers are sized for the distinct-key count (the maps hold one cell per
+        /// key). This uses the SAME up-biased estimate (`ndvReserveEstimate` over the same frozen
+        /// shards) that `onBuildPhaseFinish` reserves with, so the projection and the actual reserve
+        /// agree - otherwise the wrapping `SpillingHashJoin` would spill against a footprint that
+        /// differs from what the replay builds. The deferred reserve allocates the full count (no
+        /// `threshold / 2` budget cap), so no rehash happens during the replay and this is the exact
+        /// final buffer size.
+        const size_t ndv_reserve = ndvReserveEstimate(raw_ndv, total_buffered_rows);
+        res += projectedTwoLevelMapBytes(*hash_joins[0]->data, ndv_reserve);
+
+        /// Arena copies of string keys (one per distinct key after dedup, but tracked here as the
+        /// per-source-block key bytes, an upper bound).
+        res += buffered_key_bytes.load(std::memory_order_relaxed);
+
+        /// `RowRefList` arena nodes for keys with more than one row. The first row of each key lives
+        /// in the map cell; every further row lives in a `Batch`, which holds up to
+        /// `RowRefList::Batch::MAX_SIZE` rows in 128 bytes. With `d` duplicate rows spread over `k`
+        /// keys (`k <= min(distinct_keys, d)`), the number of `Batch`es is
+        /// `sum_i ceil(e_i / MAX_SIZE) <= (d + (MAX_SIZE - 1) * k) / MAX_SIZE`, maximized at
+        /// `k = min(distinct_keys, d)`. This is a tight upper bound (not the ~MAX_SIZE x over-estimate
+        /// of `d` batches), so a duplicate-heavy build is not projected far larger than it really is
+        /// (which would spuriously spill). `d` uses the LOWER-biased distinct-key estimate so an HLL
+        /// over-estimate cannot shrink the duplicate count below reality, while `k` uses the same
+        /// up-biased estimate as the map term (an upper bound on the number of distinct keys) - so
+        /// both `d` and `k`, and hence the batch count, stay conservative.
+        constexpr size_t batch_rows = RowRefList::Batch::MAX_SIZE;
+        const size_t ndv_low = ndvLowerBound(raw_ndv);
+        const size_t duplicate_rows = total_buffered_rows > ndv_low ? total_buffered_rows - ndv_low : 0;
+        const size_t dup_keys = std::min(ndv_reserve, duplicate_rows);
+        const size_t max_batches = (duplicate_rows + (batch_rows - 1) * dup_keys + batch_rows - 1) / batch_rows;
+        res += max_batches * sizeof(RowRefList::Batch);
     }
     return res;
 }
@@ -613,7 +968,29 @@ static DispatchKeyShape getDispatchKeyShape(const HashJoin & join, size_t total_
     return shape;
 }
 
-static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, const Strings & key_columns_names, const Block & from_block)
+/// The per-row scatter selector (which slot each row goes to) plus the raw scatter hashes it was
+/// derived from. The hashes are returned so the deferred build can feed them into the distinct-key
+/// HLL shards without recomputing them.
+struct DispatchSelectorAndHashes
+{
+    IColumn::Selector selector;
+    BlockHashes hashes;
+    /// Per shard: whether any row routed to that shard would be kept by the streaming build (its key is
+    /// NULL - kept for the seeding rule - or it passes the right-side ON mask). Filled only when the
+    /// caller asks (`compute_has_kept_row`) and the block is not the all-kept fast path. An EMPTY vector
+    /// means "every shard keeps a row" (nothing to skip), so the common build allocates nothing extra.
+    std::vector<UInt8> has_kept_row;
+};
+
+static DispatchSelectorAndHashes
+selectDispatchBlock(
+    const HashJoin & join,
+    size_t num_shards,
+    const Strings & key_columns_names,
+    const Block & from_block,
+    const String & right_filter_condition_column,
+    bool filter_to_insertable_rows,
+    bool compute_has_kept_row)
 {
     const auto shape = getDispatchKeyShape(join, key_columns_names.size());
 
@@ -628,19 +1005,77 @@ static IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_s
         key_columns.push_back(key_col_no_lc.get());
     }
     ConstNullMapPtr null_map{};
-    extractNestedColumnsAndNullMap(key_columns, null_map);
+    /// Keep the returned holder alive: when several key columns are nullable, `extractNestedColumnsAndNullMap`
+    /// allocates a fresh combined null map and `null_map` points into it. `key_column_holders` only owns the
+    /// per-column Nullable wrappers, so without this holder the combined null map would be freed and `null_map`
+    /// would dangle - read below in `keep_insertable_hashes` (see the other callers in `HashJoin` and `Set`).
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
 
-    auto calculate_selector = [&](auto & maps)
+    /// The deferred build's distinct-key estimator must count only the keys that are actually inserted
+    /// into the maps. The replay (like the streaming build) skips rows whose key is NULL or that fail
+    /// the right-side ON condition (see `HashJoinMethods::insertFromBlockImplTypeCase`), so the returned
+    /// estimator hashes are filtered the same way: an empty `right_filter_condition_column` (the ON
+    /// clause has no right-side condition) yields an all-pass mask, and `null_map` is computed from the
+    /// same `extractNestedColumnsAndNullMap` the insert path uses. The estimate's null set is always a
+    /// subset of the insert's, so the estimate never drops a row the replay inserts (which would
+    /// under-size and rehash). The only divergence is for an ASOF join with a NULL asof key: the insert
+    /// also drops it but this estimate (which sees only the equality-key prefix) counts it - a bounded
+    /// over-count that can only over-reserve, never rehash.
+    const JoinCommon::JoinMask insert_mask = filter_to_insertable_rows
+        ? JoinCommon::getColumnAsMask(from_block, right_filter_condition_column)
+        : JoinCommon::JoinMask(true, from_block.rows());
+
+    /// Filter `hash` down to the inserted rows' hashes (for the distinct-key estimate) and, when the
+    /// caller asks (`compute_has_kept_row`), report per shard whether any row routed to that shard would
+    /// be kept by the streaming build. A row is KEPT iff its key is NULL (kept for the seeding rule -
+    /// `is_inserted` is set true before the ON-mask check) or it passes the right-side ON mask; this is
+    /// exactly the streaming build's `is_inserted`-becomes-true condition. A row is INSERTED (and so
+    /// contributes a distinct-key hash) iff its key is non-NULL AND it passes the mask. The two differ
+    /// only on NULL-key rows, which are kept but not inserted, so the per-shard flags must use the
+    /// keep test, not `hash.empty()`.
+    auto keep_insertable_hashes = [&](BlockHashes & hash, const IColumn::Selector & selector) -> std::vector<UInt8>
     {
-        BlockHashes hash;
+        if (!filter_to_insertable_rows)
+            return {};
+        /// Fast path for the common build (no NULL keys to drop, no right-side ON condition): every row
+        /// is inserted, so the full hash set is already correct - keep it as-is (no copy). This keeps the
+        /// mostly-unique cold build, the main beneficiary of the exact-size build, free of extra work.
+        /// Every shard then keeps a row, so the empty `has_kept_row` (== "skip nothing") is correct and
+        /// the fast path stays allocation-free.
+        if (!null_map && insert_mask.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
+            return {};
+        std::vector<UInt8> has_kept_row;
+        if (compute_has_kept_row)
+            has_kept_row.assign(num_shards, 0);
+        BlockHashes kept;
+        kept.reserve(hash.size());
+        for (size_t i = 0; i < hash.size(); ++i)
+        {
+            const bool null_key = null_map && (*null_map)[i];
+            const bool filtered = insert_mask.isRowFiltered(i);
+            if (compute_has_kept_row && (null_key || !filtered))
+                has_kept_row[selector[i]] = 1;
+            if (null_key || filtered)
+                continue;
+            kept.push_back(hash[i]);
+        }
+        hash = std::move(kept);
+        return has_kept_row;
+    };
 
+    auto calculate_selector = [&](auto & maps) -> DispatchSelectorAndHashes
+    {
         switch (join.getJoinedData()->type)
         {
         #define M(TYPE)                                                                                                                       \
             case HashJoin::Type::TYPE:                                                                                                        \
-        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            {                                                                                                                                 \
+                BlockHashes hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                     *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
-        return hashToSelector(*maps.TYPE, hash, num_shards);
+                auto selector = hashToSelector(*maps.TYPE, hash, num_shards);                                                                 \
+                auto has_kept_row = keep_insertable_hashes(hash, selector);                                                                   \
+                return {std::move(selector), std::move(hash), std::move(has_kept_row)};                                                       \
+            }
 
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
@@ -699,17 +1134,49 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
     return result;
 }
 
-ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
+ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
+    const Strings & key_columns_names, Block && from_block, std::vector<UInt64> * out_block_key_hashes,
+    std::vector<UInt8> * out_has_kept_row)
 {
     const size_t num_shards = hash_joins.size();
+    /// Both the distinct-key estimate (`out_block_key_hashes`) and the per-shard keep flags
+    /// (`out_has_kept_row`, used by the deferred build to skip blocks the streaming build would pop) need
+    /// the rows filtered to the ones the replay would insert/keep, which needs the right-side ON column.
+    /// It is empty when the ON clause has no such condition.
+    const bool want_insertable_filter = out_block_key_hashes != nullptr || out_has_kept_row != nullptr;
+    const String right_filter_condition_column
+        = want_insertable_filter ? table_join->getOnlyClause().condColumnNames().second : String{};
     if (num_shards == 1)
     {
+        /// All rows go to the single slot. Still compute the insertable key hashes (distinct-key estimate)
+        /// and the keep flag (slot 0) when the deferred build asked for them; the selector is trivially
+        /// all-zero, so any kept row sets `has_kept_row[0]`.
+        if (want_insertable_filter)
+        {
+            auto result = selectDispatchBlock(
+                *hash_joins[0]->data, num_shards, key_columns_names, from_block, right_filter_condition_column,
+                /*filter_to_insertable_rows=*/true, /*compute_has_kept_row=*/out_has_kept_row != nullptr);
+            if (out_block_key_hashes)
+                *out_block_key_hashes = std::move(result.hashes);
+            if (out_has_kept_row)
+                *out_has_kept_row = std::move(result.has_kept_row);
+        }
         ScatteredBlocks res;
         res.emplace_back(std::move(from_block));
         return res;
     }
 
-    IColumn::Selector selector = selectDispatchBlock(*hash_joins[0]->data, num_shards, key_columns_names, from_block);
+    auto [selector, hashes, has_kept_row] = selectDispatchBlock(
+        *hash_joins[0]->data, num_shards, key_columns_names, from_block, right_filter_condition_column,
+        /*filter_to_insertable_rows=*/want_insertable_filter, /*compute_has_kept_row=*/out_has_kept_row != nullptr);
+
+    /// Hand the insertable-row scatter hashes to the caller for the distinct-key estimate. They are
+    /// reused as-is: the HLL's own `intHash32` mixes them, and the estimate is global (shards are
+    /// merged, not partitioned per slot), so no extra finalizer is needed.
+    if (out_block_key_hashes)
+        *out_block_key_hashes = std::move(hashes);
+    if (out_has_kept_row)
+        *out_has_kept_row = std::move(has_kept_row);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
     /// This is not beneficial when the whole set of columns is e.g. a single small column.
@@ -733,6 +1200,22 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     chassert(slot_idx < hash_joins.size());
     auto & hash_join = hash_joins[slot_idx];
     std::lock_guard lock(hash_join->mutex);
+
+    /// Deferred build that has not been replayed yet (the wrapping `SpillingHashJoin` decided to spill
+    /// before `onBuildPhaseFinish`): hand the buffered blocks over without ever building the in-memory
+    /// map. Materialize each block to its selected rows only, so rows are not duplicated across slots.
+    if (!hash_join->buffered_blocks.empty())
+    {
+        BlocksList blocks;
+        for (auto & scattered_block : hash_join->buffered_blocks)
+        {
+            scattered_block.filterBySelector();
+            blocks.emplace_back(std::move(scattered_block).getSourceBlock());
+        }
+        hash_join->clearBuffers();
+        return blocks;
+    }
+
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
@@ -740,6 +1223,103 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
+    if (deferred_build)
+    {
+        /// Exact-size build: reserve each slot's owned buckets to the estimated distinct-key count,
+        /// then replay the buffered blocks (the inserts now rarely rehash). Done in parallel across
+        /// slots, before the bucket merge below. `reserveBucketsBySize` takes the global total because
+        /// each owned bucket is reserved to `total / NUM_BUCKETS`, matching the statistics-driven path.
+        ///
+        /// The reserve is sized by distinct keys, not source rows: the map holds one cell per key, so
+        /// reserving by source rows would over-allocate (by the duplication factor) for duplicate-heavy
+        /// builds and could overshoot the `SpillingHashJoin` memory cap. The distinct-key count comes
+        /// from the merged HLL shards filled while buffering. It MUST be the same number that
+        /// `getProjectedTotalByteCount` uses for the spill decision, hence the shared
+        /// `estimateBufferedDistinctKeys`.
+        const size_t global_reserve_size = estimateBufferedDistinctKeys();
+
+        /// The replay below pushes a slot's entire buffered right side through one pool task. The old
+        /// streaming build inserted block-by-block across separate processor work calls, so it was
+        /// interruptible between blocks; here we must poll the query status ourselves, otherwise a
+        /// large cold build would reserve and replay to completion before `KILL QUERY` (or an expired
+        /// `max_execution_time`) is observed. `checkTimeLimit` throws on kill/timeout and the exception
+        /// is re-raised from `pool->wait()` below; under `timeout_overflow_mode = 'break'` it just
+        /// returns and the build completes normally (a half-replayed map would be incorrect).
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElement();
+
+        /// A replay task throwing (e.g. `checkTimeLimit` on `KILL QUERY`) is rethrown from a later
+        /// `scheduleOrThrow` or from `wait` below, but tasks already scheduled keep running and read
+        /// each slot's `buffered_blocks`. If that exception escaped here, the pipeline teardown would
+        /// destroy this join (and free `buffered_blocks`) while those tasks are still in flight - a
+        /// use-after-free. Drain the pool on every exit path before propagating, mirroring the
+        /// constructor and destructor guards in this file.
+        try
+        {
+            for (size_t i = 0; i < slots; ++i)
+            {
+                pool->scheduleOrThrow(
+                    [&, i, query_status, thread_group = CurrentThread::getGroup()]()
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+
+                        auto & hash_join = hash_joins[i];
+                        if (query_status)
+                            query_status->checkTimeLimit();
+
+                        if (global_reserve_size && hash_join->data->twoLevelMapIsUsed())
+                            reserveBucketsBySize(
+                                *hash_join->data,
+                                i,
+                                global_reserve_size,
+                                slots,
+                                external_join_threshold,
+                                /*cap_to_external_threshold=*/false,
+                                ProfileEvents::HashJoinDeferredPreallocatedElementsInHashTables);
+
+                        for (auto & scattered_block : hash_join->buffered_blocks)
+                        {
+                            if (query_status)
+                                query_status->checkTimeLimit();
+                            auto [block, selector] = std::move(scattered_block).detachData();
+                            hash_join->data->addBlockToJoin(block, std::move(selector), /*check_limits=*/false);
+                        }
+                        hash_join->clearBuffers();
+
+                        /// `addBlockToJoin(..., check_limits=false)` early-returns before maintaining
+                        /// `keys_to_join` and before the memory-pressure shrink, so compensate here, as
+                        /// `GraceHashJoin` does with `getAndSetRightTableKeys` after its own
+                        /// `check_limits=false` inserts. Without this, `avgPerKeyRows` would see zero
+                        /// keys and silently flip the `output_by_row_list` emit heuristic to the
+                        /// per-row path. The bucket merge below sums the per-slot `keys_to_join`
+                        /// into slot 0, so this must run before it.
+                        hash_join->data->getAndSetRightTableKeys();
+                        size_t total_bytes = hash_join->data->getTotalByteCount();
+                        hash_join->data->shrinkStoredBlocksToFit(total_bytes);
+                    });
+            }
+            pool->wait();
+        }
+        catch (...)
+        {
+            /// Join the still-running replay tasks before this slot's buffers are freed.
+            pool->wait();
+            throw;
+        }
+
+        /// Enforce `max_rows_in_join` / `max_bytes_in_join` against the real maps now that the
+        /// deferred build is materialized (and before the bucket merge below, while each slot still
+        /// owns its own map and arena). `getTotalRowCount` counts distinct-key cells - the same
+        /// contract as the streaming build, not the buffered source-row count - and `getTotalByteCount`
+        /// includes the `RowRefList` arena nodes, so this is exact where the buffering-time check in
+        /// `addBlockToJoin` could not be. Only `throw` reaches here (the deferral is disabled for
+        /// `break` in the constructor), so the check raises on overflow.
+        if (deferred_limits_check_requested.load(std::memory_order_relaxed))
+            table_join->sizeLimits().check(
+                getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
+
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <optional>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -56,7 +57,8 @@ public:
         size_t max_num_buckets_,
         const StatsCollectingParams & stats_collecting_params_ = {});
 
-    /// Concurrent mode: wraps a ConcurrentHashJoin.
+    /// Concurrent mode: wraps a ConcurrentHashJoin. `plan_key_ndv_` is forwarded to the
+    /// `ConcurrentHashJoin` to size/skip its exact-size deferred build (see that constructor).
     SpillingHashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_,
@@ -65,7 +67,8 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_);
+        const StatsCollectingParams & stats_collecting_params_,
+        std::optional<size_t> plan_key_ndv_ = std::nullopt);
 
     ~SpillingHashJoin() override;
 

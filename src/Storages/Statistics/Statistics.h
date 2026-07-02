@@ -120,6 +120,9 @@ public:
     /// True iff null-count tracking is available for this column (e.g. via `Basic` on a Nullable column).
     bool hasNullCount() const;
     UInt64 estimateCardinality() const;
+    /// True when a real `Uniq` statistic exists, so `estimateCardinality` does not fall back to the
+    /// `default_cardinality_ratio` mock.
+    bool hasUniqStatistic() const;
     UInt64 estimateDefaults() const;
 
     /// `null_count / rows` when `Basic` statistics are present; otherwise a default factor.

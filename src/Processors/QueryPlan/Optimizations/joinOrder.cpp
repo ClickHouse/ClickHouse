@@ -103,14 +103,30 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
             UInt64 min_ndv = std::min(left_it->second.num_distinct_values, right_it->second.num_distinct_values);
             left_it->second.num_distinct_values = min_ndv;
             right_it->second.num_distinct_values = min_ndv;
+            /// `min(left, right)` is only an upper bound on the joined distinct keys (partial key overlap
+            /// makes the real count lower), so the result is an estimate, not a measured `uniq`. Clear the
+            /// provenance flag: the value must not later be trusted as a `uniq`-backed build-map size by
+            /// `extractTrustworthyRightKeyNdv` if this join's column stats ever reach it. (The value still
+            /// feeds the join-order cost model, which does not require provenance.)
+            left_it->second.num_distinct_values_from_uniq = false;
+            right_it->second.num_distinct_values_from_uniq = false;
         }
     }
 
-    /// Cap all NDVs at the estimated output rows.
+    /// Cap all NDVs at the estimated output rows. When the cap actually lowers an NDV, the value is now
+    /// the join's *estimated* output cardinality, not a real `uniq` count, so it is no longer
+    /// trustworthy for the parallel_hash deferred-build shortcut: clear the provenance flag (the value
+    /// is still fine for the join-order cost model).
     if (cardinality_)
     {
         for (auto & [_, stats] : column_stats)
-            stats.num_distinct_values = std::min(stats.num_distinct_values, *cardinality_);
+        {
+            if (*cardinality_ < stats.num_distinct_values)
+            {
+                stats.num_distinct_values = *cardinality_;
+                stats.num_distinct_values_from_uniq = false;
+            }
+        }
     }
 }
 

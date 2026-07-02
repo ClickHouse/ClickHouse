@@ -15,6 +15,15 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
+/// The per-block pre-insert spill check trips when the live bytes reach
+/// `max_bytes_before_external_join` divided by this factor - i.e. at half the configured cap rather
+/// than the full cap. The headroom absorbs allocations not yet reflected in the byte count at the
+/// moment of the check: the power-of-two hash-table buffer doubling (which transiently holds the old
+/// and new buffers at once) and the conversion peak while handing buffers over to `GraceHashJoin`.
+/// The terminal check in `onBuildPhaseFinish` does not use this factor: there the projected byte
+/// count is already a complete, conservative upper bound on the post-replay footprint.
+static constexpr size_t SPILL_TRIGGER_HEADROOM_FACTOR = 2;
+
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader left_sample_block_,
@@ -45,7 +54,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    std::optional<size_t> plan_key_ndv_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -61,7 +71,8 @@ SpillingHashJoin::SpillingHashJoin(
         right_sample_block_,
         stats_collecting_params_,
         /*any_take_last_row_=*/false,
-        max_bytes_before_external_join);
+        max_bytes_before_external_join,
+        plan_key_ndv_);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -121,14 +132,20 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
+    ///
+    /// For `ConcurrentHashJoin` the live byte count is enough here: a deferred build has no hash
+    /// maps yet (only buffered blocks, so no doubling race), and a non-deferred build has no
+    /// buffered rows so `getProjectedTotalByteCount` equals `getTotalByteCount` anyway. The
+    /// projection-based spill decision for a pending deferred build lives in `onBuildPhaseFinish`,
+    /// right before the replay would allocate the maps.
     if (concurrent_join)
     {
-        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (concurrent_join->getTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
     else
     {
-        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+        if (hash_join->getTotalByteCount() * SPILL_TRIGGER_HEADROOM_FACTOR >= max_bytes_before_external_join)
             switchToGraceHashJoin();
     }
 
@@ -237,11 +254,16 @@ void SpillingHashJoin::onBuildPhaseFinish()
 {
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {
-        /// Safety net for the terminal block: the proactive pre-insert check in `addBlockToJoin`
-        /// fires only on subsequent calls. If the very last block pushed total bytes past
-        /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
-        /// promote it to `GraceHashJoin` here so the configured cap is honored.
-        const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+        /// Final spill decision, made right before the deferred build would be replayed
+        /// (`onBuildPhaseFinish` below) - the last point where switching to `GraceHashJoin` is still
+        /// possible. For a pending deferred `ConcurrentHashJoin` build the projected byte count now
+        /// accounts for the full post-replay footprint - the hash-table buffers and the `RowRefList`
+        /// arena nodes, both sized from the distinct-key estimate gathered while buffering - so the
+        /// raw projection is compared against the cap directly, with no extra margin (the projection
+        /// is already a conservative upper bound). A non-deferred build (or the single `HashJoin`
+        /// path) has its maps and arena built, so its byte count is exact.
+        const size_t total_bytes = concurrent_join ? concurrent_join->getProjectedTotalByteCount() : hash_join->getTotalByteCount();
+
         if (total_bytes >= max_bytes_before_external_join)
         {
             switchToGraceHashJoin();
