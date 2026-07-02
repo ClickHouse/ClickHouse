@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
