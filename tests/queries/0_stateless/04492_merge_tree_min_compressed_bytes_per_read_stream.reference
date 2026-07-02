@@ -1,0 +1,10 @@
+-- cap reduces streams for a narrow column --
+1
+-- disabled (=0) keeps the full max_threads --
+1
+-- cap never produces zero streams --
+1
+-- cap does not raise streams above max_threads when max_threads is already small --
+1
+-- results are identical with the cap on and off --
+1

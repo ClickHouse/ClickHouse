@@ -15,6 +15,7 @@ namespace Setting
 {
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 merge_tree_min_bytes_per_task_for_remote_reading;
+    extern const SettingsUInt64 merge_tree_min_compressed_bytes_per_read_stream;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
@@ -183,6 +184,29 @@ calculateMinMarksPerTask(
         else
         {
             avg_mark_bytes = std::max<size_t>(getSizeOfColumns(*part.data_part, columns_to_read, settings) / part_marks_count, 1);
+
+            /// For local disk, also increase min_marks_per_task for narrow columns.
+            /// Without this, a UInt16 column produces tasks of ~24 marks × 4 KB = 96 KB each,
+            /// making task-acquisition mutex overhead significant relative to useful work.
+            /// We ensure each task processes at least the overhead cost worth of bytes, while
+            /// capping at sum_marks / (threads × 2) so that work stealing remains possible.
+            const size_t overhead_cost_bytes = settings[Setting::merge_tree_min_compressed_bytes_per_read_stream];
+            if (overhead_cost_bytes > 0 && avg_mark_bytes > 0)
+            {
+                const size_t heuristic_min_marks = std::min<size_t>(
+                    pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
+                    overhead_cost_bytes / avg_mark_bytes);
+
+                if (heuristic_min_marks > min_marks_per_task)
+                {
+                    LOG_TEST(
+                        &Poco::Logger::get("MergeTreeReadPoolBase"),
+                        "Increasing min_marks_per_task from {} to {} based on local column size heuristic",
+                        min_marks_per_task,
+                        heuristic_min_marks);
+                    min_marks_per_task = heuristic_min_marks;
+                }
+            }
         }
     }
 

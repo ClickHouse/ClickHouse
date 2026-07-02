@@ -1,0 +1,31 @@
+<test>
+    <!--
+        Regression test for `merge_tree_min_compressed_bytes_per_read_stream`.
+
+        Scanning a single narrow column with many threads spawns far more read
+        streams than the small amount of compressed data justifies; the per-stream
+        pipeline overhead then dominates (ClickBench Q29 pattern: many SUMs over one
+        narrow column). The bytes-aware stream cap keeps the stream count proportional
+        to sqrt(compressed_bytes), which should be faster on high-core-count machines.
+    -->
+    <create_query>
+        CREATE TABLE narrow_col (w UInt16)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS index_granularity = 8192
+    </create_query>
+
+    <fill_query>INSERT INTO narrow_col SELECT number % 50000 FROM numbers(100000000)</fill_query>
+
+    <!-- Q29-style: many aggregations over a single narrow column. -->
+    <query>
+        SELECT
+            sum(w), sum(w + 1), sum(w + 2), sum(w + 3), sum(w + 4),
+            sum(w + 5), sum(w + 6), sum(w + 7), sum(w + 8), sum(w + 9)
+        FROM narrow_col
+        FORMAT Null
+    </query>
+
+    <query>SELECT sum(w) FROM narrow_col GROUP BY w % 1000 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS narrow_col</drop_query>
+</test>
