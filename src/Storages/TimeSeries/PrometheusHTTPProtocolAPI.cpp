@@ -467,14 +467,27 @@ void PrometheusHTTPProtocolAPI::getSeries(
         PullingPipelineExecutor executor(io.pipeline);
         Block result_block;
 
+        /// Pull until the first non-empty block is ready before writing the success envelope: `pull` can
+        /// throw after `executeQuery` has already succeeded (read error, limit exceeded, killed query, ...),
+        /// and once `{"status":"success",...}` has been written `PrometheusRequestHandler::QueryImpl` can no
+        /// longer replace the response with `{"status":"error",...}` (`response.sent()` is already true), so
+        /// the client would get a truncated success body. Mirrors `writeQueryResponse`.
+        auto pull_next_nonempty = [&]
+        {
+            while (executor.pull(result_block))
+            {
+                if (result_block.rows() > 0)
+                    return true;
+            }
+            return false;
+        };
+        bool has_output = pull_next_nonempty();
+
         writeString(R"({"status":"success","data":[)", response);
 
         bool first_row = true;
-        while (executor.pull(result_block))
+        while (has_output)
         {
-            if (result_block.empty() || result_block.rows() == 0)
-                continue;
-
             const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
             const auto & tags_col = result_block.getByName(TimeSeriesColumnNames::Tags).column;
 
@@ -528,6 +541,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
                 writeString("}", response);
             }
+
+            has_output = pull_next_nonempty();
         }
 
         writeString("]}", response);
@@ -604,13 +619,26 @@ void PrometheusHTTPProtocolAPI::getLabels(
         PullingPipelineExecutor executor(io.pipeline);
         Block result_block;
 
+        /// Pull until the first non-empty block is ready before writing the success envelope: `pull` can
+        /// throw after `executeQuery` has already succeeded (read error, limit exceeded, killed query, ...),
+        /// and once `{"status":"success",...}` has been written `PrometheusRequestHandler::QueryImpl` can no
+        /// longer replace the response with `{"status":"error",...}` (`response.sent()` is already true), so
+        /// the client would get a truncated success body. Mirrors `writeQueryResponse`.
+        auto pull_next_nonempty = [&]
+        {
+            while (executor.pull(result_block))
+            {
+                if (result_block.rows() > 0)
+                    return true;
+            }
+            return false;
+        };
+        bool has_output = pull_next_nonempty();
+
         writeString(R"({"status":"success","data":["__name__")", response);
 
-        while (executor.pull(result_block))
+        while (has_output)
         {
-            if (result_block.empty() || result_block.rows() == 0)
-                continue;
-
             const auto & label_col = result_block.getByName("label_key").column;
 
             for (size_t i = 0; i < result_block.rows(); ++i)
@@ -622,6 +650,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
                 writeString(",", response);
                 writeJSONString(label, response, format_settings);
             }
+
+            has_output = pull_next_nonempty();
         }
 
         writeString("]}", response);
@@ -721,14 +751,27 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         PullingPipelineExecutor executor(io.pipeline);
         Block result_block;
 
+        /// Pull until the first non-empty block is ready before writing the success envelope: `pull` can
+        /// throw after `executeQuery` has already succeeded (read error, limit exceeded, killed query, ...),
+        /// and once `{"status":"success",...}` has been written `PrometheusRequestHandler::QueryImpl` can no
+        /// longer replace the response with `{"status":"error",...}` (`response.sent()` is already true), so
+        /// the client would get a truncated success body. Mirrors `writeQueryResponse`.
+        auto pull_next_nonempty = [&]
+        {
+            while (executor.pull(result_block))
+            {
+                if (result_block.rows() > 0)
+                    return true;
+            }
+            return false;
+        };
+        bool has_output = pull_next_nonempty();
+
         writeString(R"({"status":"success","data":[)", response);
 
         bool first = true;
-        while (executor.pull(result_block))
+        while (has_output)
         {
-            if (result_block.empty() || result_block.rows() == 0)
-                continue;
-
             const auto & value_col = result_block.getByName("label_value").column;
 
             for (size_t i = 0; i < result_block.rows(); ++i)
@@ -741,6 +784,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
                 first = false;
                 writeJSONString(value, response, format_settings);
             }
+
+            has_output = pull_next_nonempty();
         }
 
         writeString("]}", response);

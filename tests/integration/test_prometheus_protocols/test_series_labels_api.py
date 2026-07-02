@@ -303,3 +303,33 @@ def test_metadata_endpoint_records_query_finish():
         f"Expected a new QueryFinish entry in system.query_log for the /api/v1/labels query "
         f"(baseline {baseline}), got {finished}"
     )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v1/series",
+        "/api/v1/labels",
+        "/api/v1/label/host/values",
+    ],
+)
+def test_metadata_endpoint_execution_error_is_a_well_formed_error(path):
+    """An execution-time failure of a metadata endpoint must surface as a complete Prometheus error
+    object, not a truncated success response.
+
+    The three metadata helpers pull the first non-empty block of their generated query before writing
+    the {"status":"success",...} envelope (mirroring writeQueryResponse). If instead the success
+    envelope were written first and the pipeline then threw on the first pull (after executeQuery had
+    already succeeded), PrometheusRequestHandler::QueryImpl could no longer replace the response with
+    {"status":"error",...} once the header had reached the wire, so the client would get a truncated
+    success body. `max_rows_to_read=1` (with the default `throw` overflow mode) is forwarded as a
+    setting and forces such a failure during execution because the tags table holds more than one row.
+    """
+    url = f"http://{node.ip_address}:9093{path}?max_rows_to_read=1&read_overflow_mode=throw"
+    response = requests.get(url)
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    # response.json() must succeed: a truncated {"status":"success","data":[ body would fail to parse.
+    data = response.json()
+    assert data["status"] == "error", f"Expected error status, got: {data}"
+    assert data.get("errorType") == "bad_data", f"Expected bad_data errorType, got: {data}"
+    assert "exceeded" in data["error"], f"Unexpected error message: {data}"
