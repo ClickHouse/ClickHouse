@@ -47,6 +47,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
+            {"output_format_vertical_display_control_characters", false, true, "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the Vertical output format."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -191,7 +192,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"highlight_max_matches_per_row", 10000, 10000, "New setting to limit the number of highlight matches per row to protect against excessive memory usage."},
             {"materialize_statistics_on_insert", true, false, "Disable building statistics on INSERT by default, rely on merges instead"},
             {"enable_join_transitive_predicates", false, false, "New setting to infer transitive equi-join predicates for join order optimization."},
-            {"output_format_vertical_escape_special_characters", false, true, "A new setting to escape non-printable characters in Vertical output format."},
             {"input_format_column_name_matching_mode", "match_case", "match_case", "New setting."},
             {"enable_join_fixed_hash_table_conversion", false, true, "New setting to enable converting the hash table to a flat array for joins when the key is a single integer with a small value range."},
             {"allow_experimental_ai_functions", false, false, "New setting"},

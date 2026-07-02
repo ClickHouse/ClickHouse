@@ -20,9 +20,9 @@ String highlightDigitGroups(String source);
 /// Highlights and underscores trailing spaces using ANSI escape sequences.
 String highlightTrailingSpaces(String source);
 
-/// Replace non-printable characters with C-style escape sequences or hex codes.
-/// If color is true, the escape sequences are highlighted with ANSI color codes.
-String escapeNonPrintableCharacters(String source, bool color);
+/// Replace non-printable control characters (C0 controls and DEL) with the corresponding
+/// Unicode "Control Pictures" (U+2400..U+2421), so they become visible instead of being swallowed.
+String replaceControlCharactersWithPictures(String source);
 
 /// If the visible width of the name is longer than `cut_to` + `hysteresis`,
 /// and it isn't a proper identifier, truncate it to `cut_to`

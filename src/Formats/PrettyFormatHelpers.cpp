@@ -111,68 +111,48 @@ String highlightDigitGroups(String source)
 }
 
 
-String escapeNonPrintableCharacters(String source, bool color)
+String replaceControlCharactersWithPictures(String source)
 {
-    /// Check if there are any non-printable characters first.
-    bool has_non_printable = false;
-    for (unsigned char c : source)
+    /// Replace non-printable C0 control characters (0x00..0x1F) and DEL (0x7F) with the
+    /// corresponding Unicode "Control Pictures" (U+2400..U+2421), so they become visible in the
+    /// "pretty" Vertical format instead of being silently swallowed by the terminal.
+    /// Unlike C-style escape sequences (\0, \t, ...), these graphical symbols cannot be confused
+    /// with the literal characters they represent, so the backslash needs no extra escaping and
+    /// the output stays "pretty". See https://en.wikipedia.org/wiki/Control_Pictures
+
+    bool has_control_characters = false;
+    for (char c : source)
     {
-        if (c < 32 || c == 127)
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte == 0x7F)
         {
-            has_non_printable = true;
+            has_control_characters = true;
             break;
         }
     }
 
-    if (!has_non_printable)
+    if (!has_control_characters)
         return source;
 
     String result;
-    result.reserve(source.size());
+    /// Every replaced byte expands to a 3-byte UTF-8 sequence.
+    result.reserve(source.size() + source.size() / 2);
 
-    for (unsigned char c : source)
+    for (char c : source)
     {
-        if (c < 32 || c == 127)
+        const auto byte = static_cast<unsigned char>(c);
+        if (byte < 0x20 || byte == 0x7F)
         {
-            String escaped;
-            switch (c)
-            {
-                case '\0': escaped = "\\0"; break;
-                case '\a': escaped = "\\a"; break;
-                case '\b': escaped = "\\b"; break;
-                case '\t': escaped = "\\t"; break;
-                case '\n': escaped = "\\n"; break;
-                case '\v': escaped = "\\v"; break;
-                case '\f': escaped = "\\f"; break;
-                case '\r': escaped = "\\r"; break;
-                case '\x1b': escaped = "\\e"; break;
-                case 127: escaped = "\\x7F"; break;
-                default:
-                {
-                    /// Use hex escape for other control characters.
-                    escaped.resize(4);
-                    escaped[0] = '\\';
-                    escaped[1] = 'x';
-                    escaped[2] = "0123456789ABCDEF"[c >> 4];
-                    escaped[3] = "0123456789ABCDEF"[c & 0xF];
-                    break;
-                }
-            }
-
-            if (color)
-            {
-                result += RED_COLOR;
-                result += escaped;
-                result += RESET_COLOR;
-            }
-            else
-            {
-                result += escaped;
-            }
+            /// The code point is U+2400 + byte for 0x00..0x1F, and U+2421 for DEL (0x7F).
+            /// All of these lie in U+2400..U+2421, whose UTF-8 encoding is 0xE2 0x90 (0x80 + low 6 bits).
+            const unsigned char code = (byte == 0x7F) ? 0x21 : byte;
+            result += static_cast<char>(0xE2);
+            result += static_cast<char>(0x90);
+            result += static_cast<char>(0x80 + code);
         }
         else
         {
-            result += static_cast<char>(c);
+            result += c;
         }
     }
 
