@@ -16,11 +16,13 @@ extern "C" {
 #ifdef ADDRESS_SANITIZER
 const char * __asan_default_options()
 {
-    return "halt_on_error=1 abort_on_error=1";
+    /// allocator_may_return_null=1: oversized allocation returns null (recoverable) instead of
+    /// aborting. Removable once llvm/llvm-project#206649 lands in our toolchain.
+    return "halt_on_error=1 abort_on_error=1 allocator_may_return_null=1";
 }
 const char * __lsan_default_options()
 {
-    return "max_allocation_size_mb=32768";
+    return "max_allocation_size_mb=32768 allocator_may_return_null=1";
 }
 const char * __lsan_default_suppressions()
 {
@@ -45,21 +47,21 @@ const char * __lsan_default_suppressions()
 #ifdef MEMORY_SANITIZER
 const char * __msan_default_options()
 {
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
+    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
 }
 #endif
 
 #ifdef THREAD_SANITIZER
 const char * __tsan_default_options()
 {
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
+    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
 }
 #endif
 
 #ifdef UNDEFINED_BEHAVIOR_SANITIZER
 const char * __ubsan_default_options()
 {
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
+    return "print_stacktrace=1 max_allocation_size_mb=32768 allocator_may_return_null=1";
 }
 #endif
 }

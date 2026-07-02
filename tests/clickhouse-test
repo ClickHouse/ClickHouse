@@ -131,6 +131,9 @@ IGNORED_SANITIZER_ERRORS = [
     # This warning appears when the virtual stack size is too large for ASan to track __asan_handle_no_return.
     # It is a known limitation (https://github.com/google/sanitizers/issues/189) and not a real error.
     "ASan is ignoring requested __asan_handle_no_return",
+    # With allocator_may_return_null=1 an oversized/OOM single allocation returns null (recoverable
+    # CANNOT_ALLOCATE_MEMORY) instead of aborting, and the runtime prints this benign warning.
+    "Sanitizer failed to allocate",
     # Note, usually such error means that sanitizer has found something but failed to print, so it should not be ignored
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
