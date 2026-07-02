@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: relies on a specific sequence of `DETACH PARTITION`/`MODIFY COLUMN`/`ATTACH PARTITION`; random whole-table `DETACH`/`ATTACH` between these steps reloads parts and detaches them as broken.
+
 drop table if exists src;
 create table src( A Int64, B String, C String) Engine=MergeTree order by A SETTINGS min_bytes_for_wide_part=0;
 insert into src values(1, 'one', 'test');

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-random-detach
+# no-random-detach: test checks mutation state
 # Tag no-parallel: Fails due to failpoint intersection
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

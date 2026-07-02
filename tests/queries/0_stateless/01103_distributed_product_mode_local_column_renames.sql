@@ -1,4 +1,5 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed, no-parallel, no-random-detach
+-- no-random-detach: test uses readonly mode
 
 CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 USE {CLICKHOUSE_DATABASE_1:Identifier};

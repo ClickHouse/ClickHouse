@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-shared-merge-tree
+# Tags: long, zookeeper, no-shared-merge-tree, no-random-detach
 # no-shared-merge-tree: depends on local fs
+# no-random-detach: test races local part directory removal against the table state and uses explicit DETACH/ATTACH
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

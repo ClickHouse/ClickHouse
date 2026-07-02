@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- no-random-detach: attach of a table affects
+-- used_aggregate_functions because of building minmax projection
+
 DROP TABLE IF EXISTS t_optimize_equal_ranges;
 
 CREATE TABLE t_optimize_equal_ranges (a UInt64, b String, c UInt64) ENGINE = MergeTree ORDER BY a;

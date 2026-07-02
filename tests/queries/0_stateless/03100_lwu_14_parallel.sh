@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-random-detach
+# no-random-detach: test checks system.parts
 # no-replicated-database - path in zookeeper differs with replicated database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

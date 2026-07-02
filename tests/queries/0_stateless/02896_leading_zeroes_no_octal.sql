@@ -1,4 +1,5 @@
--- Tags: no-async-insert
+-- Tags: no-async-insert, no-random-detach
+-- no-random-detach: DETACH/ATTACH adds too much overhead per query
 
 DROP TABLE IF EXISTS t_leading_zeroes;
 DROP TABLE IF EXISTS t_leading_zeroes_f;

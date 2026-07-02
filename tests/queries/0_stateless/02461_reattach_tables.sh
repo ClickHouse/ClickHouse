@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Tags: no-random-detach, no-replicated-database
+# no-random-detach: test uses DETACH/ATTACH itself
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
+
+# Run the query and capture both the client exit code and its output (including trace logs).
+# A non-zero client exit code means the query itself failed, which must be reported as FAIL by the
+# callers instead of being silently treated as "the table was not detached".
+function check_if_detached_impl()
+{
+    query="$1"
+    REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+        --reattach_tables_before_query_execution=1  \
+        --query "$query" 2>&1)
+    REATTACH_STATUS=$?
+}
+
+function check_if_detached()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "OK"
+    else
+        echo "FAIL"
+    fi
+}
+
+function check_if_not_detached()
+{
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -ne 0 ]; then
+        echo "FAIL (client error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "FAIL"
+    else
+        echo "OK"
+    fi
+}
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_2"
+
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_1 (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_2 (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_if_detached "INSERT INTO t_reattach_1 VALUES (1)" "t_reattach_1"
+
+check_if_detached "SELECT * FROM t_reattach_1" "t_reattach_1"
+check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reattach_1"
+check_if_detached "SELECT * FROM t_reattach_1 JOIN t_reattach_2 USING a" "t_reattach_2"
+
+check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_1"
+check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reattach_2"
+
+check_if_detached "EXISTS TABLE t_reattach_1" "t_reattach_1"
+check_if_detached "SHOW CREATE TABLE t_reattach_1" "t_reattach_1"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_2"
+
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_1 (a UInt64) ENGINE = Memory"
+
+check_if_not_detached "INSERT INTO t_reattach_1 VALUES (55)" "t_reattach_1"
+check_if_not_detached "SELECT * FROM t_reattach_1" "t_reattach_1"
+
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM t_reattach_1"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
+
+${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
+${CLICKHOUSE_CLIENT} --reattach_tables_before_query_execution=1 -q "SELECT number FROM system.numbers LIMIT 1"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_cte (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+# A real CTE (WITH name AS (subquery)) shadows a table with the same name, so the table is not used.
+check_if_not_detached "WITH t_reattach_cte AS (SELECT 1) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A scalar WITH alias does NOT shadow a table name in FROM: `WITH (SELECT 1) AS t_reattach_cte SELECT * FROM
+# t_reattach_cte` reads the real table, so it is detached.
+check_if_detached "WITH (SELECT 1) AS t_reattach_cte SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A CTE's own definition body may reference a real table with the same name (only the CTE currently being
+# resolved is hidden), so the real table is read inside the body and detached.
+check_if_detached "WITH t_reattach_cte AS (SELECT * FROM t_reattach_cte) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A CTE defined only in a nested subquery must NOT shadow the same name in an outer FROM clause.
+check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH t_reattach_cte AS (SELECT 1) SELECT * FROM t_reattach_cte)" "t_reattach_cte"
+
+# A recursive CTE resolves its self-reference through the recursive temporary table, not a real table with the
+# same name, so the real table is NOT read inside the recursive member and must NOT be detached.
+check_if_not_detached "WITH RECURSIVE t_reattach_cte AS (SELECT toUInt64(1) AS a UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# A recursive CTE's NON-RECURSIVE seed term (the first UNION member) is resolved before the recursive temporary
+# table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
+# Only the recursive members (after the first) resolve the name through the recursive temporary table.
+check_if_detached "WITH RECURSIVE t_reattach_cte AS (SELECT a FROM t_reattach_cte UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"
+
+# A user with database-scoped `GRANT ALL ON db.*` has `DROP TABLE` and `CREATE TABLE` on the table, but not
+# the global `TABLE ENGINE ON MergeTree` grant that the internal `ATTACH TABLE` requires when
+# `access_control_improvements.table_engines_require_grant` is enabled (it is in the stateless test config).
+# The reattach hook must account for the full `ATTACH` authorization; otherwise it would `DETACH` the table
+# and then fail to re-attach it (with `ACCESS_DENIED` on the engine grant), leaving it detached. So the table
+# must NOT be detached for such a user, and the query must succeed.
+REATTACH_USER="user_reattach_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${REATTACH_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${REATTACH_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${REATTACH_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_engine_grant"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_engine_grant (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${REATTACH_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "SELECT * FROM t_reattach_engine_grant" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_engine_grant"; then
+    echo "FAIL"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_engine_grant"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${REATTACH_USER}"

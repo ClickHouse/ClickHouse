@@ -2127,16 +2127,29 @@ class TestCase:
 
     def add_effective_settings(self, client_options):
         new_options = ""
+        detach_http_params = ""
+        if self.randomize_detach:
+            new_options += f" --reattach_tables_before_query_execution_probability {self.reattach_tables_probability}"
+            detach_http_params = f"reattach_tables_before_query_execution_probability={self.reattach_tables_probability}"
+
         if self.effective_settings:
             http_params = self.http_format_settings(self.effective_settings)
+            if detach_http_params:
+                http_params = detach_http_params + "&" + http_params
             if len(self.base_url_params) == 0:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = http_params
             else:
                 os.environ["CLICKHOUSE_URL_PARAMS"] = (
                     self.base_url_params + "&" + http_params
                 )
-
             new_options += f" {self.cli_format_settings(self.effective_settings)}"
+        elif detach_http_params:
+            if len(self.base_url_params) == 0:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = detach_http_params
+            else:
+                os.environ["CLICKHOUSE_URL_PARAMS"] = (
+                    self.base_url_params + "&" + detach_http_params
+                )
 
         if self.effective_merge_tree_settings:
             new_options += f" --allow_merge_tree_settings {self.cli_format_settings(self.effective_merge_tree_settings)}"
@@ -2146,8 +2159,12 @@ class TestCase:
         # --allow_repeated_settings, the last occurrence is what takes effect.
         if new_options != "":
             new_options += " --allow_repeated_settings"
+            # Keep `client_options` (e.g. stress-job settings for `.sh` tests) in the exported variable.
+            # `randomize_detach` makes `new_options` non-empty for almost every test, so this branch is taken
+            # nearly always; dropping `client_options` here would stop them reaching `$CLICKHOUSE_CLIENT`.
+            # Put it last so user-supplied `--client-option` values win (last wins with --allow_repeated_settings).
             os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                new_options + " " + self.base_client_options + " "
+                new_options + " " + self.base_client_options + " " + client_options + " "
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
@@ -2165,10 +2182,12 @@ class TestCase:
         os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
 
     def add_info_about_settings(self, description):
+        if self.randomize_detach:
+            description += f"\nRandomization of DETACH/ATTACH tables is used with probability: {self.reattach_tables_probability}\n"
         if self.effective_settings:
-            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}"
+            description += f"\nSettings used in the test: {self.cli_format_settings(self.effective_settings)}\n"
         if self.effective_merge_tree_settings:
-            description += f"\n\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}"
+            description += f"\nMergeTree settings used in test: {self.cli_format_settings(self.effective_merge_tree_settings)}\n"
 
         return description + "\n"
 
@@ -2553,10 +2572,15 @@ class TestCase:
         self.testcase_args = None
         self.runs_count = 0
 
+        has_no_random_detach_tag = self.tags and "no-random-detach" in self.tags
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
             self.tags and "no-random-merge-tree-settings" in self.tags
         )
+
+        self.randomize_detach = not (args.no_random_detach or has_no_random_detach_tag)
+        if self.randomize_detach:
+            self.reattach_tables_probability = args.reattach_tables_probability
 
         allow_random_settings = not (args.no_random_settings or has_no_random_settings_tag)
         # If test contains SHOW CREATE TABLE do not
@@ -4306,6 +4330,11 @@ def run_diagnose_from_artifacts(args, stop_testing):
             # Override settings with the saved artifact values (disable randomization)
             test_case.effective_settings = settings
             test_case.effective_merge_tree_settings = mt_settings
+            # Diagnostics must be deterministic: the `randomize_detach` state and
+            # `reattach_tables_before_query_execution_probability` are not captured
+            # in the saved artifact, so replaying with them still enabled adds extra
+            # nondeterminism and can yield false "not reproducible" conclusions.
+            test_case.randomize_detach = False
 
             client_options = get_additional_client_options(args)
 
@@ -6238,6 +6267,18 @@ def parse_args():
         action="store_true",
         default=False,
         help="Disable MergeTree settings randomization",
+    )
+    parser.add_argument(
+        "--no-random-detach",
+        action="store_true",
+        default=False,
+        help="Disable randomization of DETACH/ATTACH",
+    )
+    parser.add_argument(
+        "--reattach-tables-probability",
+        type=float,
+        default=0.1,
+        help="Probability of enabling table reattach before query execution when the setting is disabled",
     )
     parser.add_argument(
         "--random-settings-diagnostics-dir",

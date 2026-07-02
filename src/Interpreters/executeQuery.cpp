@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
+#include <Common/quoteString.h>
 #include <Common/Stopwatch.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -28,11 +29,15 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTBackupQuery.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -67,6 +72,11 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/getTableExpressions.h>
+#include <Interpreters/ActionLocksManager.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Databases/IDatabase.h>
+#include <Storages/IStorage.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -84,6 +94,8 @@
 
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+
+#include <unordered_set>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -185,6 +197,8 @@ namespace Setting
     extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsBool reattach_tables_before_query_execution;
+    extern const SettingsFloat reattach_tables_before_query_execution_probability;
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
@@ -232,6 +246,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -1120,6 +1135,339 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
+namespace
+{
+
+struct CollectTablesData
+{
+    explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
+
+    const ContextPtr context;
+    std::vector<StorageID> tables;
+
+    void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes)
+    {
+        if (table.empty())
+            return;
+
+        /// Unqualified reference matching an in-scope CTE name: it refers to the CTE, not a real table.
+        if (database.empty() && active_ctes.contains(table))
+            return;
+
+        StorageID storage_id = database.empty()
+            ? StorageID("", table)
+            : StorageID(database, table);
+
+        auto resolved = context->tryResolveStorageID(storage_id);
+        if (!resolved)
+            return;
+
+        /// Skip temporary and external tables — detaching them makes no sense.
+        if (resolved.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE)
+            return;
+
+        tables.emplace_back(std::move(resolved));
+    }
+};
+
+/// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
+/// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
+/// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
+///
+/// Only the `WITH name AS (subquery)` form (`ASTWithElement`) shadows a table identifier in FROM. A scalar
+/// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
+/// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
+/// only the CTE currently being resolved (`WITH t AS (SELECT * FROM t) ...` reads the real table `t` inside).
+void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes)
+{
+    if (!ast)
+        return;
+
+    if (const auto * select = ast->as<ASTSelectQuery>())
+    {
+        const ASTPtr with = select->with();
+
+        /// Collect only the real CTE names declared in this select's WITH clause. Only the
+        /// `WITH name AS (subquery)` form (`ASTWithElement`) introduces a name that shadows a table
+        /// identifier in FROM. A scalar `WITH expr AS alias` binding does not: `WITH 1 AS t SELECT * FROM t`
+        /// still reads the table `t`, so such aliases must not be treated as shadowing CTE names.
+        std::unordered_set<String> this_level_ctes;
+        if (with)
+        {
+            for (const auto & with_child : with->children)
+                if (const auto * with_element = with_child->as<ASTWithElement>())
+                    this_level_ctes.insert(with_element->name);
+
+            /// Walk each WITH child (CTE definitions and scalar aliases). The analyzer hides only the CTE
+            /// currently being resolved, so a CTE body may still reference a real table with the same name:
+            /// `WITH t AS (SELECT * FROM t) SELECT * FROM t` reads the real table `t` inside the definition.
+            /// Therefore the element's own name is not active while walking its own body, but its siblings are.
+            ///
+            /// `WITH RECURSIVE` is more subtle: the analyzer resolves the non-recursive *seed* term (the
+            /// first `UNION` member) before the recursive temporary table exists, so the seed reads a real
+            /// table of the same name; only the recursive members (after the first) resolve the name through
+            /// the recursive temporary table. So the element's own name must shadow references inside the
+            /// recursive members (otherwise `WITH RECURSIVE t AS (SELECT 1 UNION ALL SELECT ... FROM t) ...`
+            /// would `DETACH`/`ATTACH` a table the query does not read), but must NOT shadow references in
+            /// the seed term (otherwise `WITH RECURSIVE t AS (SELECT ... FROM t UNION ALL ...) ...` would
+            /// miss the real table `t` that the seed term actually reads).
+            for (const auto & with_child : with->children)
+            {
+                auto body_ctes = active_ctes;
+                body_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
+
+                const auto * with_element = with_child->as<ASTWithElement>();
+
+                if (!select->recursive_with || !with_element)
+                {
+                    /// Non-recursive CTE (or a scalar `WITH expr AS alias` binding): the element's own name
+                    /// does not shadow references inside its own body, because the analyzer hides only the
+                    /// CTE currently being resolved.
+                    if (with_element)
+                        body_ctes.erase(with_element->name);
+                    collectTablesInQuery(with_child, data, body_ctes);
+                    continue;
+                }
+
+                /// `WITH RECURSIVE name AS (seed [UNION ALL recursive ...])`: locate the `UNION` member list
+                /// so the seed term can be walked with `name` un-shadowed and the recursive members with
+                /// `name` shadowed.
+                const ASTSelectWithUnionQuery * union_query = nullptr;
+                if (with_element->subquery)
+                {
+                    union_query = with_element->subquery->as<ASTSelectWithUnionQuery>();
+                    if (!union_query)
+                        for (const auto & sub_child : with_element->subquery->children)
+                            if ((union_query = sub_child->as<ASTSelectWithUnionQuery>()))
+                                break;
+                }
+
+                const ASTPtr members = union_query ? union_query->list_of_selects : nullptr;
+                if (!members || members->children.empty())
+                {
+                    /// Unrecognized recursive body shape: conservatively keep the name shadowed across the
+                    /// whole body (it is better to miss a real table than to detach one the query does not read).
+                    collectTablesInQuery(with_child, data, body_ctes);
+                    continue;
+                }
+
+                /// Seed (first) member: the name is not yet bound to the recursive temporary table, so a
+                /// same-named real table read here is a real table the query reads — do not shadow it.
+                auto seed_ctes = body_ctes;
+                seed_ctes.erase(with_element->name);
+                collectTablesInQuery(members->children.front(), data, seed_ctes);
+
+                /// Recursive members: the name resolves to the recursive temporary table — keep it shadowed.
+                for (size_t i = 1; i < members->children.size(); ++i)
+                    collectTablesInQuery(members->children[i], data, body_ctes);
+            }
+        }
+
+        /// For the rest of the query (FROM and below) all of this select's CTE names shadow table identifiers.
+        active_ctes.insert(this_level_ctes.begin(), this_level_ctes.end());
+
+        /// Walk the FROM table expressions directly so the original (un-resolved) database name is
+        /// preserved. `getDatabaseAndTables` would substitute the current database for unqualified
+        /// references, which defeats the CTE-name check: a CTE shadows only unqualified table references.
+        for (const auto * table_expression : getTableExpressions(*select))
+        {
+            if (!table_expression || !table_expression->database_and_table_name)
+                continue;
+            if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
+                data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes);
+        }
+
+        /// Recurse into the remaining children with the CTE names active. The WITH subtree was already
+        /// walked above with per-element scope, so skip it here to avoid re-adding the element's own name.
+        for (const auto & child : ast->children)
+        {
+            if (child == with)
+                continue;
+            collectTablesInQuery(child, data, active_ctes);
+        }
+        return;
+    }
+    else if (const auto * insert = ast->as<ASTInsertQuery>())
+    {
+        data.addTableIfNotEmpty(insert->getDatabase(), insert->getTable(), active_ctes);
+    }
+    else if (const auto * backup = ast->as<ASTBackupQuery>())
+    {
+        /// For `BACKUP`, `database_name`/`table_name` is the local table being read.
+        /// For `RESTORE TABLE old AS new`, `database_name`/`table_name` is the object name inside the backup,
+        /// while the local table the query touches is the destination `new_database_name`/`new_table_name`.
+        /// (When the restore creates a new table, the destination does not exist yet and `addTableIfNotEmpty`
+        /// skips it, so this never detaches an unrelated existing table with the same in-backup name.)
+        for (const auto & element : backup->elements)
+        {
+            if (backup->kind == ASTBackupQuery::RESTORE)
+                data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes);
+            else
+                data.addTableIfNotEmpty(element.database_name, element.table_name, active_ctes);
+        }
+    }
+    else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+    {
+        data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes);
+    }
+
+    for (const auto & child : ast->children)
+        collectTablesInQuery(child, data, active_ctes);
+}
+
+}
+
+static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
+{
+    CollectTablesData data(context);
+    collectTablesInQuery(query, data, /* active_ctes */ {});
+
+    /// Deduplicate: the same table can appear multiple times (e.g. self-joins).
+    {
+        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        std::erase_if(data.tables, [&](const StorageID & id) { return !seen.insert(id).second; });
+    }
+
+    for (const auto & table_id : data.tables)
+    {
+        if (table_id.getDatabaseName() == "system")
+            continue;
+
+        const auto & catalog = DatabaseCatalog::instance();
+
+        /// If table doesn't store data on disk, the data will be lost after detach.
+        /// If table has lock for any action, it will be removed after detach.
+        /// Since it will affect future queries do not detach in those cases.
+        auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
+        if (!database
+            || !database->supportsDetachingTables()
+            || !table
+            || !table->storesDataOnDisk()
+            || context->getActionLocksManager()->hasAny(table))
+            continue;
+
+        /// Replicated tables (e.g. `ReplicatedMergeTree`) re-run their startup sequence on `ATTACH`,
+        /// and that path can currently trip a broken-part invariant: `ReplicatedMergeTreeRestartingThread::tryStartup`
+        /// calls `createLogEntriesToFetchBrokenParts`, which reaches `removePartAndEnqueueFetch(..., storage_init = true)`
+        /// while the broken part is still in the working set and hits `chassert(!storage_init)`.
+        /// Until that is hardened, skip replicated tables so this testing hook does not introduce a new
+        /// startup exception instead of only exercising existing reattach safety.
+        if (table->supportsReplication())
+            continue;
+
+        if (!catalog.getReferentialDependencies(table_id).empty()
+            || !catalog.getReferentialDependents(table_id).empty()
+            || !catalog.getLoadingDependencies(table_id).empty()
+            || !catalog.getLoadingDependents(table_id).empty())
+            continue;
+
+        /// Tables with columns of dynamic structure (`Dynamic`, `JSON`, `Variant` and types containing them)
+        /// can fail with logical errors during merges that race with DETACH/ATTACH, because part-level
+        /// serialization metadata may differ between the original and re-attached table state.
+        {
+            bool has_dynamic_structure = false;
+            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
+            {
+                if (column.type->hasDynamicSubcolumns())
+                {
+                    has_dynamic_structure = true;
+                    break;
+                }
+            }
+            if (has_dynamic_structure)
+                continue;
+        }
+
+        /// `DETACH TABLE` requires `DROP TABLE`, and the internal `ATTACH TABLE` below goes through the same
+        /// authorization path as `CREATE`/`ATTACH` (see `InterpreterCreateQuery`): besides `CREATE TABLE` it
+        /// also checks the `TABLE ENGINE` grant for the table's engine when
+        /// `access_control_improvements.table_engines_require_grant` is enabled. Mirror all of these
+        /// requirements here; otherwise the hook could `DETACH` a table and then fail to `ATTACH` it back
+        /// (e.g. with `ACCESS_DENIED` on the engine grant), leaving the table detached and failing later
+        /// statements with `UNKNOWN_TABLE`. Skip the table if the user lacks any of them.
+        /// `isGranted(TABLE_ENGINE, ...)` already accounts for the `table_engines_require_grant` setting.
+        auto access = context->getAccess();
+        if (!access->isGranted(AccessType::DROP_TABLE, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(AccessType::CREATE_TABLE, table_id.getDatabaseName(), table_id.getTableName())
+            || !access->isGranted(AccessType::TABLE_ENGINE, table->getName()))
+            continue;
+
+        table.reset();
+
+        auto quoted_name = backQuoteIfNeed(table_id.getDatabaseName()) + "." + backQuoteIfNeed(table_id.getTableName());
+        auto detach_query = fmt::format("DETACH TABLE {} SYNC", quoted_name);
+        auto attach_query = fmt::format("ATTACH TABLE {}", quoted_name);
+
+        /// The outer query is already registered in the process list with its `query_id`.
+        /// Internal `DETACH`/`ATTACH` queries must use a fresh context with their own
+        /// `query_id`, otherwise `ProcessList::insert` will reject them with
+        /// `QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING`.
+        auto make_internal_context = [&]
+        {
+            auto internal_context = Context::createCopy(context);
+            internal_context->makeQueryContext();
+            internal_context->setCurrentQueryId({});
+            return internal_context;
+        };
+
+        bool detached = false;
+        try
+        {
+            {
+                auto internal_context = make_internal_context();
+                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(detach, internal_context);
+                detached = true;
+            }
+
+            {
+                auto internal_context = make_internal_context();
+                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                executeTrivialBlockIO(attach, internal_context);
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException("reattachTablesUsedInQuery", "", LogsLevel::warning);
+
+            /// If DETACH succeeded but ATTACH failed, try to re-attach the table
+            /// to avoid leaving it in a detached state.
+            /// Decide recovery from the actual post-exception state, not only from the `detached`
+            /// flag: `DETACH TABLE ... SYNC` first removes the table from the database and only
+            /// then waits for the detached table to become unused, so an exception from that wait
+            /// (e.g. when the query is killed) leaves the table detached while `detached` is still
+            /// `false`.
+            ///
+            /// But a concurrent query may have detached or dropped the table before our `DETACH`
+            /// acquired the `DDLGuard`; then our `DETACH TABLE ... SYNC` fails with `UNKNOWN_TABLE`
+            /// and we did not detach anything. In that case the table is missing because of the other
+            /// query, not because of this hook, so re-attaching here would undo that query's detach.
+            /// Only treat the table as detached-by-us when the failure was not `UNKNOWN_TABLE`.
+            if (!detached && getCurrentExceptionCode() != ErrorCodes::UNKNOWN_TABLE)
+                detached = !catalog.isTableExist(table_id, context);
+
+            if (detached)
+            {
+                try
+                {
+                    auto internal_context = make_internal_context();
+                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                    executeTrivialBlockIO(attach, internal_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("reattachTablesUsedInQuery",
+                        fmt::format("Failed to re-attach table {} after failed DETACH/ATTACH cycle", quoted_name),
+                        LogsLevel::error);
+                    /// Re-throw so the outer query fails clearly instead of running against a permanently
+                    /// detached table and producing confusing `UNKNOWN_TABLE` errors later.
+                    throw;
+                }
+            }
+        }
+    }
+}
 
 static BlockIO executeQueryImpl(
     const char * begin,
@@ -1476,6 +1824,7 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
             if (settings[Setting::enforce_strict_identifier_format])
@@ -1526,6 +1875,37 @@ static BlockIO executeQueryImpl(
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
+
+        /// Reattach tables only after AST validations pass, the query is admitted
+        /// to the process list, and external tables are initialized — so queries
+        /// rejected before this point do not produce DETACH/ATTACH side effects,
+        /// and external tables correctly shadow persistent ones during resolution.
+        /// Skip EXPLAIN: it should not mutate server state.
+        if (out_ast)
+        {
+            bool is_initial_query = client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+            bool has_transaction = context->getCurrentTransaction() || settings[Setting::implicit_transaction];
+            bool is_explain = out_ast->as<ASTExplainQuery>() != nullptr;
+            if (!internal && is_initial_query && !has_transaction && !is_explain)
+            {
+                bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
+                auto reattach_probability = std::clamp(
+                    static_cast<double>(settings[Setting::reattach_tables_before_query_execution_probability]),
+                    0.0, 1.0);
+
+                if (!need_reattach_tables && reattach_probability > 0.0)
+                {
+                    std::bernoulli_distribution distribution(reattach_probability);
+                    need_reattach_tables |= distribution(thread_local_rng);
+                }
+
+                if (need_reattach_tables)
+                {
+                    LOG_DEBUG(getLogger("executeQuery"), "Will DETACH and ATTACH back tables used in query");
+                    reattachTablesUsedInQuery(out_ast, context);
+                }
+            }
+        }
         std::shared_ptr<QueryPlanAndSets> query_plan;
         if (stage == QueryProcessingStage::QueryPlan)
             query_plan = context->getDeserializedQueryPlan();
@@ -2259,6 +2639,47 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 }
 
 
+/// Helper that runs the failpoints used to test crash-log/stack-trace features.
+/// Kept separate (and `noinline`) from `executeQuery` so the symbolizer always
+/// reports a frame whose function name contains "executeQuery", regardless of
+/// how the compiler lays out the catch handlers in the surrounding function
+/// (the symbol attribution for cold paths inside `executeQuery` can otherwise
+/// be lost depending on unrelated changes in this translation unit).
+[[gnu::noinline, gnu::cold]]
+static void executeQueryFailpoints()
+{
+    fiu_do_on(FailPoints::terminate_with_exception,
+    {
+        try
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::terminate_with_std_exception,
+    {
+        try
+        {
+            throw std::runtime_error("Failpoint terminate_with_std_exception");
+        }
+        catch (...)
+        {
+            std::terminate();
+        }
+    });
+
+    fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
+    {
+        std::vector<int> v;
+        (void)v[0];
+    });
+}
+
+
 std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
@@ -2293,35 +2714,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     /// The 'SYSTEM ENABLE FAILPOINT terminate_with_exception' query itself should succeed.
     if (ast && !ast->as<ASTSystemQuery>())
     {
-        fiu_do_on(FailPoints::terminate_with_exception,
-        {
-            try
-            {
-                throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint terminate_with_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::terminate_with_std_exception,
-        {
-            try
-            {
-                throw std::runtime_error("Failpoint terminate_with_std_exception");
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        });
-
-        fiu_do_on(FailPoints::libcxx_hardening_out_of_bounds_assertion,
-        {
-            std::vector<int> v;
-            (void)v[0];
-        });
+        executeQueryFailpoints();
     }
 
     const bool is_shared_catalog_internal = context->getClientInfo().is_shared_catalog_internal;

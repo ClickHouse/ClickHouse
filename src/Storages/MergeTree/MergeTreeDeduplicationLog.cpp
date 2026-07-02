@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -199,9 +200,16 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        if (current_sum > deduplication_window)
+        /// Never drop the current active log — it may still be open for writing
+        if (itr->first == current_log_number)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            current_sum += itr->second.entries_count;
+            continue;
+        }
+
+        if (current_sum >= deduplication_window)
+        {
+            /// We have more logs than required, all older files (excluding current) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -217,6 +225,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
+            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
             disk->removeFile(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
@@ -378,6 +387,7 @@ void MergeTreeDeduplicationLog::shutdown()
         try
         {
             current_writer->finalize();
+            current_writer->sync();
             current_writer.reset();
         }
         catch (...)

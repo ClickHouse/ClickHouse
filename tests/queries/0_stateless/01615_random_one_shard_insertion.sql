@@ -1,4 +1,5 @@
--- Tags: shard, no-parallel, no-flaky-check
+-- Tags: shard, no-parallel, no-random-detach, no-flaky-check
+-- no-random-detach: test checks system.parts
 
 create database if not exists shard_0;
 create database if not exists shard_1;

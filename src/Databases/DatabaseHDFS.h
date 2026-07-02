@@ -39,6 +39,7 @@ public:
     bool empty() const override;
 
     bool isReadOnly() const override { return true; }
+    bool supportsDetachingTables() const override { return false; }
 
     void shutdown() override;
 

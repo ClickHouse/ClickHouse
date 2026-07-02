@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-random-detach
 # ^ long: waits for the background merge pool to make progress within a bounded time window.
+# no-random-detach: the test polls a control table until a background merge / TTL merge makes progress
+# within a bounded time window; a random DETACH/ATTACH before a polling query restarts the table's
+# background merge scheduling, so the merge may never complete in time and the test flakes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

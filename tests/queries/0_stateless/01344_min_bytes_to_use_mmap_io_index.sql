@@ -1,4 +1,5 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-random-detach
+-- no-random-detach: test checks profile events
 DROP TABLE IF EXISTS test_01344;
 -- packed_skip_index_max_bytes=0: this test measures the number of read buffers created when
 -- reading per-file skip-index substreams via mmap. Packing routes those bytes through the

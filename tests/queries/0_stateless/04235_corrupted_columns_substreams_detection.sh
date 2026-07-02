@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-object-storage
+# Tags: no-fasttest, no-shared-merge-tree, no-object-storage, no-random-detach
 
 # Test that corrupted columns_substreams.txt (from a historical rename bug) is detected
 # and safely discarded at load time, allowing the part to work correctly without it.

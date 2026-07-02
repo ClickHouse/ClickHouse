@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-tsan
+# Tags: long, no-object-storage, no-tsan, no-random-detach
+# no-random-detach: test checks profile events
 # no-s3 because read FileOpen metric
 
 set -e

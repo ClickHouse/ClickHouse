@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-random-detach
+# no-random-detach: test checks mutation state
 
 # https://github.com/ClickHouse/ClickHouse/issues/45328
 # Check that replacing one partition on a table with `ALTER TABLE REPLACE PARTITION`

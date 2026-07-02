@@ -1,4 +1,5 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-detach
+-- no-random-detach: test checks system.parts
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
 SET mutations_sync = 2;

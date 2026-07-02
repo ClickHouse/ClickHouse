@@ -38,6 +38,8 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
+    bool supportsDetachingTables() const override { return false; }
+
     StoragePtr detachTable(ContextPtr context, const String & name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;

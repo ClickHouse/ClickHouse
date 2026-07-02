@@ -61,6 +61,51 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
         storage_locks[table.get()].erase(action_type);
 }
 
+bool ActionLocksManager::has(const StorageID & table_id, StorageActionBlockType action_type) const
+{
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+        return has(table, action_type);
+    return false;
+}
+
+bool ActionLocksManager::has(const StoragePtr & table, StorageActionBlockType action_type) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = storage_locks.find(table.get());
+    if (it == storage_locks.end())
+        return false;
+
+    auto lock_it = it->second.find(action_type);
+    if (lock_it == it->second.end())
+        return false;
+
+    return !lock_it->second.expired();
+}
+
+bool ActionLocksManager::hasAny(const StorageID & table_id) const
+{
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
+        return hasAny(table);
+    return false;
+}
+
+bool ActionLocksManager::hasAny(const StoragePtr & table) const
+{
+    std::lock_guard lock(mutex);
+
+    auto it = storage_locks.find(table.get());
+    if (it == storage_locks.end())
+        return false;
+
+    /// Check if there are any non-expired locks
+    for (const auto & [_, action_lock] : it->second)
+        if (!action_lock.expired())
+            return true;
+
+    return false;
+}
+
 void ActionLocksManager::cleanExpired()
 {
     std::lock_guard lock(mutex);
