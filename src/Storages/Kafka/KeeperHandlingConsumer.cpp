@@ -112,10 +112,14 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const std::filesystem::path & keeper_path_,
     const String & replica_name_,
     size_t idx_,
-    const LoggerPtr & log_)
+    const LoggerPtr & log_,
+    UInt64 partition_num_,
+    UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
     , idx(idx_)
+    , partition_num(partition_num_)
+    , shard_count(shard_count_)
     , kafka_consumer(kafka_consumer_)
     , keeper(keeper_)
     , log(log_)
@@ -176,6 +180,28 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
     {
         LOG_TRACE(log, "Couldn't get list of all topic partitions");
         return CannotPollReason::NoMetadata;
+    }
+
+    // Apply partition affinity filter using hash-mod mapping:
+    //   partition_id % shard_count == partition_num % shard_count
+    // The modulo on partition_num allows both 0-based and 1-based shard numbering.
+    // NOTE: if a different mapping algorithm is introduced in the future, update this logic.
+    if (shard_count > 0)
+    {
+        const auto effective_shard_num = partition_num % shard_count;
+        const auto total_before = all_topic_partitions.size();
+        std::erase_if(all_topic_partitions, [&](const auto & tp)
+        {
+            return static_cast<UInt64>(tp.partition_id) % shard_count != effective_shard_num;
+        });
+        LOG_TRACE(log, "Partition affinity filter: {} -> {} partitions (partition_num={}, shard_count={})",
+            total_before, all_topic_partitions.size(), partition_num, shard_count);
+
+        if (all_topic_partitions.empty())
+        {
+            LOG_TRACE(log, "No partitions match the affinity filter");
+            return CannotPollReason::NoPartitions;
+        }
     }
 
     const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(all_topic_partitions);
