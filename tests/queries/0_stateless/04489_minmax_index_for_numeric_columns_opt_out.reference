@@ -1,0 +1,5 @@
+readonly opt-out preserved	0
+unrelated alter keeps opt-out	0
+parent opt-out: main-table implicit count	0
+parent enabled: main-table implicit indices	auto_minmax_index_a
+parent enabled: main-table implicit indices	auto_minmax_index_b

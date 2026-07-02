@@ -6,7 +6,8 @@ SET explain_query_plan_default = 'legacy';
 -- { echo }
 
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (x Int32) ENGINE = MergeTree PARTITION BY x ORDER BY tuple();
+CREATE TABLE t (x Int32) ENGINE = MergeTree PARTITION BY x ORDER BY tuple()
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t VALUES (1), (2), (3);
 
 -- With partition pruning enabled (default): MinMax and Partition should prune

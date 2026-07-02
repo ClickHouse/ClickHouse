@@ -1925,7 +1925,7 @@ Possible values:
 - `partition_key_only` — only the partition-key columns are tracked.
 - `with_block_number_offset` — partition-key columns plus the persisted `_block_number` and `_block_offset` virtual columns. Enables part-level pruning by these columns.
 )", 0) \
-    DECLARE(Bool, add_minmax_index_for_numeric_columns, false, R"(
+    DECLARE(Bool, add_minmax_index_for_numeric_columns, true, R"(
 When enabled, min-max (skipping) indices are added for all numeric columns
 of the table.
 )", 0) \
