@@ -208,10 +208,8 @@ public:
     bool onlyNull() const override { return nested_column->isDummy(); }
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
-    char * serializeValueIntoMemoryAsComparable(size_t n, char * memory) const override;
-    void batchSerializeComparableIntoMemory(PaddedPODArray<char *> & memories) const override;
-    void collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const override;
-    bool supportsComparableSerialization() const override { return nested_column->supportsComparableSerialization(); }
+    void serializeAsComparable(size_t n, String & out) const override;
+    void batchSerializeAsComparable(size_t num_rows, std::vector<String> & out, const IColumn::Permutation * permutation) const override;
 
 
     /// Return the column that represents values.

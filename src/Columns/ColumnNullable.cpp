@@ -1064,49 +1064,27 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-ALWAYS_INLINE char * ColumnNullable::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 {
     const auto & null_map_data = getNullMapData();
-    /// NULL flag: 0x00 = non-NULL (sorts before), 0x01 = NULL (sorts after).
     if (null_map_data[n])
     {
-        *memory++ = 0x01;
-        return memory;
+        out.push_back('\x01');
+        return;
     }
-    *memory++ = 0x00;
-    return nested_column->serializeValueIntoMemoryAsComparable(n, memory);
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
 }
 
-void ColumnNullable::batchSerializeComparableIntoMemory(
-    PaddedPODArray<char *> & memories) const
+void ColumnNullable::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
 {
-    const size_t num_rows = memories.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
-}
-
-void ColumnNullable::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
-{
-    const auto & null_map_data = getNullMapData();
-    size_t rows = size();
-    if (sizes.empty())
-        sizes.resize_fill(rows);
-    else if (sizes.size() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
-
-    /// 1 byte per row for null flag.
-    for (auto & sz : sizes)
-        sz += 1;
-
-    /// For non-null rows, accumulate nested column's per-row sizes.
-    /// First collect nested sizes, then add only for non-null rows.
-    PaddedPODArray<UInt64> nested_sizes;
-    nested_column->collectComparableSerializedRowSizes(nested_sizes);
-
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t r = 0; r < num_rows; ++r)
     {
-        if (!null_map_data[i])
-            sizes[i] += nested_sizes[i];
+        const size_t src = permutation ? (*permutation)[r] : r;
+        serializeAsComparable(src, out[r]);
     }
 }
 

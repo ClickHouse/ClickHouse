@@ -1,5 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/transformEndianness.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -698,61 +699,21 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 }
 
 template <is_decimal T>
-ALWAYS_INLINE char * ColumnDecimal<T>::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
 {
-    using Native = typename T::NativeType;
-    if constexpr (std::is_integral_v<Native>)
+    using Native = T::NativeType;
+    if constexpr (std::is_integral_v<Native> || is_big_int_v<Native>)
     {
         Native value = data[n].value;
-        if constexpr (std::endian::native == std::endian::little)
-            value = std::byteswap(value);
-        /// Flip sign bit for signed types.
+        transformEndianness<std::endian::big>(value);
         char * bytes = reinterpret_cast<char *>(&value);
         bytes[0] ^= 0x80;
-        memcpy(memory, &value, sizeof(Native));
-        return memory + sizeof(Native);
-    }
-    else if constexpr (is_big_int_v<Native>)
-    {
-        Native value = data[n].value;
-        constexpr unsigned item_count = sizeof(Native) / sizeof(uint64_t);
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            uint64_t item = value.items[Native::_impl::big(i)];
-            if constexpr (std::endian::native == std::endian::little)
-                item = std::byteswap(item);
-            memcpy(memory + i * sizeof(uint64_t), &item, sizeof(uint64_t));
-        }
-        /// Flip sign bit (all Decimal NativeTypes are signed).
-        memory[0] ^= 0x80;
-        return memory + sizeof(Native);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(Native));
     }
     else
     {
-        return IColumn::serializeValueIntoMemoryAsComparable(n, memory);
+        IColumn::serializeAsComparable(n, out);
     }
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::batchSerializeComparableIntoMemory(
-    PaddedPODArray<char *> & memories) const
-{
-    const size_t num_rows = memories.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
-{
-    size_t rows = data.size();
-    if (sizes.empty())
-        sizes.resize_fill(rows);
-    else if (sizes.size() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
-
-    for (auto & sz : sizes)
-        sz += sizeof(T);
 }
 
 template class ColumnDecimal<Decimal32>;

@@ -20,6 +20,7 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
+#include <Common/transformEndianness.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -1417,68 +1418,52 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
 }
 
 template <typename T>
-ALWAYS_INLINE char * ColumnVector<T>::serializeValueIntoMemoryAsComparable(size_t n, char * memory) const
+void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
 {
     if constexpr (std::is_integral_v<T>)
     {
         auto value = data[n];
-        if constexpr (std::endian::native == std::endian::little)
-            value = std::byteswap(value);
+        transformEndianness<std::endian::big>(value);
         if constexpr (std::is_signed_v<T>)
         {
-            /// Flip sign bit for correct unsigned byte ordering.
             char * bytes = reinterpret_cast<char *>(&value);
             bytes[0] ^= 0x80;
         }
-        memcpy(memory, &value, sizeof(T));
-        return memory + sizeof(T);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
     }
     else if constexpr (is_big_int_v<T>)
     {
         auto value = data[n];
-        constexpr unsigned item_count = sizeof(T) / sizeof(uint64_t);
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            uint64_t item = value.items[T::_impl::big(i)];
-            if constexpr (std::endian::native == std::endian::little)
-                item = std::byteswap(item);
-            memcpy(memory + i * sizeof(uint64_t), &item, sizeof(uint64_t));
-        }
+        transformEndianness<std::endian::big>(value);
         if constexpr (is_signed_v<T>)
-            memory[0] ^= 0x80;
-        return memory + sizeof(T);
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
     }
     else if constexpr (std::is_same_v<T, Float32>)
     {
         UInt32 bits = std::bit_cast<UInt32>(data[n]);
         if (std::isnan(data[n]))
-        {
-            /// NaN → all-0xff sentinel (sorts after ±Inf).
-            bits = 0xffffffffU;
-        }
+            bits = 0xFFFFFFFFU;
         else
         {
-            /// Collapse -0.0 → +0.0.
             if (bits == 0x80000000U)
                 bits = 0;
-            /// IEEE-754 total order: invert all bits when negative, else flip sign bit.
             if (bits & 0x80000000U)
                 bits = ~bits;
             else
                 bits ^= 0x80000000U;
         }
-        if constexpr (std::endian::native == std::endian::little)
-            bits = std::byteswap(bits);
-        memcpy(memory, &bits, sizeof(UInt32));
-        return memory + sizeof(UInt32);
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt32));
     }
     else if constexpr (std::is_same_v<T, Float64>)
     {
         UInt64 bits = std::bit_cast<UInt64>(data[n]);
         if (std::isnan(data[n]))
-        {
-            bits = 0xffffffffffffffffULL;
-        }
+            bits = 0xFFFFFFFFFFFFFFFFULL;
         else
         {
             if (bits == 0x8000000000000000ULL)
@@ -1488,60 +1473,37 @@ ALWAYS_INLINE char * ColumnVector<T>::serializeValueIntoMemoryAsComparable(size_
             else
                 bits ^= 0x8000000000000000ULL;
         }
-        if constexpr (std::endian::native == std::endian::little)
-            bits = std::byteswap(bits);
-        memcpy(memory, &bits, sizeof(UInt64));
-        return memory + sizeof(UInt64);
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt64));
     }
     else if constexpr (std::is_same_v<T, UUID>)
     {
-        const auto & under = data[n].toUnderType();
-        constexpr unsigned item_count = sizeof(UInt128) / sizeof(uint64_t);
-        for (unsigned i = 0; i < item_count; ++i)
-        {
-            uint64_t item = under.items[UInt128::_impl::big(i)];
-            if constexpr (std::endian::native == std::endian::little)
-                item = std::byteswap(item);
-            memcpy(memory + i * sizeof(uint64_t), &item, sizeof(uint64_t));
-        }
-        return memory + sizeof(UInt128);
+        auto value = data[n].toUnderType();
+        transformEndianness<std::endian::big>(value);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(UInt128));
     }
     else
     {
-        return IColumn::serializeValueIntoMemoryAsComparable(n, memory);
+        IColumn::serializeAsComparable(n, out);
     }
 }
 
 template <typename T>
-void ColumnVector<T>::batchSerializeComparableIntoMemory(
-    PaddedPODArray<char *> & memories) const
+void ColumnVector<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    std::vector<String> & out,
+    const IColumn::Permutation * permutation) const
 {
-    const size_t num_rows = memories.size();
-    for (size_t i = 0; i < num_rows; ++i)
-        memories[i] = serializeValueIntoMemoryAsComparable(i, memories[i]);
-}
-
-template <typename T>
-void ColumnVector<T>::collectComparableSerializedRowSizes(PaddedPODArray<UInt64> & sizes) const
-{
-    size_t rows = data.size();
-    if (sizes.empty())
-        sizes.resize_fill(rows);
-    else if (sizes.size() != rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
-
-    for (auto & sz : sizes)
-        sz += sizeof(T);
-}
-
-template <typename T>
-bool ColumnVector<T>::supportsComparableSerialization() const
-{
-    return std::is_integral_v<T>
-        || is_big_int_v<T>
-        || std::is_same_v<T, Float32>
-        || std::is_same_v<T, Float64>
-        || std::is_same_v<T, UUID>;
+    if (permutation)
+    {
+        for (size_t r = 0; r < num_rows; ++r)
+            serializeAsComparable((*permutation)[r], out[r]);
+    }
+    else
+    {
+        for (size_t r = 0; r < num_rows; ++r)
+            serializeAsComparable(r, out[r]);
+    }
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

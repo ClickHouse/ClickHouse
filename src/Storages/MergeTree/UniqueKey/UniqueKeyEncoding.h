@@ -16,21 +16,24 @@ namespace DB::UniqueKeyEncoding
 /// encodeBlock(B))` agrees in sign with `IColumn::compareAt` applied
 /// column-by-column in schema order.
 ///
-/// Implementation delegates to IColumn::batchSerializeComparableIntoMemory
-/// for each column type, which internally calls
-/// IColumn::serializeValueIntoMemoryAsComparable per row.
-/// Supported types: integers (UInt/Int 8-256),
-/// Float32/64 (IEEE-754 total order), Decimal32/64/128/256,
-/// Date/Date32/DateTime/DateTime64, String (NUL-escaped), FixedString,
-/// UUID, Nullable(T) (1-byte null flag).
-///
-/// The encoding uses a column-outer loop: one virtual dispatch per column,
-/// tight row loop per type. This avoids per-row virtual call overhead.
+/// Supported types: integers (UInt/Int 8/16/32/64/128/256), Float32/64
+/// (IEEE-754 total order; NaN canonicalizes to all-`0xFF`; ±0.0 collapse),
+/// Decimal32/64/128/256, Date / Date32 / DateTime / DateTime64, String
+/// (`'\0'` escaped to `'\0\x01'` + `'\0\x00'` terminator), FixedString,
+/// UUID, Nullable(T) (1-byte null flag — non-NULL=0x00, NULL=0x01;
+/// NULL sorts AFTER non-NULL, matching `IColumn::compareAt` with
+/// `nulls_direction=1` and the Float NaN-as-all-`0xFF` sentinel).
+/// Compound keys concatenate per-column encodings; each per-column
+/// encoding is prefix-free, so the concatenation is order-preserving.
+/// Decoding is not provided — the probe path only compares.
 
-/// Encode all rows of `columns` into `out[row]`. `permutation`,
+/// Encode all rows of `columns` into `out[row]`, column-outer (one
+/// dispatch per column, tight row loop per type). `permutation`,
 /// if non-null, drives iteration order so `out[i]` is the encoded form
 /// of row `(*permutation)[i]`. Throws BAD_ARGUMENTS if any encoded row
 /// exceeds `max_size`; `out` is left in an indeterminate state on throw.
+/// Misuse (mismatched column sizes or an invalid permutation) raises
+/// LOGICAL_ERROR.
 void encodeBlock(
     const Columns & columns,
     const IColumn::Permutation * permutation,
