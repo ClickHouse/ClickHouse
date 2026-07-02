@@ -1082,6 +1082,9 @@ void StorageS3Configuration::fromAST(
         ? initialization_context->catalog->getObjectStorageInitializationOptions()
         : std::nullopt;
 
+    if (catalog_options && !catalog_options->biglake)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog is not BigLake type");
+
     if (catalog_options && catalog_options->biglake)
     {
         auto biglake_catalog = *catalog_options->biglake;

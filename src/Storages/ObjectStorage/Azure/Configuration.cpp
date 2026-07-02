@@ -887,6 +887,9 @@ void StorageAzureConfiguration::fromAST(
         ? initialization_context->catalog->getObjectStorageInitializationOptions()
         : std::nullopt;
 
+    if (catalog_options && !catalog_options->onelake)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog is not OneLake type");
+
     if (catalog_options && catalog_options->onelake)
     {
         const auto & onelake_catalog = *catalog_options->onelake;
