@@ -1,6 +1,7 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupFileInfo.h>
+#include <Backups/BackupMetadataHandler.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
@@ -27,7 +28,7 @@
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/DOM/DOMParser.h>
+#include <Poco/SAX/SAXParser.h>
 
 #include <filesystem>
 
@@ -551,8 +552,6 @@ void BackupImpl::readBackupMetadata()
     LOG_TRACE(log, "Backup {}: Reading metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupReadMetadataMicroseconds);
 
-    using namespace XMLUtils;
-
     std::unique_ptr<ReadBuffer> in;
     if (use_archive)
     {
@@ -570,110 +569,151 @@ void BackupImpl::readBackupMetadata()
 
     String str;
     readStringUntilEOF(str, *in);
-    Poco::XML::DOMParser dom_parser;
-    Poco::AutoPtr<Poco::XML::Document> config = dom_parser.parseMemory(str.data(), str.size());
-    const Poco::XML::Node * config_root = getRootNode(config);
-    version = getInt(config_root, "version");
-    if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
-        throw Exception(
-            ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name_for_logging, version);
-
-    timestamp = parse<::LocalDateTime>(getString(config_root, "timestamp")).to_time_t();
-    uuid = parse<UUID>(getString(config_root, "uuid"));
-
-    if (config_root->getNodeByPath("base_backup") && !base_backup_info)
-    {
-        base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
-
-        /// The marker is honored only when the base backup locator itself comes from the metadata:
-        /// if the locator was overridden with the `base_backup` setting, the override is used as is.
-        base_backup_copy_s3_credentials_from_backup = getBool(config_root, BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP, false);
-    }
-
-    if (config_root->getNodeByPath("base_backup_uuid"))
-        base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
-
-    if (config_root->getNodeByPath("original_endpoint"))
-        original_endpoint = getString(config_root, "original_endpoint");
-    if (config_root->getNodeByPath("original_namespace"))
-        original_namespace = getString(config_root, "original_namespace");
 
     num_files = 0;
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
 
-    const auto * contents = config_root->getNodeByPath("contents");
-    for (const Poco::XML::Node * child = contents->firstChild(); child; child = child->nextSibling())
+    BackupMetadataHandler handler;
+
+    handler.on_header = [&](const BackupMetadataHandler::Fields & h)
     {
-        if (child->nodeName() == "file")
+        auto req = [&](const String & key) -> const String &
         {
-            const Poco::XML::Node * file_config = child;
-            BackupFileInfo info;
-            info.file_name = getString(file_config, "name");
-            validateFileNameFromBackup(info.file_name, "name", backup_name_for_logging);
-            info.object_key = getString(file_config, "object_key", "");
-            info.size = getUInt64(file_config, "size");
-            if (info.size)
-            {
-                info.checksum = unhexChecksum(getString(file_config, "checksum"));
+            auto it = h.find(key);
+            if (it == h.end())
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot read <{}> from metadata", backup_name_for_logging, key);
+            return it->second;
+        };
 
-                bool use_base = getBool(file_config, "use_base", false);
-                info.base_size = getUInt64(file_config, "base_size", use_base ? info.size : 0);
-                if (info.base_size)
-                    use_base = true;
+        version = parse<int>(req("version"));
+        if ((version < INITIAL_BACKUP_VERSION) || (version > CURRENT_BACKUP_VERSION))
+            throw Exception(
+                ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", backup_name_for_logging, version);
 
-                if (info.base_size > info.size)
-                {
-                    throw Exception(
-                        ErrorCodes::BACKUP_DAMAGED,
-                        "Backup {}: Base size must not be greater than the size of entry {}",
-                        backup_name_for_logging,
-                        quoteString(info.file_name));
-                }
+        timestamp = parse<::LocalDateTime>(req("timestamp")).to_time_t();
+        uuid = parse<UUID>(req("uuid"));
 
-                if (use_base)
-                {
-                    if (info.base_size == info.size)
-                        info.base_checksum = info.checksum;
-                    else
-                        info.base_checksum = unhexChecksum(getString(file_config, "base_checksum"));
-                }
+        if (h.contains("base_backup") && !base_backup_info)
+        {
+            base_backup_info = BackupInfo::fromString(req("base_backup"));
 
-                if (info.size > info.base_size)
-                {
-                    info.data_file_name = getString(file_config, "data_file", info.file_name);
-                    if (info.data_file_name != info.file_name)
-                        validateFileNameFromBackup(info.data_file_name, "data_file", backup_name_for_logging);
-                }
-                info.encrypted_by_disk = getBool(file_config, "encrypted_by_disk", false);
-            }
-
-            file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
-            if (!info.object_key.empty())
-            {
-                if (original_endpoint.empty() || original_namespace.empty())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
-
-                if (open_mode == OpenMode::READ)
-                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
-
-                file_object_keys.emplace(info.file_name, info.object_key);
-                lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
-            }
-            else if (info.size)
-                file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
-
-            ++num_files;
-            total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
-            if (has_entry)
-            {
-                ++num_entries;
-                size_of_entries += info.size - info.base_size;
-            }
+            /// The marker is honored only when the base backup locator itself comes from the metadata:
+            /// if the locator was overridden with the `base_backup` setting, the override is used as is.
+            auto it = h.find(BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP);
+            base_backup_copy_s3_credentials_from_backup = (it != h.end()) && (it->second == "true" || it->second == "1");
         }
-    }
+
+        if (h.contains("base_backup_uuid"))
+            base_backup_uuid = parse<UUID>(req("base_backup_uuid"));
+
+        if (h.contains("original_endpoint"))
+            original_endpoint = req("original_endpoint");
+        if (h.contains("original_namespace"))
+            original_namespace = req("original_namespace");
+    };
+
+    /// `readBackupMetadata` runs under `mutex` (TSA_REQUIRES), and `on_file` is invoked synchronously from
+    /// `parseMemoryNP` below while that lock is held, so the guarded members are safe to touch here. TSA cannot
+    /// see through the lambda boundary, hence the explicit suppression.
+    handler.on_file = [&](const BackupMetadataHandler::Fields & f) TSA_NO_THREAD_SAFETY_ANALYSIS
+    {
+        auto req = [&](const String & key) -> const String &
+        {
+            auto it = f.find(key);
+            if (it == f.end())
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED, "Backup {}: Cannot read <{}> of a file from metadata", backup_name_for_logging, key);
+            return it->second;
+        };
+        auto opt = [&](const String & key, const String & def) -> String
+        {
+            auto it = f.find(key);
+            return it == f.end() ? def : it->second;
+        };
+        auto get_bool = [&](const String & key, bool def)
+        {
+            auto it = f.find(key);
+            if (it == f.end())
+                return def;
+            return it->second == "true" || it->second == "1";
+        };
+
+        BackupFileInfo info;
+        info.file_name = req("name");
+        validateFileNameFromBackup(info.file_name, "name", backup_name_for_logging);
+        info.object_key = opt("object_key", "");
+        info.size = parse<UInt64>(req("size"));
+        if (info.size)
+        {
+            info.checksum = unhexChecksum(req("checksum"));
+
+            bool use_base = get_bool("use_base", false);
+            auto base_size_it = f.find("base_size");
+            info.base_size = (base_size_it != f.end()) ? parse<UInt64>(base_size_it->second) : (use_base ? info.size : 0);
+            if (info.base_size)
+                use_base = true;
+
+            if (info.base_size > info.size)
+            {
+                throw Exception(
+                    ErrorCodes::BACKUP_DAMAGED,
+                    "Backup {}: Base size must not be greater than the size of entry {}",
+                    backup_name_for_logging,
+                    quoteString(info.file_name));
+            }
+
+            if (use_base)
+            {
+                if (info.base_size == info.size)
+                    info.base_checksum = info.checksum;
+                else
+                    info.base_checksum = unhexChecksum(req("base_checksum"));
+            }
+
+            if (info.size > info.base_size)
+            {
+                info.data_file_name = opt("data_file", info.file_name);
+                if (info.data_file_name != info.file_name)
+                    validateFileNameFromBackup(info.data_file_name, "data_file", backup_name_for_logging);
+            }
+            info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
+        }
+
+        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
+        if (!info.object_key.empty())
+        {
+            if (original_endpoint.empty() || original_namespace.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+
+            if (open_mode == OpenMode::READ)
+                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+
+            file_object_keys.emplace(info.file_name, info.object_key);
+            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
+        }
+        else if (info.size)
+            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
+
+        ++num_files;
+        total_size += info.size;
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
+        if (has_entry)
+        {
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+    };
+
+    Poco::XML::SAXParser xml_parser;
+    xml_parser.setContentHandler(&handler);
+    xml_parser.parseMemoryNP(str.data(), str.size());
+
+    /// Callbacks must not throw through expat; a captured exception is rethrown here.
+    if (handler.saved_exception)
+        std::rethrow_exception(handler.saved_exception);
 
     uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
