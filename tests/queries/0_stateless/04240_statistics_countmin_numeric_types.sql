@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-parallel-replicas
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
+SET explain_query_plan_default = 'legacy';
 SET allow_statistics = 1;
 SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;

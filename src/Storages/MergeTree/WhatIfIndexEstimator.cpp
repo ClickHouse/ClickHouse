@@ -348,6 +348,7 @@ bool tryEstimateEmpirical(
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
+    std::vector<UInt8> * surviving_marks,
     bool apply_final_pk_expand,
     ContextPtr context)
 {
@@ -385,6 +386,9 @@ bool tryEstimateEmpirical(
     const size_t skip_index_granularity = index_helper->index.granularity;
     auto index_expression = index_helper->index.expression;
 
+    /// Position of the next baseline mark, gives every candidate's bitmap the same coordinates
+    size_t baseline_mark_pos = 0;
+
     for (const auto & part_with_ranges : saved_parts)
     {
         auto part = part_with_ranges.data_part;
@@ -397,7 +401,7 @@ bool tryEstimateEmpirical(
         const size_t total_marks = part_index_granularity->getMarksCountWithoutFinal();
 
         /// Baseline marks the candidate keeps in this part (only collected for the FINAL expansion)
-        std::vector<size_t> surviving_marks;
+        std::vector<size_t> final_surviving_marks;
 
         std::vector<bool> in_baseline(part->getMarksCount(), false);
         for (const auto & range : mark_ranges)
@@ -472,8 +476,11 @@ bool tryEstimateEmpirical(
                 total_data_granules += baseline_marks_in_window;
                 if (!condition->mayBeTrueOnGranule(granule, {}))
                     skipped_data_granules += baseline_marks_in_window;
+                else if (surviving_marks)
+                    for (size_t pos : window_baseline_marks)
+                        (*surviving_marks)[pos] = 1;
                 else if (apply_final_pk_expand)
-                    surviving_marks.insert(surviving_marks.end(), window_baseline_marks.begin(), window_baseline_marks.end());
+                    final_surviving_marks.insert(final_surviving_marks.end(), window_baseline_marks.begin(), window_baseline_marks.end());
             };
 
             auto on_mark_finished = [&]
@@ -482,7 +489,9 @@ bool tryEstimateEmpirical(
                 if (current_mark < in_baseline.size() && in_baseline[current_mark])
                 {
                     ++baseline_marks_in_window;
-                    if (apply_final_pk_expand)
+                    if (surviving_marks)
+                        window_baseline_marks.push_back(baseline_mark_pos++);
+                    else if (apply_final_pk_expand)
                         window_baseline_marks.push_back(current_mark);
                 }
 
@@ -551,7 +560,7 @@ bool tryEstimateEmpirical(
             /// snapshot the expansion pass needs. Empty surviving ranges still matter: this part can
             /// be re-included if its PK values intersect a surviving range in another part.
             MarkRanges survivor_ranges;
-            for (size_t m : surviving_marks)
+            for (size_t m : final_surviving_marks)
             {
                 if (!survivor_ranges.empty() && survivor_ranges.back().end == m)
                     survivor_ranges.back().end = m + 1;
@@ -603,6 +612,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & saved_parts,
     const WhatIfSettings & settings,
+    std::vector<UInt8> * surviving_marks,
     bool query_with_final,
     bool final_exact_mode,
     ContextPtr context)
@@ -739,7 +749,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
 
     if (settings.empirical)
     {
-        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, apply_final_pk_expand, context))
+        if (tryEstimateEmpirical(result, index_helper, condition, read_step, analysis, saved_parts, surviving_marks, apply_final_pk_expand, context))
             return result;
         result.empirical_status = WhatIfIndexEstimator::IndexResult::Unsupported;
     }
@@ -916,6 +926,16 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         return result;
     }
 
+    /// Only track per-candidate surviving marks when a combined row could actually be produced
+    const bool want_combined = settings.empirical && !query_with_final
+        && hypo_indexes.size() >= 2 && result.baseline_marks > 0;
+
+    std::vector<UInt8> combined_surviving_marks;
+    bool combined_started = false;
+    std::vector<String> combined_names;
+    UInt64 combined_total_parts = 0;
+    UInt64 combined_total_marks = 0;
+
     for (const auto & index_desc : hypo_indexes)
     {
         if (query_with_final && !effective_settings[Setting::use_skip_indexes_if_final])
@@ -930,12 +950,59 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             continue;
         }
 
+        std::vector<UInt8> surviving_marks;
+        if (want_combined)
+            surviving_marks.assign(result.baseline_marks, 0);
         auto index_result = evaluateIndex(
-            index_desc, read_step, analysis, baseline_parts, settings, query_with_final, final_exact_mode, plan_context);
+            index_desc, read_step, analysis, baseline_parts, settings,
+            want_combined ? &surviving_marks : nullptr, query_with_final, final_exact_mode, plan_context);
+
+        /// push empirically-evaluated candidates in a per-mark survival set we can intersect
+        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
+        {
+            if (!combined_started)
+            {
+                combined_surviving_marks = std::move(surviving_marks);
+                combined_started = true;
+            }
+            else
+                for (size_t m = 0; m < combined_surviving_marks.size(); ++m)
+                    combined_surviving_marks[m] &= surviving_marks[m];
+            combined_names.push_back(index_result.index_name);
+            combined_total_parts = index_result.total_parts;
+            combined_total_marks = index_result.total_marks;
+        }
+
         result.index_results.push_back(std::move(index_result));
     }
 
     validate_forced_indices();
+
+    /// what pruning ALL the empirically-modelled candidates together would achieve
+    if (combined_names.size() >= 2 && result.baseline_marks > 0)
+    {
+        UInt64 survivors = 0;
+        for (UInt8 m : combined_surviving_marks)
+            survivors += m;
+        survivors = std::min<UInt64>(survivors, result.baseline_marks);
+
+        IndexResult combined;
+        String joined;
+        for (size_t i = 0; i < combined_names.size(); ++i)
+            joined += (i ? ", " : "") + combined_names[i];
+        combined.index_name = "(combined: " + joined + ")";
+        combined.status = IndexResult::Applicable;
+        combined.empirical_status = IndexResult::Ok;
+        combined.estimate_source = "empirical";
+        combined.estimated_marks = survivors;
+        combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
+        combined.sampled_parts = analysis.selected_parts;
+        combined.sampled_marks = analysis.selected_marks;
+        combined.total_parts = combined_total_parts;
+        combined.total_marks = combined_total_marks;
+        result.index_results.push_back(std::move(combined));
+    }
+
     return result;
 }
 
