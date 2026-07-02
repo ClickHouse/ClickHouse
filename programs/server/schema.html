@@ -943,6 +943,14 @@ let loadGeneration = 0;
 /// reload cannot write keys from a superseded graph onto the current one.
 let viewsLoadGeneration = 0;
 
+/// The connection (`connectionSnapshot`) that produced the currently displayed `state.nodes`,
+/// committed by the last successful `loadAll`. A standalone heat-map reload from the lookback
+/// selector binds to this — not the live form fields — so merely changing the lookback after
+/// editing `url` cannot contact a newly-edited (possibly cross-origin) target before an explicit
+/// `Load`, and cannot overlay one server's `query_views_log` onto another server's graph. Null
+/// until the first load commits.
+let loadedConnection = null;
+
 async function loadAll() {
     const myGeneration = ++loadGeneration;
     const isLatestLoad = () => myGeneration === loadGeneration;
@@ -1037,6 +1045,10 @@ async function loadAll() {
     /// applying this batch would render a schema from a superseded (possibly different) connection.
     if (!isLatestLoad()) return;
 
+    /// This batch now owns the view: record the connection that produced it so a standalone
+    /// heat-map reload (a lookback change) stays bound to this server rather than the live fields.
+    loadedConnection = conn;
+
     state.tables = tablesRes.rows;
     state.columnsByTable = new Map();
     for (const c of columnsRes.rows) {
@@ -1068,10 +1080,15 @@ async function loadAll() {
 /// if the table is empty, missing, or query_views_log is disabled, we silently fall back
 /// to an empty heat-map.
 async function loadViewsLoad(conn, generation) {
-    /// Reuse the load batch's captured connection when called from `loadAll`; when the user
-    /// changes the lookback period interactively, capture the connection at that point so this
-    /// query, too, is bound to one target (see `connectionSnapshot`).
-    conn = conn || connectionSnapshot();
+    /// Reuse the load batch's captured connection when called from `loadAll`. A standalone reload
+    /// from the lookback selector (`conn` omitted) must target the connection that produced the
+    /// displayed `state.nodes` — `loadedConnection`, committed by the last successful `loadAll` —
+    /// not the live form fields: otherwise editing `url` to a cross-origin target and then merely
+    /// changing the lookback would POST `user`/`password` there before any explicit `Load`, and
+    /// would overlay that server's `query_views_log` onto the displayed graph. Fail closed if no
+    /// load has committed a connection yet (there is no graph to key a heat-map against anyway).
+    conn = conn || loadedConnection;
+    if (!conn) return;
     /// Reuse the caller's load generation (a `loadAll` batch) or, for a standalone reload from
     /// the lookback selector, read the current one without bumping it — a standalone heat-map
     /// reload must not cancel an in-flight `loadAll`, but a newer `loadAll` does supersede it.
