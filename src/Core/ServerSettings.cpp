@@ -619,17 +619,17 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
     DECLARE(String, columns_cache_policy, DEFAULT_COLUMNS_CACHE_POLICY, R"(Columns cache policy name.)", 0) \
     DECLARE(UInt64, columns_cache_size, DEFAULT_COLUMNS_CACHE_MAX_SIZE, R"(
-    Maximum size (in bytes) for the columns cache, which stores deserialized columns from MergeTree tables.
+Maximum size (in bytes) for the columns cache, which stores deserialized columns from MergeTree tables.
 
-    The columns cache eliminates repeated decompression and deserialization for frequently accessed columns.
-    The cache is used if the query-level option `use_columns_cache` is enabled.
+The columns cache eliminates repeated decompression and deserialization for frequently accessed columns.
+The cache is used if the query-level option `use_columns_cache` is enabled.
 
-    :::note
-    A value of `0` means disabled.
+:::note
+A value of `0` means disabled.
 
-    This setting can be modified at runtime and will take effect immediately.
-    :::
-    )", 0) \
+This setting can be modified at runtime and will take effect immediately.
+:::
+)", 0) \
     DECLARE(Double, columns_cache_size_ratio, DEFAULT_COLUMNS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the columns cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
