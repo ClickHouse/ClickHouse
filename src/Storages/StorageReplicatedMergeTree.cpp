@@ -3511,7 +3511,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         part = get_part();
         // The fetched part is valuable and should not be cleaned like a temp part.
         part->is_temp = false;
-        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
+        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true, /*out_directory_was_moved=*/ nullptr);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -5704,7 +5704,7 @@ bool StorageReplicatedMergeTree::fetchPart(
         {
             // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
-            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
+            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true, /*out_directory_was_moved=*/ nullptr);
         }
     }
     catch (const Exception & e)
@@ -5821,7 +5821,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} fetched on wrong disk {}", part->name, part->getDataPartStorage().getDiskName());
 
         auto replaced_path = fs::path(replaced_part_path);
-        part->getDataPartStorage().rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false);
+        part->getDataPartStorage().rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false, /*out_directory_was_moved=*/ nullptr);
     }
     catch (const Exception & e)
     {

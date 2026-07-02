@@ -217,6 +217,19 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    REGULAR(mergetree_load_outdated_parts_inject_retryable_exception) \
+    REGULAR(mergetree_load_outdated_parts_inject_schedule_failure) \
+    REGULAR(mergetree_load_outdated_parts_inject_post_load_retryable_exception) \
+    REGULAR(mergetree_load_outdated_parts_inject_post_cleanup_move_retryable_exception) \
+    REGULAR(mergetree_load_unexpected_parts_inject_post_load_retryable_exception) \
+    REGULAR(mergetree_load_unexpected_parts_inject_post_cleanup_move_retryable_exception) \
+    REGULAR(mergetree_load_unexpected_parts_inject_schedule_failure) \
+    REGULAR(mergetree_load_unexpected_parts_inject_worker_nonretryable_exception) \
+    REGULAR(mergetree_load_unexpected_parts_inject_worker_retryable_exception) \
+    REGULAR(mergetree_part_cleanup_inject_pre_move_retryable_exception) \
+    REGULAR(mergetree_part_cleanup_inject_move_retryable_exception) \
+    PAUSEABLE(mergetree_load_outdated_parts_pause_in_worker_retryable_catch) \
+    PAUSEABLE(mergetree_load_outdated_parts_pause_before_cancel_check) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \

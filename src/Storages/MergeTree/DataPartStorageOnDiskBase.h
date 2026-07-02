@@ -135,14 +135,16 @@ public:
         std::string new_part_dir,
         LoggerPtr log,
         bool remove_new_dir_if_exists,
-        bool fsync_part_dir) override;
+        bool fsync_part_dir,
+        bool * out_directory_was_moved) override;
 
     void remove(
         CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log) override;
+        LoggerPtr log,
+        bool * out_directory_was_moved) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;

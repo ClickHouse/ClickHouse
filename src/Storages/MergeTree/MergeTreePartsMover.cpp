@@ -310,7 +310,7 @@ try
     /// if something goes wrong before swapping
     part.setState(MergeTreeDataPartState::DeleteOnDestroy);
     /// Don't remove new directory but throw an error because it may contain part which is currently in use.
-    part.renameTo(part.name, /* remove_new_dir_if_exists */ false);
+    part.renameTo(part.name, /* remove_new_dir_if_exists */ false, /*out_directory_was_moved=*/ nullptr);
 }
 catch (...)
 {

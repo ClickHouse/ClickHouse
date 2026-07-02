@@ -343,6 +343,11 @@ public:
 
     void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
+        /// Grow the tracking vector before scheduling so the append below cannot throw once the pool has
+        /// accepted the callback: a reallocation here would otherwise leave a running but untracked task
+        /// that waitForAllToFinish*() never waits for. Double the capacity to keep this amortized O(1).
+        if (tasks.size() == tasks.capacity())
+            tasks.reserve(tasks.capacity() == 0 ? 1 : tasks.capacity() * 2);
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }
 

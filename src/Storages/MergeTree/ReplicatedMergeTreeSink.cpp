@@ -601,7 +601,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         /// We should rename it back, otherwise it will be lost (e.g. if it was a part from detached/ and we failed to attach it).
         try
         {
-            part->renameTo(original_part_dir, /*remove_new_dir_if_exists*/ false);
+            part->renameTo(original_part_dir, /*remove_new_dir_if_exists*/ false, /*out_directory_was_moved=*/ nullptr);
         }
         catch (...)
         {
@@ -653,7 +653,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             {
                 /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
                 fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-                part->renameTo(new_relative_path, false);
+                part->renameTo(new_relative_path, false, /*out_directory_was_moved=*/ nullptr);
             }
             else if (part_dir.starts_with("tmp_restore_" + part->name))
             {
@@ -1109,7 +1109,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             transaction.rollbackPartsToTemporaryState();
             part->is_temp = true;
             part->setName(initial_part_name);
-            part->renameTo(temporary_part_relative_path, false);
+            part->renameTo(temporary_part_relative_path, false, /*out_directory_was_moved=*/ nullptr);
             /// Throw an exception to set the proper keeper error and force a retry (if possible)
             zkutil::KeeperMultiException::check(multi_code, ops, responses);
         }
@@ -1126,7 +1126,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             transaction.rollbackPartsToTemporaryState();
             part->is_temp = true;
             part->setName(initial_part_name);
-            part->renameTo(temporary_part_relative_path, false);
+            part->renameTo(temporary_part_relative_path, false, /*out_directory_was_moved=*/ nullptr);
 
             auto conflicted_hash_it = std::find_if(
                 deduplication_hashes.begin(),
