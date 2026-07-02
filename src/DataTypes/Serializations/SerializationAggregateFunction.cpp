@@ -1,6 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/SipHash.h>
@@ -26,7 +27,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & function_, const String & type_name_, size_t version_)
 {
     SipHash hash;
@@ -41,26 +41,9 @@ UInt128 SerializationAggregateFunction::getHash(const AggregateFunctionPtr & fun
     return hash.get128();
 }
 
-void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+namespace
 {
-    const AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
-    writeBinary(state.data, ostr);
-}
-
-void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
-{
-    field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
-    readBinary(s.data, istr);
-    s.name = type_name;
-}
-
-void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
-{
-    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
-}
-
-void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, ReadBuffer & read_buf, size_t version, bool check_buffer_consumed = false)
 {
     ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
 
@@ -69,9 +52,19 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
 
     function->create(place);
+
     try
     {
-        function->deserialize(place, istr, version, &arena);
+        function->deserialize(place, read_buf, version, &arena);
+
+        if (check_buffer_consumed && !read_buf.eof())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "AggregateFunction state for `{}` has {} trailing byte(s) after deserialization",
+                function->getName(),
+                read_buf.available());
+        }
     }
     catch (...)
     {
@@ -80,6 +73,165 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     }
 
     column_concrete.getData().push_back(place);
+}
+
+void createStateFromValues(const AggregateFunctionPtr & function, IColumn & column, const IColumn ** arg_columns, size_t num_rows)
+{
+    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
+
+    Arena & arena = column_concrete.createOrGetArena();
+    size_t size_of_state = function->sizeOfData();
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
+
+    function->create(place);
+
+    try
+    {
+        function->addBatchSinglePlace(0, num_rows, place, arg_columns, &arena);
+    }
+    catch (...)
+    {
+        function->destroy(place);
+        throw;
+    }
+    column_concrete.getData().push_back(place);
+}
+
+using DeserializeMethod = void(SerializationPtr, IColumn &, ReadBuffer &, const FormatSettings &);
+#define DESERIALIZE_METHOD(method) [] (SerializationPtr serde, auto column_, auto istr_, auto settings_) { \
+    serde->method(column_, istr_, settings_); \
+}
+
+template<DeserializeMethod Method>
+void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const AggregateFunctionPtr & function)
+{
+    chassert(settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::State);
+
+    const auto & argument_types = function->getArgumentTypes();
+    const auto value_type = argument_types.size() == 1 ? argument_types[0] : std::make_shared<DataTypeTuple>(argument_types);
+
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
+    {
+        const auto tmp_column = value_type->createColumn();
+        Method(value_type->getDefaultSerialization(), *tmp_column, istr, settings);
+
+        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
+        if (argument_types.size() == 1)
+            columns_ptrs.push_back(tmp_column.get());
+        else
+            for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
+                columns_ptrs.push_back(col.get());
+
+        createStateFromValues(function, column, columns_ptrs.data(), 1);
+    }
+    else
+    {
+        auto array_type = DataTypeArray(value_type);
+        const auto tmp_column = array_type.createColumn();
+        Method(array_type.getDefaultSerialization(), *tmp_column, istr, settings);
+
+        const auto & array_column = assert_cast<const ColumnArray&>(*tmp_column);
+        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
+        if (argument_types.size() == 1)
+            columns_ptrs.push_back(array_column.getDataPtr().get());
+        else if (!argument_types.empty())
+            for (const auto & col : assert_cast<const ColumnTuple&>(array_column.getData()).getColumns())
+                columns_ptrs.push_back(col.get());
+
+        createStateFromValues(function, column, columns_ptrs.data(), array_column.getData().size());
+    }
+}
+
+}
+
+void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
+{
+    const AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
+    writeBinary(state.data, ostr);
+}
+
+void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    field = AggregateFunctionStateData();
+    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
+    s.name = type_name;
+
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        readBinary(s.data, istr);
+        return;
+    }
+
+    const auto & argument_types = function->getArgumentTypes();
+    const auto value_type = argument_types.size() == 1 ? argument_types[0] : std::make_shared<DataTypeTuple>(argument_types);
+
+    Arena arena{};
+    size_t size_of_state = function->sizeOfData();
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
+    function->create(place);
+
+    try
+    {
+        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
+        size_t num_rows = 0;
+        if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::Value)
+        {
+            const auto tmp_column = value_type->createColumn();
+            Field tmp;
+            value_type->getDefaultSerialization()->deserializeBinary(tmp, istr, settings);
+            tmp_column->insert(tmp);
+
+            if (argument_types.size() == 1)
+                columns_ptrs.push_back(tmp_column.get());
+            else
+                for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
+                    columns_ptrs.push_back(col.get());
+            num_rows = 1;
+        } else
+        {
+            auto array_type = DataTypeArray(value_type);
+            const auto tmp_column = array_type.createColumn();
+            Field tmp;
+            array_type.getDefaultSerialization()->deserializeBinary(tmp, istr, settings);
+            tmp_column->insert(tmp);
+
+            const auto & array_column = assert_cast<const ColumnArray&>(*tmp_column);
+            if (argument_types.size() == 1)
+                columns_ptrs.push_back(array_column.getDataPtr().get());
+            else if (!argument_types.empty())
+                for (const auto & col : assert_cast<const ColumnTuple&>(array_column.getData()).getColumns())
+                    columns_ptrs.push_back(col.get());
+            num_rows = array_column.getData().size();
+        }
+
+        function->addBatchSinglePlace(0, num_rows, place, columns_ptrs.data(), &arena);
+        WriteBufferFromString buf(s.data);
+        function->serialize(place, buf, version);
+    }
+    catch (...)
+    {
+        function->destroy(place);
+        throw;
+    }
+
+    function->destroy(place);
+}
+
+void SerializationAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    function->serialize(assert_cast<const ColumnAggregateFunction &>(column).getData()[row_num], ostr, version);
+}
+
+void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        deserializeFromString(function, column, istr, version);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeBinary);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -125,140 +277,6 @@ static String serializeToString(const AggregateFunctionPtr & function, const ICo
     return buffer.str();
 }
 
-static void deserializeFromString(const AggregateFunctionPtr & function, IColumn & column, const String & s, size_t version)
-{
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-
-    function->create(place);
-
-    try
-    {
-        ReadBufferFromString istr(s);
-        function->deserialize(place, istr, version, &arena);
-
-        const size_t trailing_bytes = istr.available();
-        if (trailing_bytes != 0)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "AggregateFunction state for `{}` has {} trailing byte(s) after deserialization",
-                function->getName(),
-                trailing_bytes);
-        }
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-
-    column_concrete.getData().push_back(place);
-}
-
-static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn & column, const String & value_str, const FormatSettings & settings)
-{
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-
-    function->create(place);
-
-    try
-    {
-        // Get the argument types for the aggregate function
-        const auto & argument_types = function->getArgumentTypes();
-        if (argument_types.size() == 1)
-        {
-            // Single argument - parse the value directly
-            auto temp_column = argument_types[0]->createColumn();
-            ReadBufferFromString buf(value_str);
-            argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
-            // Add the value to the aggregate state
-            const IColumn * columns[] = {temp_column.get()};
-            function->add(place, columns, 0, &arena);
-        }
-        else
-        {
-            // Multiple arguments - parse as tuple
-            auto arg_types = DataTypeTuple(function->getArgumentTypes());
-            auto tmp_column = arg_types.createColumn();
-            ReadBufferFromString buf(value_str);
-            arg_types.getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
-            ColumnRawPtrs columns_ptrs;
-            for (const auto & col : assert_cast<ColumnTuple*>(tmp_column.get())->getColumns())
-                columns_ptrs.push_back(col.get());
-            function->add(place, columns_ptrs.data(), 0, &arena);
-        }
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-    column_concrete.getData().push_back(place);
-}
-
-static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn & column, const String & array_str, const FormatSettings & settings)
-{
-    ColumnAggregateFunction & column_concrete = assert_cast<ColumnAggregateFunction &>(column);
-
-    Arena & arena = column_concrete.createOrGetArena();
-    size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
-
-    function->create(place);
-
-    try
-    {
-        // Get the argument types for the aggregate function
-        const auto & argument_types = function->getArgumentTypes();
-        const auto elem_type = argument_types.size() == 1 ? argument_types[0] : std::make_shared<DataTypeTuple>(argument_types);
-        const auto tmp_column = elem_type->createColumn();
-        const auto elem_serialization = elem_type->getDefaultSerialization();
-        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
-        if (argument_types.size() == 1)
-            columns_ptrs.push_back(tmp_column.get());
-        else
-            for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
-                columns_ptrs.push_back(col.get());
-        // Parse the array - expect format like [val1,val2,val3] or [(val1a,val1b),(val2a,val2b)]
-        ReadBufferFromString buf(array_str);
-        assertChar('[', buf);
-        bool first = true;
-        while (!buf.eof())
-        {
-            skipWhitespaceIfAny(buf);
-            if (*buf.position() == ']')
-                break;
-            if (!first)
-            {
-                assertChar(',', buf);
-                skipWhitespaceIfAny(buf);
-            }
-            first = false;
-            if (argument_types.size() == 1)
-                elem_serialization->deserializeTextCSV(*tmp_column, buf, settings);  // CSV handles both ' and "
-            else
-                elem_serialization->deserializeTextQuoted(*tmp_column, buf, settings);  // Quoted for tuples
-            function->add(place, columns_ptrs.data(), 0, &arena);
-            tmp_column->popBack(1);
-        }
-        assertChar(']', buf);
-    }
-    catch (...)
-    {
-        function->destroy(place);
-        throw;
-    }
-
-    column_concrete.getData().push_back(place);
-}
 
 SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)
 {
@@ -278,36 +296,19 @@ void SerializationAggregateFunction::serializeTextEscaped(
 }
 
 
-void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, const String & s) const
-{
-    if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::State)
-    {
-        deserializeFromString(function, column, s, version);
-    }
-    else if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::Value)
-    {
-        deserializeFromValue(function, column, s, settings);
-    }
-    else if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::Array)
-    {
-        deserializeFromArray(function, column, s, settings);
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid value for aggregate_function_input_format: '{}'. Expected '{}', '{}', or '{}'",
-            settings.aggregate_function_input_format,
-            DB::FormatSettings::AggregateFunctionInputFormat::State,
-            DB::FormatSettings::AggregateFunctionInputFormat::Value,
-            DB::FormatSettings::AggregateFunctionInputFormat::Array);
-    }
-}
 void SerializationAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
-    deserializeBasedOnInput(column, settings, s);
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        String s;
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(s, istr) : readEscapedString(s, istr);
+        ReadBufferFromString str_buf(s);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeTextEscaped);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 
@@ -323,17 +324,30 @@ void SerializationAggregateFunction::serializeTextQuoted(const IColumn & column,
 
 void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readQuotedStringWithSQLStyle(s, istr);
-    deserializeBasedOnInput(column, settings, s);
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        String s;
+        readQuotedStringWithSQLStyle(s, istr);
+        ReadBufferFromString str_buf(s);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeTextQuoted);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 
 void SerializationAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readStringUntilEOF(s, istr);
-    deserializeBasedOnInput(column, settings, s);
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        deserializeFromString(function, column, istr, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeWholeText);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 
@@ -345,9 +359,32 @@ void SerializationAggregateFunction::serializeTextJSON(const IColumn & column, s
 
 void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readJSONString(s, istr, settings.json);
-    deserializeBasedOnInput(column, settings, s);
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        String s;
+        readJSONString(s, istr, settings.json);
+        ReadBufferFromString str_buf(s);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    /// Backward compatibility: `aggregate_function_input_format` was released in `v25.12` and `v26.1` accepting the
+    /// value/array as a JSON string holding its textual representation, e.g. `{"x": "[1,2,3]"}` in `array` mode.
+    /// The native JSON form `{"x": [1,2,3]}` added by this change reads `[` directly, so a string-wrapped array would
+    /// otherwise be rejected. Keep accepting the legacy string-wrapped form alongside the native one.
+    skipWhitespaceIfAny(istr);
+    if (!istr.eof() && *istr.position() == '"')
+    {
+        String s;
+        readJSONString(s, istr, settings.json);
+        ReadBufferFromString str_buf(s);
+        auto method = DESERIALIZE_METHOD(deserializeWholeText);
+        deserializeFromValues<method>(column, str_buf, settings, function);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeTextJSON);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 
@@ -365,9 +402,17 @@ void SerializationAggregateFunction::serializeTextCSV(const IColumn & column, si
 
 void SerializationAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String s;
-    readCSV(s, istr, settings.csv);
-    deserializeBasedOnInput(column, settings, s);
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        String s;
+        readCSV(s, istr, settings.csv);
+        ReadBufferFromString str_buf(s);
+        deserializeFromString(function, column, str_buf, version, /* check_buffer_consumed */ true);
+        return;
+    }
+
+    auto method = DESERIALIZE_METHOD(deserializeTextCSV);
+    deserializeFromValues<method>(column, istr, settings, function);
 }
 
 size_t SerializationAggregateFunction::allocatedBytes() const
