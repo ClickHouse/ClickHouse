@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <string>
+
 #include <Common/Exception.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
@@ -140,4 +143,66 @@ GTEST_TEST(SettingMySQLDataTypesSupport, SetInvalidString)
     EXPECT_NO_THROW(setting = String(", "));
     ASSERT_TRUE(setting.changed);
     ASSERT_EQ(std::vector<MySQLDataTypesSupport>{}, setting.value);
+}
+
+GTEST_TEST(SettingFieldMilliseconds, HugeValueSaturatesInsteadOfWrapping)
+{
+    // A millisecond value above INT64_MAX / 1000 used to overflow the `x * 1000` conversion to
+    // microseconds into a negative Int64, so the stored timespan went negative and totalMilliseconds()
+    // returned garbage. The value is now saturated, so it must stay non-negative and not exceed the
+    // largest representable millisecond count.
+    constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
+
+    for (UInt64 huge : {UInt64(9223372036854776ULL), UInt64(std::numeric_limits<UInt64>::max())})
+    {
+        SettingFieldMilliseconds from_ctor(huge);
+        ASSERT_GE(from_ctor.totalMicroseconds(), 0);
+        ASSERT_GE(from_ctor.totalMilliseconds(), 0);
+        ASSERT_LE(from_ctor.totalMilliseconds(), max_ms);
+        ASSERT_LE(static_cast<UInt64>(from_ctor), static_cast<UInt64>(max_ms));
+
+        SettingFieldMilliseconds from_assign;
+        from_assign = huge;
+        ASSERT_GE(from_assign.totalMicroseconds(), 0);
+        ASSERT_LE(from_assign.totalMilliseconds(), max_ms);
+
+        SettingFieldMilliseconds from_string;
+        from_string.parseFromString(std::to_string(huge));
+        ASSERT_GE(from_string.totalMicroseconds(), 0);
+        ASSERT_LE(from_string.totalMilliseconds(), max_ms);
+    }
+
+    // Values that fit are stored exactly.
+    SettingFieldMilliseconds ok(9223372036854775ULL);
+    ASSERT_EQ(ok.totalMilliseconds(), 9223372036854775LL);
+    SettingFieldMilliseconds small(5000ULL);
+    ASSERT_EQ(small.totalMilliseconds(), 5000LL);
+    ASSERT_EQ(small.totalMicroseconds(), 5000000LL);
+}
+
+GTEST_TEST(SettingFieldSeconds, HugeStringValueDoesNotWrap)
+{
+    // parseFromString (native-protocol string path) must reject an out-of-range value, like the
+    // Field path, rather than wrapping its microseconds via an undefined float-to-Int64 cast.
+    for (const char * huge : {"100000000000000", "9223372036854775807", "1e19"})
+    {
+        SettingFieldSeconds from_string;
+        ASSERT_ANY_THROW(from_string.parseFromString(huge));
+    }
+
+    // Values within range parse exactly, including fractional seconds.
+    SettingFieldSeconds ok;
+    ok.parseFromString("120");
+    ASSERT_EQ(ok.totalSeconds(), 120LL);
+    ASSERT_EQ(ok.totalMicroseconds(), 120000000LL);
+
+    SettingFieldSeconds fractional;
+    fractional.parseFromString("1.5");
+    ASSERT_EQ(fractional.totalMicroseconds(), 1500000LL);
+
+    // A large-but-representable value stays non-negative (no wrap).
+    SettingFieldSeconds big;
+    big.parseFromString("100000000000");
+    ASSERT_GE(big.totalMicroseconds(), 0);
+    ASSERT_EQ(big.totalSeconds(), 100000000000LL);
 }

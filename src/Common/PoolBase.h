@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/saturatedDuration.h>
 
 namespace ProfileEvents
 {
@@ -156,7 +157,7 @@ public:
             }
             else
             {
-                auto timeout_ms = std::chrono::milliseconds(timeout);
+                auto timeout_ms = DB::saturatedMilliseconds(timeout);
                 LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
                 available.wait_for(lock, timeout_ms);
             }

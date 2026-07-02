@@ -11,6 +11,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -88,7 +89,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
+        auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)

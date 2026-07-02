@@ -1,4 +1,5 @@
 #include <Common/RWLock.h>
+#include <Common/saturatedDuration.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
@@ -101,10 +102,13 @@ private:
 RWLockImpl::LockHolder
 RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & lock_timeout_ms, bool throw_in_fast_path)
 {
+    /// saturatedMilliseconds clamps into [0, MAX] so the ms-to-ns multiplication inside
+    /// steady_clock::now() + duration cannot overflow for a huge positive or negative timeout.
+    /// Zero keeps its special "wait forever" meaning; a negative value saturates to 0 (immediate deadline).
     const auto lock_deadline_tp =
         (lock_timeout_ms == std::chrono::milliseconds(0))
             ? std::chrono::time_point<std::chrono::steady_clock>::max()
-            : std::chrono::steady_clock::now() + lock_timeout_ms;
+            : std::chrono::steady_clock::now() + saturatedMilliseconds(lock_timeout_ms.count());
 
     const bool request_has_query_id = query_id != NO_QUERY;
 
