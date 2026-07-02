@@ -335,6 +335,11 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+
+    /// Set when downstream aggregation-in-order benefits from multiple
+    /// input streams (parallel aggregation + memory-bound merging).
+    /// Disables per-part PrefetchingConcat that would collapse streams into one.
+    void setPreferMultipleStreams() { prefer_multiple_streams = true; }
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
@@ -450,6 +455,16 @@ private:
 
     size_t requested_num_streams;
     size_t output_streams_limit = 0;
+
+    /// True when a LIMIT exists in the query but could not be pushed
+    /// to input_order_info->limit (e.g. because of a JOIN). Set inside
+    /// `requestReadingInOrder` based on `query_limit`/`read_limit`, so it is
+    /// also recorded for child readers under a `Merge` table.
+    bool has_outer_limit = false;
+
+    /// True when downstream step (e.g. aggregation-in-order) benefits from
+    /// receiving multiple streams for parallel processing.
+    bool prefer_multiple_streams = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;
