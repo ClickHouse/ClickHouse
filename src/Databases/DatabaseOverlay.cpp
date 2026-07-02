@@ -10,6 +10,17 @@
 #include <Storages/IStorage_fwd.h>
 #include <Core/UUID.h>
 
+#include <Databases/DatabaseFactory.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Common/logger_useful.h>
+
+#include <unordered_set>
+
 namespace DB
 {
 
@@ -19,22 +30,80 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
-DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger("DatabaseOverlay(" + name_ + ")"))
+DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_, bool readonly_)
+    : IDatabase(name_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger("DatabaseOverlay(" + name_ + ")"))
+    , readonly(readonly_)
 {
 }
 
 DatabaseOverlay & DatabaseOverlay::registerNextDatabase(DatabasePtr database)
 {
+    if (!database)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Overlay database {} received a null underlying database pointer",
+            backQuote(getDatabaseName()));
     databases.push_back(std::move(database));
     return *this;
 }
 
+DatabaseOverlay & DatabaseOverlay::registerNextDatabaseByName(const String & source_name)
+{
+    if (source_name.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Overlay database {} received an empty underlying database name",
+            backQuote(getDatabaseName()));
+    source_names.push_back(source_name);
+    return *this;
+}
+
+std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
+{
+    if (!readonly)
+        return databases;
+
+    std::vector<DatabasePtr> resolved;
+    resolved.reserve(source_names.size());
+    for (const auto & name : source_names)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(name);
+        if (!db)
+            continue;
+        /// If the source is not (yet) registered, skip it silently: during
+        /// `loadMetadata` the Overlay may be processed before one of its sources,
+        /// and the missing source will simply become visible once it is loaded.
+
+        /// A read-only `Overlay` must not use another read-only `Overlay` as a source. Such nesting
+        /// would silently bypass the intermediate facade in every runtime check: reading `top.t`
+        /// (with `top = Overlay('mid')` and `mid = Overlay('src')`) resolves the storage straight
+        /// to `src.t`, so the access and row-policy code — which only sees the written id (`top.t`)
+        /// and the resolved storage id (`src.t`) — would never require the grants or apply the row
+        /// policies defined on `mid.t`. Reject the nested facade instead of flattening it.
+        ///
+        /// This also covers reference cycles that can only form after creation (create `db_b` as
+        /// `Overlay('db_a')`, drop `db_a`, re-create `db_a` as `Overlay('db_b')`), which the
+        /// per-database self-reference check at CREATE time cannot see.
+        if (const auto * nested = typeid_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Overlay database {} cannot use another Overlay database {} as a source",
+                backQuote(getDatabaseName()),
+                backQuote(name));
+
+        resolved.push_back(std::move(db));
+    }
+    return resolved;
+}
+
 bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context_) const
 {
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         if (db->isTableExist(table_name, context_))
             return true;
@@ -45,7 +114,7 @@ bool DatabaseOverlay::isTableExist(const String & table_name, ContextPtr context
 StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr context_) const
 {
     StoragePtr result = nullptr;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         result = db->tryGetTable(table_name, context_);
         if (result)
@@ -56,7 +125,13 @@ StoragePtr DatabaseOverlay::tryGetTable(const String & table_name, ContextPtr co
 
 void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const ASTPtr & query)
 {
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run CREATE TABLE in an underlying database",
+            backQuote(getDatabaseName()));
+    for (auto & db : resolveDatabases())
     {
         if (!db->isReadOnly())
         {
@@ -74,7 +149,13 @@ void DatabaseOverlay::createTable(ContextPtr context_, const String & table_name
 
 void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, bool sync)
 {
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run DROP TABLE in the underlying database that owns the table",
+            backQuote(getDatabaseName()));
+    for (auto & db : resolveDatabases())
     {
         if (db->isTableExist(table_name, context_))
         {
@@ -93,7 +174,14 @@ void DatabaseOverlay::dropTable(ContextPtr context_, const String & table_name, 
 void DatabaseOverlay::attachTable(
     ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run ATTACH TABLE in an underlying database",
+            backQuote(getDatabaseName()));
+
+    for (auto & db : resolveDatabases())
     {
         try
         {
@@ -115,8 +203,13 @@ void DatabaseOverlay::attachTable(
 
 StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & table_name)
 {
-    StoragePtr result = nullptr;
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run DETACH TABLE in the underlying database that owns the table",
+            backQuote(getDatabaseName()));
+    for (auto & db : resolveDatabases())
     {
         if (db->isTableExist(table_name, context_))
             return db->detachTable(context_, table_name);
@@ -137,7 +230,13 @@ void DatabaseOverlay::renameTable(
     bool exchange,
     bool dictionary)
 {
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run RENAME TABLE in an underlying database",
+            backQuote(getDatabaseName()));
+    for (auto & db : resolveDatabases())
     {
         if (db->isTableExist(name, current_context))
         {
@@ -145,10 +244,11 @@ void DatabaseOverlay::renameTable(
             {
                 /// Renaming from Overlay database inside itself or into another Overlay database.
                 /// Just use the first database in the overlay as a destination.
-                if (to_overlay_database->databases.empty())
+                auto target_databases = to_overlay_database->resolveDatabases();
+                if (target_databases.empty())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The destination Overlay database {} does not have any members", to_database.getDatabaseName());
 
-                db->renameTable(current_context, name, *to_overlay_database->databases[0], to_name, exchange, dictionary);
+                db->renameTable(current_context, name, *target_databases[0], to_name, exchange, dictionary);
             }
             else
             {
@@ -165,7 +265,7 @@ void DatabaseOverlay::renameTable(
 ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
     ASTPtr result = nullptr;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         result = db->tryGetCreateTableQuery(name, context_);
         if (result)
@@ -181,21 +281,42 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
     return result;
 }
 
-/*
- * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
- * To use DatabaseOverlay, it must be constructed programmatically in code
- */
 ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
     auto query = make_intrusive<ASTCreateQuery>();
     query->setDatabase(database_name);
+
+    if (readonly)
+    {
+        auto storage = make_intrusive<ASTStorage>();
+
+        auto engine_func = make_intrusive<ASTFunction>();
+        engine_func->name = "Overlay";
+
+        auto args = make_intrusive<ASTExpressionList>();
+        args->children.reserve(source_names.size());
+        /// Use the symbolic `source_names` directly: this works even if some of
+        /// the sources have not been (re)loaded yet, and preserves what the user
+        /// wrote, not what `DatabaseCatalog` happens to resolve right now.
+        for (const auto & name : source_names)
+            args->children.emplace_back(make_intrusive<ASTLiteral>(name));
+        engine_func->arguments = args;
+
+        storage->set(storage->engine, engine_func);
+        query->set(query->storage, storage);
+    }
     return query;
 }
 
 String DatabaseOverlay::getTableDataPath(const String & table_name) const
 {
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     String result;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         result = db->getTableDataPath(table_name);
         if (!result.empty())
@@ -206,8 +327,13 @@ String DatabaseOverlay::getTableDataPath(const String & table_name) const
 
 String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
 {
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     String result;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         result = db->getTableDataPath(query);
         if (!result.empty())
@@ -216,39 +342,64 @@ String DatabaseOverlay::getTableDataPath(const ASTCreateQuery & query) const
     return result;
 }
 
+bool DatabaseOverlay::isReadOnly() const
+{
+    return readonly;
+}
+
 UUID DatabaseOverlay::getUUID() const
 {
+    // In the case of a non-readonly overlay database (typically created via clickhouse-local),
+    // the underlying database is not independently registered in the global context.
+    // Therefore, for all practical purposes, the overlay database acts as the underlying database.
     UUID result = UUIDHelpers::Nil;
-    for (const auto & db : databases)
+    if (!readonly)
     {
-        result = db->getUUID();
-        if (result != UUIDHelpers::Nil)
-            break;
+        for (const auto & db : databases)
+        {
+            result = db->getUUID();
+            if (result != UUIDHelpers::Nil)
+                break;
+        }
+        return result;
     }
-    return result;
+
+    return UUIDHelpers::Nil;
 }
 
 UUID DatabaseOverlay::tryGetTableUUID(const String & table_name) const
 {
     UUID result = UUIDHelpers::Nil;
-    for (const auto & db : databases)
+    if (!readonly)
     {
-        result = db->tryGetTableUUID(table_name);
-        if (result != UUIDHelpers::Nil)
-            break;
+        for (const auto & db : databases)
+        {
+            result = db->tryGetTableUUID(table_name);
+            if (result != UUIDHelpers::Nil)
+                break;
+        }
     }
     return result;
 }
 
 void DatabaseOverlay::drop(ContextPtr context_)
 {
+    if (readonly)
+        return;
+    /// `drop` is the non-readonly path only — `databases` is authoritative here.
     for (auto & db : databases)
         db->drop(context_);
 }
 
 void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    for (auto & db : databases)
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run ALTER TABLE in an underlying database",
+            backQuote(getDatabaseName()));
+    for (auto & db : resolveDatabases())
     {
         if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
         {
@@ -267,8 +418,16 @@ void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & tab
 std::vector<std::pair<ASTPtr, StoragePtr>>
 DatabaseOverlay::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
 {
+    /// The read-only facade owns no tables: backing them up here would rewrite their
+    /// `CREATE TABLE` statements to the facade's name, producing a backup that cannot be
+    /// restored (table creation through the facade is rejected). The tables are backed up
+    /// with the source databases that own them; `BACKUP DATABASE` on the facade captures
+    /// only the `CREATE DATABASE ... ENGINE = Overlay(...)` definition.
+    if (readonly)
+        return {};
+
     std::vector<std::pair<ASTPtr, StoragePtr>> result;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
         auto db_backup = db->getTablesForBackup(filter, local_context);
         result.insert(result.end(), std::make_move_iterator(db_backup.begin()), std::make_move_iterator(db_backup.end()));
@@ -282,6 +441,12 @@ void DatabaseOverlay::createTableRestoredFromBackup(
     std::shared_ptr<IRestoreCoordination> /*restore_coordination*/,
     UInt64 /*timeout_ms*/)
 {
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run CREATE TABLE in an underlying database",
+            backQuote(getDatabaseName()));
     /// Creates a tables by executing a "CREATE TABLE" query.
     InterpreterCreateQuery interpreter{create_table_query, local_context};
     interpreter.setInternal(true);
@@ -291,26 +456,36 @@ void DatabaseOverlay::createTableRestoredFromBackup(
 
 bool DatabaseOverlay::empty() const
 {
+    if (readonly)
+        return true;
     for (const auto & db : databases)
-    {
         if (!db->empty())
             return false;
-    }
     return true;
 }
 
 void DatabaseOverlay::shutdown()
 {
+    /// In read-only (facade) mode the underlying databases are owned by `DatabaseCatalog`,
+    /// not by this Overlay. Propagating `shutdown` would take down those real databases when the
+    /// Overlay alone is dropped, so the facade's `shutdown` must be a no-op here.
+    if (readonly)
+        return;
     for (auto & db : databases)
         db->shutdown();
 }
 
-DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool /*skip_not_loaded*/) const
+DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
+    /// Note: the `Overlay` exposes the *union* of tables from its underlying
+    /// databases. The same physical table may also be reachable directly via
+    /// its owner database registered in `DatabaseCatalog`. Callers that
+    /// aggregate across all databases (e.g. `ServerAsynchronousMetrics`) must
+    /// deduplicate by `IStorage *` to avoid double-counting.
     Tables tables;
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
     {
-        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name); table_it->isValid(); table_it->next())
+        for (auto table_it = db->getTablesIterator(context_, filter_by_table_name, skip_not_loaded); table_it->isValid(); table_it->next())
             tables.insert({table_it->name(), table_it->table()});
     }
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
@@ -318,36 +493,64 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
 
 bool DatabaseOverlay::isExternal() const
 {
-    for (const auto & db : databases)
+    for (const auto & db : resolveDatabases())
         if (!db->isExternal())
             return false;
     return true;
 }
 
-void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+bool DatabaseOverlay::isRemoteDatabase() const
 {
+    /// A server-side (read-only) `Overlay` is reported as remote so that it is excluded from the
+    /// default catalog enumeration `getDatabases({.with_remote_databases = false})` used by
+    /// `system.tables`, `system.columns` and the asynchronous metrics. Otherwise, because the facade
+    /// is a local object that walks all of its underlying databases in `getTablesIterator`, an
+    /// `Overlay` over a remote source (`MySQL`/`PostgreSQL`/`DataLake`) would let those consumers
+    /// reach the remote service and issue implicit calls (e.g. query `INFORMATION_SCHEMA`) even when
+    /// `show_remote_databases_in_system_tables` is disabled. Explicit `SHOW TABLES` and direct
+    /// queries through the facade still work, and `system.databases` still lists it.
+    ///
+    /// We answer from the `readonly` flag rather than by resolving sources: it is constant per
+    /// instance (so it does not depend on the order in which databases are loaded at startup) and it
+    /// touches no other database (so it is safe to call from `DatabaseCatalog::attachDatabase`, which
+    /// holds `databases_mutex`). The `clickhouse-local` (non-read-only) `Overlay`, which owns its
+    /// underlying databases and acts as the default database, stays non-remote so that its tables
+    /// keep showing up in `system.tables`.
+    return readonly;
+}
+
+void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
+{
+    if (readonly)
+        return;
     for (auto & db : databases)
         if (!db->isReadOnly())
-            db->loadStoredObjects(local_context, mode);
+            db->loadStoredObjects(local_context, loading_mode);
 }
 
 bool DatabaseOverlay::supportsLoadingInTopologicalOrder() const
 {
+    if (readonly)
+        return false;
     for (const auto & db : databases)
         if (db->supportsLoadingInTopologicalOrder())
             return true;
     return false;
 }
 
-void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
+void DatabaseOverlay::beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel loading_mode)
 {
+    if (readonly)
+        return;
     for (auto & db : databases)
         if (!db->isReadOnly())
-            db->beforeLoadingMetadata(local_context, mode);
+            db->beforeLoadingMetadata(local_context, loading_mode);
 }
 
 void DatabaseOverlay::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool is_startup)
 {
+    if (readonly)
+        return;
     for (auto & db : databases)
         if (!db->isReadOnly())
             db->loadTablesMetadata(local_context, metadata, is_startup);
@@ -358,7 +561,7 @@ void DatabaseOverlay::loadTableFromMetadata(
     const String & file_path,
     const QualifiedTableName & name,
     const ASTPtr & ast,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel loading_mode)
 {
     for (auto & db : databases)
     {
@@ -367,7 +570,7 @@ void DatabaseOverlay::loadTableFromMetadata(
 
         try
         {
-            db->loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            db->loadTableFromMetadata(local_context, file_path, name, ast, loading_mode);
             return;
         }
         catch (const std::exception &)
@@ -391,7 +594,7 @@ LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
     const String & file_path,
     const QualifiedTableName & name,
     const ASTPtr & ast,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel loading_mode)
 {
     for (auto & db : databases)
     {
@@ -400,7 +603,7 @@ LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
 
         try
         {
-            return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, mode);
+            return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, loading_mode);
         }
         catch (const std::exception &)
         {
@@ -420,7 +623,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
     const QualifiedTableName & name,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel loading_mode)
 {
     for (auto & db : databases)
     {
@@ -429,7 +632,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
 
         try
         {
-            return db->startupTableAsync(async_loader, startup_after, name, mode);
+            return db->startupTableAsync(async_loader, startup_after, name, loading_mode);
         }
         catch (const std::exception &)
         {
@@ -447,7 +650,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
 LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
     AsyncLoader & async_loader,
     LoadJobSet startup_after,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel loading_mode)
 {
     for (auto & db : databases)
     {
@@ -456,7 +659,7 @@ LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
 
         try
         {
-            return db->startupDatabaseAsync(async_loader, startup_after, mode);
+            return db->startupDatabaseAsync(async_loader, startup_after, loading_mode);
         }
         catch (const std::exception &)
         {
@@ -545,6 +748,11 @@ void DatabaseOverlay::stopLoading()
 
 void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_name) const
 {
+    if (readonly)
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). Path resolution is not supported here.",
+            backQuote(getDatabaseName()));
     for (const auto & db : databases)
     {
         if (db->isReadOnly())
@@ -552,6 +760,97 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
         db->checkMetadataFilenameAvailability(table_name);
         return;
     }
+}
+
+void registerDatabaseOverlay(DatabaseFactory & factory);
+void registerDatabaseOverlay(DatabaseFactory & factory)
+{
+    auto create_fn = [](const DatabaseFactory::Arguments & args)
+    {
+        const auto * engine_def = args.create_query.storage;
+        const auto * engine = engine_def->engine;
+        const String & engine_name = engine->name;
+
+        std::vector<String> sources;
+
+        if (!engine->arguments || engine->arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "{} database requires at least 1 argument: underlying database name(s)", engine_name);
+
+        for (const auto & arg_ast : engine->arguments->children)
+        {
+            auto lit = evaluateConstantExpressionOrIdentifierAsLiteral(arg_ast, args.context);
+            const auto & value = lit->as<ASTLiteral &>().value;
+            sources.emplace_back(value.safeGet<String>());
+        }
+
+        if (sources.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database requires at least 1 source database", engine_name);
+
+        /// Preserve the user-supplied order of source databases (it is part of the lookup contract:
+        /// for tables with the same name, the database listed earlier wins). Deduplicate in place,
+        /// keeping the first occurrence.
+        {
+            std::unordered_set<String> seen;
+            seen.reserve(sources.size());
+            std::vector<String> deduped;
+            deduped.reserve(sources.size());
+            for (const auto & name : sources)
+            {
+                if (seen.insert(name).second)
+                    deduped.push_back(name);
+            }
+            sources = std::move(deduped);
+        }
+
+        for (const auto & source_name : sources)
+        {
+            if (source_name == args.database_name)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} database cannot reference itself: {}", engine_name, source_name);
+        }
+
+        auto overlay = std::make_shared<DatabaseOverlay>(args.database_name, args.context, true /* readonly */);
+
+        /// Source databases are stored symbolically and resolved lazily through
+        /// `DatabaseCatalog` on each operation. Resolving eagerly here would make
+        /// `loadMetadata` order-dependent: `loadMetadata` processes databases in
+        /// alphabetical order, so an `Overlay` whose name sorts before one of its
+        /// sources would fail to load on server startup.
+        ///
+        /// For a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` (mode
+        /// `CREATE`) we still validate that every source exists right now so the
+        /// user gets an immediate error on typos. During `ATTACH`/`FORCE_ATTACH`
+        /// (server startup) and `SECONDARY_CREATE` (`DatabaseReplicated` /
+        /// `RESTORE`) we skip that check and rely on lazy resolution.
+        const bool validate_sources_exist = (args.mode == LoadingStrictnessLevel::CREATE);
+
+        for (const auto & source_name : sources)
+        {
+            if (validate_sources_exist)
+            {
+                const auto source_db = DatabaseCatalog::instance().tryGetDatabase(source_name);
+                if (!source_db)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database requires existing underlying database '{}', but it was not found",
+                        engine_name, source_name);
+
+                /// Reject nesting one read-only `Overlay` inside another up front. Lazy resolution
+                /// rejects it later too (see `resolveDatabases`), but an immediate error on CREATE
+                /// is friendlier than a failure on the first query through the facade.
+                if (const auto * nested = typeid_cast<const DatabaseOverlay *>(source_db.get()); nested && nested->isReadOnly())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} database cannot use another Overlay database '{}' as a source",
+                        engine_name, source_name);
+            }
+            overlay->registerNextDatabaseByName(source_name);
+        }
+
+        return overlay;
+    };
+
+    factory.registerDatabase("Overlay", create_fn, { .supports_arguments = true });
 }
 
 

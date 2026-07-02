@@ -1,0 +1,16 @@
+analyzer=1: facade policy applies through the facade (expect 1 2)
+1 2
+analyzer=1: facade policy does not affect direct reads of the source (expect 1 2 3 4)
+1 2 3 4
+analyzer=0: facade policy applies through the facade (expect 1 2)
+1 2
+analyzer=0: facade policy does not affect direct reads of the source (expect 1 2 3 4)
+1 2 3 4
+analyzer=1: through the facade both policies apply, id<=2 AND id>=2 (expect 2)
+2
+analyzer=1: direct reads of the source apply only the source policy, id>=2 (expect 2 3 4)
+2 3 4
+analyzer=0: through the facade both policies apply, id<=2 AND id>=2 (expect 2)
+2
+analyzer=0: direct reads of the source apply only the source policy, id>=2 (expect 2 3 4)
+2 3 4

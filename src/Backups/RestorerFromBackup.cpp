@@ -541,6 +541,22 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
+
+        /// Create an `Overlay` facade in restore mode (SECONDARY_CREATE), like the table-restore
+        /// path does. This skips creation-time sanity checks that do not hold mid-restore — the
+        /// facade's source databases are restored in the same operation and may not exist yet when
+        /// the facade is created (they are resolved lazily by name afterwards).
+        ///
+        /// Restrict this to the `Overlay` engine: applying it to every restored database would also
+        /// change the strictness level and `distributed_backup_restore` flag for `Replicated`
+        /// databases, breaking their `RESTORE` (see `test_backup_restore_on_cluster`).
+        if (const auto * storage = create_database_query->storage; storage && storage->engine)
+        {
+            const String canonical_engine_name = DatabaseFactory::instance().resolveCanonicalEngineName(storage->engine->name);
+            if (canonical_engine_name == "Overlay")
+                interpreter.setIsRestoreFromBackup(true);
+        }
+
         interpreter.execute();
     }
     catch (Exception & e)

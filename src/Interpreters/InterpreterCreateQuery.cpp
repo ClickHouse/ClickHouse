@@ -56,6 +56,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -83,6 +84,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -182,6 +184,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_RESTORE_TABLE;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace fs = std::filesystem;
@@ -318,7 +321,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
+    /// During RESTORE the database is created in secondary (SECONDARY_CREATE) mode, like restored
+    /// tables: this skips creation-time checks that do not hold mid-restore, e.g. an `Overlay` facade
+    /// whose source databases are restored in the same operation and may not exist yet at this point.
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ is_restore_from_backup);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -1964,6 +1970,22 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     DatabasePtr database;
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
+
+    /// A read-only `Overlay` facade owns no storage of its own; `DatabaseOverlay::createTable` and
+    /// `attachTable` reject the operation. But when the table name already resolves through the
+    /// facade to a source table, the generic existence check below short-circuits first (it returns
+    /// success for `IF NOT EXISTS`, or throws `TABLE_ALREADY_EXISTS`), so the facade guard is never
+    /// reached: the documented read-only contract is violated and a facade-scoped `CREATE TABLE`
+    /// grant leaks the existence of source tables. Reject up front, before the existence check, for
+    /// both `CREATE` and `ATTACH` and regardless of `IF NOT EXISTS`.
+    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run {} in an underlying database",
+            backQuoteIfNeed(create.getDatabase()),
+            create.attach ? "ATTACH TABLE" : "CREATE TABLE");
+
     assertOrSetUUID(create, database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
@@ -2637,7 +2659,31 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.storage && create.storage->engine)
-        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    {
+        String engine_name = create.storage->engine->name;
+        if (!create.table)
+        {
+            /// The parser may canonicalize a database engine name (e.g. `Overlay` is parsed as the
+            /// SQL-standard `overlay` function), and `TABLE ENGINE` grants are case-sensitive,
+            /// so resolve the canonical database engine name before forming the access element.
+            if (String canonical = DatabaseFactory::instance().resolveCanonicalEngineName(engine_name); !canonical.empty())
+                engine_name = canonical;
+
+            if (engine_name == "Overlay" && create.storage->engine->arguments)
+            {
+                /// Overlay re-exposes the tables of the databases it unions, so creating it
+                /// requires SELECT on each source database.
+                for (const auto & arg : create.storage->engine->arguments->children)
+                {
+                    auto resolved = evaluateConstantExpressionOrIdentifierAsLiteral(arg, getContext());
+                    const auto & literal = resolved->as<ASTLiteral &>();
+                    const String source_db = literal.value.safeGet<String>();
+                    required_access.emplace_back(AccessType::SELECT, source_db);
+                }
+            }
+        }
+        required_access.emplace_back(AccessType::TABLE_ENGINE, engine_name);
+    }
 
     return required_access;
 }

@@ -54,7 +54,11 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
 
 RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    return combineRowPolicyFilters(getFilter(database, table_name, filter_type), combine_with_filter);
+}
+
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter)
+{
     if (filter && combine_with_filter)
     {
         auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
@@ -73,12 +77,10 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
         }
 
         std::copy(combine_with_filter->policies.begin(), combine_with_filter->policies.end(), std::back_inserter(new_filter->policies));
-        filter = new_filter;
+        return new_filter;
     }
-    else if (!filter)
-    {
-        filter = combine_with_filter;
-    }
+    if (!filter)
+        return combine_with_filter;
 
     return filter;
 }

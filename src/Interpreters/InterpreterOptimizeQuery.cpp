@@ -1,3 +1,4 @@
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -22,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 
@@ -40,6 +43,15 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (const auto database = DatabaseCatalog::instance().tryGetDatabase(table_id.getDatabaseName());
+        database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get()))
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only). "
+            "Run OPTIMIZE TABLE in the underlying database that owns the table",
+            backQuote(table_id.getDatabaseName()));
+
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());

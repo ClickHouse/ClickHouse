@@ -22,6 +22,8 @@
 #include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
+#include <unordered_set>
+
 
 #include "config.h"
 #if USE_AWS_S3
@@ -414,6 +416,13 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         size_t total_projection_index_granularity_bytes_in_memory = 0;
         size_t total_projection_index_granularity_bytes_in_memory_allocated = 0;
 
+        /// A table can show up in more than one database if `Overlay(...)` is in
+        /// use: the same physical table is reachable both through its real
+        /// owner database and through every `Overlay` referencing it. Counting
+        /// it from each appearance would overstate every aggregate below, so we
+        /// deduplicate by `IStorage *` here.
+        std::unordered_set<const IStorage *> seen_tables;
+
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
@@ -425,11 +434,18 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             // Note that we skip not yet loaded tables, so metrics could possibly be lower than expected on fully loaded database just after server start if `async_load_databases = true`.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/true); iterator->isValid(); iterator->next())
             {
+                const auto & table = iterator->table();
+                /// Skip tables we have already counted through another database
+                /// view (typically an `Overlay`). Tables that fail to materialize
+                /// (`!table`) still count for `total_number_of_tables`, matching
+                /// the previous behavior.
+                if (table && !seen_tables.insert(table.get()).second)
+                    continue;
+
                 ++total_number_of_tables;
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                const auto & table = iterator->table();
                 if (!table)
                     continue;
 

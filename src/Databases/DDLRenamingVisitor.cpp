@@ -273,6 +273,20 @@ namespace
             /// We'll try to replace the database name but we can do nothing to 'tables_regexp'.
             replaceDatabaseNameInArguments(*storage.engine, data, 0);
         }
+        else if (Poco::toLower(storage.engine->name) == "overlay")
+        {
+            /// Syntax: CREATE DATABASE ... ENGINE = Overlay('db_1', 'db_2', ...)
+            /// The parser canonicalizes the database engine name to lowercase `overlay` (it collides
+            /// with the SQL-standard `OVERLAY` function), so match case-insensitively here.
+            /// Every argument names an underlying source database; rewrite them all through the
+            /// database renaming map so that a facade restored under a new name (or whose sources
+            /// were restored under new names) points at the restored sources rather than the originals.
+            if (storage.engine->arguments)
+            {
+                for (size_t i = 0, num_args = storage.engine->arguments->children.size(); i < num_args; ++i)
+                    replaceDatabaseNameInArguments(*storage.engine, data, i);
+            }
+        }
     }
 
     void visitFunction(const ASTFunction & function, const DDLRenamingVisitor::Data & data)

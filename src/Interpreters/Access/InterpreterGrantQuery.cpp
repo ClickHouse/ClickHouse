@@ -7,6 +7,7 @@
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
+#include <Databases/DatabaseFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Interpreters/QueryLog.h>
@@ -428,14 +429,23 @@ BlockIO InterpreterGrantQuery::execute()
     auto current_user_access = getContext()->getAccess();
 
     /// Validate TABLE ENGINE parameter names if explicitly specified
-    for (const auto & element : query.access_rights_elements)
+    for (auto & element : query.access_rights_elements)
     {
         if (element.isGlobalWithParameter()
             && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
             && !element.anyParameter())
         {
-            /// Will throw UNKNOWN_STORAGE if engine is unknown
-            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+            /// Database engines (e.g. `Overlay`) participate in `TABLE ENGINE` checks too
+            /// (`CREATE DATABASE` checks `TABLE_ENGINE` in `InterpreterCreateQuery`), so accept
+            /// their names here as well. `TABLE ENGINE` grants are matched by exact, case-sensitive
+            /// parameter string, and `InterpreterCreateQuery` forms the required grant from the
+            /// canonical engine name. Normalize the granted parameter to that canonical name —
+            /// otherwise a grant written as `overlay` would never satisfy a check against `Overlay`.
+            if (String canonical = DatabaseFactory::instance().resolveCanonicalEngineName(element.parameter); !canonical.empty())
+                element.parameter = std::move(canonical);
+            else
+                /// Will throw UNKNOWN_STORAGE if engine is unknown
+                (void)StorageFactory::instance().getStorageFeatures(element.parameter);
         }
     }
 

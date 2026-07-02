@@ -27,6 +27,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
@@ -182,6 +183,20 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     if (database && table)
     {
+        /// A read-only `Overlay` facade rejects these operations in its `dropTable`/`detachTable`
+        /// too, but by that time the interpreter has already called `flushAndShutdown` on the
+        /// real underlying table (and `truncate` does not consult the database at all).
+        /// Reject up front, before any side effect on the table.
+        if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run {} in the underlying database that owns the table",
+                backQuote(table_id.database_name),
+                query.kind == ASTDropQuery::Kind::Truncate ? "TRUNCATE TABLE"
+                    : query.kind == ASTDropQuery::Kind::Detach ? "DETACH TABLE"
+                    : "DROP TABLE");
+
         const auto & settings = getContext()->getSettingsRef();
         if (query.if_empty)
         {
@@ -468,6 +483,20 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     bool drop = query.kind == ASTDropQuery::Kind::Drop;
     bool truncate = query.kind == ASTDropQuery::Kind::Truncate;
+
+    /// `TRUNCATE DATABASE`/`TRUNCATE TABLES FROM` on a read-only `Overlay` facade would otherwise
+    /// expand to per-table truncation that targets the underlying source tables. Reject it up front
+    /// — the facade owns no tables, so truncation must be run against the underlying databases.
+    /// (`DROP`/`DETACH DATABASE` of the facade itself are allowed: they only remove its definition.)
+    if (truncate)
+    {
+        if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run TRUNCATE in the underlying database that owns the tables",
+                backQuote(database_name));
+    }
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
