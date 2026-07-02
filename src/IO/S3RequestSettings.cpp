@@ -3,8 +3,10 @@
 #include <Core/Settings.h>
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
+#include <IO/S3/ChecksumAlgorithm.h>
 #include <IO/S3RequestSettings.h>
 #include <Interpreters/Context.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
@@ -52,6 +54,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(String, upload_checksum_algorithm, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
     DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
     DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
@@ -243,6 +246,23 @@ void S3RequestSettings::validateUploadSettings()
             "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
             (*this)[S3RequestSetting::storage_class_name].value);
 
+    const auto & upload_checksum_algorithm = (*this)[S3RequestSetting::upload_checksum_algorithm].value;
+    /// An empty value means "use the environment default"; any other value must name an `Algorithm`.
+    const auto algorithm = upload_checksum_algorithm.empty()
+        ? std::nullopt
+        : S3::RequestChecksum::tryParse(upload_checksum_algorithm);
+    if (!upload_checksum_algorithm.empty() && !algorithm)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+            upload_checksum_algorithm, S3::RequestChecksum::supportedAlgorithms());
+
+    /// No `MD5` under FIPS — it would silently send no checksum.
+    if (algorithm && *algorithm == S3::RequestChecksum::Algorithm::MD5 && OpenSSLInitializer::instance().isFIPSEnabled())
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+
     /// TODO: it's possible to set too small limits.
     /// We can check that max possible object size is not too small.
 }
@@ -302,6 +322,9 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && (*this)[S3RequestSetting::storage_class_name].changed)
         (*this)[S3RequestSetting::storage_class_name] = Poco::toUpperInPlace((*this)[S3RequestSetting::storage_class_name].value);
+
+    if (!(*this)[S3RequestSetting::upload_checksum_algorithm].value.empty() && (*this)[S3RequestSetting::upload_checksum_algorithm].changed)
+        (*this)[S3RequestSetting::upload_checksum_algorithm] = Poco::toUpperInPlace((*this)[S3RequestSetting::upload_checksum_algorithm].value);
 }
 
 void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const

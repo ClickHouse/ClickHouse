@@ -2,16 +2,71 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
+#include <IO/S3RequestSettings.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
 #include <string_view>
 #include <fmt/format.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
+
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+}
+
 namespace DB::S3
 {
+
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
+{
+    /// An explicit setting always wins.
+    const auto & name = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
+
+        /// `MD5` selects the SDK's `Content-MD5` path, which `S3Express` and FIPS reject.
+        if (*algorithm == RequestChecksum::Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (OpenSSLInitializer::instance().isFIPSEnabled())
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    /// No explicit choice: pick a default for the environment.
+    if (is_s3express_bucket)
+        return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// Default to the SDK's `Content-MD5` path. Under FIPS that is unavailable and silently dropped, so upgrade to `SHA256`.
+    if (OpenSSLInitializer::instance().isFIPSEnabled())
+        return RequestChecksum::Algorithm::SHA256;
+    return RequestChecksum::Algorithm::MD5;
+}
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {
