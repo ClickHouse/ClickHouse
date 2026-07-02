@@ -2136,6 +2136,12 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
+            /// aggregate them and there is nothing to hardlink.
+            if (index_ptr->isInert())
+                continue;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
@@ -3082,6 +3088,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         {
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
+            /// otherwise the mutation loops forever failing to build the index.
+            if (index_ptr->isInert())
+                continue;
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
