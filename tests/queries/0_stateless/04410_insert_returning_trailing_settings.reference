@@ -8,8 +8,8 @@ select returning trailing settings pushed down
 5
 5
 trailing settings still apply to source select
-1
-1
+10
+10
 source settings before returning do not cap returning
 0
 1
@@ -22,14 +22,18 @@ source settings before returning do not cap returning
 8
 9
 10
-1
 query settings preserved for returning
 0
 1
 2
 3
 4
-1
+5
+6
+7
+8
+9
+10
 source custom setting does not leak into returning
 unset
 1
