@@ -1897,17 +1897,17 @@ CONV_FN(FileFunc, ff)
     if (ff.has_informat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InFormat_Name(ff.informat()).substr(3));
+        appendSQLStringLiteral(ret, ff.informat());
     }
     else if (ff.has_outformat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, OutFormat_Name(ff.outformat()).substr(4));
+        appendSQLStringLiteral(ret, ff.outformat());
     }
     else if (ff.has_inoutformat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InOutFormat_Name(ff.inoutformat()).substr(6));
+        appendSQLStringLiteral(ret, ff.inoutformat());
     }
     if (ff.has_structure())
     {
@@ -1924,7 +1924,7 @@ CONV_FN(FileFunc, ff)
 CONV_FN(FormatFunc, ff)
 {
     ret += "format(";
-    ret += InFormat_Name(ff.format()).substr(3);
+    ret += ff.format();
     if (ff.has_structure())
     {
         ret += ", ";
@@ -2293,17 +2293,17 @@ CONV_FN(URLFunc, url)
     if (url.has_informat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InFormat_Name(url.informat()).substr(3));
+        appendSQLStringLiteral(ret, url.informat());
     }
     else if (url.has_outformat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, OutFormat_Name(url.outformat()).substr(4));
+        appendSQLStringLiteral(ret, url.outformat());
     }
     else if (url.has_inoutformat())
     {
         ret += ", ";
-        appendSQLStringLiteral(ret, InOutFormat_Name(url.inoutformat()).substr(6));
+        appendSQLStringLiteral(ret, url.inoutformat());
     }
     if (url.has_structure())
     {
@@ -3304,9 +3304,9 @@ CONV_FN(TableEngineParam, tep)
     switch (tep.table_engine_param_oneof_case())
     {
         case TableEngineParamType::kCols: ColumnPathToString(ret, 0, tep.cols()); break;
-        case TableEngineParamType::kIn: ret += InFormat_Name(tep.in()).substr(3); break;
-        case TableEngineParamType::kOut: ret += OutFormat_Name(tep.out()).substr(4); break;
-        case TableEngineParamType::kInOut: ret += InOutFormat_Name(tep.in_out()).substr(6); break;
+        case TableEngineParamType::kIn: ret += tep.in(); break;
+        case TableEngineParamType::kOut: ret += tep.out(); break;
+        case TableEngineParamType::kInOut: ret += tep.in_out(); break;
         case TableEngineParamType::kJoinOp: ret += JoinType_Name(tep.join_op()).substr(2); break;
         case TableEngineParamType::kJoinConst: ret += JoinConst_Name(tep.join_const()).substr(2); break;
         case TableEngineParamType::kDatabase: SQLIdentifierToString(ret, tep.database()); break;
@@ -3681,7 +3681,7 @@ CONV_FN(Insert, insert)
             SettingValuesToString(ret, insert.setting_values());
         }
         ret += " FORMAT ";
-        ret += InFormat_Name(insert_file.format()).substr(3);
+        ret += insert_file.format();
     }
     else if (insert.has_query())
     {
@@ -3844,7 +3844,7 @@ CONV_FN(CheckTable, ct)
     if (ct.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ct.format()).substr(4);
+        ret += ct.format();
     }
 }
 
@@ -3877,7 +3877,7 @@ CONV_FN(DescribeStatement, ds)
     if (ds.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ds.format()).substr(4);
+        ret += ds.format();
     }
 }
 
@@ -3951,7 +3951,7 @@ CONV_FN(OptimizeTable, ot)
     if (ot.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(ot.format()).substr(4);
+        ret += ot.format();
     }
 }
 
@@ -5014,7 +5014,7 @@ CONV_FN(TopSelect, top)
     if (top.has_format())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(top.format()).substr(4);
+        ret += top.format();
     }
 }
 
@@ -5565,12 +5565,12 @@ CONV_FN(BackupRestore, backup)
     if (backup.has_informat())
     {
         ret += " FORMAT ";
-        ret += InFormat_Name(backup.informat()).substr(3);
+        ret += backup.informat();
     }
     else if (backup.has_outformat())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(backup.outformat()).substr(4);
+        ret += backup.outformat();
     }
 }
 
@@ -5620,12 +5620,12 @@ CONV_FN(Kill, kil)
     if (kil.has_informat())
     {
         ret += " FORMAT ";
-        ret += InFormat_Name(kil.informat()).substr(3);
+        ret += kil.informat();
     }
     else if (kil.has_outformat())
     {
         ret += " FORMAT ";
-        ret += OutFormat_Name(kil.outformat()).substr(4);
+        ret += kil.outformat();
     }
     if (kil.has_setting_values())
     {

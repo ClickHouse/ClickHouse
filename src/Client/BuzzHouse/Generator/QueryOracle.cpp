@@ -14,8 +14,7 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+const DB::Strings QueryOracle::oracleFormats = {"CSV", "TabSeparated", "Values"};
 
 static void finishSettings(SettingValues * svs)
 {
@@ -303,7 +302,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(true);
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -508,7 +507,7 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     eca->mutable_col_alias()->set_column("s0");
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
-    ts1->set_format(OutFormat::OUT_CSV);
+    ts1->set_format("CSV");
     const auto err1 = std::filesystem::remove(qcfile);
     UNUSED(err1);
     sif1->set_path(qcfile.generic_string());
@@ -600,7 +599,7 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
         ->set_column("s0");
 
     finishSettings(sel1->mutable_setting_values());
-    ts1->set_format(OutFormat::OUT_CSV);
+    ts1->set_format("CSV");
     const auto err1 = std::filesystem::remove(qcfile);
     UNUSED(err1);
     sif1->set_path(qcfile.generic_string());
@@ -686,7 +685,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
             SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE);
 
     finishSettings(sel2->mutable_setting_values());
-    ts2->set_format(OutFormat::OUT_CSV);
+    ts2->set_format("CSV");
     const auto err2 = std::filesystem::remove(qcfile);
     UNUSED(err2);
     ts2->mutable_intofile()->set_path(qcfile.generic_string());
@@ -756,7 +755,7 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     sv->set_property("count_distinct_implementation");
     sv->set_value("'uniqExact'");
     finishSettings(svs);
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -941,7 +940,7 @@ void QueryOracle::dumpTableContent(
     {
         finishSettings(sel->mutable_setting_values());
     }
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1032,7 +1031,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
+    ff->set_outformat(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : fc.out_formats));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -1368,7 +1367,7 @@ void QueryOracle::dumpDictionaryContent(
     gen.entries.clear();
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1434,7 +1433,7 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     }
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1449,9 +1448,9 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = !outIn.contains(ff.outformat()) || (!can_test_oracle_result && rg.nextSmallNumber() < 4)
-        ? rg.pickValueRandomlyFromMap(outIn)
-        : outIn.at(ff.outformat());
+    const std::optional<String> read_back = fc.formatToRead(ff.outformat());
+    const String inf = !read_back.has_value() || (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickRandomly(fc.in_formats)
+                                                                                                       : read_back.value();
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -1480,7 +1479,7 @@ void QueryOracle::generateImportQuery(
 
         svs->CopyFrom(oins.setting_values());
     }
-    if (can_test_oracle_result && inf == InFormat::IN_CSV)
+    if (can_test_oracle_result && inf == "CSV")
     {
         SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1608,7 +1607,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats));
+        const String & outf = rg.pickRandomly(QueryOracle::oracleFormats);
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);

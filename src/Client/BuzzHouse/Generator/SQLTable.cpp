@@ -2735,7 +2735,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   dsd->set_path(t.getTablePath(rg, this->allow_not_deterministic));
                   if (t.file_format.has_value())
                   {
-                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                      dsd->set_format(t.file_format.value());
                   }
                   dsd->set_source(DictionarySourceDetails::FILE);
               }
@@ -2744,7 +2744,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
                   dsd->set_url(t.getTablePath(rg, this->allow_not_deterministic));
                   if (t.file_format.has_value())
                   {
-                      dsd->set_format(InOutFormat_Name(t.file_format.value()).substr(6));
+                      dsd->set_format(t.file_format.value());
                   }
                   dsd->set_source(DictionarySourceDetails::HTTP);
               }

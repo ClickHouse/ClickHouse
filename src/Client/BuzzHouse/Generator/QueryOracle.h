@@ -44,7 +44,7 @@ struct MatchHandler
 class QueryOracle
 {
 private:
-    static const std::vector<std::vector<OutFormat>> oracleFormats;
+    static const DB::Strings oracleFormats;
     FuzzConfig & fc;
     const std::filesystem::path qcfile;
     const std::filesystem::path qsfile;

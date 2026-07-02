@@ -126,7 +126,7 @@ class CatalogBackup
 public:
     BackupOut bout;
     bool everything = false;
-    std::optional<OutFormat> out_format;
+    std::optional<String> out_format;
     std::unordered_map<String, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<String, SQLTable> tables;
     std::unordered_map<String, SQLView> views;
@@ -799,13 +799,13 @@ private:
                   [&]
                   {
                       /// Format
-                      const InOutFormat next_format
+                      const String next_format
                           = (b.file_format.has_value() && (!this->allow_not_deterministic || rg.nextMediumNumber() < 81))
                           ? b.file_format.value()
-                          : rg.pickRandomly(rg.pickRandomly(inOutFormats));
+                          : rg.pickRandomly(fc.in_out_formats);
 
                       next->set_key("format");
-                      next->set_value(InOutFormat_Name(next_format).substr(6));
+                      next->set_value(next_format);
                       added_format++;
                   }},
                  {add_compression,

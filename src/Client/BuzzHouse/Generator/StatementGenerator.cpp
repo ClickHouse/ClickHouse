@@ -953,9 +953,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     ot->set_use_force(rg.nextBool());
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        ot->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        ot->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -1019,9 +1017,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     }
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        ct->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        ct->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -1080,12 +1076,11 @@ bool StatementGenerator::tableOrFunctionRef(
 
               TableFunction * tf = tof->mutable_tfunc();
               URLFunc * ufunc = tf->mutable_url();
-              const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
-                  ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                  : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-              const InFormat iinf = (outIn.contains(outf) && (!this->allow_not_deterministic || rg.nextBool()))
-                  ? outIn.at(outf)
-                  : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+              const String outf = rg.pickRandomly(fc.out_formats);
+              const std::optional<String> read_back = fc.formatToRead(outf);
+              const String iinf = (read_back.has_value() && (!this->allow_not_deterministic || rg.nextBool()))
+                  ? read_back.value()
+                  : rg.pickRandomly(fc.in_formats);
 
               if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
               {
@@ -1118,7 +1113,7 @@ bool StatementGenerator::tableOrFunctionRef(
               }
               if (rg.nextMediumNumber() < 91)
               {
-                  sql += " FORMAT " + InFormat_Name(iinf).substr(3);
+                  sql += " FORMAT " + iinf;
               }
               url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "query=" + urlEncodeQueryParam(sql);
               ufunc->set_uurl(std::move(url));
@@ -1218,9 +1213,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        dt->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        dt->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -3049,9 +3042,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (rg.nextBool())
     {
         /// Most of the times, use formats that can be read later
-        br->set_outformat(
-            rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                          : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        br->set_outformat(rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -3120,10 +3111,9 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     br->mutable_out()->CopyFrom(backup.bout);
     if (backup.out_format.has_value())
     {
-        br->set_informat(
-            outIn.contains(backup.out_format.value()) && rg.nextBool()
-                ? outIn.at(backup.out_format.value())
-                : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1));
+        const std::optional<String> read_back = fc.formatToRead(backup.out_format.value());
+
+        br->set_informat(read_back.has_value() && rg.nextBool() ? read_back.value() : rg.pickRandomly(fc.in_formats));
     }
 }
 

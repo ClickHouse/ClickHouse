@@ -79,9 +79,6 @@ enum class LakeCatalog
     Unity = 4
 };
 
-extern const std::vector<std::vector<OutFormat>> outFormats;
-extern const std::unordered_map<OutFormat, InFormat> outIn;
-extern const std::vector<std::vector<InOutFormat>> inOutFormats;
 
 struct SQLColumn
 {
@@ -268,7 +265,7 @@ public:
     TableEngineDescriptor engine;
     std::optional<TableEngineDescriptor> subengine;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    std::optional<InOutFormat> file_format;
+    std::optional<String> file_format;
     IntegrationCall integration = IntegrationCall::None;
 
     SQLBase() = default;

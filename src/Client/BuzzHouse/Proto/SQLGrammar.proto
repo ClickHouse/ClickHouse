@@ -709,207 +709,6 @@ message ExprSchemaTable {
     required SQLIdentifier table = 2;
 }
 
-enum InFormat {
-    IN_Arrow = 1;
-    IN_ArrowStream = 2;
-    IN_Avro = 3;
-    IN_AvroConfluent = 4;
-    IN_BSONEachRow = 5;
-    IN_Buffers = 6;
-    IN_CapnProto = 7;
-    IN_CSV = 8;
-    IN_CSVWithNames = 9;
-    IN_CSVWithNamesAndTypes = 10;
-    IN_CustomSeparated = 11;
-    IN_CustomSeparatedIgnoreSpaces = 12;
-    IN_CustomSeparatedIgnoreSpacesWithNames = 13;
-    IN_CustomSeparatedIgnoreSpacesWithNamesAndTypes = 14;
-    IN_CustomSeparatedWithNames = 15;
-    IN_CustomSeparatedWithNamesAndTypes = 16;
-    IN_DWARF = 17;
-    IN_Form = 18;
-    IN_HiveText = 19;
-    IN_JSON = 20;
-    IN_JSONAsObject = 21;
-    IN_JSONAsString = 22;
-    IN_JSONColumns = 23;
-    IN_JSONColumnsWithMetadata = 24;
-    IN_JSONCompact = 25;
-    IN_JSONCompactColumns = 26;
-    IN_JSONCompactEachRow = 27;
-    IN_JSONCompactEachRowWithNames = 28;
-    IN_JSONCompactEachRowWithNamesAndTypes = 29;
-    IN_JSONCompactStringsEachRow = 30;
-    IN_JSONCompactStringsEachRowWithNames = 31;
-    IN_JSONCompactStringsEachRowWithNamesAndTypes = 32;
-    IN_JSONEachRow = 33;
-    IN_JSONLines = 34;
-    IN_JSONObjectEachRow = 35;
-    IN_JSONStringsEachRow = 36;
-    IN_LineAsString = 37;
-    IN_MsgPack = 38;
-    IN_MySQLDump = 39;
-    IN_Native = 40;
-    IN_Npy = 41;
-    IN_One = 42;
-    IN_ORC = 43;
-    IN_Parquet = 44;
-    IN_ParquetMetadata = 45;
-    IN_Protobuf = 46;
-    IN_ProtobufList = 47;
-    IN_ProtobufSingle = 48;
-    IN_RawBLOB = 49;
-    IN_Regexp = 50;
-    IN_RowBinary = 51;
-    IN_RowBinaryWithDefaults = 52;
-    IN_RowBinaryWithNames = 53;
-    IN_RowBinaryWithNamesAndTypes = 54;
-    IN_RowBinaryWithNamesAndTypesAndDefaults = 55;
-    IN_TabSeparated = 56;
-    IN_TabSeparatedRaw = 57;
-    IN_TabSeparatedRawWithNames = 58;
-    IN_TabSeparatedRawWithNamesAndTypes = 59;
-    IN_TabSeparatedWithNames = 60;
-    IN_TabSeparatedWithNamesAndTypes = 61;
-    IN_Template = 62;
-    IN_TemplateIgnoreSpaces = 63;
-    IN_TSKV = 64;
-    IN_Values = 65;
-}
-
-enum OutFormat {
-    OUT_Arrow = 1;
-    OUT_ArrowStream = 2;
-    OUT_Avro = 3;
-    OUT_AvroConfluent = 4;
-    OUT_BSONEachRow = 5;
-    OUT_Buffers = 6;
-    OUT_CapnProto = 7;
-    OUT_CSV = 8;
-    OUT_CSVWithNames = 9;
-    OUT_CSVWithNamesAndTypes = 10;
-    OUT_CustomSeparated = 11;
-    OUT_CustomSeparatedWithNames = 12;
-    OUT_CustomSeparatedWithNamesAndTypes = 13;
-    OUT_Hash = 14;
-    OUT_JSON = 15;
-    OUT_JSONColumns = 16;
-    OUT_JSONColumnsWithMetadata = 17;
-    OUT_JSONCompact = 18;
-    OUT_JSONCompactColumns = 19;
-    OUT_JSONCompactEachRow = 20;
-    OUT_JSONCompactEachRowWithNames = 21;
-    OUT_JSONCompactEachRowWithNamesAndTypes = 22;
-    OUT_JSONCompactEachRowWithProgress = 23;
-    OUT_JSONCompactStrings = 24;
-    OUT_JSONCompactStringsEachRow = 25;
-    OUT_JSONCompactStringsEachRowWithNames = 26;
-    OUT_JSONCompactStringsEachRowWithNamesAndTypes = 27;
-    OUT_JSONCompactStringsEachRowWithProgress = 28;
-    OUT_JSONEachRow = 29;
-    OUT_JSONEachRowWithProgress = 30;
-    OUT_JSONLines = 31;
-    OUT_JSONObjectEachRow = 32;
-    OUT_JSONStrings = 33;
-    OUT_JSONStringsEachRow = 34;
-    OUT_JSONStringsEachRowWithProgress = 35;
-    OUT_Markdown = 36;
-    OUT_MsgPack = 37;
-    OUT_MySQLWire = 38;
-    OUT_Native = 39;
-    OUT_Npy = 40;
-    OUT_Null = 41;
-    OUT_ODBCDriver2 = 42;
-    OUT_ORC = 43;
-    OUT_Parquet = 44;
-    OUT_PostgreSQLWire = 45;
-    OUT_Pretty = 46;
-    OUT_PrettyCompact = 47;
-    OUT_PrettyCompactMonoBlock = 48;
-    OUT_PrettyCompactNoEscapes = 49;
-    OUT_PrettyCompactNoEscapesMonoBlock = 50;
-    OUT_PrettyJSONEachRow = 51;
-    OUT_PrettyMonoBlock = 52;
-    OUT_PrettyNoEscapes = 53;
-    OUT_PrettyNoEscapesMonoBlock = 54;
-    OUT_PrettySpace = 55;
-    OUT_PrettySpaceMonoBlock = 56;
-    OUT_PrettySpaceNoEscapes = 57;
-    OUT_PrettySpaceNoEscapesMonoBlock = 58;
-    OUT_Prometheus = 59;
-    OUT_Protobuf = 60;
-    OUT_ProtobufList = 61;
-    OUT_ProtobufSingle = 62;
-    OUT_RawBLOB = 63;
-    OUT_RowBinary = 64;
-    OUT_RowBinaryWithNames = 65;
-    OUT_RowBinaryWithNamesAndTypes = 66;
-    OUT_SQLInsert = 67;
-    OUT_TabSeparated = 68;
-    OUT_TabSeparatedRaw = 69;
-    OUT_TabSeparatedRawWithNames = 70;
-    OUT_TabSeparatedRawWithNamesAndTypes = 71;
-    OUT_TabSeparatedWithNames = 72;
-    OUT_TabSeparatedWithNamesAndTypes = 73;
-    OUT_Template = 74;
-    OUT_TSKV = 75;
-    OUT_Values = 76;
-    OUT_Vertical = 77;
-    OUT_XML = 78;
-}
-
-enum InOutFormat {
-    INOUT_Arrow = 1;
-    INOUT_ArrowStream = 2;
-    INOUT_Avro = 3;
-    INOUT_AvroConfluent = 4;
-    INOUT_BSONEachRow = 5;
-    INOUT_Buffers = 6;
-    INOUT_CapnProto = 7;
-    INOUT_CSV = 8;
-    INOUT_CSVWithNames = 9;
-    INOUT_CSVWithNamesAndTypes = 10;
-    INOUT_CustomSeparated = 11;
-    INOUT_CustomSeparatedWithNames = 12;
-    INOUT_CustomSeparatedWithNamesAndTypes = 13;
-    INOUT_JSON = 14;
-    INOUT_JSONColumns = 15;
-    INOUT_JSONColumnsWithMetadata = 16;
-    INOUT_JSONCompact = 17;
-    INOUT_JSONCompactColumns = 18;
-    INOUT_JSONCompactEachRow = 19;
-    INOUT_JSONCompactEachRowWithNames = 20;
-    INOUT_JSONCompactEachRowWithNamesAndTypes = 21;
-    INOUT_JSONCompactStringsEachRow = 22;
-    INOUT_JSONCompactStringsEachRowWithNames = 23;
-    INOUT_JSONCompactStringsEachRowWithNamesAndTypes = 24;
-    INOUT_JSONEachRow = 25;
-    INOUT_JSONLines = 26;
-    INOUT_JSONObjectEachRow = 27;
-    INOUT_JSONStringsEachRow = 28;
-    INOUT_MsgPack = 29;
-    INOUT_Native = 30;
-    INOUT_Npy = 31;
-    INOUT_ORC = 32;
-    INOUT_Parquet = 33;
-    INOUT_Protobuf = 34;
-    INOUT_ProtobufList = 35;
-    INOUT_ProtobufSingle = 36;
-    INOUT_RawBLOB = 37;
-    INOUT_RowBinary = 38;
-    INOUT_RowBinaryWithNames = 39;
-    INOUT_RowBinaryWithNamesAndTypes = 40;
-    INOUT_TabSeparated = 41;
-    INOUT_TabSeparatedRaw = 42;
-    INOUT_TabSeparatedRawWithNames = 43;
-    INOUT_TabSeparatedRawWithNamesAndTypes = 44;
-    INOUT_TabSeparatedWithNames = 45;
-    INOUT_TabSeparatedWithNamesAndTypes = 46;
-    INOUT_Template = 47;
-    INOUT_TSKV = 48;
-    INOUT_Values = 49;
-}
-
 message UsingExpr {
     required ExprColumn column = 1;
     repeated ExprColumn other_columns = 2;
@@ -996,16 +795,16 @@ message FileFunc {
     optional Cluster cluster = 2;
     required string path = 3;
     oneof file_func_oneof {
-        InFormat informat = 4;
-        OutFormat outformat = 5;
-        InOutFormat inoutformat = 6;
+        string informat = 4;
+        string outformat = 5;
+        string inoutformat = 6;
     }
     optional Expr structure = 7;
     optional string fcomp = 8;
 }
 
 message FormatFunc {
-    required InFormat format = 1;
+    required string format = 1;
     optional Expr structure = 2;
     required string data = 3;
 }
@@ -1125,9 +924,9 @@ message URLFunc {
     optional Cluster cluster = 2;
     required string uurl = 3;
     oneof url_func_oneof {
-        InFormat informat = 4;
-        OutFormat outformat = 5;
-        InOutFormat inoutformat = 6;
+        string informat = 4;
+        string outformat = 5;
+        string inoutformat = 6;
     }
     optional Expr structure = 7;
 }
@@ -1836,9 +1635,9 @@ enum TableEngineOption {
 message TableEngineParam {
     oneof table_engine_param_oneof {
         ColumnPath cols = 1;
-        InFormat in = 2;
-        OutFormat out = 3;
-        InOutFormat in_out = 4;
+        string in = 2;
+        string out = 3;
+        string in_out = 4;
         JoinType join_op = 5;
         JoinConst join_const = 6;
         SQLIdentifier database = 7;
@@ -1977,7 +1776,7 @@ message Drop {
 message InsertFromFile {
     required string path = 1;
     optional string fcomp = 2;
-    required InFormat format = 3;
+    required string format = 3;
 }
 
 message SelectParen {
@@ -2070,14 +1869,14 @@ message SelectIntoFile {
 message TopSelect {
     required Select sel = 1;
     optional SelectIntoFile intofile = 2;
-    optional OutFormat format = 3;
+    optional string format = 3;
 }
 
 message CheckTable {
     required ExprSchemaTable est = 1;
     optional SinglePartitionExpr single_partition = 2;
     optional SettingValues setting_values = 3;
-    optional OutFormat format = 4;
+    optional string format = 4;
 }
 
 message DescribeStatement {
@@ -2088,7 +1887,7 @@ message DescribeStatement {
         SQLTableFuncCall stf = 4;
     }
     optional SettingValues setting_values = 5;
-    optional OutFormat format = 6;
+    optional string format = 6;
     /// When set with a `tof` target, emits `DESCRIBE TEMPORARY TABLE ...`. Only valid for
     /// targets that are actual temporary tables.
     optional bool temporary = 7;
@@ -2112,7 +1911,7 @@ message OptimizeTable {
     optional DeduplicateExpr dedup = 7;
     optional bool cleanup = 8;
     optional SettingValues setting_values = 9;
-    optional OutFormat format = 10;
+    optional string format = 10;
 }
 
 message Exchange {
@@ -2726,8 +2525,8 @@ message BackupRestore {
     }
     optional SyncOrAsync sync = 8;
     oneof backup_format_oneof {
-        InFormat informat = 9;
-        OutFormat outformat = 10;
+        string informat = 9;
+        string outformat = 10;
     }
 }
 
@@ -2759,8 +2558,8 @@ message Kill {
     }
     optional KillOption option = 4;
     oneof kill_format_oneof {
-        InFormat informat = 5;
-        OutFormat outformat = 6;
+        string informat = 5;
+        string outformat = 6;
     }
     optional SettingValues setting_values = 7;
 }
