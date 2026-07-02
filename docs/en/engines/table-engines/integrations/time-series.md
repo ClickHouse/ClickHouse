@@ -398,6 +398,59 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 
+## Prometheus-compatible HTTP API {#prometheus-http-api}
+
+A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API configured under the `prometheus` section of the server configuration. In addition to the PromQL query endpoints (`/api/v1/query` and `/api/v1/query_range`), the following metadata endpoints are supported, which are used by Grafana's Prometheus data source for label autocomplete and the metric browser:
+
+| Endpoint | Description |
+|---|---|
+| `/api/v1/series` | Returns the matching series together with their full label set (the metric name as `__name__` plus all tags). |
+| `/api/v1/labels` | Returns all distinct label names, always including the virtual `__name__` label. |
+| `/api/v1/label/<name>/values` | Returns the distinct values of the label `<name>` (the `metric_name` column for `__name__`, a dedicated column for a tag moved there via `tags_to_columns`, otherwise values from the `tags` map). |
+
+These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.
+
+The optional `match[]` parameter restricts the result to a single metric name, for example `/api/v1/series?match[]=cpu_usage`.
+
+Tags moved into separate columns via the `tags_to_columns` setting are included in the results of all three endpoints.
+
+The optional `start` and `end` parameters restrict the result to series whose time range (`min_time`/`max_time`) overlaps the requested interval. Because the metadata endpoints read only from the `tags` table, they can apply this filter only through the `min_time`/`max_time` columns, and only when the table is configured to use them for filtering. This requires both `store_min_time_and_max_time` = `true` (so the columns exist, the default) and `filter_by_min_time_and_max_time` = `true` (so they are used, the default). When either setting is disabled, `/api/v1/query` and `/api/v1/query_range` fall back to exact filtering from the samples table, which the metadata endpoints do not implement; a metadata request that specifies `start`/`end` is therefore rejected with an error rather than silently returning a different set of series, label names, or label values than the query endpoints.
+
+Each endpoint needs a handler of type `query_api`. Because the label-values endpoint contains a variable path component, its rule must use a regular expression (a literal `*` is not a wildcard):
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/api/v1/series</url>
+            <handler>
+                <type>query_api</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/api/v1/labels</url>
+            <handler>
+                <type>query_api</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>regex:/api/v1/label/[^/]+/values</url>
+            <handler>
+                <type>query_api</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```
+
+:::note
+The `match[]` parameter currently supports plain metric-name matching only; `{label=value}` series selectors are not yet parsed.
+:::
+
 # Functions {#functions}
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
