@@ -1,6 +1,9 @@
 -- Tags: long
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 0;
+-- The lift targets local MergeTree reads; under parallel replicas the plan reads through
+-- remote-replica steps and the pass correctly bails, changing the EXPLAIN output
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS lift_orders;
 DROP TABLE IF EXISTS lift_lineitem;
