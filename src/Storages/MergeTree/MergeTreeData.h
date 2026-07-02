@@ -475,6 +475,12 @@ public:
         /// For Summing, Coalescing and Aggregating modes.
         bool allow_tuple_element_aggregation = false;
 
+        /// Derive `allow_tuple_element_aggregation` from the table's MergeTree settings, applying the
+        /// same engine-mode gating as table construction (the flag only affects Summing / Aggregating /
+        /// Coalescing; forced off otherwise). parseFromEngineAST has no settings and leaves the field at
+        /// its default, so ALTER ... MODIFY ENGINE must call this before `check` to match the reload path.
+        void setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings);
+
         /// Check that needed columns are present and have correct types.
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
@@ -493,6 +499,14 @@ public:
                 && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
                 && graphite_params == rhs.graphite_params;
         }
+
+        /// Build MergingParams from a MergeTree-family engine clause given by its name (e.g.
+        /// "ReplacingMergeTree") and the argument list AST (may be null). Only the modern,
+        /// extended-syntax merge parameters are accepted (sign / version / is_deleted / columns
+        /// to sum / graphite config); legacy positional date/granularity/zookeeper arguments are
+        /// not supported here. Used by ALTER TABLE ... MODIFY ENGINE. Throws on an unknown or
+        /// non-MergeTree engine name or malformed arguments.
+        static MergingParams parseFromEngineAST(const String & engine_name, const ASTPtr & arguments, ContextPtr context);
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -1144,6 +1158,14 @@ public:
     {
         return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
     }
+
+    /// Validate the target engine of ALTER TABLE ... MODIFY ENGINE against the metadata this same
+    /// ALTER produces. The caller runs this before persisting the rewritten CREATE, so a rejection
+    /// leaves no invalid engine clause on disk. This does NOT swap the live `merging_params` (read
+    /// lock-free from hot paths, which an in-place swap from ALTER would race) or reset part levels:
+    /// the new merge semantics take effect when the storage is next loaded from the persisted
+    /// metadata (reload-only). A live hot-swap is a separate change (issue #107551 open point).
+    void applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context);
 
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,

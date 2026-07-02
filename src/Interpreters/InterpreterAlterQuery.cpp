@@ -23,6 +23,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -614,6 +615,17 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MODIFY_ORDER_BY:
         {
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_ENGINE:
+        {
+            /// MODIFY ENGINE changes how parts are merged (the table's merge semantics), like ORDER BY
+            /// it is a structural change to data organization, so reuse the ALTER ORDER BY privilege.
+            required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
+            /// MODIFY ENGINE persists the target engine into the CREATE query, so it carries the same
+            /// TABLE ENGINE requirement as CREATE TABLE (InterpreterCreateQuery::getRequiredAccess).
+            if (command.engine)
+                required_access.emplace_back(AccessType::TABLE_ENGINE, command.engine->as<ASTFunction &>().name);
             break;
         }
         case ASTAlterCommand::REMOVE_SAMPLE_BY:

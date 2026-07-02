@@ -62,6 +62,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTHelpers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
@@ -213,6 +214,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
+    extern const SettingsBool allow_experimental_alter_modify_engine;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -338,6 +340,7 @@ namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_STORAGE;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
     extern const int DUPLICATE_DATA_PART;
@@ -1585,6 +1588,15 @@ static void checkTupleElementAggregationConstraints(const StorageInMemoryMetadat
     }
 }
 
+void MergeTreeData::MergingParams::setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings)
+{
+    /// Only Summing / Aggregating / Coalescing understand the flag; for other modes it is forced off so
+    /// the default can be flipped on without affecting them. Keep this in sync with registerStorageMergeTree.
+    allow_tuple_element_aggregation
+        = (mode == MergingParams::Summing || mode == MergingParams::Aggregating || mode == MergingParams::Coalescing)
+        && settings[MergeTreeSetting::allow_tuple_element_aggregation];
+}
+
 void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
@@ -1888,6 +1900,153 @@ String MergeTreeData::MergingParams::getModeName() const
         case VersionedCollapsing: return "VersionedCollapsing";
         case Coalescing:    return "Coalescing";
     }
+}
+
+namespace
+{
+    /// Get the list of column names: either a single identifier `c`, or a tuple `(c1, c2)`.
+    Names extractEngineColumnNames(const ASTPtr & node)
+    {
+        const auto * expr_func = node->as<ASTFunction>();
+        if (expr_func && expr_func->name == "tuple")
+        {
+            Names res;
+            for (const auto & elem : expr_func->children.at(0)->children)
+                res.push_back(getIdentifierName(elem));
+            return res;
+        }
+        return {getIdentifierName(node)};
+    }
+}
+
+MergeTreeData::MergingParams MergeTreeData::MergingParams::parseFromEngineAST(
+    const String & engine_name, const ASTPtr & arguments, ContextPtr context)
+{
+    /// Strip the optional "Replicated" prefix and the trailing "MergeTree": "ReplacingMergeTree" -> "Replacing".
+    std::string_view name_part = engine_name;
+    if (name_part.starts_with("Replicated"))
+        name_part.remove_prefix(strlen("Replicated"));
+    if (!name_part.ends_with("MergeTree"))
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Engine {} is not a MergeTree-family engine", engine_name);
+    name_part.remove_suffix(strlen("MergeTree"));
+
+    MergingParams params;
+    params.mode = MergingParams::Ordinary;
+    if (name_part == "Collapsing")
+        params.mode = MergingParams::Collapsing;
+    else if (name_part == "Summing")
+        params.mode = MergingParams::Summing;
+    else if (name_part == "Aggregating")
+        params.mode = MergingParams::Aggregating;
+    else if (name_part == "Replacing")
+        params.mode = MergingParams::Replacing;
+    else if (name_part == "Coalescing")
+        params.mode = MergingParams::Coalescing;
+    else if (name_part == "Graphite")
+        params.mode = MergingParams::Graphite;
+    else if (name_part == "VersionedCollapsing")
+        params.mode = MergingParams::VersionedCollapsing;
+    else if (!name_part.empty())
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown storage {}", engine_name);
+
+    ASTs engine_args;
+    if (arguments)
+        engine_args = arguments->children;
+    size_t arg_cnt = engine_args.size();
+
+    /// Only the modern extended-syntax merge parameters are accepted here: the engine arguments
+    /// (if any) are exactly the merge parameter columns. Legacy positional date/sampling/granularity
+    /// and Replicated zookeeper_path/replica_name arguments are not supported by MODIFY ENGINE.
+    auto require_no_extra_args = [&](size_t expected)
+    {
+        if (arg_cnt != expected)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Engine {} expects {} argument(s) in ALTER ... MODIFY ENGINE, got {}", engine_name, expected, arg_cnt);
+    };
+
+    if (params.mode == MergingParams::Collapsing)
+    {
+        require_no_extra_args(1);
+        if (!tryGetIdentifierNameInto(engine_args[0], params.sign_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign column name must be an unquoted string");
+    }
+    else if (params.mode == MergingParams::Replacing)
+    {
+        if (arg_cnt > 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ReplacingMergeTree accepts at most 2 arguments (version, is_deleted)");
+        if (arg_cnt == 2)
+        {
+            if (!tryGetIdentifierNameInto(engine_args[1], params.is_deleted_column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "is_deleted column name must be an identifier");
+        }
+        if (arg_cnt >= 1)
+        {
+            if (!tryGetIdentifierNameInto(engine_args[0], params.version_column))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an identifier");
+        }
+    }
+    else if (params.mode == MergingParams::Summing || params.mode == MergingParams::Coalescing)
+    {
+        if (arg_cnt > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} accepts at most one (columns to sum) argument", engine_name);
+        if (arg_cnt == 1)
+            params.columns_to_sum = extractEngineColumnNames(engine_args[0]);
+    }
+    else if (params.mode == MergingParams::Graphite)
+    {
+        require_no_extra_args(1);
+        const auto * ast = engine_args[0]->as<ASTLiteral>();
+        if (!ast || ast->value.getType() != Field::Types::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Last parameter of GraphiteMergeTree must be the name (in single quotes) of the element in the configuration file with the Graphite options");
+        setGraphitePatternsFromConfig(context, ast->value.safeGet<String>(), params.graphite_params);
+    }
+    else if (params.mode == MergingParams::VersionedCollapsing)
+    {
+        require_no_extra_args(2);
+        if (!tryGetIdentifierNameInto(engine_args[0], params.sign_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sign column name must be an unquoted string");
+        if (!tryGetIdentifierNameInto(engine_args[1], params.version_column))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Version column name must be an unquoted string");
+    }
+    else
+    {
+        /// Ordinary or Aggregating: no merge-parameter arguments.
+        require_no_extra_args(0);
+    }
+
+    return params;
+}
+
+void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context)
+{
+    const auto * engine_func = new_engine_ast->as<ASTFunction>();
+    if (!engine_func)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY ENGINE expects an engine function AST");
+
+    /// Validate the target against the metadata that this same ALTER produced (so a column added in
+    /// the same statement, before MODIFY ENGINE, is visible). The caller runs this before persisting
+    /// the rewritten CREATE query, so a rejection here never leaves an invalid engine clause on disk.
+    /// The new merge semantics take effect when the storage object is next constructed from the
+    /// persisted metadata.
+    ///
+    /// We intentionally do NOT mutate the live `merging_params` here. It is read lock-free from many
+    /// hot paths (query planning, background merges/mutations), often bound by const reference for the
+    /// duration of a query, while ALTER runs concurrently with SELECTs. An in-place swap would be a
+    /// data race, and an exclusive lock cannot be taken from inside ALTER (the query already holds the
+    /// table's drop_lock in read mode, and lock upgrading is forbidden). A safe live swap requires
+    /// turning `merging_params` into a MultiVersion value or recreating the storage object; that is a
+    /// separate change. For now the persisted change applies on the next table load.
+    MergingParams new_params = MergingParams::parseFromEngineAST(engine_func->name, engine_func->arguments, local_context);
+    /// parseFromEngineAST has no settings, so it leaves allow_tuple_element_aggregation off. Derive it
+    /// from the (already changed, see StorageMergeTree::alter) settings so `check` enforces the same tuple
+    /// constraints the reload path does. getSettings() here reflects a MODIFY SETTING in the same ALTER.
+    new_params.setAllowTupleElementAggregationFromSettings(*getSettings());
+    new_params.check(*getSettings(), new_metadata);
+
+    LOG_INFO(log, "MODIFY ENGINE: merge semantics will change from {} to {} on next table load",
+        merging_params.getModeName().empty() ? "MergeTree" : merging_params.getModeName(),
+        new_params.getModeName().empty() ? "MergeTree" : new_params.getModeName());
 }
 
 Int64 MergeTreeData::getMaxBlockNumber() const
@@ -4394,6 +4553,128 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         for (const auto & cmd : commands)
             if (std::ranges::contains(forbidden_commands, cmd.type))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
+    }
+
+    /// Validate ALTER ... MODIFY ENGINE: it is gated behind an experimental setting, may only target
+    /// another MergeTree-family engine, and the resulting MergingParams must be valid for the table's
+    /// columns (after any column changes in the same ALTER are applied).
+    ///
+    /// The engine to validate is either the one this ALTER sets, or one still pending from an earlier
+    /// reload-only MODIFY ENGINE: `new_engine` is rewritten into the persisted CREATE but the live
+    /// `merging_params` stays at the old mode until the table is reloaded, so the pending engine lingers
+    /// on the live metadata. A later ALTER with no MODIFY ENGINE of its own can then invalidate that
+    /// pending engine -- e.g. `MODIFY SETTING allow_summing_columns_in_partition_or_order_key = 0` or
+    /// dropping a summing/sign/version column -- and, because the live `merging_params` is still the old
+    /// mode, neither the special-column guards nor the engine validation below would catch it, leaving an
+    /// unloadable CREATE on disk. Re-validate the pending engine here, before any live or persisted
+    /// metadata changes.
+    std::vector<ASTPtr> engines_to_validate;
+    bool has_modify_engine_command = false;
+    for (const auto & command : commands)
+    {
+        if (command.type != AlterCommand::MODIFY_ENGINE)
+            continue;
+
+        has_modify_engine_command = true;
+
+        if (!local_context->getSettingsRef()[Setting::allow_experimental_alter_modify_engine])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER TABLE ... MODIFY ENGINE is experimental. Set `allow_experimental_alter_modify_engine = 1` to enable it.");
+
+        /// The coordinated cross-replica engine switch (writing the new merge mode through the
+        /// replicated metadata log) is not implemented yet; only non-replicated MergeTree is supported
+        /// for now. Reject on Replicated tables rather than silently leaving replicas inconsistent.
+        if (supportsReplication())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER TABLE ... MODIFY ENGINE is not supported for Replicated*MergeTree tables yet");
+
+        /// Old-syntax tables (e.g. `MergeTree(date, key, 8192)`) keep the partition/sampling/sorting key
+        /// and granularity as positional arguments inside the engine clause. MODIFY ENGINE replaces the
+        /// whole engine function, which would drop those positional arguments and leave an unloadable
+        /// CREATE query. Reject them, as MODIFY ORDER BY / TTL / SAMPLE BY do below.
+        if (!is_custom_partitioned)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ALTER TABLE ... MODIFY ENGINE is not supported for tables created with the old syntax");
+
+        const auto * engine_ast = command.engine->as<ASTFunction>();
+        if (!engine_ast)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MODIFY ENGINE expects an engine clause, for example `MODIFY ENGINE = ReplacingMergeTree(version)`");
+
+        /// Only changes within the MergeTree family are allowed, and only the merge semantics may change:
+        /// switching to/from Replicated, or to a non-MergeTree engine, is not supported.
+        const bool target_replicated = std::string_view(engine_ast->name).starts_with("Replicated");
+        if (target_replicated != supportsReplication())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "MODIFY ENGINE cannot change replication: table engine is {}, requested {}", getName(), engine_ast->name);
+
+        engines_to_validate.push_back(command.engine);
+    }
+
+    /// No MODIFY ENGINE in this ALTER: re-validate the engine left pending by an earlier reload-only
+    /// MODIFY ENGINE, if any, against the post-ALTER columns and settings. The command-specific gates
+    /// above (experimental setting, replication, old syntax) were already checked when that engine was
+    /// set, and protect the feature -- here we only protect metadata integrity, so they are not re-applied.
+    if (!has_modify_engine_command)
+    {
+        auto current_metadata = getInMemoryMetadataPtr(local_context, false);
+        if (current_metadata->new_engine)
+            engines_to_validate.push_back(current_metadata->new_engine);
+    }
+
+    if (!engines_to_validate.empty())
+    {
+        /// Apply the in-flight column and setting changes from the same ALTER so a column added before
+        /// MODIFY ENGINE (e.g. the sign/version column) is visible to the validation, and so a setting
+        /// changed in the same statement (e.g. allow_summing_columns_in_partition_or_order_key) is the
+        /// value MergingParams::check sees -- matching what registerStorageMergeTree would check on the
+        /// next load. Validating against the current settings instead would make this check disagree
+        /// with the reload path.
+        StorageInMemoryMetadata metadata_for_check = *getInMemoryMetadataPtr(local_context, false);
+        for (const auto & c : commands)
+        {
+            if (c.type != AlterCommand::MODIFY_ENGINE)
+                c.apply(metadata_for_check, local_context);
+        }
+        /// Build the candidate settings the same way changeSettings (and the next table load) do: start
+        /// from defaults and apply the final settings_changes. Building them as "current settings + the
+        /// changes" would be wrong for RESET SETTING -- a reset drops the setting from settings_changes,
+        /// so a delta on top of the current settings keeps the old value, while reload reverts it to the
+        /// default. Using defaults here keeps this check in agreement with the reload path.
+        auto settings_for_check = getDefaultSettings();
+        if (metadata_for_check.settings_changes)
+            settings_for_check->applyChanges(metadata_for_check.settings_changes->as<const ASTSetQuery &>().changes);
+
+        for (const auto & engine : engines_to_validate)
+        {
+            const auto * engine_ast = engine->as<ASTFunction>();
+            if (!engine_ast)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY ENGINE expects an engine function AST");
+
+            /// Build the candidate MergingParams and validate it against the (possibly already altered)
+            /// columns. parseFromEngineAST throws for a non-MergeTree or unknown engine name.
+            MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
+            /// parseFromEngineAST leaves allow_tuple_element_aggregation off; derive it from the final
+            /// settings (with any in-flight MODIFY SETTING applied) so this check gates the tuple
+            /// constraints exactly as the reload path will -- otherwise a Summing/Aggregating/Coalescing
+            /// target with a Nullable Tuple column would pass here and only fail on the next ATTACH.
+            new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
+            new_merging_params.check(*settings_for_check, metadata_for_check);
+
+            /// registerStorageMergeTree rejects a special-mode MergeTree that has projections when
+            /// deduplicate_merge_projection_mode = throw. The reload-only design keeps the live mode
+            /// Ordinary, so without this the engine could switch to a special mode while projections
+            /// are present (or be added in the same/a later ALTER) and only fail on the next ATTACH.
+            /// metadata_for_check carries any ADD PROJECTION from this ALTER, so this covers an
+            /// explicit MODIFY ENGINE and an engine still pending from an earlier reload-only one.
+            if (new_merging_params.mode != MergingParams::Mode::Ordinary
+                && metadata_for_check.hasProjections()
+                && (*settings_for_check)[MergeTreeSetting::deduplicate_merge_projection_mode] == DeduplicateMergeProjectionMode::THROW)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "MODIFY ENGINE to {}MergeTree is not supported with projections and "
+                    "deduplicate_merge_projection_mode = throw. "
+                    "Please set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
+                    new_merging_params.getModeName());
+        }
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.

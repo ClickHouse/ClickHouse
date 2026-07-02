@@ -1,0 +1,15 @@
+before	3
+engine	ReplacingMergeTree
+replacing final	2
+summing	1	30
+summing	2	100
+collapsing	CollapsingMergeTree
+tuple-key replacing	ReplacingMergeTree
+pending setting guard	SummingMergeTree
+pending drop guard	SummingMergeTree
+pending reset guard	SummingMergeTree
+reset same stmt guard	MergeTree
+pending unrelated alter	SummingMergeTree
+projection guard	MergeTree
+pending projection guard	ReplacingMergeTree
+projection rebuild	ReplacingMergeTree

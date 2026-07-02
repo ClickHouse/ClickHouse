@@ -31,6 +31,7 @@ struct AlterCommand
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
+        MODIFY_ENGINE,
         ADD_INDEX,
         DROP_INDEX,
         ADD_CONSTRAINT,
@@ -104,6 +105,9 @@ struct AlterCommand
 
     /// For MODIFY_SAMPLE_BY
     ASTPtr sample_by = nullptr;
+
+    /// For MODIFY_ENGINE: the new MergeTree-family engine clause (an ASTFunction).
+    ASTPtr engine = nullptr;
 
     /// For ADD INDEX
     ASTPtr index_decl = nullptr;
