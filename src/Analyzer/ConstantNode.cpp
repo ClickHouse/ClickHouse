@@ -174,10 +174,28 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     if (options.use_source_expression_for_constants && source_expression)
         return source_expression->toAST(options);
 
+    const auto & constant_value_type = constant_value.getType();
+
+    /// Decimal constants (including decimals nested in Array/Tuple/Map/Variant/Dynamic) have no exact
+    /// literal syntax: a bare numeric literal is re-parsed as Float64 on the receiving side and rounds.
+    /// Rebuild the literal from the column, upgrading every decimal-backed leaf to an exact
+    /// String -> Decimal cast (reconstructed with its own type), then cast the whole value to the
+    /// final type. This must run even when add_cast_for_constants is false (e.g. the RHS of IN/notIn,
+    /// where casts are suppressed): a bare decimal in the set would be parsed as Float64 on the shard
+    /// and round, so an OR-to-IN rewrite over high-scale Decimal values could filter on rounded
+    /// constants.
+    if (typeMayContainDecimal(*constant_value_type))
+    {
+        auto exact_ast = columnConstantToExactLiteralAST(constant_value.getColumn(), 0, constant_value_type);
+        if (!options.add_cast_for_constants)
+            return exact_ast;
+        /// columnConstantToExactLiteralAST already casts a scalar Decimal/DateTime64/Time64 value to its
+        /// own type, so skip a redundant identity cast to the same type.
+        return makeCastToTypeNameAST(std::move(exact_ast), constant_value_type->getName());
+    }
+
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
-
-    const auto & constant_value_type = constant_value.getType();
 
     // Add cast if constant was created as a result of constant folding.
     // Constant folding may lead to type transformation and literal on shard
