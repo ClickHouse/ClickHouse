@@ -403,7 +403,7 @@ TEST(EstimatesBuilder, TuplePerElementKinds)
     Block block{{std::move(tuple_column), tuple_type, "t"}};
 
     SerializationInfoByName infos(columns, defaultSettings());
-    EstimatesBuilder builder(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings(), {});
     builder.add(block);
     builder.chooseKinds(infos);
 
@@ -421,7 +421,7 @@ TEST(EstimatesBuilder, AddDefaultsRecursesIntoTupleElements)
     NamesAndTypesList columns{{"t", tuple_type}};
 
     SerializationInfoByName infos(columns, defaultSettings());
-    EstimatesBuilder builder(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings(), {});
     builder.addDefaults("t", 1000);
     builder.chooseKinds(infos);
 
@@ -445,7 +445,7 @@ TEST(EstimatesBuilder, MergeEstimatesPrefersExternalDefaults)
     Block block{{std::move(col), uint_type, "c"}};
 
     SerializationInfoByName infos(columns, defaultSettings());
-    EstimatesBuilder builder(columns, defaultSettings());
+    EstimatesBuilder builder(columns, defaultSettings(), {});
     builder.add(block);
 
     /// External statistics say the column is almost all-default; this must win.

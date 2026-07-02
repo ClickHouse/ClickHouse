@@ -835,7 +835,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
-    EstimatesBuilder estimates_builder(global_ctx->storage_columns, info_settings);
+    EstimatesBuilder estimates_builder(global_ctx->storage_columns, info_settings, {});
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)

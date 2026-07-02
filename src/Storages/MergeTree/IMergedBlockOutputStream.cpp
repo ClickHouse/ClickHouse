@@ -37,7 +37,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     }
-    , estimates_builder(columns_list, info_settings)
+    , estimates_builder(columns_list, info_settings, {})
 {
 }
 

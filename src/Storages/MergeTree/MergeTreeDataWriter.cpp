@@ -1081,7 +1081,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
-    EstimatesBuilder estimates_builder(columns, settings);
+    EstimatesBuilder estimates_builder(columns, settings, {});
     estimates_builder.add(block);
     estimates_builder.chooseKinds(infos);
 

@@ -6,7 +6,6 @@
 #include <Storages/Statistics/Estimate.h>
 
 #include <map>
-#include <memory>
 
 namespace DB
 {
@@ -30,17 +29,20 @@ class SerializationInfoByName;
   * statistics afterwards (`mergeEstimates`); the resulting estimates are then used to choose the kinds
   * and are written into `serialization.json`.
   *
-  * The estimates are stored flat: every column and subcolumn is a separate entry keyed by its subcolumn
-  * path (`t`, `t.a`, `t.a.b`). The builder only tracks columns that can use sparse serialization (the same
-  * columns that get an entry in `SerializationInfoByName`).
+  * The estimates are stored in a plain ordered map: every column and subcolumn is a separate entry keyed
+  * by its subcolumn path. The `'\0'` path joiner (see `subcolumnEstimateKey`) makes a column's entry and
+  * the entries of all its subcolumns a contiguous key range, so the accumulation methods scan key ranges
+  * instead of walking a tree; the element names of a `Tuple` are taken from the sampled block itself.
+  * The builder only tracks columns that can use sparse serialization (the same columns that get an entry
+  * in `SerializationInfoByName`).
   */
 class EstimatesBuilder
 {
 public:
     /// A column whose default count is already provided by `external_estimates` (the explicit column
     /// statistics built alongside, see `MergeTreeDataWriter`) is not sampled: its counts are taken
-    /// from the statistics as-is and `add` skips it.
-    EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings, const Estimates & external_estimates = {});
+    /// from the statistics as-is and the accumulation methods skip it.
+    EstimatesBuilder(const NamesAndTypesList & columns, const SerializationInfoSettings & settings, const Estimates & external_estimates);
 
     /// Sample estimates from the (tracked) columns of a block.
     void add(const Block & block);
@@ -49,7 +51,7 @@ public:
     void addDefaults(const String & name, size_t length);
     /// Combine the estimates of a source part (additive). Used during merges to choose the output kind
     /// from the summed counts of all source parts. `part_estimates` is keyed by subcolumn path; a tracked
-    /// (sub)column missing from it contributes all-default rows (as the former per-element building did).
+    /// (sub)column missing from it contributes all-default rows.
     void add(const Estimates & part_estimates);
 
     /// Override the sampled counts with the exact counts from the explicit column statistics where they
@@ -88,34 +90,18 @@ public:
     static void filterEstimates(Estimates & estimates, const SerializationInfoByName & infos);
 
 private:
-    /// The accumulated estimate of a single column or subcolumn, together with its type. A `Tuple` node has
-    /// no child pointers: its elements are separate entries in the flat `nodes` map, reached by computing
-    /// their key (`Nested::concatenateName(key, element_name)`). The type lets the traversals enumerate a
-    /// `Tuple`'s element names without any per-node child bookkeeping.
-    struct Node
-    {
-        Estimate estimate;
-        DataTypePtr type;
-    };
-
-    using NodePtr = std::shared_ptr<Node>;
-
-    /// Create the node for `type` under key `key` and, recursively, the nodes of its subcolumns.
-    void addNodes(const String & key, const DataTypePtr & type);
-    void sampleColumn(const String & key, const IColumn & column);
-    void addDefaultsToNode(const String & key, size_t length);
-    void addPartEstimate(const String & key, const Estimates & part_estimates);
-
-    Node & getNode(const String & key) { return *nodes.at(key); }
-    const Node & getNode(const String & key) const { return *nodes.at(key); }
+    /// Create zero estimates for the column with key `key` and, recursively, for its tuple subcolumns.
+    void addKeys(const String & key, const IDataType & type);
+    void sampleColumn(const String & key, const IColumn & column, const IDataType & type);
 
     static void chooseKindsImpl(const String & key, SerializationInfo & info, const Estimates & estimates);
 
-    /// All tracked columns and their subcolumns, keyed by full subcolumn path.
-    std::map<String, NodePtr> nodes;
-    /// The tracked top-level column names, used to drive the recursion of the per-part accumulation
-    /// (whose input is flat, so top-level entries must be distinguished from subcolumn ones).
-    Names roots;
+    /// All tracked columns and their subcolumns, keyed by full subcolumn path (see the class comment
+    /// on the key ranges provided by the ordering).
+    std::map<String, Estimate> estimates;
+    /// Top-level columns whose exact counts were provided to the constructor by the explicit statistics.
+    /// The accumulation methods skip them, so the exact counts are never mixed with accumulated ones.
+    NameSet columns_with_exact_counts;
     SerializationInfoSettings settings;
 };
 
