@@ -176,7 +176,7 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
-    void drop(ContextPtr context) override;
+    void drop(ContextPtr context, const std::function<void()> & commit) override;
 
     static DataLakeMetadataPtr createWithDeserialization(
         const ObjectStoragePtr & object_storage,

@@ -176,7 +176,11 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
-    virtual void drop(ContextPtr) { }
+    /// Drop the table's underlying files. `commit` is the caller's commit point (catalog entry
+    /// removal) and must be invoked exactly once. Iceberg deletes data files first, runs `commit`,
+    /// then deletes the metadata anchor last, so a failure before `commit` leaves the table fully
+    /// reconstructable and retryable. The default (non-Iceberg / no-op cleanup) just runs `commit`.
+    virtual void drop(ContextPtr, const std::function<void()> & commit) { commit(); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 
