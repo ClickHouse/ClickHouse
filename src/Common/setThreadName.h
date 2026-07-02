@@ -68,6 +68,7 @@ namespace DB
     M(HTTP_HANDLER, "HTTPHandler") \
     M(HTTP_SERVER_CONN, "HTTPSrvConn") \
     M(ICEBERG_ITERATOR, "IcebergIter") \
+    M(ICEBERG_MANIFEST_FETCH, "IcebergMFetch") \
     M(ICEBERG_SCHEDULE_POOL, "IcebergSchPool") \
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \

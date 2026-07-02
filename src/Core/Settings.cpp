@@ -5580,6 +5580,15 @@ Possible values:
     DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
 If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
 )", 0) \
+    DECLARE(MaxThreads, iceberg_metadata_files_parallel_loading_threads, 8, R"(
+Number of threads used to fetch Iceberg manifest files concurrently during query planning.
+
+When greater than 1, manifest files listed in the manifest list are fetched concurrently from object storage, reducing cold-cache query latency proportionally to the number of manifests.
+
+- `0` — auto: derive the number of threads from the available CPU cores.
+- `1` — disable parallel fetching and load manifest files sequentially (useful for debugging or reproducing exact serial timing).
+- Greater than 1 — fetch up to that many manifest files at once.
+)", 0) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.
 

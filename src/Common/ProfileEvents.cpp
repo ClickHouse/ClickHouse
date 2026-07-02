@@ -102,6 +102,9 @@
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
     M(IcebergMetadataReadWaitTimeMicroseconds, "Total time data readers spend waiting for iceberg metadata files to be read and parsed, summed across all reader threads.", ValueType::Microseconds) \
+    M(IcebergManifestFilesParallelFetchWaitMicroseconds, "Consumer time blocked waiting on manifest file fetch futures, summed across all consumed futures.", ValueType::Microseconds) \
+    M(IcebergManifestFileFetchTaskMicroseconds, "Fetch-plus-parse time per manifest file measured inside the IO pool task, summed across all parallel tasks.", ValueType::Microseconds) \
+    M(IcebergManifestFilesParallelFetched, "Number of manifest files delivered via the parallel prefetch code path.", ValueType::Number) \
     M(ParquetMetadataCacheHits, "Number of times parquet metadata has been found in the cache.", ValueType::Number) \
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \

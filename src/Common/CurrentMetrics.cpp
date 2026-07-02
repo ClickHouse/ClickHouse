@@ -213,6 +213,9 @@
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
+    M(IcebergManifestFileFetchThreads, "Number of threads in the Iceberg manifest file parallel fetch thread pool.") \
+    M(IcebergManifestFileFetchThreadsActive, "Number of threads in the Iceberg manifest file parallel fetch thread pool running a task.") \
+    M(IcebergManifestFileFetchThreadsScheduled, "Number of queued or active jobs in the Iceberg manifest file parallel fetch thread pool.") \
     M(IcebergSchedulePoolTask, "Number of tasks in the background schedule pool for Iceberg tables.") \
     M(IcebergSchedulePoolSize, "Limit on number of tasks in the background schedule pool for Iceberg tables.") \
     M(IcebergCompactionThreads, "Number of threads in the IcebergCompaction thread pool.") \
