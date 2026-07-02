@@ -7,8 +7,6 @@ title: 'ArrowFlight table engine'
 doc_type: 'reference'
 ---
 
-# ArrowFlight table engine
-
 The ArrowFlight table engine enables ClickHouse to query remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
 This integration allows ClickHouse to fetch data from external Flight-enabled servers in a columnar Arrow format with high performance.
 

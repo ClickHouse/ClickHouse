@@ -12,3 +12,10 @@ pauseable	1
 replicated_merge_tree_insert_retry_pause	0
 replicated_merge_tree_insert_retry_pause	1
 replicated_merge_tree_insert_retry_pause	0
+once_first	1
+once_second	1
+once_third	1
+once_disabled	0
+pauseable_once_first	1
+pauseable_once_second	1
+pauseable_once_disabled	0

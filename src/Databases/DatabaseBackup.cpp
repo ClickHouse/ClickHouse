@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -27,6 +28,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 #include <Backups/BackupFactory.h>
@@ -55,6 +57,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -328,8 +332,14 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
-            NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            {
+                SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};
+                SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            }
+            {
+                NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
+                NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            }
 
             QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
 
@@ -456,6 +466,7 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
+void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

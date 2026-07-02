@@ -23,7 +23,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -679,8 +678,6 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     if (!replacement_map.empty())
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
-
-    removeGroupingFunctionSpecializations(query_tree_to_modify);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
 

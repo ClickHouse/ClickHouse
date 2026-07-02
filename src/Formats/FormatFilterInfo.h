@@ -72,6 +72,7 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
+    std::optional<size_t> condition_hash;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;

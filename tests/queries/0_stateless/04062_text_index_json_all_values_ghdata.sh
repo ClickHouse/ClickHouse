@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long
+# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check
 
 # Tests that text indexes built on JSONAllValues work correctly on a real-world
 # GitHub Events dataset (ghdata_sample.json) with various query patterns.
@@ -10,7 +10,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
+# Pin date_time_input_format to 'basic' so JSON path inference matches the
+# pre-existing reference (best_effort would infer DateTime64 from ISO date strings,
+# which changes JSONAllValues output and the cityHash64 result).
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --date_time_input_format=basic"
 
 function run_query()
 {

@@ -6,7 +6,7 @@
 #include <optional>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>

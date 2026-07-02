@@ -65,6 +65,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
     "connect_timeout", "mysql_connect_timeout",
     "mysql_rw_timeout", "rw_timeout"};
 
+void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -301,11 +302,7 @@ bool MySQLDictionarySource::isModified() const
     {
         LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-
-        invalidate_query_response = response;
-        return true;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
 
     return true;

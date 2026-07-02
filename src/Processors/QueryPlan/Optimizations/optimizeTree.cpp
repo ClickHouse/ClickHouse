@@ -80,9 +80,12 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -190,9 +193,12 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
+        optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
         optimization_settings.max_limit_for_top_k_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
+        optimization_settings.read_in_order_through_join,
+        optimization_settings.join_swap_table,
         optimization_settings.parallel_replicas_filter_pushdown,
     };
 
@@ -285,14 +291,7 @@ void optimizeTreeSecondPass(
     }
 
     traverseQueryPlan(stack, root,
-        [&](auto & frame_node)
-        {
-            if (optimization_settings.read_in_order)
-                optimizeReadInOrder(frame_node, nodes, optimization_settings);
-
-            if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
-        },
+        [&](auto &) {},
         [&](auto & frame_node)
         {
             /// After all children were processed, try to apply distributed read, join and aggregation optimizations.
@@ -319,16 +318,8 @@ void optimizeTreeSecondPass(
 
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
-                {
-                    auto applied_projection = optimizeUseAggregateProjections(
-                        *frame.node,
-                        nodes,
-                        optimization_settings.optimize_use_implicit_projections,
-                        optimization_settings.is_parallel_replicas_initiator_with_projection_support,
-                        optimization_settings.max_step_description_length);
-                    if (applied_projection)
+                    if (auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings))
                         applied_projection_names.insert(*applied_projection);
-                }
 
                 if (optimization_settings.aggregation_in_order)
                     optimizeAggregationInOrder(*frame.node, nodes, optimization_settings);
@@ -347,12 +338,7 @@ void optimizeTreeSecondPass(
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(
-                stack,
-                nodes,
-                optimization_settings,
-                optimization_settings.is_parallel_replicas_initiator_with_projection_support,
-                optimization_settings.max_step_description_length))
+            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
             {
                 applied_projection_names.insert(*applied_projection);
 
@@ -375,6 +361,25 @@ void optimizeTreeSecondPass(
 
         stack.pop_back();
     }
+
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            if (optimization_settings.aggregate_partitions_independently)
+                optimizeAggregationPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_partitions_independently)
+                optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.read_in_order)
+                optimizeReadInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.distinct_in_order)
+                optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.push_limit_by_into_sort)
+                pushLimitByIntoSort(frame_node);
+        });
 
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
@@ -451,7 +456,7 @@ void optimizeTreeSecondPass(
 
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
-    if (optimization_settings.optimize_lazy_materialization)
+    if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
@@ -459,10 +464,26 @@ void optimizeTreeSecondPass(
         {
             auto & frame = stack.back();
 
-            if (frame.next_child == 0)
+            if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
+                    /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
+                    /// (on leave) in the transformed subtree.
+                    Optimization::ExtraSettings extra{};
+                    Stack sub_stack;
+                    traverseQueryPlan(sub_stack, *frame.node,
+                        [&](QueryPlan::Node & node)
+                        {
+                            tryMergeExpressions(&node, nodes, extra);
+                            tryMergeFilters(&node, nodes, extra);
+                        },
+                        [&](QueryPlan::Node &)
+                        {
+                            if (optimization_settings.optimize_lazy_final)
+                                optimizeLazyFinal(sub_stack, query_plan, nodes, optimization_settings);
+                        });
+
                     stack.pop_back();
                     continue;
                 }
@@ -476,6 +497,9 @@ void optimizeTreeSecondPass(
                 stack.push_back(next_frame);
                 continue;
             }
+
+            if (optimization_settings.optimize_lazy_final)
+                optimizeLazyFinal(stack, query_plan, nodes, optimization_settings);
 
             stack.pop_back();
         }

@@ -98,7 +98,7 @@ StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
     const String & format,
     const ExecutableSettings & settings_,
-    const std::vector<ASTPtr> & input_queries_,
+    const VectorWithMemoryTracking<ASTPtr> & input_queries_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const String & comment)
@@ -218,6 +218,7 @@ void StorageExecutable::readImpl(
     query_plan.addResources(std::move(resources));
 }
 
+void registerStorageExecutable(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory)
 {
     auto register_storage = [](const StorageFactory::Arguments & args, bool is_executable_pool) -> StoragePtr
@@ -240,7 +241,7 @@ void registerStorageExecutable(StorageFactory & factory)
         script_name_with_arguments.erase(script_name_with_arguments.begin());
         auto format = checkAndGetLiteralArgument<String>(args.engine_args[1], "format");
 
-        std::vector<ASTPtr> input_queries;
+        VectorWithMemoryTracking<ASTPtr> input_queries;
         for (size_t i = 2; i < args.engine_args.size(); ++i)
         {
             if (args.engine_args[i]->children.empty())

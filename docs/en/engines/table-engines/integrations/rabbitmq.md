@@ -7,8 +7,6 @@ title: 'RabbitMQ table engine'
 doc_type: 'guide'
 ---
 
-# RabbitMQ table engine
-
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 
 `RabbitMQ` lets you:

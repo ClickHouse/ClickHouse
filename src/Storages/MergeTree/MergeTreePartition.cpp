@@ -309,7 +309,7 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
         {
             case DATE:
             {
-                UInt32 date_yyyymmdd;
+                UInt32 date_yyyymmdd = 0;
                 readText(date_yyyymmdd, buf);
                 constexpr UInt32 min_yyyymmdd = 10000000;
                 constexpr UInt32 max_yyyymmdd = 99999999;
@@ -323,14 +323,14 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
             }
             case UNSIGNED:
             {
-                UInt64 value;
+                UInt64 value = 0;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;
             }
             case SIGNED:
             {
-                Int64 value;
+                Int64 value = 0;
                 readText(value, buf);
                 res.emplace_back(value);
                 break;

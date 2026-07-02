@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionNumericPredicate : public IFunction
+class FunctionNumericPredicate final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

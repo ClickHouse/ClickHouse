@@ -21,7 +21,7 @@ hello
 === select n.null ===
 0
 === select vec.1 ===
-[1,2,3]
+\0
 === select id (denied) ===
 ACCESS_DENIED
 === select t.a after revoke (denied) ===

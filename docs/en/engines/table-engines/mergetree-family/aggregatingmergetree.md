@@ -10,8 +10,6 @@ title: 'AggregatingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-# AggregatingMergeTree table engine
-
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.

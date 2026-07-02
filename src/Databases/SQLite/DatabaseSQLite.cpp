@@ -218,6 +218,7 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     return create_table_query;
 }
 
+void registerDatabaseSQLite(DatabaseFactory & factory);
 void registerDatabaseSQLite(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -234,7 +235,11 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true, .is_external = true});
+    factory.registerDatabase("SQLite", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::SQLITE,
+    });
 }
 }
 

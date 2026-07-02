@@ -63,5 +63,6 @@ struct MaterializedCTE
 };
 
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+using MaterializedCTEWeakPtr = std::weak_ptr<MaterializedCTE>;
 
 }

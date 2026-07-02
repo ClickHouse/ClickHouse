@@ -15,6 +15,9 @@
 namespace DB
 {
 
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
 class ReadBufferFromAzureBlobStorage : public ReadBufferFromFileBase
 {
 public:
@@ -29,7 +32,9 @@ public:
         size_t max_single_download_retries_,
         bool use_external_buffer_ = false,
         bool restricted_seek_ = false,
-        size_t read_until_position_ = 0);
+        size_t read_until_position_ = 0,
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        String container_for_logging_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -81,7 +86,7 @@ private:
     off_t read_until_position = 0;
 
     off_t offset = 0;
-    size_t total_size;
+    size_t total_size{};
     bool initialized = false;
     char * data_ptr;
     size_t data_capacity;
@@ -89,6 +94,9 @@ private:
     LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
     /// No-way to make metadata non-mutable, because readBig method is const.
     mutable MultiVersion<std::optional<ObjectMetadata>> last_object_metadata;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
+    String container_for_logging;
 };
 
 }

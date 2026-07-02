@@ -12,6 +12,8 @@
 namespace DB
 {
 
+void registerDiskCache(DiskFactory & factory, bool global_skip_access_check);
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -22,7 +24,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsString path;
 }
 
-std::pair<FileCachePtr, FileCacheSettings> getCache(
+static std::pair<FileCachePtr, FileCacheSettings> getCache(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,

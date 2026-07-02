@@ -68,13 +68,13 @@ public:
 /// Estimate of the memory usage (bytes) of a text index header in cache
 struct TextIndexHeaderWeightFunction
 {
-    size_t operator()(const DictionarySparseIndex & header) const
+    size_t operator()(const TextIndexHeader & header) const
     {
-        return header.memoryUsageBytes();
+        return header.sparse_index.memoryUsageBytes();
     }
 };
 
-class TextIndexHeaderCache : public CacheBase<UInt128, DictionarySparseIndex, UInt128TrivialHash, TextIndexHeaderWeightFunction>
+class TextIndexHeaderCache : public CacheBase<UInt128, TextIndexHeader, UInt128TrivialHash, TextIndexHeaderWeightFunction>
 {
 public:
     TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
@@ -140,5 +140,29 @@ public:
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
+
+class TokensCardinalitiesCache
+{
+public:
+    explicit TokensCardinalitiesCache(std::vector<String> all_search_tokens_);
+
+    void update(const TokenToPostingsInfosMap & token_infos, const absl::flat_hash_set<String> & missing_tokens, size_t total_rows);
+    void sortTokens(std::vector<String> & tokens) const;
+
+private:
+    const std::vector<String> all_search_tokens;
+
+    struct CardinalityAggregate
+    {
+        size_t cardinality = 0;
+        size_t checked_rows = 0;
+
+        bool operator==(const CardinalityAggregate & other) const = default;
+    };
+
+    mutable std::mutex mutex;
+    using CardinalitiesMap = std::unordered_map<String, CardinalityAggregate>;
+    CardinalitiesMap cardinalities TSA_GUARDED_BY(mutex);
+};
 
 }

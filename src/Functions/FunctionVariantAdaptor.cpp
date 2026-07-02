@@ -1,5 +1,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -401,7 +403,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Create set of arguments for each variant using selector.
-    std::vector<ColumnsWithTypeAndName> variants_arguments;
+    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -423,8 +425,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    std::vector<ColumnPtr> variants_results;
-    std::vector<DataTypePtr> variants_result_types;
+    VectorWithMemoryTracking<ColumnPtr> variants_results;
+    VectorWithMemoryTracking<DataTypePtr> variants_result_types;
     variants_results.resize(variants.size());
     variants_result_types.resize(variants.size());
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
@@ -522,7 +524,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    std::unordered_set<String> result_type_names;
+    UnorderedSetWithMemoryTracking<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -555,7 +557,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto & result_variant = assert_cast<ColumnVariant &>(*result);
 
         /// Map each variant result to its discriminator in the result Variant
-        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+        VectorWithMemoryTracking<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
         for (size_t i = 0; i < num_variants; ++i)
         {
@@ -615,7 +617,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
     /// General path: cast each result to final Variant type to handle
     /// duplicate result types and nested Variants correctly
-    std::vector<ColumnPtr> casted_results(variants_results.size());
+    VectorWithMemoryTracking<ColumnPtr> casted_results(variants_results.size());
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -738,12 +740,38 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    /// If no valid result types were found, all alternatives are incompatible
-    /// Return Nullable(Nothing) to indicate NULL result for all rows
+    /// If no valid result types were found, all Variant alternatives are incompatible with the function.
+    /// When variant_throw_on_type_mismatch is enabled (the default), throw a clear error rather than
+    /// silently returning Nullable(Nothing), which would cause WHERE clauses to return 0 rows with no
+    /// diagnostic. When the setting is disabled, fall back to Nullable(Nothing) so that executeImpl
+    /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return;
+        bool throw_on_mismatch = true;
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+
+        if (!throw_on_mismatch)
+        {
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            return;
+        }
+
+        String alt_names;
+        for (const auto & alt : variant_alternatives)
+        {
+            if (!alt_names.empty())
+                alt_names += ", ";
+            alt_names += alt->getName();
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "None of the Variant alternatives ({}) are compatible with function '{}'",
+            alt_names,
+            function_overload_resolver->getName());
     }
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).

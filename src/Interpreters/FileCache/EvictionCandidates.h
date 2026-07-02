@@ -2,6 +2,8 @@
 #include <Interpreters/FileCache/IFileCachePriority.h>
 #include <Interpreters/FileCache/CacheUsage.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <deque>
 
 namespace DB
@@ -30,13 +32,16 @@ struct QueueEvictionInfo
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
 
-    void merge(QueueEvictionInfoPtr other);
+    /// Overwrite the eviction target with `other`'s. No accumulation.
+    void setEvictTarget(const QueueEvictionInfo & other);
+
+    /// Merge `other_hold` into ours so all reservations stay live until
+    /// release. No-op if null.
+    void absorbHoldSpace(IFileCachePriority::HoldSpacePtr other_hold);
 
     std::string toString() const;
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
-    /// Whether we "hold" some space.
-    bool hasHoldSpace() const { return hold_space != nullptr; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 };
@@ -48,7 +53,7 @@ using EvictionInfoPtr = std::unique_ptr<EvictionInfo>;
 /// Aggregated eviction info:
 /// - contains QueueEvictionInfo per queue_id
 /// - aggregates all methods among all QueueEvictionInfo's.
-class EvictionInfo : public std::map<QueueID, QueueEvictionInfoPtr>, private boost::noncopyable
+class EvictionInfo : public absl::flat_hash_map<QueueID, QueueEvictionInfoPtr>, private boost::noncopyable
 {
 public:
     EvictionInfo() = default;
@@ -65,28 +70,32 @@ public:
 
     size_t getSizeToEvict() const { return size_to_evict; }
     size_t getElementsToEvict() const { return elements_to_evict; }
+    size_t getHoldSize() const { return hold_size; }
+    size_t getHoldElements() const { return hold_elements; }
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
     /// Whether we "hold" some space.
-    bool hasHoldSpace() const;
+    bool hasHoldSpace() const { return hold_size || hold_elements; }
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 
     std::string toString() const;
 
-    void setCacheUsage(std::vector<CacheUsagePtr> && usage) { sorted_cache_usage = std::move(usage); }
-    std::vector<CacheUsagePtr> getCacheUsage() const { return sorted_cache_usage; }
+    /// Keep `usage` alive so a concurrent `cache_usage.snapshot` cannot destroy
+    /// the user's per-client priority while we hold raw pointers into it.
+    /// `shared_ptr` value dedupes: same user across iterations is stored once.
+    void addCacheUsage(CacheUsagePtr usage) { kept_alive_cache_usage.insert(std::move(usage)); }
 
 private:
-    /// If `merge_if_exists` is true
-    /// (meaning that eviction info by `queue_id` already exists),
-    /// combine two eviction info's into one.
-    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool merge_if_exists);
+    /// On existing queue: replace target + merge holds if `replace_if_exists`, else throw.
+    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool replace_if_exists);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
+    size_t hold_size = 0;     /// Total hold size among all eviction infos.
+    size_t hold_elements = 0; /// Total hold elements among all eviction infos.
 
-    std::vector<CacheUsagePtr> sorted_cache_usage;
+    absl::flat_hash_set<CacheUsagePtr> kept_alive_cache_usage;
 };
 
 class EvictionCandidates : private boost::noncopyable
@@ -161,8 +170,7 @@ public:
     }
 
 private:
-
-    std::unordered_map<FileCacheKey, KeyCandidates> candidates;
+    absl::flat_hash_map<FileCacheKey, KeyCandidates, std::hash<FileCacheKey>> candidates;
     size_t candidates_size = 0;
     size_t candidates_bytes = 0;
     FailedCandidates failed_candidates;

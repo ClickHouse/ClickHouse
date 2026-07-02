@@ -183,6 +183,11 @@ private:
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 
+    StorageID storage_id = StorageID::createEmpty();
+    size_t prewhere_step_offset = 0;
+
+    void logPredicateStatistics() const;
+
     /// For per-block virtual row generation (read-in-order optimization).
     ExpressionActionsPtr virtual_row_conversions;
     /// Precomputed header with PK column names/types; cloned and filled from index per block.

@@ -125,6 +125,7 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
+void registerOutputFormatArrow(FormatFactory & factory);
 void registerOutputFormatArrow(FormatFactory & factory)
 {
     factory.registerOutputFormat(
@@ -162,6 +163,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
+void registerOutputFormatArrow(FormatFactory &);
 void registerOutputFormatArrow(FormatFactory &)
 {
 }

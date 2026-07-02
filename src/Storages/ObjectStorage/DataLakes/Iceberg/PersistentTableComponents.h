@@ -22,6 +22,17 @@ struct PersistentTableComponents
     const String table_path;
     const std::optional<String> table_uuid;
     const IcebergPathResolver path_resolver;
+
+    /// Invalidate cached metadata for this table under both keys we may have used to cache it
+    /// (`table_path` and `table_uuid`).
+    void invalidateMetadataCache() const
+    {
+        if (!metadata_cache)
+            return;
+        metadata_cache->remove(table_path);
+        if (table_uuid.has_value())
+            metadata_cache->remove(*table_uuid);
+    }
 };
 
 }

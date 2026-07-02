@@ -44,7 +44,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"master_thread_id", std::make_shared<DataTypeUInt64>(), "OS initial ID of initial thread."},
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), "Query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "The hash of normalized query - with wiped constanstans, etc."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "The hash of normalized query - with wiped constants, etc."},
 
         {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Query type. Possible values: 1 — Query was initiated by the client, 0 — Query was initiated by another query for distributed query execution."},
         {"connection_address", DataTypeFactory::instance().get("IPv6"), "The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy."},

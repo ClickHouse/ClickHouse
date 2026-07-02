@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 # Tests that granting SELECT on a compound column implicitly grants access
 # to all of its subcolumns (Tuple elements, Map keys/values, Array size0,
