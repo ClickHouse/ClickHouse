@@ -1,11 +1,14 @@
 -- `CREATE [HYPOTHETICAL] INDEX ... (<expr>) TYPE ...` could produce an AST that did not survive
 -- the format-parse-format round trip, tripping the `Inconsistent AST formatting` logical error in
--- debug / sanitizer builds (issue #109163). Two independent causes:
+-- debug / sanitizer builds (issue #109163). Three independent causes:
 --   1. An extra-parenthesized single expression (e.g. `((a()))`) kept a redundant top-level
 --      parenthesization flag that the index's own `(...)` bracket makes meaningless.
 --   2. A single expression whose canonical form itself starts with a `(` that closes before the
 --      end (`(a, b).1`, `(x, y) -> x`, `(a + b) * c`) formatted without the index bracket, so the
 --      re-parse swallowed that leading `(` as the bracket and dropped the trailing operator.
+--   3. A scalar subquery / VALUES expression formats as `(SELECT ...)`: the leading `(` encloses
+--      the whole node, so cause 2's early-close scan misses it, but the re-parse still swallows
+--      that `(` as the index bracket and the bare `SELECT ...` is not a valid order-by list.
 
 DROP TABLE IF EXISTS t04502;
 CREATE TABLE t04502 (a UInt32, b UInt32, c String) ENGINE = MergeTree ORDER BY a;
@@ -31,6 +34,15 @@ SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 (((a, b) -> a)) TYPE min
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a + b) * a) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a + b) * a) TYPE minmax'));
 SELECT formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((a, b).1) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((a, b).1) TYPE minmax'));
 
+-- Subquery / VALUES class: the leading `(` encloses the whole node, so the wrapper must be kept
+-- (the bare bracket cannot re-parse as an order-by list).
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax'));
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((VALUES (1))) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((VALUES (1))) TYPE minmax'));
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT max(a) FROM t04502)) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT max(a) FROM t04502)) TYPE minmax'));
+SELECT formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax'));
+-- An aliased subquery already carries its own required `(...)`, so it must not be over-wrapped.
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax'));
+
 -- Concrete formatted output: redundant parens are dropped, leading-paren forms keep the wrapper.
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a())) TYPE a');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 (((a()))) TYPE a');
@@ -40,6 +52,9 @@ SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a, b).1) TYPE minmax')
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 (((a, b).1)) TYPE minmax');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 (((a, b) -> a)) TYPE minmax');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a + b) * a) TYPE minmax');
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax');
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((VALUES (1))) TYPE minmax');
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax');
 
 -- The fix must not over-reach: a multi-element tuple keeps its single parens (they are the value's
 -- representation, not redundant grouping) and an alias keeps its required parens.

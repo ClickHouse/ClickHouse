@@ -6,6 +6,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 
 
@@ -122,15 +123,23 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             }
             else
             {
-                /// The parser consumes one leading `(` as the index's own bracket. If the single
-                /// expression formats to a leading `(` that closes before the end (`(a, b).1`,
-                /// `(x, y) -> x`, `(a + b) * c`), re-wrap it so the re-parse does not swallow that
-                /// `(` as the index bracket and drop the trailing operator. Forms already enclosed
-                /// by their leading `(` (`(a, b)`, `(expr AS alias)`) are left as is.
+                /// The parser consumes one leading `(` as the index's own bracket, so re-wrap the
+                /// single expression whenever the re-parse would otherwise swallow a syntax-critical
+                /// `(`. Two such cases:
+                ///   - the canonical form starts with a `(` that closes before the end (`(a, b).1`,
+                ///     `(x, y) -> x`, `(a + b) * c`) — detected on the rendered text;
+                ///   - the expression is a scalar subquery / VALUES, which formats as `(SELECT ...)`:
+                ///     the leading `(` encloses the whole node, but `SELECT ...` is not a valid
+                ///     `ParserOrderByExpressionList`, so a bare bracket cannot round-trip.
+                /// An alias already forces its own enclosing `(...)` (`need_parens`), which supplies
+                /// the compensating bracket, so the subquery re-wrap is skipped in that case. Forms
+                /// whose leading `(` both encloses the whole expression and re-parses as an order-by
+                /// list (`(a, b)`, `(expr AS alias)`) are left as is.
                 WriteBufferFromOwnString expr_buf;
                 expr->format(expr_buf, s, state, nested_frame);
                 const auto expr_str = expr_buf.stringView();
-                if (leadingParenClosesEarly(expr_str))
+                const bool subquery_needs_wrap = expr->as<ASTSubquery>() && !nested_frame.need_parens;
+                if (subquery_needs_wrap || leadingParenClosesEarly(expr_str))
                     ostr << "(" << expr_str << ")";
                 else
                     ostr << expr_str;
