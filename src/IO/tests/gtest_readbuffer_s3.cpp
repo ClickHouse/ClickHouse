@@ -255,6 +255,40 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
     ASSERT_FALSE(subject.nextImpl());
 }
 
+TEST_F(ReadBufferFromS3Test, MissingResponseETagIsNotRejected)
+{
+    /// Contract: a GET whose response omits the ETag header must NOT be rejected even when a non-empty
+    /// expected_etag was requested. Some S3-compatible backends (and zero-byte reads) omit the header;
+    /// the read must succeed rather than raise S3_OBJECT_CHANGED_DURING_READ. Guards the `!response_etag.empty()`
+    /// clause in ReadBufferFromS3::initialize so this compatibility path cannot regress silently.
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 10;
+    auto subject = DB::ReadBufferFromS3(
+        client,
+        "test_bucket",
+        "test_key",
+        /*version_id_=*/"",
+        DB::S3::S3RequestSettings(),
+        read_settings,
+        /*use_external_buffer=*/false,
+        /*offset_=*/0,
+        /*read_until_position_=*/0,
+        /*restricted_seek_=*/false,
+        /*file_size=*/std::nullopt,
+        /*credentials_refresh_callback_=*/[] { return nullptr; },
+        /*blob_storage_log_=*/{},
+        /*expected_etag_=*/"expected-tag-1");
+
+    auto session = std::make_shared<CountedSession>();
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
+    /// setGetObjectSuccess builds the GetObjectResult with an empty header collection, i.e. no ETag.
+    client->setGetObjectSuccess(session, stream_buf.get());
+
+    readAndAssert(subject, "1234");
+    ASSERT_TRUE(subject.eof());
+}
+
 TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
 {
     std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
