@@ -84,7 +84,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    std::string_view query, /// Query text without INSERT data. The latter must be written to BlockIO::out.
     ContextMutablePtr context,       /// DB, tables, data types, storage engines, functions, aggregate functions...
     QueryFlags flags = {},
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
@@ -93,6 +93,12 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
+
+/// Finishes a query whose pipeline has already been fully executed: releases the query slot early,
+/// runs query_finish_callback (used to flush the HTTP response), and then calls io.onFinish()
+/// which records QueryFinish and releases the memory reservation.
+/// If the callback throws, its exception is rethrown after io.onFinish().
+void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(

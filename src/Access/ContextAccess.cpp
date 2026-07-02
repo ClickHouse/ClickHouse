@@ -215,6 +215,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
+            "disk_types",
+            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -249,6 +251,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+
+        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {
@@ -601,13 +606,12 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 }
 
 
-std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
 {
     auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
+    if (!quota)
         return {};
-    else
-        return quota->getUsage();
+    return quota->getAllUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const

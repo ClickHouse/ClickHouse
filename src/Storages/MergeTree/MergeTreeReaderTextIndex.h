@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -58,14 +60,24 @@ private:
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
-    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range);
+    std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range, PostingList & range_posting);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
-    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range);
+    PostingList buildPostingsForQuery(const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
     /// Reads and unions all posting list blocks for a large-posting token within the given range.
     std::vector<PostingListPtr> readPostingsBlocksForToken(std::string_view token, const TokenPostingsInfo & token_info, const RowsRange & range);
     /// Removes blocks with max value less than the given range.
     void cleanupPostingsBlocks(const RowsRange & range);
+
+    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
+    MergeTreeDataPartPtr getDataPart() const;
+
+    void readGranule();
+    /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
+    void classifyVirtualColumns();
+    void initializePostingStreams();
+    void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
+    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows, PostingList & range_posting);
 
     /// Fills a virtual column for an abandoned pattern query by evaluating the virtual column's
     /// default expression (the original search predicate) on the physical columns.
@@ -77,16 +89,12 @@ private:
         size_t offset,
         size_t num_rows) const;
 
-    std::optional<RowsRange> getRowsRangeForMark(size_t mark) const;
-    MergeTreeDataPartPtr getDataPart() const;
-
-    void readGranule();
-    /// Sets per-column flags from the analyzer's verdict and collects tokens to materialize.
-    void classifyVirtualColumns();
-    void initializePostingStreams();
-    void fillColumn(IColumn & column, const PostingList & postings, size_t row_offset, size_t num_rows);
-    void fillColumnLazy(IColumn & column, const String & column_name, size_t row_offset, size_t num_rows);
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
+
+    /// Fills a phrase virtual column from positional data (.pos), computing matching documents
+    /// via phrase intersection (cached per granule).
+    void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
+    void initializePositionsStream();
 
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
@@ -112,6 +120,11 @@ private:
     /// postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
 
+    /// Stream for position data (.pos file) used for phrase queries.
+    std::unique_ptr<MergeTreeReaderStream> positions_stream;
+    /// Per-reader memo of phrase results (shared via the postings cache) so repeated readRows calls skip the cache lookup.
+    absl::flat_hash_map<UInt128, FlatPostingsPtr> phrase_search_doc_ids;
+
     /// Current row position used when continuing reads across multiple calls.
     size_t current_row = 0;
     size_t current_mark = 0;
@@ -127,7 +140,7 @@ private:
     /// sparse-index header and confirming no virtual column carries pattern predicates.
     bool lazy_mode_requested = false;
     bool use_lazy_mode = false;
-    float lazy_density_threshold = 0.2f;
+    float lazy_intersection_density_threshold = 0.2f;
 
     /// Cached lazy cursors keyed by `(virtual column name, token)`. Cursors are forward-only and
     /// hold mutable segment/block position, so they must not be shared across columns.

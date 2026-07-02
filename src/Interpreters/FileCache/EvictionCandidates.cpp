@@ -1,5 +1,6 @@
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/Metadata.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -8,8 +9,6 @@
 namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheFailedEvictionCandidates;
 }
 
@@ -166,8 +165,9 @@ std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
     return "";
 }
 
-EvictionCandidates::EvictionCandidates()
-    : log(getLogger("EvictionCandidates"))
+EvictionCandidates::EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_)
+    : on_evict_callback(std::move(on_evict_callback_))
+    , log(getLogger("EvictionCandidates"))
 {
 }
 
@@ -235,7 +235,7 @@ void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::WriteLock 
             /// the SLRU_Protected/SLRU_Probationary type, not SplitCache_Data/System.
             original_queue_types[candidate.get()] = queue_iterator->getNestedOrThis()->getType();
 
-            queue_iterator->invalidate();
+            queue_iterator->invalidateBeforeRemove(lock);
 
             chassert(candidate->releasable());
             candidate->file_segment->markDelayedRemovalAndResetQueueIterator();
@@ -331,11 +331,20 @@ void EvictionCandidates::evict()
                 ///   it was freed in favour of some reserver, so we can make it visibly
                 ///   free only for that particular reserver.
 
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
-
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
+
+                if (on_evict_callback)
+                {
+                    try
+                    {
+                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "On-evict callback failed; ignored");
+                    }
+                }
             }
             catch (...)
             {
@@ -363,11 +372,9 @@ void EvictionCandidates::evict()
 
 void EvictionCandidates::afterEvictWrite(const CachePriorityGuard::WriteLock & lock)
 {
-    if (after_evict_write_func)
-    {
-        after_evict_write_func(lock);
-        after_evict_write_func = {};
-    }
+    for (auto & func : after_evict_write_funcs)
+        func(lock);
+    after_evict_write_funcs.clear();
 }
 
 void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
@@ -386,11 +393,9 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
         queue_entries_to_invalidate.pop_back();
     }
 
-    if (after_evict_state_func)
-    {
-        after_evict_state_func(lock);
-        after_evict_state_func = {};
-    }
+    for (auto & func : after_evict_state_funcs)
+        func(lock);
+    after_evict_state_funcs.clear();
 }
 
 }

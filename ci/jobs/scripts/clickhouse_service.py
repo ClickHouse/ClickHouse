@@ -154,7 +154,7 @@ class ClickHouseService:
 
         for attempt in range(attempts):
             _res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {port} --query "select 1"', verbose=True
+                f'clickhouse-client --port {port} --receive_timeout=5 --query "select 1"', verbose=True
             )
             if out.strip() == "1":
                 print("ClickHouse server ready")
