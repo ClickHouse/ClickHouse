@@ -143,7 +143,36 @@ void dropAliases(ASTPtr & node)
 }
 
 
-bool isCompatible(ASTPtr & node)
+/// SQLite has no way to represent a NUL byte inside a string literal (see writeQuotedStringSQLite),
+/// so a predicate whose string literal (possibly nested in an IN tuple / array / map) contains NUL
+/// must not be pushed down; it is evaluated by ClickHouse instead.
+bool fieldHasStringWithNulByte(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            return field.safeGet<String>().find('\0') != String::npos;
+        case Field::Types::Tuple:
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasStringWithNulByte(element))
+                    return true;
+            return false;
+        case Field::Types::Array:
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasStringWithNulByte(element))
+                    return true;
+            return false;
+        case Field::Types::Map:
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasStringWithNulByte(element))
+                    return true;
+            return false;
+        default:
+            return false;
+    }
+}
+
+bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
 {
     if (auto * function = node->as<ASTFunction>())
     {
@@ -190,7 +219,7 @@ bool isCompatible(ASTPtr & node)
             return false;
 
         for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr))
+            if (!isCompatible(expr, literal_escaping_style))
                 return false;
 
         /// When the parser's fast-path literal conversion produces
@@ -242,6 +271,10 @@ bool isCompatible(ASTPtr & node)
 
     if (const auto * literal = node->as<ASTLiteral>())
     {
+        /// SQLite cannot represent NUL bytes in string literals, so do not push such predicates down.
+        if (literal_escaping_style == LiteralEscapingStyle::SQLite && fieldHasStringWithNulByte(literal->value))
+            return false;
+
         if (literal->value.getType() == Field::Types::Tuple)
         {
             /// Represent a tuple with zero or one elements as (x) instead of tuple(x).
@@ -370,7 +403,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where))
+        if (isCompatible(original_where, literal_escaping_style))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -393,7 +426,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem))
+                        if (isCompatible(elem, literal_escaping_style))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);

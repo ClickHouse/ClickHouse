@@ -1,0 +1,30 @@
+--- engine: exact match on single-quote string
+2	it\'s
+--- engine: exact match on tab
+3
+--- engine: exact match on newline
+4
+--- engine: exact match on backslash
+5
+--- table function: exact match on single-quote string
+2	it\'s
+--- table function: exact match on tab
+3
+--- table function: exact match on newline
+4
+--- table function: exact match on backslash
+5
+--- engine: IN with special-character strings
+2	it\'s
+3	a\tb
+5	back\\slash
+--- engine: NOT IN with special-character strings
+1
+--- table function: IN with special-character strings
+2	it\'s
+3	a\tb
+5	back\\slash
+--- engine: NUL byte in predicate is evaluated by ClickHouse, not pushed down
+0
+--- engine: NUL byte in predicate with strict pushdown is rejected
+rejected
