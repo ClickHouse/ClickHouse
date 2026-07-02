@@ -4,6 +4,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Common/DateLUTImpl.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
 
 #include <Columns/ColumnsDateTime.h>
 
@@ -40,9 +41,22 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
     if (block.has(result_column))
         return block.getByName(result_column).column->convertToFullColumnIfSparse();
 
+    /// `Date`/`DateTime` source columns are widened to `Date32`/`DateTime64` at TTL
+    /// analysis time so the arithmetic in the expression cannot silently 16/32-bit wrap
+    /// on overflow. The block here still holds the original narrow types, so cast each
+    /// required input to the type the expression expects; for matching types this is a
+    /// cheap no-op handled inside `castColumn`.
     Block block_copy;
-    for (const auto & column_name : expression->getRequiredColumns())
-        block_copy.insert(block.getColumnOrSubcolumnByName(column_name));
+    for (const auto & required : expression->getRequiredColumnsWithTypes())
+    {
+        auto block_col = block.getColumnOrSubcolumnByName(required.name);
+        if (!block_col.type->equals(*required.type))
+        {
+            block_col.column = castColumn(block_col, required.type);
+            block_col.type = required.type;
+        }
+        block_copy.insert(std::move(block_col));
+    }
 
     /// Keep number of rows for const expression.
     size_t num_rows = block.rows();

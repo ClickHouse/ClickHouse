@@ -21,6 +21,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -119,6 +121,50 @@ public:
 using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
+/// Returns the column list with every `Date` / `DateTime` source column widened to
+/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality`).
+/// The TTL expression is analyzed against this widened view so arithmetic in
+/// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
+/// wrap on overflow. The original timezone is preserved so calendar transforms
+/// (`addMonths` / `addYears`) and DST boundaries produce the user-expected results.
+///
+/// `Nullable` is preserved: dropping it would let the analyzer treat the column as
+/// non-null, which constant-folds `isNull` / `ifNull` and silently changes TTL
+/// decisions for rows that are actually `NULL` (for both rows-TTL and `DELETE WHERE`).
+/// `LowCardinality` is dropped because `LowCardinality(DateTime64)` is not allowed
+/// in the type system; the runtime cast in `ITTLAlgorithm::executeExpressionAndGetColumn`
+/// converts the original `LC` column to the widened type.
+NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
+{
+    NamesAndTypesList result;
+    for (const auto & col : columns)
+    {
+        const auto inner = removeLowCardinalityAndNullable(col.type);
+        DataTypePtr widened;
+        if (isDate(inner))
+        {
+            widened = std::make_shared<DataTypeDate32>();
+        }
+        else if (isDateTime(inner))
+        {
+            const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
+            const String & tz = dt.getTimeZone().getTimeZone();
+            widened = std::make_shared<DataTypeDateTime64>(0, tz);
+        }
+        else
+        {
+            result.emplace_back(col);
+            continue;
+        }
+
+        if (isNullableOrLowCardinalityNullable(col.type))
+            widened = std::make_shared<DataTypeNullable>(widened);
+
+        result.emplace_back(col.name, widened);
+    }
+    return result;
+}
+
 }
 
 TTLDescription::TTLDescription(const TTLDescription & other)
@@ -175,9 +221,12 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+static ExpressionAndSets analyzeExpressionAndSets(const ASTPtr & ast_template, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
+    /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
+    /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
+    auto ast = ast_template->clone();
     auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
@@ -194,6 +243,40 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     result.sets = analyzer.getPreparedSets();
 
     return result;
+}
+
+static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+{
+    /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
+    /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
+    /// 64-bit domain and cannot silently 16/32-bit wrap on overflow (issue #101763).
+    ///
+    /// Some valid TTL expressions use functions that accept only the narrow temporal
+    /// types and reject the widened ones (e.g. `tumbleStart` / `tumbleEnd` require
+    /// `DateTime`, not `DateTime64`). The widened analysis would reject those and break
+    /// `ATTACH` of legacy tables after an upgrade, so we fall back to analyzing against
+    /// the original column types. Such expressions explicitly operate in the narrow
+    /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
+    auto widened_columns = widenTemporalColumns(columns);
+    bool widened_any = !std::equal(
+        columns.begin(), columns.end(), widened_columns.begin(), widened_columns.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); });
+
+    if (widened_any)
+    {
+        try
+        {
+            return analyzeExpressionAndSets(ast, widened_columns, context);
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch): intentional fallback to the narrow analysis below
+        {
+            /// A function in the expression rejected the widened temporal type
+            /// (e.g. `tumbleStart` requires `DateTime`, not `DateTime64`).
+            /// Retry the analysis against the original (narrow) column types.
+        }
+    }
+
+    return analyzeExpressionAndSets(ast, columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
