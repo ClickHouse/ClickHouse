@@ -228,6 +228,7 @@ Arguments:
 - `--echo-formatted [ <bool> ]` — format the echoed queries. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
 - `--echo-query-id [ <bool> ]` — print the `query_id` before execution. Takes an optional boolean value. Enabled by default in interactive mode and disabled in batch mode.
 - `--highlight`, `--hilite` `<bool>` — toggle syntax highlighting of the command prompt and the echoed queries. Enabled by default. Highlighting is applied only when writing to a terminal.
+- `--hints <bool>` — show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). Enabled by default.
 - `--verbose` — more details on query execution.
 - `--logger.console` — Log to console.
 - `--logger.log` — Log file name.
