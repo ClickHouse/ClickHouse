@@ -33,6 +33,25 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     info->is_overflows = is_overflows;
     info->chunks = std::make_shared<Chunks>(std::move(chunks));
 
+    /// Buckets may be emitted out of order here, so stamp every still-pending bucket (buffered
+    /// in `chunks_map`, or still owed by an input in `out_of_order_buckets`) except the one being
+    /// pushed. Mirrors ConvertingAggregatedToChunksTransform so a downstream re-merge layer keeps
+    /// the delayed-bucket signal and does not push a bucket twice.
+    /// A bucket is owed only while its delaying count is positive: `out_of_order_buckets` keeps
+    /// zero-count entries (an input declared a bucket delayed, then resolved it empty so it was
+    /// never buffered in `chunks_map`), and stamping those would tell the next layer this input
+    /// still owes a bucket it never will, holding back real data for it until the stream ends.
+    if (bucket >= 0)
+    {
+        for (const auto & [pending_bucket, chunks_for_bucket] : chunks_map)
+            if (pending_bucket != bucket)
+                info->out_of_order_buckets.push_back(pending_bucket);
+        for (const auto & [delayed_bucket, num_inputs_delaying] : out_of_order_buckets)
+            if (delayed_bucket != bucket && num_inputs_delaying > 0 && !chunks_map.contains(delayed_bucket))
+                info->out_of_order_buckets.push_back(delayed_bucket);
+        std::ranges::sort(info->out_of_order_buckets);
+    }
+
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
@@ -389,6 +408,10 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
     res_info->chunk_num = chunks_to_merge->chunk_num;
+    /// Carry the delayed-bucket signal through so a downstream GroupingAggregatedTransform
+    /// (e.g. in a multi-layer distributed query) still knows which out-of-order buckets are
+    /// still coming; otherwise it may push a bucket twice.
+    res_info->out_of_order_buckets = chunks_to_merge->out_of_order_buckets;
     chunk.getChunkInfos().add(std::move(res_info));
 
     auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled, dataflow_cache_updater);

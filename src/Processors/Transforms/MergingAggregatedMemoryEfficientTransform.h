@@ -155,6 +155,10 @@ struct ChunksToMerge : public ChunkInfoCloneable<ChunksToMerge>
     Int32 bucket_num = -1;
     bool is_overflows = false;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
+    /// Buckets still owed by some input when this chunk was pushed. GroupingAggregatedTransform may emit
+    /// buckets out of order, so this carries the same "delayed bucket" signal that
+    /// ConvertingAggregatedToChunksTransform records, letting a downstream re-merge layer keep ordering.
+    std::vector<Int32> out_of_order_buckets;
 };
 
 class Pipe;
