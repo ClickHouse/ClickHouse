@@ -8287,7 +8287,7 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
 )", 0) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
 Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
 )", EXPERIMENTAL) \
