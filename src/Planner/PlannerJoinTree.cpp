@@ -28,10 +28,10 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
-#include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -50,7 +50,11 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Processors/Sources/NullSource.h>
@@ -70,6 +74,7 @@
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -83,12 +88,14 @@
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/collectSelectedColumnsFromTable.h>
 
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -103,6 +110,10 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
+    extern const SettingsUInt64 distributed_group_by_no_merge;
+    extern const SettingsBool optimize_skip_unused_shards;
+    extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
@@ -154,6 +165,149 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Recursively find the first TableNode whose storage matches `target`.
+QueryTreeNodePtr findTableNodeByStorage(const QueryTreeNodePtr & node, const StoragePtr & target)
+{
+    const auto * tn = node->as<TableNode>();
+    if (tn && tn->getStorage() == target)
+    {
+        return node;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child)
+        {
+            auto found = findTableNodeByStorage(child, target);
+            if (found)
+            {
+                return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+/// Returns true if `node` contains any function whose IFunctionBase::isDeterministic() is false.
+/// Used by the view-pushdown gate: the optimization rewrites the outer query so its expressions
+/// run on shards instead of the coordinator, which changes results for functions like hostName,
+/// serverUUID, nowInBlock, blockNumber, rand, now etc. Aggregate and window functions are not
+/// flagged here — FunctionNode::getFunction() only returns the resolved IFunctionBase for
+/// ordinary functions, returning nullptr otherwise.
+///
+/// ConstantNode is also inspected because the analyzer constant-folds suitable function calls
+/// (server-local constants such as hostName, serverUUID, version) into ConstantNodes that carry
+/// is_deterministic = false (see resolveFunction.cpp:1766). Without this branch the visitor
+/// would miss folded calls — only functions that vary per row (rand, now, ...) stay as
+/// FunctionNodes after analysis. Plain literals (SELECT 1) use the default-deterministic
+/// ConstantNode constructor and are not flagged.
+bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction(); function && !function->isDeterministic())
+            return true;
+    }
+
+    if (const auto * constant_node = node->as<ConstantNode>())
+    {
+        if (!constant_node->isDeterministic())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsNonDeterministicFunction(child))
+            return true;
+    }
+    return false;
+}
+
+/// AST-level counterpart of containsNonDeterministicFunction. Used for predicates that the
+/// pushdown injects as shard-side filters but that are NOT present in the outer query tree the
+/// QueryTree-based check above runs on: the view's row policy and view-keyed
+/// additional_table_filters. On the normal StorageView path these are coordinator-side filters;
+/// the pushdown evaluates them on each shard, so a non-deterministic / server-local function in
+/// them (hostName, serverUUID, rand, now, ...) would change results once the optimization fires.
+/// A function is unsafe when its builder reports isDeterministic() == false (no constant-folding
+/// has happened at the AST stage, so server-local constants are still ASTFunction nodes here).
+bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (!function->name.empty() && function->name != "lambda")
+        {
+            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            if (!builder || !builder->isDeterministic())
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsNonDeterministicFunction(child, context))
+            return true;
+    }
+    return false;
+}
+
+/// Returns true if any descendant of `node` (the outer query) is a subquery, i.e. a QUERY or
+/// UNION node. `node` itself is the outer query and is intentionally not treated as a subquery.
+///
+/// The pushdown ships the outer query to the shards. A subquery in it (e.g. the right-hand side
+/// of `IN (SELECT ...)`) is evaluated once on the coordinator on the normal StorageView path, but
+/// per-shard once the optimization fires; if it reads an initiator-local table, or one whose
+/// contents/privileges differ between shards, the result can change or the query can start
+/// throwing. So suppress the optimization whenever the outer query contains a subquery.
+///
+/// At this planner stage `IN (subquery)` still carries its subquery as a QUERY/UNION child of the
+/// `in` function (see CollectSets.cpp), so it is found here. Scalar subqueries that the analyzer
+/// already constant-folded live in ConstantNode::source_expression, which is NOT a child
+/// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
+/// the initiator and safe to ship.
+bool containsSubqueryNode(const QueryTreeNodePtr & node)
+{
+    for (const auto & child : node->getChildren())
+    {
+        if (!child)
+            continue;
+        const auto child_node_type = child->getNodeType();
+        if (child_node_type == QueryTreeNodeType::QUERY || child_node_type == QueryTreeNodeType::UNION)
+            return true;
+        if (containsSubqueryNode(child))
+            return true;
+    }
+    return false;
+}
+
+/// AST-level subquery detector, the counterpart of containsSubqueryNode for the predicates the
+/// pushdown injects as shard-side filters (the view's row policy and view-keyed
+/// additional_table_filters), which are not part of the outer query tree. They are coordinator-side
+/// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
+/// the optimization fires, with the same divergence risk described above, so suppress the
+/// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+bool astContainsSubquery(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (ast->as<ASTSubquery>())
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsSubquery(child))
+            return true;
+    }
+    return false;
+}
 
 /// Check if current user has privileges to SELECT columns from table
 /// Throws an exception if access to any column from `column_names` is not granted
@@ -1208,9 +1362,335 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     where_filters.emplace_back(std::move(*additional_filters_info), makeDescription("additional filter"));
                 }
 
+                /// For trivial views over Distributed tables, inline the view body and use the
+                /// underlying StorageDistributed directly. StorageDistributed will substitute the
+                /// distributed table node (inside the inlined subquery) with the shard-local table,
+                /// so each shard receives the full view body (aliases, WHERE, etc.) against its local table.
+                StoragePtr effective_storage = storage;
+                StorageSnapshotPtr effective_snapshot = storage_snapshot;
+                /// Context used to ship the read into the underlying distributed table when the
+                /// view-pushdown optimization fires. For SECURITY NONE it carries the no-user
+                /// override built below (matching StorageView::readImpl, which uses the override for
+                /// both the inner interpreter and the inner storage read); for INVOKER and the
+                /// legacy unset case it is just a copy of query_context. Stays equal to
+                /// query_context whenever the pushdown does not apply.
+                ContextPtr effective_context = query_context;
+                /// Only push down when the view is the sole table expression of the outer query.
+                /// The pushdown ships the whole outer query to shards (replacing the view with the
+                /// inlined body over the shard-local table), which is only meaningful when "the outer
+                /// query" is exactly "read the view". When the view is one input of a join, the outer
+                /// query references join columns by identifier (e.g. __table2.id) that the rewrite
+                /// would leave dangling, and the other side may be a local table that cannot be
+                /// shipped to shards at all. Joined queries fall back to the standard
+                /// StorageView::readImpl path.
+                ///
+                /// Also skip when distributed_group_by_no_merge is set. A normal StorageView advertises
+                /// FetchColumns, so an outer GROUP BY aggregates on the initiator over rows from all
+                /// shards. Under the pushdown effective_storage is the Distributed table, and with
+                /// distributed_group_by_no_merge its getQueryProcessingStage returns a stage where each
+                /// shard aggregates independently and the initiator only concatenates — so a group key
+                /// present on several shards yields one partial row per shard instead of one merged row.
+                /// Fall back to the StorageView path, which still merges on the initiator.
+                const auto * view = (is_single_table_expression
+                                     && settings[Setting::optimize_trivial_view_pushdown_to_distributed]
+                                     && !settings[Setting::distributed_group_by_no_merge])
+                    ? typeid_cast<const StorageView *>(storage.get())
+                    : nullptr;
+                if (view)
+                {
+                    auto underlying_dist = view->tryGetUnderlyingDistributed(storage_snapshot, query_context);
+                    if (underlying_dist)
+                    {
+                        /// Suppress the pushdown when it would move an expression from the coordinator
+                        /// onto the shards that is unsafe to evaluate per-shard:
+                        ///   * non-deterministic / server-local functions (hostName, serverUUID,
+                        ///     nowInBlock, blockNumber, rand, now, ...) in the outer query — evaluated
+                        ///     per-shard instead of once on the initiator, changing results;
+                        ///   * subqueries in the outer query (e.g. the right-hand side of
+                        ///     `IN (SELECT ...)`) — evaluated per-shard against shard-local tables
+                        ///     instead of once on the coordinator (a scalar subquery the analyzer
+                        ///     already folded into a constant is safe and is not flagged);
+                        ///   * the same two hazards inside view-keyed additional_table_filters.
+                        /// The view body itself needs no check: it is read through
+                        /// StorageDistributed::read in both paths (and tryGetTrivialViewUnderlyingStorage
+                        /// already rejects a body whose WHERE/SELECT contains a subquery).
+                        ///
+                        /// Also suppress when a row policy applies to the view or to the underlying
+                        /// Distributed table. Row policies must be enforced in the view-output namespace;
+                        /// splicing a policy into the inlined body can bind to a source column instead of
+                        /// the view alias (e.g. `SELECT id + 1 AS id` with policy `id = 2` under
+                        /// prefer_column_name_to_alias = 1). The canonical StorageView::readImpl path
+                        /// enforces the view policy in the right namespace and handles the Distributed
+                        /// policy (not propagated to shards — see issue #28334) and used_row_policies
+                        /// bookkeeping correctly, so we fall back to it whenever any policy is present.
+                        const auto & view_id = storage->getStorageID();
+                        const auto & dist_id = underlying_dist->getStorageID();
+                        auto view_row_policy = query_context->getRowPolicyFilter(
+                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        auto dist_row_policy = query_context->getRowPolicyFilter(
+                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
+                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+
+                        /// Also suppress when shard pruning is forced. The pushdown ships the outer
+                        /// query's WHERE in the view-output namespace, which cannot be safely mapped to
+                        /// the underlying table's sharding key (the view may rewrite the key column while
+                        /// keeping its name), so it forgoes optimize_skip_unused_shards pruning (see the
+                        /// filter_actions_dag clear below). With force_optimize_skip_unused_shards the
+                        /// inability to prune is a hard error, so fall back to the canonical
+                        /// StorageView::readImpl path, which propagates the outer WHERE to the underlying
+                        /// Distributed table and prunes correctly.
+                        const bool force_skip_unused_shards = settings[Setting::force_optimize_skip_unused_shards] != 0;
+
+                        if (has_row_policy
+                            || force_skip_unused_shards
+                            || containsNonDeterministicFunction(table_expression_query_info.query_tree)
+                            || containsSubqueryNode(table_expression_query_info.query_tree)
+                            || astContainsNonDeterministicFunction(table_expression_query_info.additional_filter_ast, query_context)
+                            || astContainsSubquery(table_expression_query_info.additional_filter_ast))
+                            underlying_dist = nullptr;
+                    }
+                    if (underlying_dist)
+                    {
+                        const auto & view_sql_security = storage_snapshot->metadata->sql_security_type;
+
+                        /// For SQL SECURITY NONE, the inner query normally executes with a no-user
+                        /// (global) context via getSQLSecurityOverriddenContext, so caller-specific
+                        /// row policies do not apply to the underlying distributed table. Use that
+                        /// same context here to match readImpl behaviour.
+                        const ContextPtr inner_context = (view_sql_security && *view_sql_security == SQLSecurityType::NONE)
+                            ? storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context)
+                            : query_context;
+
+                        /// Analyze the view's inner query to obtain its query tree. Row policies are not
+                        /// injected here: queries against a view (or underlying Distributed table) with a
+                        /// row policy were already excluded from the pushdown above, so the canonical
+                        /// StorageView::readImpl path enforces them in the correct namespace.
+                        const auto & inner_query_ast = storage_snapshot->metadata->getSelectQuery().inner_query;
+
+                        auto options = SelectQueryOptions(QueryProcessingStage::FetchColumns).subquery();
+                        InterpreterSelectQueryAnalyzer inner_interp(inner_query_ast, inner_context, options);
+                        const auto & inner_query_tree = inner_interp.getQueryTree();
+                        /// Mark as subquery so it serializes as (SELECT ...) in the FROM clause.
+                        inner_query_tree->as<QueryNode &>().setIsSubquery(true);
+                        /// Inherit the view's alias so outer ColumnNodes get the correct table qualifier.
+                        inner_query_tree->setAlias(table_expression_query_info.table_expression->getAlias());
+                        /// Find the underlying distributed table's node inside the inner query tree.
+                        auto dist_table_node = findTableNodeByStorage(inner_query_tree, underlying_dist);
+
+                        /// A view may declare an explicit column schema whose types differ from the
+                        /// inner query's result types (e.g. CREATE VIEW v (id UInt8) AS SELECT id FROM dist
+                        /// where dist.id is UInt32). StorageView::readImpl converts the inner result to the
+                        /// view's declared structure ("Convert VIEW subquery result to VIEW table
+                        /// structure"); the pushdown ships the raw inner query and skips that conversion,
+                        /// so a shard would return the inner types and break the VIEW type contract.
+                        /// Suppress when any read column's declared type differs from the inner output
+                        /// type, falling back to readImpl which applies the cast.
+                        bool view_schema_matches_inner = true;
+                        {
+                            std::unordered_map<String, DataTypePtr> inner_types;
+                            for (const auto & col : inner_query_tree->as<QueryNode &>().getProjectionColumns())
+                                inner_types.emplace(col.name, col.type);
+                            const auto & view_columns = storage_snapshot->metadata->getColumns();
+                            for (const auto & name : columns_names)
+                            {
+                                if (!view_columns.has(name)) /// skip virtuals / non-declared columns
+                                    continue;
+                                auto it = inner_types.find(name);
+                                if (it == inner_types.end() || !view_columns.get(name).type->equals(*it->second))
+                                {
+                                    view_schema_matches_inner = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (dist_table_node && view_schema_matches_inner)
+                        {
+                            /// Column-aware access check for the underlying distributed table, gated on
+                            /// the same security modes readImpl would check under (INVOKER and legacy
+                            /// unset). The pushdown is suppressed entirely when a row policy applies to
+                            /// either the view or the distributed table (see the gate above), so the
+                            /// freshly-analyzed tree here carries no injected policy WHERE and the grant
+                            /// requirement reflects only the columns the outer query actually reads.
+                            if (!view_sql_security || *view_sql_security == SQLSecurityType::INVOKER)
+                            {
+                                /// Pass columns_names so the analyzer wraps the inner query as
+                                /// SELECT <columns_names> FROM (<inner_query_ast>) and prunes columns
+                                /// the outer caller does not read. Mirrors StorageView::readImpl, which
+                                /// receives the same column list via IStorage::read and is the access
+                                /// check this pushdown path is meant to be equivalent to. Without this,
+                                /// collectSelectedColumnsFromTable would pick up every column the view
+                                /// body mentions and over-require grants on the underlying table.
+                                InterpreterSelectQueryAnalyzer access_check_interp(inner_query_ast, inner_context, options, columns_names);
+                                auto access_check_tree = access_check_interp.getQueryTree();
+                                auto access_check_dist_node = findTableNodeByStorage(access_check_tree, underlying_dist);
+                                /// This tree is the same inner query re-analyzed with the read column list;
+                                /// it cannot lose the dist table reference the earlier lookup found.
+                                chassert(access_check_dist_node);
+                                auto referenced_columns = collectSelectedColumnsFromTable(
+                                    access_check_tree, underlying_dist->getStorageID(), query_context);
+                                checkAccessRights(access_check_dist_node->as<TableNode &>(), referenced_columns, query_context);
+                            }
+
+                            /// Merge table expression modifiers (FINAL, SAMPLE) from the outer view
+                            /// reference into the distributed table node. The outer modifiers come from
+                            /// the caller (e.g. SELECT * FROM my_view FINAL SAMPLE 0.1); the inner
+                            /// modifiers come from the view body itself. FINAL is OR-ed so either source
+                            /// can enable it; for SAMPLE the outer value takes precedence over the inner.
+                            auto & dist_table = dist_table_node->as<TableNode &>();
+                            const auto outer_modifiers = table_expression_query_info.table_expression->as<const TableNode &>().getTableExpressionModifiers();
+                            if (outer_modifiers)
+                            {
+                                const auto inner_modifiers = dist_table.getTableExpressionModifiers();
+                                bool merged_final = outer_modifiers->hasFinal() || (inner_modifiers && inner_modifiers->hasFinal());
+                                auto merged_sample_size = outer_modifiers->hasSampleSizeRatio()
+                                    ? outer_modifiers->getSampleSizeRatio()
+                                    : (inner_modifiers ? inner_modifiers->getSampleSizeRatio() : std::nullopt);
+                                auto merged_sample_offset = outer_modifiers->hasSampleOffsetRatio()
+                                    ? outer_modifiers->getSampleOffsetRatio()
+                                    : (inner_modifiers ? inner_modifiers->getSampleOffsetRatio() : std::nullopt);
+                                dist_table.setTableExpressionModifiers(TableExpressionModifiers{merged_final, merged_sample_size, merged_sample_offset});
+                            }
+
+                            /// Fold any `additional_table_filters` keyed by this view into the outer
+                            /// QueryNode's WHERE clause BEFORE inlining the view body. The view's
+                            /// TableNode is still table_expression at this point, so view-namespace
+                            /// identifiers (including projection aliases) resolve correctly. After
+                            /// cloneAndReplace below, the WHERE rides along inside the shipped query
+                            /// and is evaluated on the shard prior to any partial aggregation, exactly
+                            /// like a user-written WHERE clause — `SELECT count() FROM v` becomes
+                            /// `SELECT count() FROM (inlined view body) WHERE additional_filter`.
+                            /// We also clear additional_filter_ast on query_info to suppress
+                            /// StorageDistributed::read's own propagation (which would otherwise
+                            /// re-key the view-namespace AST to the shard-local table — fine for
+                            /// unaliased views, but a hard error for aliased ones).
+                            if (auto & additional_filter_ast = table_expression_query_info.additional_filter_ast; additional_filter_ast)
+                            {
+                                ASTPtr wrapped_filter_ast = additional_filter_ast;
+                                if (wrapped_filter_ast->as<ASTSubquery>() || wrapped_filter_ast->as<ASTSelectWithUnionQuery>())
+                                    wrapped_filter_ast = makeASTFunction("notEquals",
+                                        wrapped_filter_ast,
+                                        make_intrusive<ASTLiteral>(Field(UInt8(0))));
+
+                                auto filter_query_tree = buildQueryTree(wrapped_filter_ast, query_context);
+                                QueryAnalysisPass query_analysis_pass(table_expression_query_info.table_expression);
+                                query_analysis_pass.run(filter_query_tree, query_context);
+
+                                auto & outer_query_node = table_expression_query_info.query_tree->as<QueryNode &>();
+                                if (outer_query_node.hasWhere())
+                                    outer_query_node.getWhere() = mergeConditionNodes(
+                                        {outer_query_node.getWhere(), std::move(filter_query_tree)},
+                                        query_context);
+                                else
+                                    outer_query_node.getWhere() = std::move(filter_query_tree);
+
+                                additional_filter_ast = nullptr;
+                            }
+
+                            /// additional_table_filters keyed by the underlying Distributed table are
+                            /// parsed here so StorageDistributed::read can propagate them to the
+                            /// shard-local table, exactly as the non-pushdown path does (its inner
+                            /// planner parses the filter while planning the Distributed table). The
+                            /// early parseAdditionalFilterAstIfNeeded ran only for the view's identifiers,
+                            /// so a filter keyed by the Distributed table would otherwise be lost. This
+                            /// runs after the view-keyed handling above cleared additional_filter_ast,
+                            /// and parseAdditionalFilterAstIfNeeded is a no-op when no entry matches.
+                            parseAdditionalFilterAstIfNeeded(
+                                underlying_dist, dist_table_node->getAlias(), table_expression_query_info, inner_context);
+
+                            /// Replace the view's table expression in the outer query with the
+                            /// inlined inner query tree. StorageDistributed will then replace
+                            /// the distributed table node (now deep inside the subquery) with
+                            /// a StorageDummy for the shard-local table, so each shard receives
+                            /// the full view body (aliases, WHERE, etc.) reading from its local table.
+                            table_expression_query_info.query_tree = table_expression_query_info.query_tree->cloneAndReplace(
+                                table_expression_query_info.table_expression, inner_query_tree);
+                            table_expression_query_info.table_expression = dist_table_node;
+                            effective_storage = underlying_dist;
+                            auto dist_metadata_snapshot = underlying_dist->getInMemoryMetadataPtr(query_context, false);
+                            effective_snapshot = underlying_dist->getStorageSnapshot(dist_metadata_snapshot, query_context);
+
+                            /// filter_actions_dag was built from the VIEW's output columns. After
+                            /// inlining, StorageDistributed::skipUnusedShardsWithAnalyzer would interpret
+                            /// that view-namespace predicate against the underlying table's sharding key,
+                            /// which is wrong when the view rewrites the sharding-key column but keeps its
+                            /// name (e.g. SELECT id + 1 AS id FROM dist). Clear it so shard pruning is
+                            /// skipped rather than applied to a stale predicate; the WHERE still rides in
+                            /// the inlined query_tree shipped to the shards, so results stay correct — we
+                            /// only forgo the optimize_skip_unused_shards pruning hint for this read.
+                            if (table_expression_query_info.filter_actions_dag
+                                && (settings[Setting::optimize_skip_unused_shards] || settings[Setting::force_optimize_skip_unused_shards]))
+                            {
+                                LOG_DEBUG(getLogger("Planner"),
+                                    "optimize_trivial_view_pushdown_to_distributed is enabled; shard pruning "
+                                    "(optimize_skip_unused_shards) is skipped for this query because the view's "
+                                    "filter is in the view's output namespace and cannot be safely applied to "
+                                    "the underlying table's sharding key. Disable "
+                                    "optimize_trivial_view_pushdown_to_distributed to use shard pruning.");
+                            }
+                            table_expression_query_info.filter_actions_dag = nullptr;
+
+                            /// Disable result-size limits and extremes for the underlying distributed
+                            /// read, mirroring StorageView::readImpl (getViewContext). These settings
+                            /// must be enforced only at the outer query boundary (the final result),
+                            /// not on the inner view read: otherwise a query like
+                            /// `SELECT id FROM v ORDER BY id LIMIT 1 SETTINGS max_result_rows = 1`
+                            /// could throw on a shard whose intermediate result exceeds the limit,
+                            /// before the coordinator applies the final ORDER BY/LIMIT. The outer query
+                            /// still runs under query_context, so the limits remain enforced on the
+                            /// result the client receives.
+                            auto read_context = Context::createCopy(inner_context);
+                            read_context->setSetting("max_result_rows", Field(0));
+                            read_context->setSetting("max_result_bytes", Field(0));
+                            read_context->setSetting("extremes", Field(false));
+
+                            /// Disable the GROUP BY / DISTINCT / LIMIT BY sharding-key aggregation
+                            /// optimization (optimize_distributed_group_by_sharding_key) for this read.
+                            /// StorageDistributed::getOptimizedQueryProcessingStageAnalyzer compares the
+                            /// shipped query's GROUP BY columns with the underlying table's sharding key
+                            /// by name; when it matches it returns the Complete stage and skips the
+                            /// coordinator merge. After inlining, a view that rewrites the sharding-key
+                            /// column but keeps its name (e.g. `SELECT intDiv(id, 2) AS id FROM dist`,
+                            /// sharded by `id`) would fool that name comparison: the view-output group can
+                            /// span multiple shards, so skipping the merge returns per-shard partial
+                            /// groups instead of one merged group. Clearing filter_actions_dag above only
+                            /// handles shard pruning, not this stage decision, so disable the optimization
+                            /// here to force the merge. The pushdown still ships the GROUP BY to the shards
+                            /// (partial aggregation); only the unsafe merge-skipping is suppressed.
+                            read_context->setSetting("optimize_distributed_group_by_sharding_key", Field(false));
+
+                            /// StorageDistributed::read rewrites the shard query using
+                            /// table_expression_query_info.planner_context's query context (see
+                            /// buildQueryTreeForShard); rewrites such as ReplaceLongConstWithScalar
+                            /// register scalars there. The distributed read, however, sends scalars from
+                            /// the context it is invoked with (effective_context). Context::createCopy
+                            /// snapshots the scalar map by value, so read_context and the original
+                            /// planner context would diverge — the shard could receive __getScalar('..')
+                            /// without the matching scalar ("Scalar doesn't exist"). Point the planner
+                            /// context at read_context so the rewrite stores scalars into the very
+                            /// context that sends them. The copy ctor keeps the shared
+                            /// GlobalPlannerContext (prepared sets, column identifiers).
+                            table_expression_query_info.planner_context
+                                = std::make_shared<PlannerContext>(read_context, table_expression_query_info.planner_context);
+
+                            effective_context = std::move(read_context);
+                        }
+                    }
+                }
+
                 if (!select_query_options.build_logical_plan)
-                    till_stage = storage->getQueryProcessingStage(
-                        query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+                {
+                    /// Use effective_context (not query_context) so the processing stage is computed
+                    /// under the same SQL-security context the read runs in. For SQL SECURITY NONE the
+                    /// pushdown reads via the no-user override context (effective_context); computing the
+                    /// stage from the caller's context could otherwise return a stage inconsistent with
+                    /// that read (e.g. settings like distributed_group_by_no_merge differing between the
+                    /// two contexts, leading the initiator to skip a merge the read expects). When the
+                    /// pushdown does not fire, effective_context == query_context, so this is unchanged.
+                    till_stage = effective_storage->getQueryProcessingStage(
+                        effective_context, select_query_options.to_stage, effective_snapshot, table_expression_query_info);
+                }
 
                 if (select_query_options.build_logical_plan)
                 {
@@ -1266,7 +1746,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
-                        ContextPtr updated_context = query_context;
+                        ContextPtr updated_context = effective_context;
                         if (const UnionNode * table_union = planner_context->getGlobalPlannerContext()->parallel_replicas_table_union)
                         {
                             SelectQueryOptions options;
@@ -1282,15 +1762,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                         if (disable_parallel_replicas_for_storage)
                         {
-                            auto mutable_context = Context::createCopy(query_context);
+                            auto mutable_context = Context::createCopy(effective_context);
                             mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                             updated_context = mutable_context;
                         }
 
-                        storage->read(
+                        effective_storage->read(
                             query_plan,
                             columns_names,
-                            storage_snapshot,
+                            effective_snapshot,
                             table_expression_query_info,
                             std::move(updated_context),
                             till_stage,
@@ -1299,12 +1779,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else
                     {
-                        storage->read(
+                        effective_storage->read(
                             query_plan,
                             columns_names,
-                            storage_snapshot,
+                            effective_snapshot,
                             table_expression_query_info,
-                            query_context,
+                            effective_context,
                             till_stage,
                             max_block_size,
                             max_streams);

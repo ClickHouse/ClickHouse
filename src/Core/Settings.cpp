@@ -889,6 +889,16 @@ You should not rely on automatic batch splitting, since this may hurt performanc
 :::
 )", 0, distributed_directory_monitor_split_batch_on_failure) \
     \
+    DECLARE(Bool, optimize_trivial_view_pushdown_to_distributed, true, R"(
+When enabled, for views over [Distributed](../../engines/table-engines/special/distributed.md) tables whose `SELECT` list contains only column references, `*`,
+or expressions (but no window functions or scalar subqueries), and that have no aggregation, grouping, ordering, or joins, the full outer query is pushed to
+each shard. This allows the shard to apply the view's filters and expressions locally, reducing the amount of data transferred over the network.
+
+Possible values:
+
+- 0 — The optimization is disabled; views over `Distributed` tables are always executed on the coordinator.
+- 1 — The optimization is enabled.
+)", 0) \
     DECLARE(Bool, optimize_move_to_prewhere, true, R"(
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
 
