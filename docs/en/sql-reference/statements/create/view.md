@@ -48,7 +48,8 @@ SELECT a, b, c FROM (SELECT ...)
 
 ## Parameterized View {#parameterized-view}
 
-Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately.
+These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -57,6 +58,14 @@ The above creates a view for table which can be used as table function by substi
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+Since the parameterized view depends on the parameter values, it doesn't have a schema when parameters are not provided.
+That means there's no information about parameterized views in the `system.columns` table.
+Also, `DESCRIBE` queries would work only if parameters are provided.
+
+```sql
+DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 ## Materialized View {#materialized-view}
