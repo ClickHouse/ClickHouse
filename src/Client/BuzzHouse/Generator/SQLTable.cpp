@@ -152,12 +152,17 @@ void collectColumnPaths(
     else if (tp && (flags & collect_generated) != 0 && tp->getTypeClass() == SQLTypeClass::QBIT)
     {
         QBitType * qbit = dynamic_cast<QBitType *>(tp);
-        FloatType * fp = dynamic_cast<FloatType *>(qbit->subtype.get());
+        SQLType * sub = qbit->subtype.get();
+        /// The number of accessible subcolumns equals the element bit-width: Int8 -> 8, BFloat16 -> 16,
+        /// Float32 -> 32, Float64 -> 64. Read the width from whichever element type is in use.
+        const FloatType * fp = dynamic_cast<const FloatType *>(sub);
+        const IntType * ip = dynamic_cast<const IntType *>(sub);
+        const uint32_t esize = fp ? fp->size : ip->size;
         static const std::unordered_map<uint32_t, DB::Strings> qentries
-            = {{16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
+            = {{8, {"1", "4", "8"}}, {16, {"1", "8", "16"}}, {32, {"1", "16", "32"}}, {64, {"1", "16", "32", "64"}}};
 
         /// Only setting a subset of the values to not add too many entries
-        for (const auto & entry : qentries.at(fp->size))
+        for (const auto & entry : qentries.at(esize))
         {
             next.path.emplace_back(ColumnPathChainEntry(entry, &(*string_tp)));
             paths.push_back(next);
@@ -1913,6 +1918,14 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
                 ikv->set_key("preprocessor");
                 generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 11, ikv->mutable_value());
             }
+            if (rg.nextSmallNumber() < 4)
+            {
+                IndexKeyVal * ikv = idef->add_params()->mutable_kval();
+                std::optional<SQLRelation> trel = std::make_optional<SQLRelation>(createTableRelation(rg, true, "", t));
+
+                ikv->set_key("postprocessor");
+                generateTableExpression(rg, trel, rg.nextMediumNumber() < 6, rg.nextMediumNumber() < 11, ikv->mutable_value());
+            }
             if (rg.nextBool())
             {
                 idef->add_params()->set_unescaped_sval("dictionary_block_size = " + std::to_string(rg.randomInt<uint32_t>(1, 512)));
@@ -1997,7 +2010,13 @@ void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, 
         }
         this->allow_subqueries = false;
         generateSelect(
-            rg, true, false, ncols, allow_groupby | allow_orderby | allow_global_aggregate, std::nullopt, psdef->mutable_select());
+            rg,
+            true,
+            false,
+            ncols,
+            allow_where | allow_groupby | allow_orderby | allow_global_aggregate,
+            std::nullopt,
+            psdef->mutable_select());
         this->allow_subqueries = prev_allow_subqueries;
         this->levels.clear();
         /// Add projection settings

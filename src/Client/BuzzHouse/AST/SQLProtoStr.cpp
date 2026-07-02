@@ -891,7 +891,7 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             const QBit & qq = btn.qbit();
 
             ret += "QBit(";
-            ret += FloatingPoints_Name(qq.subtype());
+            ret += qq.has_int8() ? "Int8" : FloatingPoints_Name(qq.floats());
             ret += ", ";
             ret += std::to_string(qq.dimension());
             ret += ")";
@@ -1261,8 +1261,11 @@ CONV_FN(ExprIn, ein)
 
 CONV_FN(ExprAny, eany)
 {
+    const BinaryOperator op = eany.op();
+    const bool distinct_from = op == BINOP_IS_DISTINCT_FROM || op == BINOP_IS_NOT_DISTINCT_FROM;
+
     ExprToString(ret, eany.expr());
-    BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
+    BinaryOperatorToString(ret, distinct_from ? op : static_cast<BinaryOperator>(((static_cast<int>(op) % 8) + 1)));
     ret += ExprAny_AnyAllSome_Name(eany.anyall()).substr(4);
     ret += "(";
     ExprInTypeToString(ret, eany.in_type());

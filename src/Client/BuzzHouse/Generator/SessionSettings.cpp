@@ -1144,8 +1144,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {
-             static const DB::Strings choices
-                 = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'", "'pread_fake_async'"};
+             static const DB::Strings choices = {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'", "'pread_fake_async'"};
              return rg.pickRandomly(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'", "'pread_fake_async'"},

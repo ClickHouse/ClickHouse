@@ -2112,16 +2112,33 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
               const uint32_t dimension = rg.nextSmallNumber();
+              /// QBit accepts Int8 as element type besides the floating-point ones.
+              const bool use_int8 = rg.nextSmallNumber() < 3;
 
-              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-              if (tp)
+              if (use_int8)
               {
-                  QBit * qbit = tp->mutable_qbit();
+                  sub = std::make_unique<IntType>(8, false);
+                  if (tp)
+                  {
+                      QBit * qbit = tp->mutable_qbit();
 
-                  qbit->set_subtype(nflo);
-                  qbit->set_dimension(dimension);
+                      qbit->set_int8(true);
+                      qbit->set_dimension(dimension);
+                  }
+              }
+              else
+              {
+                  FloatingPoints nflo = {};
+
+                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+                  if (tp)
+                  {
+                      QBit * qbit = tp->mutable_qbit();
+
+                      qbit->set_floats(nflo);
+                      qbit->set_dimension(dimension);
+                  }
               }
               res = std::make_unique<QBitType>(std::move(sub), dimension);
           }},

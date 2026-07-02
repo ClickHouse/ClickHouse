@@ -1539,8 +1539,11 @@ message Dynamic {
 }
 
 message QBit {
-    required FloatingPoints subtype = 1;
-    required uint32 dimension = 2;
+    oneof subtype {
+        FloatingPoints floats = 1;
+        bool int8 = 2;
+    }
+    required uint32 dimension = 3;
 }
 
 message AggregateParam {
