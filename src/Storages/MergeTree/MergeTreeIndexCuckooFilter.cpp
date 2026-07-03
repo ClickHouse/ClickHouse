@@ -985,10 +985,11 @@ void MergeTreeIndexAggregatorCuckooFilter::update(const Block & block, size_t * 
 }
 
 MergeTreeIndexCuckooFilter::MergeTreeIndexCuckooFilter(
+    StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
     double false_positive_rate_,
     size_t f_bits_)
-    : IMergeTreeIndex(index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , false_positive_rate(false_positive_rate_)
     , f_bits(f_bits_)
 {
@@ -1029,7 +1030,7 @@ static void assertIndexColumnsType(const Block & header)
 }
 
 MergeTreeIndexPtr cuckooFilterIndexCreator(
-    const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
 
@@ -1044,7 +1045,7 @@ MergeTreeIndexPtr cuckooFilterIndexCreator(
     false_positive_rate = std::min(false_positive_rate, 1.0 - 1e-15);
     const size_t f_bits = CuckooFilter::fingerprintBitsFromFalsePositiveRate(false_positive_rate);
 
-    return std::make_shared<MergeTreeIndexCuckooFilter>(index, false_positive_rate, f_bits);
+    return std::make_shared<MergeTreeIndexCuckooFilter>(std::move(metadata_snapshot), index, false_positive_rate, f_bits);
 }
 
 void cuckooFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)

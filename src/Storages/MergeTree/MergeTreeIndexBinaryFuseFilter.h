@@ -132,7 +132,7 @@ private:
 class MergeTreeIndexBinaryFuseFilter final : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexBinaryFuseFilter(const IndexDescription & index_, double false_positive_rate_, size_t f_bits_);
+    MergeTreeIndexBinaryFuseFilter(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, double false_positive_rate_, size_t f_bits_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
