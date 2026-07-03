@@ -2490,6 +2490,21 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A named `APPLY (x -> <matcher>, 'prefix')` whose lambda body is itself a
+                    /// bare matcher/asterisk (`*`, `t.*`, `COLUMNS(...)`) has no column to attach
+                    /// the prefix to. The legacy path rejects this with BAD_ARGUMENTS (it calls
+                    /// setAlias on a non-aliasable asterisk node); reject it here too, before the
+                    /// matcher is expanded into a column list and the reused column is silently
+                    /// renamed. A matcher nested inside a function (`x -> tuple(*)`) is not a bare
+                    /// matcher and stays allowed, matching the legacy path.
+                    if (!apply_column_name_prefix.empty()
+                        && expression_node->as<LambdaNode &>().getExpression()->getNodeType() == QueryTreeNodeType::MATCHER)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "APPLY transformer {} sets a name prefix on an asterisk or COLUMNS matcher, "
+                            "which does not name a single column. In scope {}",
+                            transformer->formatASTForErrorMessage(),
+                            scope.scope_node->formatASTForErrorMessage());
+
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
@@ -2546,6 +2561,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 auto replace_expression = replace_transformer->findReplacementExpression(column_name);
                 if (!replace_expression)
                     continue;
+
+                /// `REPLACE (<matcher> AS a)` renames the matched column to the replacement's
+                /// name, but a bare matcher/asterisk replacement (`COLUMNS('a')`, `*`, `t.*`)
+                /// has no single name to carry. The legacy path rejects this with BAD_ARGUMENTS
+                /// (setAlias on a non-aliasable asterisk node); reject it here too instead of
+                /// expanding the matcher and renaming the reused column.
+                if (replace_expression->getNodeType() == QueryTreeNodeType::MATCHER)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "REPLACE transformer {} uses an asterisk or COLUMNS matcher as the replacement "
+                        "for column '{}', which does not name a single column. In scope {}",
+                        transformer->formatASTForErrorMessage(),
+                        column_name,
+                        scope.scope_node->formatASTForErrorMessage());
 
                 replace_transformer_was_used = true;
 

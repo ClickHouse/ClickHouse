@@ -16,12 +16,22 @@ SELECT * APPLY (x -> *, 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMEN
 SELECT * APPLY (x -> COLUMNS('a'), 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
 -- REPLACE whose replacement expression is a qualified asterisk.
 SELECT * REPLACE (compound_value.* AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+-- REPLACE whose replacement expression is a plain asterisk / COLUMNS matcher.
+SELECT * REPLACE (* AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (COLUMNS('a') AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+-- The same rejection must hold on a multi-column input (not just single-column).
+SELECT * APPLY (x -> *, 'f_') FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
+SELECT * APPLY (x -> COLUMNS('a'), 'f_') FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (COLUMNS('a') AS a) FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
 
 -- Valid transformers must keep working (old analyzer).
 SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'p_') APPLY (x -> x + 1, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * REPLACE (a + 1 AS a) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+-- A matcher nested inside a function is not a bare matcher, so a named APPLY over it is
+-- still allowed (only the top-level result being a bare matcher is rejected).
+SELECT * APPLY (x -> tuple(*), 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 -- The prefix uses the short column name, not a qualified one, even in a scope that
 -- requires qualification (alias `a` collides with `x.a`, so `x.*` qualifies to `x.a`).
 SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
@@ -34,6 +44,23 @@ SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWi
 -- New (default) analyzer: the APPLY name prefix must be applied consistently with the
 -- old analyzer (it used to be silently dropped). https://github.com/ClickHouse/ClickHouse/pull/109223
 SET enable_analyzer = 1;
+
+-- The default analyzer must honor the same BAD_ARGUMENTS contract as the old analyzer for a
+-- named transformer over a bare matcher/asterisk expansion. It used to either accept the
+-- query and rename the reused column (one-column input) or emit a generic UNSUPPORTED_METHOD
+-- (multi-column input) instead of rejecting it.
+SELECT * APPLY (x -> compound_value.*, 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * APPLY (x -> *, 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * APPLY (x -> COLUMNS('a'), 'f_') FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (compound_value.* AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (* AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (COLUMNS('a') AS a) FROM (SELECT 1 AS a); -- { serverError BAD_ARGUMENTS }
+-- Multi-column input must be rejected with the same BAD_ARGUMENTS (previously UNSUPPORTED_METHOD).
+SELECT * APPLY (x -> *, 'f_') FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
+SELECT * APPLY (x -> COLUMNS('a'), 'f_') FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
+SELECT * REPLACE (COLUMNS('a') AS a) FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
+-- A matcher nested inside a function is not a bare matcher: still allowed, matching the old analyzer.
+SELECT * APPLY (x -> tuple(*), 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 
 SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
