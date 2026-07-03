@@ -630,6 +630,12 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"])
     {
+        /// only allow substitution for nodes with no value and without "replace"
+        if (node->hasChildNodes() && !replace)
+            throw Poco::Exception(
+                "Element <" + node->nodeName()
+                + "> has value and does not have 'replace' attribute, can't process from_hashicorp_vault substitution");
+
         HashiCorpVault * effective_vault = vault ? vault : &HashiCorpVault::instance();
         if (effective_vault->isLoaded())
         {

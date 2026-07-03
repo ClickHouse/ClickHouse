@@ -119,3 +119,11 @@ def test_cert_with_token():
         "configs/users.xml",
         "DB::Exception: Multiple auth methods are specified for vault",
     )
+
+
+def test_node_with_value_and_no_replace():
+    start_clickhouse(
+        "configs/config_token.xml",
+        "configs/users_with_default_value.xml",
+        "has value and does not have 'replace' attribute",
+    )
