@@ -10,6 +10,11 @@
         </substitution>
     </substitutions>
 
+    <!-- Always build the row store regardless of the cardinality estimate -->
+    <settings>
+        <min_rows_ratio_for_hash_join_row_store>0</min_rows_ratio_for_hash_join_row_store>
+    </settings>
+
     <!-- Unique keys -->
     <create_query>CREATE TABLE rs_right_100k (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE rs_right_10m (k UInt64, a Int32, b Int64, c UInt8, d Float64, e UInt32, f Int16, g FixedString(16), h Int8) ENGINE = MergeTree ORDER BY tuple()</create_query>

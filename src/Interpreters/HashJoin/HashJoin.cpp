@@ -777,6 +777,8 @@ void HashJoin::initRowStore(const Block & block)
 
     data->row_store_state = RowStoreState::Initialized;
     data->column_access_indexes = std::move(access_indexes);
+
+    LOG_DEBUG(log, "{}Initialized Row store with {} columns", instance_log_id, row_store_columns.size());
 }
 
 RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const

@@ -16,6 +16,59 @@ INSERT INTO right_asof SELECT number, toDateTime('2024-01-01 00:00:00', 'UTC') +
 SET join_algorithm = 'hash';
 SET min_columns_for_hash_join_row_store = 1;
 
+SELECT '--- Row store planner decision test ---';
+
+ -- Pin planner settings
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 0;
+SET query_plan_optimize_join_order_limit = 10;
+SET collect_hash_table_stats_during_joins = 0;
+ -- Pin minimum join output to build size ratio
+SET min_rows_ratio_for_hash_join_row_store = 2;
+
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_always_enabled';
+
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS query_plan_optimize_join_order_limit = 0, log_comment = 'rs_disabled_by_unknown_statistcs';
+
+SET param__internal_join_table_stat_hints = '{"left": {"cardinality": 1000000, "distinct_keys": {"k": 1}}, "right": {"cardinality": 100, "distinct_keys": {"k": 1}}}';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS log_comment = 'rs_enabled_by_planner';
+
+SET param__internal_join_table_stat_hints = '{"left": {"cardinality": 1000000, "distinct_keys": {"k": 1000000}}, "right": {"cardinality": 100, "distinct_keys": {"k": 100}}}';
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS log_comment = 'rs_disabled_by_planner';
+
+SYSTEM FLUSH LOGS text_log, query_log;
+
+SELECT 'rs_always_enabled', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_always_enabled' AND type = 'QueryFinish');
+
+SELECT 'rs_disabled_by_unknown_statistcs', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_unknown_statistcs' AND type = 'QueryFinish');
+
+SELECT 'rs_enabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_enabled_by_planner' AND type = 'QueryFinish');
+
+SELECT 'rs_disabled_by_planner', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_planner' AND type = 'QueryFinish');
+
+-- Keep the row store enabled regardless of cardinality estimates.
+SET min_rows_ratio_for_hash_join_row_store = 0;
+
 SELECT '--- INNER JOIN ---';
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k ORDER BY ALL;
 
