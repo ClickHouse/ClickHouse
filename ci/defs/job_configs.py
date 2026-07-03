@@ -322,11 +322,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.ARM_UBSAN,
-            provides=[ArtifactNames.CH_ARM_UBSAN, ArtifactNames.DEB_ARM_UBSAN],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-        Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
             provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -922,11 +917,6 @@ class JobConfigs:
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.DEB_ARM_MSAN],
         ),
-        Job.ParamSet(
-            parameter="arm_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_UBSAN],
-        ),
     )
     # might be heavy on azure - run only on master
     stress_test_azure_jobs = common_stress_job_config.parametrize(
@@ -1425,6 +1415,25 @@ class JobConfigs:
         run_in_docker="clickhouse/sqlancer-test",
         # 5h sqlancer run (set in sqlancer_job.sh) plus server start/teardown.
         timeout=3600 * 5 + 1800,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
+    sqlancer_pp_jobs = Job.Config(
+        name=JobNames.SQLANCER_PP,
+        runs_on=[],  # from parametrize()
+        command="./ci/jobs/sqlancer_pp_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/docker/sqlancer-test",
+            ],
+        ),
+        run_in_docker="clickhouse/sqlancer-test",
+        timeout=3600,
     ).parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan",
