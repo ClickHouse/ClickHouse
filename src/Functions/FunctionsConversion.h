@@ -303,7 +303,9 @@ struct ToDateTransformFromSecondsOrDays
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
-            if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+            /// Compare in the double domain: MAX_DATETIME_TIMESTAMP is exact as double but rounds when a
+            /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
+            if (static_cast<double>(from) > static_cast<double>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
         }
 
@@ -353,7 +355,9 @@ struct ToDate32TransformFromSecondsOrDays
         }
 
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME64_TIMESTAMP)
-            if (from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            /// Compare in the double domain: MAX_DATETIME64_TIMESTAMP is exact as double but rounds when a
+            /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
+            if (static_cast<double>(from) > static_cast<double>(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -409,7 +413,9 @@ struct ToDateTimeTransform64Signed
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
+            /// Compare in the double domain: MAX_DATETIME_TIMESTAMP is exact as double but rounds when a
+            /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
+            if (from < 0 || static_cast<double>(from) > static_cast<double>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
@@ -473,7 +479,10 @@ struct ToTimeTransform64
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_TIME_TIMESTAMP || from < (-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
+            /// Compare in FromType domain to avoid a sign-compare between an unsigned FromType and the signed
+            /// MAX_TIME_TIMESTAMP; the negative bound only applies to signed sources.
+            if (from > FromType(MAX_TIME_TIMESTAMP)
+                || (is_signed_v<FromType> && from < FromType(-1 * MAX_TIME_TIMESTAMP))) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
@@ -1972,7 +1981,7 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeBFloat16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1991,12 +2000,12 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeBFloat16>
             ) && std::is_same_v<ToDataType, DataTypeDate32>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromSecondsOrDays<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
@@ -2007,20 +2016,20 @@ struct ConvertImpl
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -2030,10 +2039,10 @@ struct ConvertImpl
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((
