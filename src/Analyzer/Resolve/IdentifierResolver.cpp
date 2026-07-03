@@ -412,6 +412,12 @@ StoragePtr IdentifierResolver::tryResolveDatalakeTable(
     if (!table_identifier.isCompound())
         return nullptr;
 
+    /// `database.table` interpretation takes priority: when the first part names an existing
+    /// database, do not silently reinterpret the identifier as the catalog's `namespace.table`
+    /// (the table may simply be missing from that database).
+    if (DatabaseCatalog::instance().isDatabaseExist(table_identifier[0]))
+        return nullptr;
+
     auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
     if (!current_db)
         return nullptr;
