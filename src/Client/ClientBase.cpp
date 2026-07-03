@@ -74,6 +74,7 @@
 #include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -126,6 +127,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields_on_insert;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
@@ -2216,11 +2219,23 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 {
     String current_format = "Values";
 
+    /// The inline data of `INSERT ... VALUES` is parsed here, in the client, so the named-tuple
+    /// insert guard would not be applied to it - unlike `INSERT ... SELECT`, whose conversion runs
+    /// on the server through `InterpreterInsertQuery`. Mirror that logic here so that inserting a
+    /// named tuple that would drop source fields is rejected consistently on both paths.
+    ContextMutablePtr format_context = client_context;
+
     /// Data format can be specified in the INSERT query.
     if (const auto * insert = parsed_query->as<ASTInsertQuery>())
     {
         if (!insert->format.empty())
             current_format = insert->format;
+
+        if (!client_context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
+        {
+            format_context = Context::createCopy(client_context);
+            format_context->setSetting("allow_named_tuple_conversion_with_extra_source_fields", false);
+        }
     }
 
     const Settings & settings = client_context->getSettingsRef();
@@ -2242,7 +2257,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         ? settings[Setting::min_insert_block_size_bytes]
         : insert_format_min_block_size_bytes_from_config.value_or(settings[Setting::min_insert_block_size_bytes]);
 
-    auto source = client_context->getInputFormat(
+    auto source = format_context->getInputFormat(
         current_format,
         buf,
         sample,
@@ -2257,7 +2272,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     {
         pipe.addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, client_context);
+            return std::make_shared<AddingDefaultsTransform>(header, columns_description, *source, format_context);
         });
     }
 
