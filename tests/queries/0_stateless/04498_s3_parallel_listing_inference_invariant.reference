@@ -1,0 +1,2 @@
+hive: inference is parallelism-invariant
+schema: inference is parallelism-invariant
