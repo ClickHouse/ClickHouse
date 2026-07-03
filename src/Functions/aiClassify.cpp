@@ -47,6 +47,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
+            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"categories", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStrings), &isColumnConst, "const Array(String)"},
         };
@@ -60,9 +61,9 @@ public:
 
 private:
     static constexpr float default_temp = 0.0f;
-    static constexpr size_t prompt_arg_index = 0;
-    static constexpr size_t categories_arg_index = 1;
-    static constexpr size_t temp_arg_idx = 2;
+    static constexpr size_t prompt_arg_index = 1;
+    static constexpr size_t categories_arg_index = 2;
+    static constexpr size_t temp_arg_idx = 3;
 
     String functionName() const override { return name; }
 
@@ -191,18 +192,19 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
-        .syntax = "aiClassify(text, categories[, temperature])",
+        .syntax = "aiClassify(collection, text, categories[, temperature])",
         .arguments = {
+            {"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
             {"text", "Text to classify.", {"String"}},
             {"categories", "Constant list of candidate category labels.", {"Array(String)"}},
             {"temperature", "Sampling temperature controlling randomness. Default: `0.0`.", {"Float64"}},
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'", "positive"},
-            {"Classify a column", "SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5", ""},
+            {"Classify sentiment", "SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
+            {"Classify a column", "SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
