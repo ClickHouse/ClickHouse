@@ -7648,6 +7648,10 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
+        /// Under `USE db.namespace` (DataLakeCatalog databases) unqualified table names resolve
+        /// within the selected namespace: tables in such databases are named `namespace.table`.
+        if (!current_table_prefix.empty())
+            storage_id.table_name = current_table_prefix + "." + storage_id.table_name;
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

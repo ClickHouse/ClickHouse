@@ -305,8 +305,11 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     auto current_db_info = context->getCurrentDatabase();
     const String & current_database = current_db_info.database;
     /// Namespaced table names are specific to data lake catalogs, so check the engine name
-    /// (`isRemoteDatabase` would also cover MySQL/PostgreSQL).
-    auto current_db_ptr = DatabaseCatalog::instance().tryGetDatabase(current_database);
+    /// (`isRemoteDatabase` would also cover MySQL/PostgreSQL). The current database may be
+    /// empty (e.g. a global context), and `tryGetDatabase` does not accept an empty name.
+    DatabasePtr current_db_ptr;
+    if (!current_database.empty())
+        current_db_ptr = DatabaseCatalog::instance().tryGetDatabase(current_database);
     bool is_current_db_datalake = current_db_ptr && current_db_ptr->getEngineName() == DataLake::DATABASE_ENGINE_NAME;
 
     StoragePtr storage;
@@ -373,7 +376,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     /// for DataLakeCatalog databases, try fallback resolution (like "namespace.table" as table name)
     if (!storage && is_current_db_datalake)
     {
-        storage = tryResolveDatalakeTable(table_identifier, context, current_db_info);
+        storage = tryResolveDatalakeTable(table_identifier, context, current_database);
         /// Adopt the resolved table's identity so the explicit storage_id passed to TableNode is valid.
         if (storage)
             storage_id = storage->getStorageID();
@@ -399,26 +402,21 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 }
 
 /// Fallback resolution for DataLakeCatalog databases whose table names are namespace-qualified:
-/// `namespace.table` is a table name within the current catalog, and a bare `table` gets the
-/// namespace prefix selected by `USE catalog.namespace` (if any).
+/// `namespace.table` is a table name within the current catalog. (A bare `table` under
+/// `USE db.namespace` gets its prefix centrally, in `Context::resolveStorageID`.)
 StoragePtr IdentifierResolver::tryResolveDatalakeTable(
     const Identifier & table_identifier,
     const ContextPtr & context,
-    const CurrentDatabaseInfo & current_db_info)
+    const String & current_database)
 {
-    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_db_info.database);
+    if (!table_identifier.isCompound())
+        return nullptr;
+
+    auto current_db = DatabaseCatalog::instance().tryGetDatabase(current_database);
     if (!current_db)
         return nullptr;
 
-    String table_name = table_identifier.getFullName();
-    if (!table_identifier.isCompound())
-    {
-        if (current_db_info.table_prefix.empty())
-            return nullptr;
-        table_name = current_db_info.table_prefix + "." + table_name;
-    }
-
-    return current_db->tryGetTable(table_name, context);
+    return current_db->tryGetTable(table_identifier.getFullName(), context);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)

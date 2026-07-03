@@ -75,7 +75,7 @@ public:
     static StoragePtr tryResolveDatalakeTable(
         const Identifier & table_identifier,
         const ContextPtr & context,
-        const CurrentDatabaseInfo & current_db_info);
+        const String & current_database);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).

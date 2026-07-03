@@ -158,9 +158,9 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
 
-    const auto & database = context->getCurrentDatabase().database;
-    if (!database.empty() && database != new_context->getCurrentDatabase().database)
-        new_context->setCurrentDatabase(database);
+    const auto current_db_info = context->getCurrentDatabase();
+    if (!current_db_info.database.empty() && current_db_info != new_context->getCurrentDatabase())
+        new_context->setCurrentDatabase(current_db_info.database, current_db_info.table_prefix);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());

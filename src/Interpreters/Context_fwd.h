@@ -20,6 +20,8 @@ struct CurrentDatabaseInfo
 {
     String database;
     String table_prefix;
+
+    bool operator==(const CurrentDatabaseInfo &) const = default;
 };
 
 /// Most used types have shorter names
