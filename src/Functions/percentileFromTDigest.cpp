@@ -121,6 +121,7 @@ Extracts a specific percentile value from a serialized TDigest sketch.
 The percentile parameter should be between 0.0 and 1.0 (e.g., 0.5 for median, 0.95 for p95).
 Returns NaN for empty sketches.
 )",
+        .syntax = "percentileFromTDigest(serialized_sketch, percentile)",
         .examples{{"percentileFromTDigest", "SELECT percentileFromTDigest(serializedTDigest(value), 0.95) FROM table", ""}},
         .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
