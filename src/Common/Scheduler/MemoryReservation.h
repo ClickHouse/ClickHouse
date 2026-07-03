@@ -65,6 +65,7 @@ private:
 
     // Interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override;
+    void spillAllocation(ResourceCost at_least_bytes) override;
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;

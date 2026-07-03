@@ -2090,6 +2090,8 @@ private: // interaction with the scheduler thread
         cv.notify_all();
     }
 
+    void spillAllocation(ResourceCost) override {}
+
     void increaseApproved(const IncreaseRequest & increase) override
     {
         std::unique_lock lock(mutex);

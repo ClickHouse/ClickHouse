@@ -29,12 +29,14 @@ public:
     void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) override;
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
+    void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
     void approveIncrease() override;
     void approveDecrease() override;
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override;
     void processActivation() override;
     void attachChild(const SchedulerNodePtr &) override;
     void removeChild(ISchedulerNode *) override;
@@ -64,9 +66,11 @@ private:
     ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
     ResourceAllocation::RemovingList removing_allocations; /// Allocations to remove
+    ResourceAllocation::ReclaimableSet reclaimable_allocations; /// Running allocations with `reclaimable > 0`, ordered by `fair_key` (spill victim = largest)
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
+    ResourceCost pending_reclaimable_delta = 0; /// Net change to `reclaimable` reported since the last activation, drained and propagated in processActivation().
 
     UInt64 rejects = 0; /// Number of rejected allocations
 };

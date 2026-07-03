@@ -36,6 +36,12 @@ public:
     /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
+    /// Reports the amount of this allocation's size that can be spilled or discarded on request.
+    /// `reclaimable_total` is an absolute total (not a delta) and is clamped to the current size.
+    /// Advisory: never blocks and never fails. The per-subtree `reclaimable` aggregate is updated on the
+    /// scheduler thread and propagated to the root; the scheduler uses it to choose spill victims.
+    virtual void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

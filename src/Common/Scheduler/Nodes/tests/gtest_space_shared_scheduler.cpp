@@ -4,10 +4,12 @@
 #include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/MemoryTracker.h>
 
 #include <barrier>
+#include <cstdlib>
 #include <future>
 #include <thread>
 
@@ -68,6 +70,34 @@ struct SpaceSharedResourceHolder
         return node.get();
     }
 
+    /// Attaches a `FairAllocation` under `parent` (which must already be part of the detached subtree).
+    FairAllocation * addFair(const String & path, ISpaceSharedNode * parent, double weight = 1.0)
+    {
+        auto node = std::make_shared<FairAllocation>(t.scheduler.event_queue, SchedulerNodeInfo(weight));
+        node->basename = path.substr(path.rfind('/') + 1);
+        parent->attachChild(node);
+        return node.get();
+    }
+
+    /// Attaches an `AllocationQueue` under an explicit `parent` with a given fairness `weight`.
+    AllocationQueue * addQueueUnder(const String & path, ISpaceSharedNode * parent, double weight = 1.0,
+        Int64 max_queued = std::numeric_limits<Int64>::max())
+    {
+        auto node = std::make_shared<AllocationQueue>(t.scheduler.event_queue, SchedulerNodeInfo(weight), max_queued);
+        node->basename = path.substr(path.rfind('/') + 1);
+        parent->attachChild(node);
+        return node.get();
+    }
+
+    /// Sets the soft limit on the scheduler thread and waits for it to take effect.
+    void setSoftLimit(AllocationLimit * limit, ResourceCost soft_limit)
+    {
+        std::promise<void> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue.enqueue([&] { limit->updateSoftLimit(soft_limit); p.set_value(); });
+        f.get();
+    }
+
     void registerResource()
     {
         std::promise<void> p;
@@ -92,6 +122,158 @@ struct SpaceSharedResourceHolder
         });
         f.get();
     }
+};
+
+
+/// A mock allocation for exercising the reclaimable/spill machinery deterministically. Unlike
+/// `MemoryReservation` (whose `spillAllocation` is a no-op), it records spill signals and lets the test
+/// simulate a query reacting to one (report a lower reclaimable total, then decrease). Lock ordering
+/// mirrors `MemoryReservation`: AllocationQueue::mutex -> SpillableAllocation::mutex, so queue operations
+/// are always invoked without `mutex` held.
+struct SpillableAllocation : public ResourceAllocation
+{
+    SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
+        : ResourceAllocation(*queue_, name_)
+    {
+        real_size = initial_size;
+        if (initial_size > 0)
+            increase_enqueued = true;
+        queue.insertAllocation(*this, initial_size); // scheduler thread may call back after this
+        if (initial_size > 0) // Block until admitted, like MemoryReservation with reserve_memory > 0
+        {
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [this] { return !increase_enqueued || fail_reason; });
+            if (fail_reason)
+                std::rethrow_exception(fail_reason);
+        }
+    }
+
+    ~SpillableAllocation() override
+    {
+        {
+            std::unique_lock lock(mutex);
+            if (removed || fail_reason)
+                return;
+            real_size = 0;
+        }
+        queue.removeAllocation(*this);
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return removed || fail_reason; });
+    }
+
+    /// Grows/shrinks the allocation to `new_size` and waits until the scheduler has applied it.
+    void setSize(ResourceCost new_size)
+    {
+        ResourceCost inc = 0;
+        ResourceCost dec = 0;
+        {
+            std::unique_lock lock(mutex);
+            real_size = new_size;
+            if (new_size > allocated_size)
+            {
+                inc = new_size - allocated_size;
+                increase_enqueued = true;
+            }
+            else if (new_size < allocated_size)
+            {
+                dec = allocated_size - new_size;
+                decrease_enqueued = true;
+            }
+        }
+        if (inc > 0)
+            queue.increaseAllocation(*this, inc);
+        else if (dec > 0)
+            queue.decreaseAllocation(*this, dec);
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued); });
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+    }
+
+    /// Reports the absolute reclaimable total to the scheduler (advisory, non-blocking).
+    void reportReclaimable(ResourceCost total)
+    {
+        queue.setReclaimable(*this, total);
+    }
+
+    void waitSpills(size_t n)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return spills >= n; });
+    }
+
+    size_t spillCount()
+    {
+        std::unique_lock lock(mutex);
+        return spills;
+    }
+
+    ResourceCost lastSpillAtLeast()
+    {
+        std::unique_lock lock(mutex);
+        return last_spill_at_least;
+    }
+
+    ResourceCost size()
+    {
+        std::unique_lock lock(mutex);
+        return allocated_size;
+    }
+
+private: // interaction with the scheduler thread
+    void increaseApproved(const IncreaseRequest & increase) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size += increase.size;
+        increase_enqueued = false;
+        cv.notify_all();
+    }
+
+    void decreaseApproved(const DecreaseRequest & decrease) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size -= decrease.size;
+        decrease_enqueued = false;
+        if (decrease.removing_allocation)
+            removed = true;
+        cv.notify_all();
+    }
+
+    void allocationFailed(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        fail_reason = reason;
+        removed = true;
+        allocated_size = 0;
+        cv.notify_all();
+    }
+
+    void killAllocation(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        kill_reason = reason;
+        cv.notify_all();
+    }
+
+    void spillAllocation(ResourceCost at_least_bytes) override
+    {
+        std::unique_lock lock(mutex);
+        ++spills;
+        last_spill_at_least = at_least_bytes;
+        cv.notify_all();
+    }
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::exception_ptr kill_reason;
+    std::exception_ptr fail_reason;
+    bool increase_enqueued = false;
+    bool decrease_enqueued = false;
+    bool removed = false;
+    size_t spills = 0;
+    ResourceCost last_spill_at_least = 0;
+    ResourceCost allocated_size = 0;
+    ResourceCost real_size = 0;
 };
 
 
@@ -471,6 +653,65 @@ TEST(SchedulerSpaceShared, MultipleMemoryTrackerSyncs)
 }
 
 
+/// Test that the reported reclaimable amount is aggregated and propagated up the tree, kept clamped to
+/// the allocation size, and removed when the allocation leaves.
+TEST(SchedulerSpaceShared, ReclaimablePropagation)
+{
+    SpaceSharedTest t;
+
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 1000000); // 1MB limit (root)
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    ResourceLink link;
+    link.allocation_queue = queue;
+
+    // Flush the scheduler thread (so any pending activation is processed first) and read a node's
+    // `reclaimable` aggregate on the scheduler thread, where it may be safely accessed.
+    auto reclaimable_of = [&](ISpaceSharedNode * node) -> ResourceCost
+    {
+        std::promise<ResourceCost> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue.enqueue([&] { p.set_value(node->reclaimable); });
+        return f.get();
+    };
+
+    {
+        MemoryReservation res(link, "res", 1000); // admitted -> allocated == 1000
+
+        // Nothing reclaimable initially.
+        EXPECT_EQ(reclaimable_of(queue), 0);
+        EXPECT_EQ(reclaimable_of(limit), 0);
+        EXPECT_EQ(reclaimable_of(&t.scheduler), 0);
+
+        // Report 600 reclaimable; it propagates to the queue, the limit and the root.
+        queue->setReclaimable(res, 600);
+        EXPECT_EQ(reclaimable_of(queue), 600);
+        EXPECT_EQ(reclaimable_of(limit), 600);
+        EXPECT_EQ(reclaimable_of(&t.scheduler), 600);
+
+        // Lowering the report (delta -300) propagates too.
+        queue->setReclaimable(res, 300);
+        EXPECT_EQ(reclaimable_of(queue), 300);
+        EXPECT_EQ(reclaimable_of(limit), 300);
+        EXPECT_EQ(reclaimable_of(&t.scheduler), 300);
+
+        // Reporting more than allocated is clamped to the allocation size (1000).
+        queue->setReclaimable(res, 5000);
+        EXPECT_EQ(reclaimable_of(queue), 1000);
+        EXPECT_EQ(reclaimable_of(limit), 1000);
+        EXPECT_EQ(reclaimable_of(&t.scheduler), 1000);
+
+        // res is destroyed here -> its reclaimable must be removed from the aggregate.
+    }
+
+    EXPECT_EQ(reclaimable_of(queue), 0);
+    EXPECT_EQ(reclaimable_of(limit), 0);
+    EXPECT_EQ(reclaimable_of(&t.scheduler), 0);
+}
+
+
 /// Test rapid creation and destruction of reservations
 TEST(SchedulerSpaceShared, RapidCreateDestroy)
 {
@@ -488,5 +729,173 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
     {
         MemoryReservation res(link, fmt::format("rapid_{}", i), 100);
         // Immediate destruction
+    }
+}
+
+
+/// A query over the soft limit but reporting nothing reclaimable is never asked to spill (fail-close,
+/// invariant I6). Once it reports reclaimable memory, the scheduler asks it to reclaim `allocated - soft`.
+TEST(SchedulerSpaceShared, SoftLimitFailCloseThenSpill)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 5000);
+
+    SpillableAllocation a(queue, "a", 8000); // admitted; 8000 > soft 5000 but nothing reclaimable yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    a.reportReclaimable(6000);
+    a.waitSpills(1);
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 3000); // need = allocated(8000) - soft(5000)
+}
+
+
+/// Among several reclaimable allocations in one queue, the largest is asked to spill first (Progress /
+/// invariant I8), and only one spill is in flight at a time (decision D2).
+TEST(SchedulerSpaceShared, SoftLimitSpillsLargestInQueue)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a(queue, "a", 3000);
+    SpillableAllocation b(queue, "b", 6000);
+    // Both report reclaimable while still under the soft limit (9000 <= 10000) — no spill yet.
+    a.reportReclaimable(3000);
+    b.reportReclaimable(6000);
+    EXPECT_EQ(a.spillCount(), 0);
+    EXPECT_EQ(b.spillCount(), 0);
+
+    // Cross the soft limit: allocated becomes 5000 + 6000 = 11000. `b` (6000) is the largest reclaimable.
+    a.setSize(5000);
+    b.waitSpills(1);
+    EXPECT_EQ(b.spillCount(), 1);
+    EXPECT_EQ(b.lastSpillAtLeast(), 1000); // need = 11000 - 10000
+    EXPECT_EQ(a.spillCount(), 0); // one spill at a time: the smaller reclaimable is not signaled
+}
+
+
+/// Spill selection descends the tree skipping subtrees with nothing reclaimable: a larger but
+/// unreclaimable allocation is passed over in favor of a smaller reclaimable one in a sibling workload.
+TEST(SchedulerSpaceShared, SoftLimitDescendsFairSkippingUnreclaimable)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    FairAllocation * fair = r.addFair("/fair", limit);
+    AllocationQueue * q1 = r.addQueueUnder("/fair/q1", fair);
+    AllocationQueue * q2 = r.addQueueUnder("/fair/q2", fair);
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a1(q1, "a1", 8000); // larger, but never reports anything reclaimable
+    SpillableAllocation a2(q2, "a2", 3000); // smaller, reclaimable
+    a2.reportReclaimable(3000);
+
+    a2.waitSpills(1);
+    EXPECT_EQ(a2.spillCount(), 1);
+    EXPECT_EQ(a2.lastSpillAtLeast(), 1000); // need = 11000 - 10000
+    EXPECT_EQ(a1.spillCount(), 0); // unreclaimable subtree skipped
+}
+
+
+/// After a victim makes progress (a decrease), the one-at-a-time gate reopens and the scheduler re-signals
+/// while still over the soft limit; once back under it, no further spill is requested.
+TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 5000);
+
+    SpillableAllocation a(queue, "a", 8000);
+    a.reportReclaimable(8000);
+    a.waitSpills(1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 3000);
+
+    // Simulate a partial reaction: report less reclaimable and shrink, but stay above the soft limit.
+    a.reportReclaimable(4000);
+    a.setSize(6000); // decrease by 2000 -> allocated 6000 > soft 5000, still reclaimable
+    a.waitSpills(2);
+    EXPECT_EQ(a.lastSpillAtLeast(), 1000); // need = 6000 - 5000
+
+    // Now drop below the soft limit: the episode ends, no more spills are requested.
+    a.reportReclaimable(1000);
+    a.setSize(4000); // allocated 4000 <= soft 5000
+    EXPECT_EQ(a.spillCount(), 2);
+}
+
+
+/// Perf smoke test. Measures scheduler throughput for reclaimable-related operations. The iteration count
+/// is tiny by default (functional coverage); set env `SCHED_PERF_ITERS` to a large value for a manual
+/// perf run. Reports ops/sec via a test property and to stderr.
+TEST(SchedulerSpaceShared, ReclaimablePerf)
+{
+    size_t iters = 1000;
+    if (const char * env = std::getenv("SCHED_PERF_ITERS")) // NOLINT(concurrency-mt-unsafe): test setup, single-threaded
+    {
+        if (Int64 v = strtoll(env, nullptr, 10); v > 0)
+            iters = static_cast<size_t>(v);
+    }
+
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 1000000000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 500000000); // high enough that this workload never spills here
+
+    auto report = [&](const char * name, size_t ops, double seconds)
+    {
+        double ops_per_sec = seconds > 0 ? static_cast<double>(ops) / seconds : 0.0;
+        RecordProperty(fmt::format("{}_ops_per_sec", name), std::to_string(static_cast<Int64>(ops_per_sec)));
+        fmt::print(stderr, "[ perf     ] {}: {} ops in {:.3f}s = {:.0f} ops/sec\n", name, ops, seconds, ops_per_sec);
+    };
+
+    // (a) increase/decrease churn on a single running allocation.
+    {
+        SpillableAllocation a(queue, "a", 1000);
+        Stopwatch sw;
+        for (size_t i = 0; i < iters; ++i)
+        {
+            a.setSize(2000);
+            a.setSize(1000);
+        }
+        report("increase_decrease", 2 * iters, sw.elapsedSeconds());
+    }
+
+    // (b) setReclaimable churn (aggregate propagation to the root on every toggle).
+    {
+        SpillableAllocation a(queue, "a", 10000);
+        Stopwatch sw;
+        for (size_t i = 0; i < iters; ++i)
+        {
+            a.reportReclaimable(5000);
+            a.reportReclaimable(0);
+        }
+        report("set_reclaimable", 2 * iters, sw.elapsedSeconds());
+    }
+
+    // (c) over-soft spill trigger: lower the soft limit below the allocation size so each reclaimable
+    //     report drives a full `selectAllocationToSpill` descent.
+    {
+        r.setSoftLimit(limit, 1000);
+        SpillableAllocation a(queue, "a", 10000); // always above the soft limit
+        Stopwatch sw;
+        for (size_t i = 0; i < iters; ++i)
+        {
+            a.reportReclaimable(5000); // triggers a spill selection while over soft
+            a.reportReclaimable(0);    // ends the episode (nothing reclaimable)
+        }
+        report("spill_trigger", iters, sw.elapsedSeconds());
     }
 }

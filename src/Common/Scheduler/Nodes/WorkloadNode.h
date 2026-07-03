@@ -936,6 +936,13 @@ private:
         return child->selectAllocationToKill(killer, limit, details);
     }
 
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override
+    {
+        chassert(child);
+        // Single-child passthrough: the child returns nullptr if nothing in its subtree is reclaimable.
+        return child->selectAllocationToSpill(at_least, details);
+    }
+
     void propagateUpdateSchedulingSettings() override
     {
         if (parent)

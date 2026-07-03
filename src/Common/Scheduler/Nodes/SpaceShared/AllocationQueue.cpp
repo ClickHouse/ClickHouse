@@ -7,6 +7,8 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -85,10 +87,16 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
 
     chassert(!allocation.increasing_hook.is_linked());
 
-    // Update the key of running allocation
+    // Update the key of running allocation. Re-key the reclaimable set in lockstep (invariant I8) if this
+    // allocation is a member, so its position stays consistent with `running_allocations`.
+    bool reclaimable_member = allocation.reclaimable_hook.is_linked();
     running_allocations.erase(running_allocations.iterator_to(allocation));
+    if (reclaimable_member)
+        reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
     allocation.fair_key = allocation.allocated + increase_size;
     running_allocations.insert(allocation);
+    if (reclaimable_member)
+        reclaimable_allocations.insert(allocation);
 
     // Enqueue increase request. `Kind::Initial` is the first increase that admits the allocation
     // into the hierarchy (it makes `apply(IncreaseRequest)` increment `allocations`). Use the
@@ -113,6 +121,31 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
     decreasing_allocations.push_back(allocation);
     if (&allocation == &*decreasing_allocations.begin())
         scheduleActivation();
+}
+
+void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+
+    // Reclaimable memory is a portion of what is currently allocated, so clamp to `[0, allocated]`.
+    // A pending (not yet admitted) allocation has `allocated == 0` and thus reports nothing reclaimable.
+    ResourceCost new_reclaimable = std::clamp<ResourceCost>(reclaimable_total, 0, allocation.allocated);
+    ResourceCost delta = new_reclaimable - allocation.reclaimable;
+    if (delta == 0)
+        return; // Nothing changed — avoid a needless activation (advisory value tolerates staleness).
+    bool was_member = allocation.reclaimable > 0;
+    bool now_member = new_reclaimable > 0;
+    allocation.reclaimable = new_reclaimable;
+    pending_reclaimable_delta += delta;
+    // Maintain the reclaimable-filtered set (invariant I7). It is keyed by `fair_key`, which is valid here
+    // because `new_reclaimable > 0` implies `allocated > 0`, i.e. a running allocation with a live key.
+    if (now_member && !was_member)
+        reclaimable_allocations.insert(allocation);
+    else if (!now_member && was_member)
+        reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
+    scheduleActivation();
 }
 
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
@@ -159,6 +192,8 @@ void AllocationQueue::purgeQueue()
     {
         ResourceAllocation & allocation = *running_allocations.begin();
         running_allocations.erase(running_allocations.iterator_to(allocation));
+        if (allocation.reclaimable_hook.is_linked())
+            reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
         if (allocation.increasing_hook.is_linked())
             increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
         if (allocation.decreasing_hook.is_linked())
@@ -174,12 +209,15 @@ void AllocationQueue::purgeQueue()
     chassert(increasing_allocations.empty());
     chassert(decreasing_allocations.empty());
     chassert(removing_allocations.empty());
+    chassert(reclaimable_allocations.empty());
 
     // All further calls to this queue will throw exceptions
     increase = nullptr;
     decrease = nullptr;
     allocated = 0;
     allocations = 0;
+    reclaimable = 0;
+    pending_reclaimable_delta = 0;
     is_not_usable = true;
 }
 
@@ -266,6 +304,13 @@ void AllocationQueue::approveDecrease()
     bool is_increasing = allocation.increasing_hook.is_linked();
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+    // Re-key the reclaimable set in lockstep (invariant I8). A removal has already zeroed `reclaimable`
+    // and unlinked the allocation in `processActivation`, so `reclaimable_member` is false for removals.
+    // We do NOT re-clamp `reclaimable` to the smaller `allocated` here: leaving it keeps the per-subtree
+    // aggregate consistent (it is a plain sum), and the query re-reports the true value on its next sync.
+    bool reclaimable_member = allocation.reclaimable_hook.is_linked();
+    if (reclaimable_member)
+        reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
 
     // Update the key and other fields
     apply(*decrease);
@@ -278,6 +323,8 @@ void AllocationQueue::approveDecrease()
         running_allocations.insert(allocation);
         if (is_increasing)
             increasing_allocations.insert(allocation);
+        if (reclaimable_member)
+            reclaimable_allocations.insert(allocation);
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
@@ -320,6 +367,21 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     return &victim;
 }
 
+ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    std::lock_guard lock(mutex);
+    if (reclaimable_allocations.empty())
+        return nullptr; // Nothing reclaimable here — fail-close (invariant I6).
+
+    // Spill the largest reclaimable allocation (the tail of the set, ordered by `fair_key`), matching the
+    // kill order (invariant I8). This is the "Progress" strategy: while the whole tree is one cooperative
+    // domain we penalize the biggest reclaimable allocation first.
+    ResourceAllocation & victim = *reclaimable_allocations.rbegin();
+    details = fmt::format("Asking the largest reclaimable allocation of size {} (reclaimable {}) in workload '{}' to reclaim at least {}.",
+        formatReadableCost(victim.allocated), formatReadableCost(victim.reclaimable), getWorkloadName(), formatReadableCost(at_least));
+    return &victim;
+}
+
 void AllocationQueue::processActivation()
 {
     if (!parent)
@@ -333,6 +395,18 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
+
+            // The allocation is leaving the queue, so drop its reported reclaimable from the aggregate.
+            // The net delta is drained and propagated to the root at the end of processActivation.
+            // (A running allocation that merely shrinks keeps its reclaimable; the query re-reports it.)
+            if (allocation.reclaimable != 0)
+            {
+                pending_reclaimable_delta -= allocation.reclaimable;
+                allocation.reclaimable = 0;
+                if (allocation.reclaimable_hook.is_linked()) // Keep invariant I7: unlink from the reclaimable set
+                    reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
+            }
+
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -380,6 +454,15 @@ void AllocationQueue::processActivation()
             update.setIncrease(increase);
         if (setDecrease())
             update.setDecrease(decrease);
+
+        // Drain reported reclaimable changes: update our own aggregate and carry the net delta to the
+        // root so every ancestor's `reclaimable` sum stays consistent (see ISpaceSharedNode::apply).
+        if (pending_reclaimable_delta != 0)
+        {
+            reclaimable += pending_reclaimable_delta;
+            update.setReclaimableDelta(pending_reclaimable_delta);
+            pending_reclaimable_delta = 0;
+        }
     }
 
     // Propagate update to parent
