@@ -46,6 +46,10 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
+    /// Force serial listing: see StorageObjectStorage::getPathSample. The sample path must be
+    /// deterministic (independent of `s3_list_object_parallelism`) so hive-partitioning detection
+    /// is stable.
+    query_settings.list_object_parallelism = 1;
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
