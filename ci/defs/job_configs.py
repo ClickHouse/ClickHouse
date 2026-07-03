@@ -4,6 +4,7 @@ from praktika.utils import Utils
 from ci.defs.defs import (
     LLVM_ARTIFACTS_LIST,
     LLVM_FT_NUM_BATCHES,
+    LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -318,11 +319,6 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
             provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_UBSAN,
-            provides=[ArtifactNames.CH_ARM_UBSAN, ArtifactNames.DEB_ARM_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -649,12 +645,19 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE
+                    + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, old analyzer, s3 storage, DatabaseReplicated, WasmEdge, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
@@ -913,11 +916,6 @@ class JobConfigs:
             parameter="arm_msan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.DEB_ARM_MSAN],
-        ),
-        Job.ParamSet(
-            parameter="arm_ubsan",
-            runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_UBSAN],
         ),
     )
     # might be heavy on azure - run only on master
@@ -1417,6 +1415,25 @@ class JobConfigs:
         run_in_docker="clickhouse/sqlancer-test",
         # 5h sqlancer run (set in sqlancer_job.sh) plus server start/teardown.
         timeout=3600 * 5 + 1800,
+    ).parametrize(
+        Job.ParamSet(
+            parameter="arm_asan_ubsan",
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
+    sqlancer_pp_jobs = Job.Config(
+        name=JobNames.SQLANCER_PP,
+        runs_on=[],  # from parametrize()
+        command="./ci/jobs/sqlancer_pp_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/sqlancer_pp_job.sh",
+                "./ci/docker/sqlancer-test",
+            ],
+        ),
+        run_in_docker="clickhouse/sqlancer-test",
+        timeout=3600,
     ).parametrize(
         Job.ParamSet(
             parameter="arm_asan_ubsan",
