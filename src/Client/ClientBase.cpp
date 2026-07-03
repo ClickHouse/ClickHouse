@@ -5,6 +5,7 @@
 #include <Client/InternalTextLogs.h>
 #include <Client/LineReader.h>
 #include <Client/TerminalKeystrokeInterceptor.h>
+#include <Client/TerminalMarkdownRenderer.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
 #include <Core/SortDescription.h>
@@ -102,6 +103,7 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
@@ -944,25 +946,30 @@ void ClientBase::adjustSettings(ContextMutablePtr context)
 {
     /// NOTE: Do not forget to set changed=false to avoid sending it to the server (to avoid breakage read only profiles)
 
-    /// Do not limit pretty format output in case of --pager specified or in case of stdout is not a tty.
-    if (!pager.empty() || !stdout_is_a_tty)
+    /// Do not limit pretty format output when pager is active or stdout is not a tty.
+    /// When the pager is cleared at runtime (e.g. `nopager`) and stdout is a tty,
+    /// restore the defaults so values are truncated again — otherwise the limits
+    /// stay at UInt64::max for the rest of the session.
+    const bool raise = !pager.empty() || !stdout_is_a_tty;
+
+    Settings settings = context->getSettingsCopy();
+    const Settings defaults;
+
+    if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
     {
-        Settings settings = context->getSettingsCopy();
-
-        if (!context->getSettingsRef()[Setting::output_format_pretty_max_rows].changed)
-        {
-            settings[Setting::output_format_pretty_max_rows] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_rows].changed = false;
-        }
-
-        if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
-        {
-            settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
-            settings[Setting::output_format_pretty_max_value_width].changed = false;
-        }
-
-        context->setSettings(settings);
+        const UInt64 default_value = defaults[Setting::output_format_pretty_max_rows];
+        settings[Setting::output_format_pretty_max_rows] = raise ? std::numeric_limits<UInt64>::max() : default_value;
+        settings[Setting::output_format_pretty_max_rows].changed = false;
     }
+
+    if (!context->getSettingsRef()[Setting::output_format_pretty_max_value_width].changed)
+    {
+        const UInt64 default_value = defaults[Setting::output_format_pretty_max_value_width];
+        settings[Setting::output_format_pretty_max_value_width] = raise ? std::numeric_limits<UInt64>::max() : default_value;
+        settings[Setting::output_format_pretty_max_value_width].changed = false;
+    }
+
+    context->setSettings(settings);
 }
 
 void ClientBase::initClientContext(ContextMutablePtr context)
@@ -1587,9 +1594,6 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
     switch (packet.type)
     {
-        case Protocol::Server::PartUUIDs:
-            return true;
-
         case Protocol::Server::Data:
             if (!cancelled_)
                 onData(packet.block, parsed_query);
@@ -1918,7 +1922,7 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                    Protocol::Server::toString(packet.type));
         }
     }
 }
@@ -2380,7 +2384,7 @@ bool ClientBase::receiveEndOfQueryForInsert()
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
                     "Unexpected packet from server (expected Exception, EndOfStream, Log, Progress or ProfileEvents. Got {})",
-                    String(Protocol::Server::toString(packet.type)));
+                    Protocol::Server::toString(packet.type));
         }
     }
 }
@@ -2823,6 +2827,7 @@ void ClientBase::setupEchoAndHighlightSettings(bool verbose_implies_echo)
     echo_queries = config.getBool("echo", echo_default);
     echo_query_formatted = config.getBool("echo-formatted", is_interactive);
     echo_query_id = config.getBool("echo-query-id", is_interactive);
+    echo_query_separator = config.getString("echo-query-separator", "");
     highlight_queries = config.getBool("highlight", true);
 }
 
@@ -2855,6 +2860,13 @@ void ClientBase::echoQuery(std::string_view full_query, const ASTPtr & parsed_qu
     {
         /// Surround the formatted query with blank lines, as in interactive mode.
         writeChar('\n', *std_out);
+        /// Optionally print a separator so the formatted query is easy to tell apart from the
+        /// user-typed query that the terminal echoes directly above it in interactive mode.
+        if (!echo_query_separator.empty())
+        {
+            writeString(echo_query_separator, *std_out);
+            writeChar('\n', *std_out);
+        }
         writeString(text, *std_out);
         writeString("\n\n", *std_out);
     }
@@ -3224,6 +3236,48 @@ bool ClientBase::processQueryText(const String & text)
         return processMultiQueryFromFile(file_name);
     }
 
+    /// mysql-style client-only pager control. Mutates `pager`; the per-query launcher
+    /// in onData() picks up the new value on the next query.
+    if (is_interactive)
+    {
+        auto set_pager_to = [&](const String & cmd)
+        {
+            pager = trim(cmd, [](char c) { return isWhitespaceASCII(c); });
+            /// Re-apply pretty-format width/row limits — they need to be raised when the
+            /// pager is enabled and restored to defaults when it is cleared. Otherwise a
+            /// runtime `pager ...` without `--pager` on the command line would keep the
+            /// truncated defaults, and a `pager ... -> nopager` sequence would leave the
+            /// limits at UInt64::max for the rest of the session.
+            adjustSettings(client_context);
+            if (pager.empty())
+                output_stream << "PAGER set to stdout" << std::endl;
+            else
+                output_stream << "PAGER set to '" << pager << "'" << std::endl;
+        };
+
+        if (trimmed_input == "nopager" || trimmed_input == "\\n")
+        {
+            set_pager_to({});
+            return true;
+        }
+
+        for (const String prefix : {"pager", "\\P"})
+        {
+            if (trimmed_input == prefix)
+            {
+                set_pager_to({});
+                return true;
+            }
+            if (trimmed_input.starts_with(prefix)
+                && trimmed_input.size() > prefix.size()
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+            {
+                set_pager_to(trimmed_input.substr(prefix.size()));
+                return true;
+            }
+        }
+    }
+
     // Handle `ls` metacommand
     if (supportsLocalMetaCommands() && boost::iequals(trimmed_input, "ls"))
     {
@@ -3231,6 +3285,21 @@ bool ClientBase::processQueryText(const String & text)
         // TODO: Use the filesystem table engine once https://github.com/ClickHouse/ClickHouse/pull/53610 is merged
         const String ls_query = "SELECT _file AS file FROM file('*', 'One') ORDER BY file";
         return executeMultiQuery(ls_query);
+    }
+
+    /// Interactive `help`/`man` command (in all of the forms `help`, `/help`, `man`, `/man`): render the
+    /// embedded documentation for a word from `system.documentation`. Gated like the other meta-commands,
+    /// so that batch `clickhouse-client` still parses a query starting with `help`/`man` as SQL.
+    if (is_interactive || supportsLocalMetaCommands())
+    {
+        for (const std::string_view prefix : {"help", "/help", "man", "/man"})
+        {
+            if (boost::iequals(trimmed_input, prefix))
+                return processHelpCommand({});
+            if (trimmed_input.size() > prefix.size() && boost::istarts_with(trimmed_input, prefix)
+                && isWhitespaceASCII(trimmed_input[prefix.size()]))
+                return processHelpCommand(trimmed_input.substr(prefix.size()));
+        }
     }
 
 
@@ -3506,7 +3575,205 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         return "";
     }
 }
+#endif
 
+Block ClientBase::fetchDocumentation(const String & query, const String & word)
+{
+    const NameToNameMap query_parameters_for_help{{"word", word}};
+
+    connection->sendQuery(
+        connection_parameters.timeouts,
+        query,
+        query_parameters_for_help,
+        "", /// query_id
+        QueryProcessingStage::Complete,
+        nullptr, /// settings
+        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
+        false, /// with_pending_data
+        {}, /// external_roles
+        {} /// process_progress_callback
+    );
+
+    Blocks blocks;
+    while (true)
+    {
+        Packet packet = connection->receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::Data:
+                /// The first data block is the empty header; only blocks with rows carry results.
+                if (packet.block.rows() > 0)
+                    blocks.push_back(std::move(packet.block));
+                continue;
+
+            case Protocol::Server::EndOfStream: return blocks.empty() ? Block{} : concatenateBlocks(blocks);
+
+            case Protocol::Server::Exception: packet.exception->rethrow(); break; /// unreachable: `rethrow` always throws
+
+            case Protocol::Server::Progress:
+            case Protocol::Server::ProfileInfo:
+            case Protocol::Server::ProfileEvents:
+            case Protocol::Server::Totals:
+            case Protocol::Server::Extremes:
+            case Protocol::Server::Log:
+            case Protocol::Server::TimezoneUpdate:
+            case Protocol::Server::PartUUIDs: continue;
+
+            default:
+                throw Exception(
+                    ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
+        }
+    }
+}
+
+bool ClientBase::processHelpCommand(const String & word_arg)
+{
+    const String word = trim(word_arg, [](char c) { return isWhitespaceASCII(c); });
+
+    if (word.empty())
+    {
+        output_stream << "\nUsage: help <name>   (also: /help <name>, man <name>, /man <name>)\n"
+                         "\n"
+                         "Searches the embedded documentation (the system.documentation table) for <name> and\n"
+                         "renders it in the terminal, formatted from Markdown. When several entities share the\n"
+                         "name (e.g. `file`), all of them are shown. When nothing matches, similar names and\n"
+                         "entities whose documentation mentions the word are listed.\n"
+                         "\n"
+                         "Examples: help MergeTree, help domainWithoutWWW, help max_threads\n"
+                      << std::endl;
+        return true;
+    }
+
+    if (!connection)
+    {
+        error_stream << "The help command is not available: not connected to a server." << std::endl;
+        return true;
+    }
+
+    TerminalMarkdownRenderer renderer;
+    renderer.ansi = stdout_is_a_tty;
+    if (renderer.ansi)
+    {
+        try
+        {
+            /// Wrap to the real terminal width (the renderer clamps very narrow terminals to a minimum).
+            const uint16_t detected_width = getTerminalWidth();
+            if (detected_width >= 20)
+                renderer.width = detected_width;
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+            /// Ok: if the terminal width cannot be determined, the default is used.
+        }
+    }
+#if USE_REPLXX
+    /// Documentation snippets are often query fragments, not complete queries, so fall back to
+    /// lexer-based highlighting when the parser cannot parse them.
+    if (renderer.ansi && client_context)
+        renderer.highlight_sql = [this](const String & sql)
+        { return highlighted(sql, *client_context, /*rainbow_parentheses=*/false, /*lexer_fallback=*/true); };
+#endif
+
+    try
+    {
+        const Block exact = fetchDocumentation(
+            "SELECT name, toString(type) AS type, description FROM system.documentation "
+            "WHERE lower(name) = lower({word:String}) ORDER BY type, name",
+            word);
+
+        if (exact.rows() > 0)
+        {
+            const auto & names = typeid_cast<const ColumnString &>(*exact.getByName("name").column);
+            const auto & types = typeid_cast<const ColumnString &>(*exact.getByName("type").column);
+            const auto & descriptions = typeid_cast<const ColumnString &>(*exact.getByName("description").column);
+            /// Frame the output with blank lines (before, between entries, and after) for readability.
+            output_stream << '\n';
+            for (size_t i = 0; i < exact.rows(); ++i)
+            {
+                if (i)
+                    output_stream << '\n';
+                output_stream << renderer.renderEntry(
+                    String(names.getDataAt(i)), String(types.getDataAt(i)), String(descriptions.getDataAt(i)));
+            }
+            output_stream << '\n';
+            output_stream << std::flush;
+            return true;
+        }
+
+        /// Nothing matched exactly: offer suggestions by similar name (substring or small edit distance),
+        /// and by entities whose documentation mentions the word.
+        /// `lower` (not `lowerUTF8`) is used deliberately: entity names are ASCII, and `lowerUTF8`
+        /// requires ICU, which is not available in every build (e.g. the Fast test build).
+        const Block by_name = fetchDocumentation(
+            "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
+            "WHERE (lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(name, {word:String}) > 0) "
+            "   OR editDistanceUTF8(lower(name), lower({word:String})) "
+            "      <= greatest(1, intDiv(lengthUTF8({word:String}), 3)) "
+            "ORDER BY editDistanceUTF8(lower(name), lower({word:String})), lengthUTF8(name), name "
+            "LIMIT 30",
+            word);
+
+        const Block by_content = fetchDocumentation(
+            "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
+            "WHERE lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(description, {word:String}) > 0 "
+            "  AND lower(name) != lower({word:String}) "
+            "ORDER BY name LIMIT 30",
+            word);
+
+        output_stream << "\nNo documentation found for '" << word << "'.\n";
+
+        std::unordered_set<String> shown_names;
+        auto print_suggestions = [&](const Block & block, std::string_view header, bool record)
+        {
+            if (block.rows() == 0)
+                return false;
+
+            const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+            const auto & types = typeid_cast<const ColumnString &>(*block.getByName("type").column);
+
+            bool printed_header = false;
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                String name = String(names.getDataAt(i));
+                if (!record && shown_names.contains(name))
+                    continue;
+                if (record)
+                    shown_names.insert(name);
+
+                if (!printed_header)
+                {
+                    output_stream << '\n' << header << '\n';
+                    printed_header = true;
+                }
+
+                output_stream << "    ";
+                if (stdout_is_a_tty)
+                    output_stream << "\033[1m" << name << "\033[0m";
+                else
+                    output_stream << name;
+                output_stream << "  (" << String(types.getDataAt(i)) << ")\n";
+            }
+            return printed_header;
+        };
+
+        const bool any_name = print_suggestions(by_name, "Maybe you meant:", /*record=*/true);
+        const bool any_content = print_suggestions(by_content, "Found in the documentation of:", /*record=*/false);
+
+        if (!any_name && !any_content)
+            output_stream << "Nothing similar found. Try the name of a function, table engine, data type, format or setting.\n";
+
+        output_stream << '\n';
+        output_stream << std::flush;
+    }
+    catch (...)
+    {
+        error_stream << "The help command failed: " << getCurrentExceptionMessage(false) << std::endl;
+    }
+
+    return true;
+}
+
+#if USE_CLIENT_AI
 bool ClientBase::checkAIProviderAcknowledgment()
 {
     // If API key came from environment and user hasn't acknowledged yet, ask for confirmation
@@ -3584,6 +3851,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("echo", po::value<bool>()->implicit_value(true), "Print queries before execution. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-formatted", po::value<bool>()->implicit_value(true), "Format the echoed queries. Enabled by default in interactive mode, disabled in batch mode.")
         ("echo-query-id", po::value<bool>()->implicit_value(true), "Print the query_id before execution. Enabled by default in interactive mode, disabled in batch mode.")
+        ("echo-query-separator", po::value<std::string>(), "Print this separator before the formatted echoed query (requires --echo-formatted). Empty by default (disabled).")
 
         ("log-level", po::value<std::string>(), "Log level")
         ("server_logs_file", po::value<std::string>(), "Write server logs to specified file")
@@ -3593,6 +3861,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
         ("vertical,E", "Same as --format=Vertical or FORMAT Vertical or \\G at end of command")
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
+        ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -3721,6 +3990,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("echo-formatted", options["echo-formatted"].as<bool>());
     if (options.contains("echo-query-id"))
         getClientConfiguration().setBool("echo-query-id", options["echo-query-id"].as<bool>());
+    if (options.contains("echo-query-separator"))
+        getClientConfiguration().setString("echo-query-separator", options["echo-query-separator"].as<std::string>());
     if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
@@ -3729,6 +4000,8 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.contains("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
+    if (options.contains("hints"))
+        getClientConfiguration().setBool("hints", options["hints"].as<bool>());
     if (options.contains("history_file"))
     {
         if (isEmbeeddedClient())
@@ -3901,6 +4174,12 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
+        /// Hints need color, so they are enabled only together with highlighting.
+        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
+        /// turns off autocompletion entirely, including the hints.
+        .enable_hints = getClientConfiguration().getBool("hints", true)
+            && getClientConfiguration().getBool("highlight", true)
+            && !getClientConfiguration().getBool("disable_suggestion", false),
         .extenders = query_extenders,
         .delimiters = query_delimiters,
         .word_break_characters = word_break_characters,

@@ -150,6 +150,21 @@ elseif (SANITIZE STREQUAL "address")
     list(APPEND RUSTFLAGS "-Zsanitizer=address")
 endif()
 
+# Force `rustix` to use its libc backend under sanitizers.
+# On Linux `rustix` defaults to the `linux_raw` backend, which issues `mmap`, `munmap` and
+# other syscalls directly via the `syscall` instruction, bypassing libc. The sanitizers
+# intercept these operations at the libc symbol boundary, so with the raw backend they never
+# observe `rustix`'s memory mappings. For ThreadSanitizer this means the shadow memory of a
+# region is not reset when `rustix` (used by `wasmtime` for compiled-code `mmap` allocations)
+# maps or unmaps it, so a freshly mapped region inherits the stale shadow of whatever
+# previously occupied that virtual address, producing false-positive data races. The same gap
+# affects MemorySanitizer (freshly mapped memory looks uninitialized) and AddressSanitizer.
+# `--cfg=rustix_use_libc` is the mechanism `rustix` provides for transitive consumers to select
+# the libc backend; it also activates the `libc` dependency (already pinned in `Cargo.lock`).
+if (NOT SANITIZE STREQUAL "")
+    list(APPEND RUSTFLAGS "--cfg" "rustix_use_libc")
+endif()
+
 # Set metadata flag to force different hashes for different sanitizers
 if (SANITIZE STREQUAL "")
     list(APPEND RUSTFLAGS "-C" "metadata=no-sanitizer")
