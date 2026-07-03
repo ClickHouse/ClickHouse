@@ -1,13 +1,13 @@
 inner eq	2
-left between	3
+left between	2
 non-key	0
-full join	0
-setting off	0
+full join	1
+setting off	1
 multi-clause	2
-non-indexed target	0
-left, filter on rhs	0
-non-deterministic	0
+non-indexed target	1
+left, filter on rhs	1
+non-deterministic	1
 result match	0
 left correctness	0
-computed key	0
+computed key	1
 computed key correctness	0

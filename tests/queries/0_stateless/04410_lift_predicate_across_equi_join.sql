@@ -17,9 +17,11 @@ INSERT INTO lift_orders   SELECT number, number % 1000, toString(number) FROM nu
 INSERT INTO lift_lineitem SELECT number, number % 1000, toString(number) FROM numbers(1000000);
 INSERT INTO lift_mem      SELECT number FROM numbers(1000);
 
+-- Counting occurrences of the predicate in filter steps: 1 = source side only, 2 = lifted to target too
+
 -- INNER JOIN, equality predicate on left subquery, target side gets substituted predicate
 SELECT 'inner eq',
-       countIf(explain LIKE '%equals(__table3.orderkey, 12345_UInt16)%')
+       countIf(explain LIKE '%ilter column:%orderkey = 12345%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -29,7 +31,7 @@ FROM (
 
 -- LEFT JOIN, range predicate
 SELECT 'left between',
-       countIf(explain LIKE '%greaterOrEquals(__table3.orderkey, 100000_UInt32)%')
+       countIf(explain LIKE '%orderkey >= 100000%' OR explain LIKE '%orderkey <= 100100%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT sum(l.orderkey)
@@ -39,7 +41,7 @@ FROM (
 
 -- Predicate on non-key column, nothing to lift
 SELECT 'non-key',
-       countIf(explain LIKE '%equals(__table3.orderkey%')
+       countIf(explain LIKE '%ilter column:%orderkey =%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -47,9 +49,9 @@ FROM (
     INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
 );
 
--- FULL JOIN: lift unsound, skip
+-- FULL JOIN, lift unsound, skip (source-side filter only)
 SELECT 'full join',
-       countIf(explain LIKE '%equals(__table3.orderkey%')
+       countIf(explain LIKE '%ilter column:%orderkey = 1%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -57,9 +59,9 @@ FROM (
     FULL JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
 );
 
--- Setting off
+-- Setting off (source-side filter only)
 SELECT 'setting off',
-       countIf(explain LIKE '%equals(__table3.orderkey%')
+       countIf(explain LIKE '%ilter column:%orderkey = 1%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -68,9 +70,9 @@ FROM (
     SETTINGS query_plan_lift_predicate_across_join = 0
 );
 
--- Multi-clause JOIN, filter on orderkey (one of two equi-keys) should still lift via that key
+-- Multi-clause JOIN, filter on orderkey (one of two equi-keys) still lifts via that key
 SELECT 'multi-clause',
-       countIf(explain LIKE '%equals(__table3.orderkey, 42_UInt8)%')
+       countIf(explain LIKE '%ilter column:%orderkey = 42%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -78,9 +80,9 @@ FROM (
     INNER JOIN lift_lineitem AS l ON o.orderkey = l.orderkey AND o.custkey = l.custkey
 );
 
--- Target side is not indexed (Memory), bail
+-- Target side is not indexed (Memory), bail (source-side filter only)
 SELECT 'non-indexed target',
-       countIf(explain LIKE '%Lifted equi-join filter%')
+       countIf(explain LIKE '%ilter column:%orderkey = 1%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -90,7 +92,7 @@ FROM (
 
 -- LEFT JOIN with filter on RIGHT subquery, lifting RIGHT->LEFT would drop unmatched left rows, skip
 SELECT 'left, filter on rhs',
-       countIf(explain LIKE '%Lifted equi-join filter%')
+       countIf(explain LIKE '%ilter column:%orderkey = 1%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -98,9 +100,9 @@ FROM (
     LEFT JOIN (SELECT * FROM lift_lineitem WHERE orderkey = 1) AS l ON o.orderkey = l.orderkey
 );
 
--- Non-deterministic predicate: lift would produce a different filter on the target side
+-- Non-deterministic predicate, lift would produce a different filter on the target side
 SELECT 'non-deterministic',
-       countIf(explain LIKE '%Lifted equi-join filter%')
+       countIf(explain LIKE '%ilter column:%orderkey =%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
@@ -124,10 +126,10 @@ SELECT 'left correctness',
         LEFT JOIN lift_lineitem AS l ON o.orderkey = l.orderkey
         SETTINGS query_plan_lift_predicate_across_join = 0);
 
--- Computed equi-key (rhs is `l.orderkey + 1`, not a raw INPUT). Lift must bail in this direction,
+-- Computed equi-key (rhs is `l.orderkey + 1`, not a raw column of the target). Lift must bail,
 -- otherwise the inserted FilterStep references a column missing from the target child's header
 SELECT 'computed key',
-       countIf(explain LIKE '%Lifted equi-join filter%')
+       countIf(explain LIKE '%ilter column:%orderkey = 42%')
 FROM (
     EXPLAIN PLAN actions=1
     SELECT count()
