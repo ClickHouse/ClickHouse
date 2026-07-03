@@ -38,12 +38,15 @@ function bounded()
 # Match by the fixed object name (every query holding them names them in its text)
 # instead of current_database, so cross-invocation lingering work is killed too. The
 # KILL's own text contains those names, hence the NOT ILIKE '%KILL QUERY%' self-exclusion.
+# FORMAT Null: cleanup runs at the top of the script and on EXIT, so a self-heal that
+# actually kills a leaked query must not print kill_status rows to stdout (the reference
+# is only the final `1`).
 function kill_lingering_queries()
 {
     bounded $CLICKHOUSE_CLIENT -q "
         KILL QUERY WHERE (query ILIKE '%$WORKLOAD_NAME%' OR query ILIKE '%$RESOURCE_NAME%')
             AND query NOT ILIKE '%KILL QUERY%'
-        SYNC
+        SYNC FORMAT Null
     " 2>/dev/null ||:
 }
 
