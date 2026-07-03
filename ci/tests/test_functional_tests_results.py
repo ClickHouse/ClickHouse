@@ -23,8 +23,6 @@ import signal
 import sys
 from pathlib import Path
 
-import pytest
-
 # Repo root so `ci.*` resolves; the `ci` dir so the bare `from praktika...`
 # import inside `functional_tests_results` resolves the same way it does when
 # the praktika job runner imports it.
