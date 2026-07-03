@@ -64,6 +64,16 @@ SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHER
 SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS make_distributed_plan = 0;
 SET distributed_product_mode = 'deny';
 
+-- distributed_product_mode = 'allow' keeps the subquery as written on the legacy path (no rewrite),
+-- so the plan path (initiator-side set from a `FutureSetFromSubquery` source plan holding another
+-- placeholder) and the legacy path agree on this two-identical-shard cluster. This also documents
+-- the divergence area: under the default 'deny' the legacy path throws while the plan path succeeds.
+SELECT '-- IN subquery over the Distributed table with SET distributed_product_mode = allow';
+SET distributed_product_mode = 'allow';
+SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10);
+SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS make_distributed_plan = 0;
+SET distributed_product_mode = 'deny';
+
 SELECT '-- GLOBAL IN with a subquery over the distributed table';
 SELECT count(), sum(v) FROM sweep_dist WHERE k GLOBAL IN (SELECT k FROM sweep_dist WHERE v < 10);
 SELECT count(), sum(v) FROM sweep_dist WHERE k GLOBAL IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS make_distributed_plan = 0;

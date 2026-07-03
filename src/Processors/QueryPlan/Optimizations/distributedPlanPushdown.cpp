@@ -259,7 +259,7 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes &, const Q
     std::swap(node, *child_node);
 }
 
-void finalizeReadFromRemotePlan(QueryPlan::Node & root)
+void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans)
 {
     std::vector<QueryPlan::Node *> stack = {&root};
     while (!stack.empty())
@@ -275,6 +275,19 @@ void finalizeReadFromRemotePlan(QueryPlan::Node & root)
 
         for (auto * child : node->children)
             stack.push_back(child);
+
+        /// Also finalize placeholders nested in child plans of steps like `ReadFromMerge`, mirroring
+        /// the `getChildPlans` walk in `planReadsFromRemote`. Invariant: such child plans are
+        /// independently optimized when they are created, so their placeholders normally finalize
+        /// there — this walk is defense in depth. It is off when the raw `make_distributed_plan`
+        /// setting is off, because `getChildPlans` may force lazy child-plan creation
+        /// (`ReadFromMerge`) and the unconditional call of this scan must then stay a cheap
+        /// zero-side-effect walk over `node->children` only.
+        if (walk_child_plans)
+        {
+            for (auto * child_plan : node->step->getChildPlans())
+                stack.push_back(child_plan->getRootNode());
+        }
     }
 }
 

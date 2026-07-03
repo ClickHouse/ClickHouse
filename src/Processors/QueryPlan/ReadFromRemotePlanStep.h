@@ -6,7 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/SelectQueryInfo.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {

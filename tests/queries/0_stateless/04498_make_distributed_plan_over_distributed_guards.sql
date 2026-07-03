@@ -37,6 +37,22 @@ SELECT k, c FROM (SELECT k, count() AS c FROM mdp_dist GROUP BY k) ORDER BY k, c
 SELECT '-- distributed-over-distributed';
 SELECT count(), sum(v) FROM mdp_dist2;
 
+-- Regression: subquery-level SETTINGS make_distributed_plan = 1 while the outer query is at the
+-- default 0. The subquery is planned with its own context (the placeholder is planted), but the
+-- merged plan is optimized once with the outer settings — the placeholder must still be finalized
+-- into a `ReadFromRemote` step instead of reaching pipeline building (LOGICAL_ERROR).
+SELECT '-- subquery-level SETTINGS make_distributed_plan = 1 with the outer query at default';
+SET make_distributed_plan = 0;
+SELECT * FROM (SELECT count(), sum(v) FROM mdp_dist SETTINGS make_distributed_plan = 1);
+SELECT c + 1, sv FROM (SELECT count() AS c, sum(v) AS sv FROM mdp_dist SETTINGS make_distributed_plan = 1);
+
+SELECT '-- the same through a view';
+DROP VIEW IF EXISTS mdp_view;
+CREATE VIEW mdp_view AS SELECT count() AS c, sum(v) AS sv FROM mdp_dist SETTINGS make_distributed_plan = 1;
+SELECT * FROM mdp_view;
+DROP VIEW mdp_view;
+SET make_distributed_plan = 1;
+
 DROP TABLE mdp_dist2;
 DROP TABLE mdp_dist;
 DROP TABLE mdp_local;

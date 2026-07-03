@@ -84,6 +84,9 @@
 -- IN subquery over the Distributed table with SET distributed_product_mode = local (plan path falls back to legacy)
 60	870
 60	870
+-- IN subquery over the Distributed table with SET distributed_product_mode = allow
+60	870
+60	870
 -- GLOBAL IN with a subquery over the distributed table
 60	870
 60	870

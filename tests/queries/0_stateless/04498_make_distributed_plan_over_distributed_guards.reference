@@ -27,3 +27,8 @@
 3	5
 -- distributed-over-distributed
 80	760
+-- subquery-level SETTINGS make_distributed_plan = 1 with the outer query at default
+40	380
+41	380
+-- the same through a view
+40	380

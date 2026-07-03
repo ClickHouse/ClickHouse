@@ -613,8 +613,13 @@ void optimizeTreeSecondPass(
     /// Replace `ReadFromRemotePlanStep` placeholders with final `ReadFromRemote` steps carrying
     /// the per-shard plans. Done in the optimizer (not in buildQueryPipeline), so that
     /// `EXPLAIN PLAN` shows the final step and `EXPLAIN PLAN distributed=1` prints the inner plan.
-    if (optimization_settings.make_distributed_plan)
-        finalizeReadFromRemotePlan(root);
+    /// Unconditional, like the `ReadFromLocalParallelReplicaStep` replacement above: a subquery or
+    /// a view planned with its own `make_distributed_plan = 1` (subquery-level SETTINGS) plants a
+    /// placeholder even when this merged plan is optimized with the setting off, and a placeholder
+    /// must never reach `initializePipeline` (skipping `tryPushDownToRemotePlan` above is fine —
+    /// that only loses pushdown — but finalize is mandatory). When the setting is off, this is a
+    /// cheap side-effect-free scan over plan children.
+    finalizeReadFromRemotePlan(root, optimization_settings.make_distributed_plan);
 }
 
 void addStepsToBuildSets(
