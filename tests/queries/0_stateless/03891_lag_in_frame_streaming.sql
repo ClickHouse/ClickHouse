@@ -146,3 +146,69 @@ SELECT
     without_opt = with_opt AS correct;
 
 DROP TABLE lag_streaming_t;
+
+-- Floating-point partition keys: the streaming path matches partition keys with a SipHash of
+-- their raw bytes (`updateHashWithValue`), whereas `WindowTransform` uses `compareAt`.  These
+-- disagree for floats -- `compareAt` treats `-0.0` and `+0.0` (and all `NaN`s) as equal, the raw
+-- hash does not -- so a float-bearing partition key would be split into several partitions and
+-- produce wrong `lagInFrame` results.  The optimization must therefore NOT activate on such keys
+-- (lifting this requires the canonicalization tracked in issue #105941).
+CREATE TABLE lag_streaming_float_t (
+    MetricName LowCardinality(String),
+    TimeUnix UInt64,
+    Count UInt64,
+    FloatAttr Float64,
+    NullableFloatAttr Nullable(Float64)
+) ENGINE = MergeTree()
+ORDER BY (MetricName, TimeUnix)
+SETTINGS index_granularity = 8192;
+
+-- FloatAttr alternates +0.0 / -0.0 within a single prefix group: `compareAt` sees one partition,
+-- a raw-byte hash would split it -- exactly the case that would corrupt results without the gate.
+INSERT INTO lag_streaming_float_t
+SELECT
+    'm' AS MetricName,
+    number AS TimeUnix,
+    number AS Count,
+    if(number % 2 = 0, toFloat64(0.0), toFloat64(-0.0)) AS FloatAttr,
+    if(number % 2 = 0, toFloat64(0.0), toFloat64(-0.0)) AS NullableFloatAttr
+FROM numbers(0, 1000);
+
+-- Float64 suffix partition key: streaming must NOT activate.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_float_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- Nullable(Float64) suffix partition key (float nested inside Nullable): streaming must NOT activate.
+SELECT countIf(explain LIKE '%StreamingLag%')
+FROM (
+    EXPLAIN pipeline
+    SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, NullableFloatAttr ORDER BY TimeUnix) AS prev_count
+    FROM lag_streaming_float_t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+);
+
+-- With the setting enabled the float key falls back to `WindowTransform`, so the result matches
+-- the unoptimized path (and is not corrupted by signed-zero partition splitting).
+SELECT
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
+            FROM lag_streaming_float_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
+        )
+    ) AS without_opt,
+    (
+        SELECT sum(prev_count) FROM (
+            SELECT lagInFrame(Count) OVER (PARTITION BY MetricName, FloatAttr ORDER BY TimeUnix) AS prev_count
+            FROM lag_streaming_float_t
+            SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1
+        )
+    ) AS with_opt,
+    without_opt = with_opt AS correct;
+
+DROP TABLE lag_streaming_float_t;

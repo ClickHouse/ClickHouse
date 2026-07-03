@@ -29,7 +29,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/typeid_cast.h>
 #include <optional>
@@ -1983,6 +1983,43 @@ void optimizeStreamingWindowFunctions(
     suffix_col_names.reserve(partition_by.size() - prefix_description.size());
     for (size_t i = prefix_description.size(); i < partition_by.size(); ++i)
         suffix_col_names.push_back(partition_by[i].column_name);
+
+    /// `StreamingLagTransform` delimits partitions by `SipHash` of the raw bytes of the
+    /// partition-key columns (`IColumn::updateHashWithValue`), whereas `WindowTransform` uses
+    /// `compareAt`.  For floating-point values the two disagree: `compareAt` treats `-0.0` and
+    /// `+0.0` as equal and treats all `NaN` values as equal, while the raw-byte hash does not.
+    /// A float-bearing partition key would therefore be split into several `state_map_` entries
+    /// and yield `lagInFrame` results different from the non-optimised `WindowTransform` path.
+    /// Skip the optimisation whenever any partition-key column (prefix or suffix) is or contains
+    /// a floating-point type; the canonicalisation needed to lift this restriction is tracked in
+    /// https://github.com/ClickHouse/ClickHouse/issues/105941.
+    {
+        auto contains_float = [](const IDataType & type)
+        {
+            if (isFloat(type))
+                return true;
+            bool found = false;
+            type.forEachChild([&](const IDataType & child)
+            {
+                if (isFloat(child))
+                    found = true;
+            });
+            return found;
+        };
+
+        for (const auto & desc : prefix_description)
+        {
+            const auto * entry = window_input.findByName(desc.column_name);
+            if (!entry || contains_float(*entry->type))
+                return;
+        }
+        for (const auto & name : suffix_col_names)
+        {
+            const auto * entry = window_input.findByName(name);
+            if (!entry || contains_float(*entry->type))
+                return;
+        }
+    }
 
     /// Collect value column names and optional explicit defaults for each function.
     std::vector<std::string> value_col_names;
