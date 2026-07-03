@@ -38,6 +38,6 @@ SELECT t.data FROM t_values_dynamic;
 -- on the server and reports a server error. With async_insert the client sends the block unconverted
 -- and the server-side guard rejects it during WaitForAsyncInsert, so a server error is reported
 -- instead. Either way the conversion must be rejected.
-INSERT INTO t_values_dynamic VALUES (tuple('val')(42)); -- { clientError CANNOT_CONVERT_TYPE, serverError CANNOT_CONVERT_TYPE }
+INSERT INTO t_values_dynamic VALUES (tuple('val')(42)); -- { error CANNOT_CONVERT_TYPE }
 INSERT INTO t_values_dynamic SELECT tuple('val')(42); -- { serverError CANNOT_CONVERT_TYPE }
 DROP TABLE t_values_dynamic;
