@@ -1,8 +1,10 @@
+import logging
 import pytest
 import re
 import time
 
-from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.uclient import client, prompt
 
 

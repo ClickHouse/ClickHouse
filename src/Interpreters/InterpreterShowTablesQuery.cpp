@@ -249,7 +249,6 @@ BlockIO InterpreterShowTablesQuery::execute()
 ///     SQL tests can take advantage of this.
 
 
-void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

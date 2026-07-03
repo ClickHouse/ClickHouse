@@ -21,7 +21,7 @@ public:
     {
         COPY_FROM = 0,
         COPY_TO = 1,
-    } type{};
+    } type;
 
     String table_name;
     Strings column_names;

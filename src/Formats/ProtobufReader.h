@@ -37,10 +37,6 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 
-    /// Drop all message-bounds tracking so the next startMessage starts fresh.
-    /// Does not touch the underlying ReadBuffer.
-    void resetState();
-
 private:
     void readBinary(void * data, size_t size);
     void ignore(UInt64 num_bytes);
@@ -49,7 +45,7 @@ private:
 
     UInt64 ALWAYS_INLINE readVarint()
     {
-        char c = 0;
+        char c;
         in->readStrict(c);
         UInt64 first_byte = static_cast<UInt8>(c);
         ++cursor;

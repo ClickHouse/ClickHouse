@@ -94,9 +94,10 @@ RestorerFromBackup::RestorerFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
+    const ContextPtr & query_context_,
     ThreadPool & thread_pool_,
     const std::function<void()> & after_task_callback_)
-    : BackupMetadataFinder(restore_settings_, backup_, context_, thread_pool_)
+    : BackupMetadataFinder(restore_settings_, backup_, context_, query_context_, thread_pool_)
     , restore_query_elements(restore_query_elements_)
     , restore_coordination(restore_coordination_)
     , after_task_callback(after_task_callback_)
@@ -360,7 +361,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
     if (current_user_access_rights->contains(required_access_rights))
         return;
 
-    context->checkAccess(required_access_rights.getElements());
+    query_context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
@@ -513,15 +514,12 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), create_database_query->formatForLogging());
 
-        /// Use the restore-owned `context` (a copy of the original query context made when the restore started),
-        /// not the live query context: for a "RESTORE ASYNC" query the original query context may already be gone
-        /// or concurrently mutated by its thread while we run here in the background.
-        auto create_query_context = Context::createCopy(context);
+        auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
 
-        /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
-        /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished
-        /// (the restore process is working in the background).
+        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
+        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
+        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
         create_query_context->setProgressCallback(nullptr);
 
 #if CLICKHOUSE_CLOUD
@@ -558,7 +556,7 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
         ASTPtr database_def_from_backup;
-        bool is_predefined_database = false;
+        bool is_predefined_database;
 
         {
             std::lock_guard lock{mutex};
@@ -636,8 +634,8 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies = 0;
-        size_t num_dependents = 0;
+        size_t num_dependencies;
+        size_t num_dependents;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(
@@ -741,7 +739,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
 
-        if (context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
+        if (query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
         {
             LOG_INFO(log, "`restore_replicated_merge_tree_to_shared_merge_tree` enabled, will try to replace Replicated engine with Shared");
             ASTStorage * storage = create_table_query->storage;
@@ -772,10 +770,7 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 table_info.database = database;
         }
 
-        /// Use the restore-owned `context` (a copy of the original query context made when the restore started),
-        /// not the live query context: for a "RESTORE ASYNC" query the original query context may already be gone
-        /// or concurrently mutated by its thread while we run here in the background.
-        auto create_query_context = Context::createCopy(context);
+        auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
         create_query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
 
@@ -786,9 +781,9 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
 
         create_query_context->setUnderRestore(true);
 
-        /// We shouldn't use the progress callback copied from the restore context because it was originally set in a
-        /// protocol handler (e.g. HTTPHandler) for the "RESTORE ASYNC" query which could have already finished
-        /// (the restore process is working in the background).
+        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
+        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
+        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
         create_query_context->setProgressCallback(nullptr);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
@@ -832,7 +827,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         ASTPtr table_def_from_backup;
-        bool is_predefined_table = false;
+        bool is_predefined_table;
 
         {
             std::lock_guard lock{mutex};
@@ -846,7 +841,7 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
         }
 
         if (!restore_settings.allow_different_table_def && !is_predefined_table &&
-            !context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
+            !query_context->getSettingsRef()[Setting::restore_replicated_merge_tree_to_shared_merge_tree])
         {
             ASTPtr existing_table_def = database->getCreateTableQuery(resolved_id.table_name, context);
             if (!BackupUtils::compareRestoredTableDef(*existing_table_def, *table_def_from_backup, context->getGlobalContext()))
