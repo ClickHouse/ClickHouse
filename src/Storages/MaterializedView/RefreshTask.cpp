@@ -985,6 +985,18 @@ void RefreshTask::executeRefresh()
     String error_message;
     std::optional<UUID> new_table_uuid;
 
+    /// Use a deduplication token for APPEND, when possible (coordinated) for better deduplication
+    /// (i.e. in case server has been terminated in the middle of saving the state)
+    String insert_deduplication_token;
+    if (refresh_append && coordination.coordinated)
+    {
+        insert_deduplication_token = fmt::format(
+            "{}:{}:{}",
+            view->getStorageID().getShortName(),
+            Int64(execution.znode.last_success_end_time.time_since_epoch().count()),
+            Int64(execution.znode.last_completed_timeslot.time_since_epoch().count()));
+    }
+
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
     if (execution.znode.attempt_number > 1)
     {
@@ -1003,7 +1015,7 @@ void RefreshTask::executeRefresh()
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, insert_deduplication_token);
     }
     catch (...)
     {
@@ -1045,7 +1057,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, const String & insert_deduplication_token)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1078,6 +1090,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             if (root_znode_version != -1)
                 refresh_context->setDDLAdditionalChecksOnEnqueue({zkutil::makeCheckRequest(coordination.path, root_znode_version)});
         }
+        else if (!insert_deduplication_token.empty())
+            refresh_context->setSetting("insert_deduplication_token", insert_deduplication_token);
 
         {
             /// Create a table.
