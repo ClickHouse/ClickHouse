@@ -1270,7 +1270,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool readonly)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1356,7 +1357,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID()
+                /*storage_id_=*/getStorageID(),
+                /*readonly_=*/readonly
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -1782,14 +1784,29 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
+        /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+        /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression,
+        /// or TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
+        /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
+        ///
+        /// Sample the setting here, under `currently_processing_in_background_mutex` and immediately before
+        /// selecting background work, so the window against a concurrent `ALTER ... MODIFY SETTING
+        /// table_readonly = 1` is as small as possible. Suppressing already in-flight background work is
+        /// best-effort: an operation whose selection started just before the setting was published may still
+        /// complete once. That is harmless - the table is abandoned after rotation, the result is correct,
+        /// and explicit user modifications are always rejected synchronously (`assertNotReadonly` for
+        /// writes/mutations/OPTIMIZE, and the `table_readonly` gate in `MergeTreeData::alterPartition` for
+        /// partition commands).
+        const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
+
         {
-            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
+            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn, /*optimize_skip_merged_partitions=*/false, /*readonly=*/table_is_readonly))
                 merge_entry = std::move(merge_select_result.value());
             else
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: {}", merge_select_result.error().explanation.text);
         }
 
-        if (!merge_entry && !current_mutations_by_version.empty())
+        if (!merge_entry && !table_is_readonly && !current_mutations_by_version.empty())
         {
             PreformattedMessage out_reason;
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
@@ -2879,6 +2896,15 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
+
+    /// A read-only destination table (the `table_readonly` MergeTree setting, used e.g. for rotated
+    /// system log tables) must not have parts moved into it. The source-side gate in
+    /// `MergeTreeData::alterPartition` only rejects `MOVE PARTITION ... TO TABLE` when the *source*
+    /// is read-only, because the command is dispatched through the source table; when the source is
+    /// writable and only the destination is read-only that gate does not fire, so the destination
+    /// has to be checked here, before any parts are cloned into it.
+    dest_table_storage->assertNotReadonly();
+
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(dest_table_storage->getStoragePolicy());
 
     if (!are_policies_partition_op_compatible)
