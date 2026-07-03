@@ -1,3 +1,6 @@
+SET explain_query_plan_default = 'legacy';
+SET optimize_use_projections = 1;
+
 -- { echoOn }
 DROP TABLE IF EXISTS visits_order;
 DROP TABLE IF EXISTS visits_order_dst;

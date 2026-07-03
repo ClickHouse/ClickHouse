@@ -171,6 +171,8 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         file_path = *new_key;
     }
 
+    last_written_object_path = file_path;
+
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,

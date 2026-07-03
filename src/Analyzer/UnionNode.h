@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
 #include <Parsers/SelectUnionMode.h>
 

@@ -7,7 +7,6 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/iota.h>
 
 #include <algorithm>
@@ -206,7 +205,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
         size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-        assert(offset_start <= offset_end);
+        chassert(offset_start <= offset_end);
 
         if (offset_start != offset_end)
         {
@@ -481,7 +480,7 @@ ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
@@ -661,7 +660,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
         }
     }
 
-    assert(row == limit);
+    chassert(row == limit);
 }
 
 void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -775,22 +774,21 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-WeakHash32 ColumnSparse::getWeakHash32() const
+void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 values_hash = values->getWeakHash32();
-    WeakHash32 hash(size());
+    const size_t values_size = values->size();
 
-    auto & hash_data = hash.getData();
-    auto & values_hash_data = values_hash.getData();
+    PaddedPODArray<UInt32> values_hash(values_size);
+    if (values_size)
+        values->computeHashInto(0, values_size, values_hash.data(), true);
 
-    auto offset_it = begin();
-    for (size_t i = 0; i < _size; ++i, ++offset_it)
+    auto offset_it = getIterator(row_begin);
+    for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
     {
-        size_t value_index = offset_it.getValueIndex();
-        hash_data[i] = values_hash_data[value_index];
+        const UInt32 value = values_hash[offset_it.getValueIndex()];
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
     }
-
-    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -919,7 +917,7 @@ IColumn::Offsets & ColumnSparse::getOffsetsData()
 
 size_t ColumnSparse::getValueIndex(size_t n) const
 {
-    assert(n < _size);
+    chassert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);
@@ -937,18 +935,27 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns, max_dynamic_subcolumns);
+    values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnSparse::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeDynamicStructureFromColumn(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+}
+
+void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    VectorWithMemoryTracking<ColumnPtr> values_source_columns;
+    values_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeOrCalculateStatisticsFrom(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)

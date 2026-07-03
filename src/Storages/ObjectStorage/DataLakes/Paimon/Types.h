@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDecimalBase.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -79,7 +78,7 @@ enum class RootDataType
 
 struct DataType
 {
-    RootDataType root_type;
+    RootDataType root_type{};
     String raw_type;
     DataTypePtr clickhouse_data_type;
     static DataType parse(const Poco::JSON::Object::Ptr & json_object, const String & key)

@@ -3,6 +3,7 @@
 #include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
+#include <Core/UUID.h>
 #include <Databases/DataLake/HiveCatalog.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
@@ -19,7 +20,6 @@
 
 #if USE_AVRO && USE_PARQUET
 
-#include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -47,6 +47,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Common/FailPoint.h>
+#include <Common/HTTPHeaderFilter.h>
 
 namespace DB
 {
@@ -58,6 +59,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsS3UriStyle storage_uri_style;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
@@ -66,9 +68,11 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString region;
     extern const DatabaseDataLakeSettingsString aws_role_arn;
     extern const DatabaseDataLakeSettingsString aws_role_session_name;
+    extern const DatabaseDataLakeSettingsString aws_external_id;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
@@ -79,6 +83,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsBool force_add_bucket;
 }
 
 namespace Setting
@@ -89,6 +94,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool log_queries;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool database_datalake_require_metadata_access;
@@ -122,7 +128,8 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
-    UUID uuid)
+    UUID uuid,
+    bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
@@ -132,6 +139,14 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
+    /// On ATTACH (server startup) defer catalog construction to first use: building it can
+    /// perform network I/O or credential validation that must not block startup. On CREATE
+    /// build eagerly so misconfiguration is reported immediately.
+    if (!lazy_init)
+    {
+        std::lock_guard lock(catalog_mutex);
+        initialize();
+    }
 }
 
 void DatabaseDataLake::validateSettings()
@@ -151,13 +166,12 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+void DatabaseDataLake::initialize() const
 {
+    /// Caller holds `catalog_mutex`: this runs either from the constructor (CREATE, eager)
+    /// or from `getCatalog` on first access (ATTACH, lazy).
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
-
-    if (catalog_impl)
-        return catalog_impl;
 
     auto catalog_parameters = DataLake::CatalogSettings{
         .storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value,
@@ -166,6 +180,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         .region = settings[DatabaseDataLakeSetting::region].value,
         .aws_role_arn = settings[DatabaseDataLakeSetting::aws_role_arn].value,
         .aws_role_session_name = settings[DatabaseDataLakeSetting::aws_role_session_name].value,
+        .aws_external_id = settings[DatabaseDataLakeSetting::aws_external_id].value,
     };
 
     switch (settings[DatabaseDataLakeSetting::catalog_type].value)
@@ -239,12 +254,16 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
+#if USE_AWS_S3 && USE_AVRO
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
                 url,
                 Context::getGlobalContextInstance(),
                 catalog_parameters,
                 table_engine_definition);
             break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot use Glue catalog: ClickHouse was compiled without AWS S3 or Avro support");
+#endif
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         {
@@ -292,6 +311,14 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
+}
+
+std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+{
+    std::lock_guard lock(catalog_mutex);
+    /// Lazily build the catalog on first access for databases attached at startup (see ctor).
+    if (!catalog_impl)
+        initialize();
     return catalog_impl;
 }
 
@@ -474,7 +501,7 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
     auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
-    return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+    return table_metadata.getLocationWithEndpoint(endpoint_from_settings, settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
 bool DatabaseDataLake::empty() const
@@ -497,6 +524,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     /// This is added to test that lightweight queries like 'SHOW TABLES' dont end up fetching the table
     fiu_do_on(FailPoints::lightweight_show_tables,
@@ -624,7 +653,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         azure_configuration->setInitializationAsOneLake(
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId()
+            rest_catalog->getTenantId(),
+            settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
@@ -662,9 +692,12 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
+    const auto catalog_uuid = table_metadata.getTableUUID();
+    const UUID table_uuid = catalog_uuid ? parseFromString<UUID>(*catalog_uuid) : UUIDHelpers::Nil;
+
     if (can_use_parallel_replicas && !is_secondary_query)
     {
-        auto storage_id = StorageID(getDatabaseName(), name);
+        auto storage_id = StorageID(getDatabaseName(), name, table_uuid);
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
@@ -678,19 +711,27 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             /// because this table is actually stateless like a table function.
             /* is_table_function */true);
 
+        if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+            context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
+
         storage_cluster->startup();
         return storage_cluster;
     }
 
-    bool can_use_distributed_iterator =
-        context_->getClientInfo().collaborate_with_initiator &&
-        can_use_parallel_replicas;
+    /// Unlike table functions (s3, url, etc.), DataLake tables are queried as
+    /// `SELECT * FROM catalog.table` — the query sent to shards cannot be rewritten
+    /// into a Cluster table function variant. So when the initiator created a
+    /// StorageObjectStorageCluster (the branch above) and the shard is collaborating
+    /// with it, we need distributed_processing=true to use the task iterator.
+    const bool distributed_processing =
+        context_->getClientInfo().collaborate_with_initiator
+        && can_use_parallel_replicas;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto result_storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name))),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback(StorageID(getDatabaseName(), name, table_uuid))),
         context_copy,
-        StorageID(getDatabaseName(), name),
+        StorageID(getDatabaseName(), name, table_uuid),
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
@@ -699,13 +740,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         getCatalog(),
         /* if_not_exists*/true,
         /* is_datalake_query*/true,
-        /* distributed_processing */can_use_distributed_iterator,
+        distributed_processing,
         /* partition_by */nullptr,
         /* order_by */nullptr,
         /// Use is_table_function = true,
         /// because this table is actually stateless like a table function.
         /* is_table_function */true,
         /* lazy_init */true);
+
+    if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
+        context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
+
+    return result_storage;
 }
 
 void DatabaseDataLake::dropTable( /// NOLINT
@@ -843,6 +889,28 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     return result;
 }
 
+VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
+{
+    VectorWithMemoryTracking<String> result;
+
+    /// Do not throw here, because this is called from the typo-hint path
+    /// (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames) which
+    /// must not fail even when the catalog is temporarily unreachable.
+    try
+    {
+        Names tables = getCatalog()->getTables();
+        result.reserve(tables.size());
+        for (auto & table : tables)
+            result.push_back(std::move(table));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return result;
+}
+
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
@@ -852,6 +920,17 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
     return create_query;
 }
 
+void DatabaseDataLake::checkDatabase() const
+{
+    auto catalog = getCatalog();
+    /// This function checks if we can access catalog and get tables list.
+    /// We do not check if there are tables in catalog, because even if catalog is empty, it still can be valid and working.
+    std::ignore = catalog->empty();
+
+
+    LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
+}
+
 ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
@@ -859,6 +938,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
 
     const auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
@@ -920,6 +1001,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     return create_table_query;
 }
 
+void registerDatabaseDataLake(DatabaseFactory & factory);
 void registerDatabaseDataLake(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -930,6 +1012,27 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
+
+        const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
+        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// `auth_header` was accepted by an older version must still attach at startup, so a
+        /// single misconfigured database cannot block the server from starting. The malformed
+        /// header is then reported lazily on first use of the database.
+        if (!args.create_query.attach && !auth_header_str.empty())
+        {
+            /// Only headers with a valid `name: value` format are accepted.
+            auto pos = auth_header_str.find(':');
+            if (pos != std::string::npos)
+            {
+                DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auth header format. Expected 'HeaderName: HeaderValue'");
+            }
+        }
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
@@ -1048,9 +1151,97 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
-            args.uuid);
+            args.uuid,
+            /*lazy_init=*/args.create_query.attach);
     };
-    factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
+    /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
+    /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
+    /// for runtime-dependent or composite source checks exist.
+    factory.registerDatabase("DataLakeCatalog", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .is_external = true,
+    }, Documentation{
+        .description = R"DOCS_MD(
+The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
+data catalogs and query open table format data without the need for data duplication.
+This transforms ClickHouse into a powerful query engine that works seamlessly with
+your existing data lake infrastructure.
+
+## Supported catalogs {#supported-catalogs}
+
+The `DataLakeCatalog` engine supports the following data catalogs:
+
+- **AWS Glue Catalog** - For Iceberg tables in AWS environments
+- **Databricks Unity Catalog** - For Delta Lake and Iceberg tables
+- **Hive Metastore** - Traditional Hadoop ecosystem catalog
+- **REST Catalogs** - Any catalog supporting the Iceberg REST specification
+
+## Creating a database {#creating-a-database}
+
+You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_database_unity_catalog = 1;
+SET allow_experimental_database_glue_catalog = 1;
+SET allow_experimental_database_hms_catalog = 1;
+SET allow_experimental_database_paimon_rest_catalog = 1;
+```
+
+Databases with the `DataLakeCatalog` engine can be created using the following syntax:
+
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint[, user, password])
+SETTINGS
+catalog_type,
+[...]
+```
+
+The following settings are supported:
+
+| Setting                 | Description                                                                             |
+|-------------------------|-----------------------------------------------------------------------------------------|
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg) |
+| `warehouse`             | The warehouse/database name to use in the catalog.                                      |
+| `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
+| `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
+| `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
+| `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
+| `oauth_server_uri`      | URI of the OAuth2 authorization server for authentication                               |
+| `vended_credentials`    | Boolean indicating whether to use vended credentials from the catalog (supports AWS S3 and Azure ADLS Gen2) |
+| `aws_access_key_id`     | AWS access key ID for S3/Glue access (if not using vended credentials)                  |
+| `aws_secret_access_key` | AWS secret access key for S3/Glue access (if not using vended credentials)              |
+| `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
+| `dlf_access_key_id`     | Access key ID for DLF access                                                            |
+| `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
+
+## Examples {#examples}
+
+See below sections for examples of using the `DataLakeCatalog` engine:
+
+* [Unity Catalog](/use-cases/data-lake/unity-catalog)
+* [Glue Catalog](/use-cases/data-lake/glue-catalog)
+* OneLake Catalog
+    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog(catalog_endpoint)
+SETTINGS
+    catalog_type = 'onelake',
+    warehouse = warehouse,
+    onelake_tenant_id = tenant_id,
+    oauth_server_uri = server_uri,
+    auth_scope = auth_scope,
+    onelake_client_id = client_id,
+    onelake_client_secret = client_secret;
+SHOW TABLES IN database_name;
+SELECT count() from database_name.table_name;
+```
+)DOCS_MD",
+        .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
+        .related = {}});
 }
 
 }

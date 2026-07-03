@@ -31,6 +31,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
+#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -78,6 +79,8 @@ namespace Setting
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+    extern const SettingsSetOperationMode except_default_mode;
+    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -120,12 +123,15 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
+    extern const int FAULT_INJECTED;
     }
 namespace FailPoints
 {
     extern const char database_replicated_startup_pause[];
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
+    extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_throw_on_stop_replication[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -331,7 +337,30 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
+        /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// `/replicas` exists but is empty -- i.e. the first replica is
+        /// not fully created yet or the last replica was just dropped)
+        /// are all expected during concurrent database lifecycle
+        /// operations. The caller treats nullptr as "no cluster info
+        /// available for this database, skip it". Logging those at
+        /// `error` is misleading and noisy: the test runner forwards
+        /// server logs at `warning` and above to the client stderr,
+        /// which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Log
+        /// them at `information` so administrators still see the message
+        /// in normal server logs but it does not propagate to clients.
+        /// Anything else is unexpected (malformed Keeper payloads, logic
+        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// `error` level so operators notice it.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster;
 }
@@ -355,7 +384,18 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// See the note in `tryGetCluster` above: downgrade the expected
+        /// coordination/connection failures and the "no active replicas"
+        /// state (all reachable through `getClusterImpl`) to
+        /// `information`, leave anything else at the default `error`
+        /// level so unexpected problems are visible.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster_all_groups;
 }
@@ -443,8 +483,8 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
               fmt::join(unfiltered_hosts, ", "), fmt::join(hosts, ", "), fmt::join(host_ids, ", "));
 
-    assert(!hosts.empty());
-    assert(hosts.size() == host_ids.size());
+    chassert(!hosts.empty());
+    chassert(hosts.size() == host_ids.size());
     String current_shard;
     std::vector<std::vector<DatabaseReplicaInfo>> shards;
     for (size_t i = 0; i < hosts.size(); ++i)
@@ -467,7 +507,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     if (shards.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
-    UInt16 default_port;
+    UInt16 default_port = 0;
     if (cluster_auth_info.cluster_secure_connection)
         default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
     else
@@ -537,15 +577,22 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
                 UInt64 recovery_time = 0;
+                bool unsynced_after_recovery = false;
                 {
+                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+                    /// access to it must hold the lock. Read both members here.
                     std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    if (ddl_worker)
+                    {
+                        if (replica.is_local)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+                    }
                 }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                    .unsynced_after_recovery = unsynced_after_recovery,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
@@ -558,7 +605,19 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
+        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
+        /// replica state columns for this database", and the Keeper state
+        /// of a Replicated database can be in flux during normal lifecycle
+        /// operations. Log expected coordination/connection failures at
+        /// `information` so they do not leak into the client stderr at the
+        /// default `send_logs_level = warning`, but keep anything
+        /// unexpected at the default `error` level.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
         return {};
     }
 }
@@ -796,6 +855,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::waitForReplicaToProcessAllEntries");
     chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
     {
         std::lock_guard lock{ddl_worker_mutex};
@@ -806,23 +866,32 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     if (mode == SyncReplicaMode::DEFAULT)
         return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 
+    /// In STRICT mode the sync is satisfied as soon as our replication lag is within the
+    /// max_replication_lag_to_enqueue threshold - we do not require every entry to be fully
+    /// processed. Check that condition before blocking, and otherwise wait in short bounded
+    /// steps and re-check, so a sync that is (or becomes) within-threshold returns promptly
+    /// instead of blocking for the whole timeout. Blocking for the full budget would make a
+    /// successful sync arrive at the same boundary as the client's own read timeout.
+    static constexpr UInt64 wait_step_ms = 100;
     Stopwatch elapsed;
     while (true)
     {
-        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
-        if (elapsed_ms > timeout_ms)
-            return false;
-
-        if (ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms - elapsed_ms))
-            return true;
-
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
         UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
 
-        /// max_log_ptr might be increased while we were waiting - retry until replication lag is below the threshold
+        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
+        if (elapsed_ms >= timeout_ms)
+            return false;
+
+        /// Block until the worker fully processes the queue or wait_step_ms elapses. Full
+        /// processing (our_log_ptr == max_log_ptr) is strictly stronger than the STRICT
+        /// threshold, so return immediately in that case; otherwise loop and re-check the
+        /// threshold above, re-reading max_log_ptr, which might have advanced while we waited.
+        if (ddl_worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
+            return true;
     }
 }
 
@@ -1222,8 +1291,10 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
 void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Reduce number of debug checks
-    if (thread_local_rng() % 16)
+    /// Reduce number of debug checks, unless a failpoint forces the check.
+    bool force_check = false;
+    fiu_do_on(FailPoints::database_replicated_force_metadata_digest_check, { force_check = true; });
+    if (!force_check && thread_local_rng() % 16)
         return;
 
     if (!checkDigestValid(local_context))
@@ -1333,7 +1404,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     {
         if (ddl_query->getDatabase() != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
+        ddl_query->reset(ddl_query->database);
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -1392,7 +1463,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         host_fqdn_id = ddl_worker->getCommonHostID();
     }
 
-    if (!flags.internal && (query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY))
+    if (!flags.internal && query_context->isDDLOrOnClusterInternal())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
@@ -1457,6 +1528,7 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
 
 void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
 
     is_recovering = true;
@@ -1546,7 +1618,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
         query_context->setCurrentQueryId({});
@@ -1573,7 +1645,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (static_cast<double>(total_tables) * db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio]
+    if (static_cast<double>(total_tables) * static_cast<double>(db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio])
         < static_cast<double>(tables_to_detach.size()))
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
 
@@ -1635,7 +1707,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Table probably stores some data. Let's move it to another database.
             String to_name = fmt::format("{}_{}_{}", broken_table_name, max_log_ptr, thread_local_rng() % 1000);
             LOG_DEBUG(log, "Will RENAME TABLE {} TO {}.{}", backQuoteIfNeed(broken_table_name), backQuoteIfNeed(to_database_name), backQuoteIfNeed(to_name));
-            assert(db_name < to_database_name);
+            chassert(db_name < to_database_name);
             DDLGuardPtr to_table_guard = DatabaseCatalog::instance().getDDLGuard(to_database_name, to_name, nullptr);
             auto to_db_ptr = DatabaseCatalog::instance().getDatabase(to_database_name);
 
@@ -1767,6 +1839,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             /// Same for table_name_to_metadata and make_query_context
             auto task = [this, &table_id, &table_name_to_metadata, &make_query_context]()
             {
+                /// The task might run on a different thread, so we need to set current component for it
+                auto inner_component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
                 auto table_name = table_id.getTableName();
 
                 auto metadata_it = table_name_to_metadata.find(table_name);
@@ -1781,7 +1855,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 const auto & create_query_string = metadata_it->second;
                 if (isTableExist(table_name, getContext()))
                 {
-                    assert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
+                    chassert(create_query_string == readMetadataFile(table_name) || getTableUUIDIfReplicated(create_query_string, getContext()) != UUIDHelpers::Nil);
                     return;
                 }
 
@@ -1793,8 +1867,14 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                     /*query=*/create_query_string);
                 auto create_query_context = make_query_context();
 
-                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+                {
+                    SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
+                    SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
+                }
+                {
+                    NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+                    NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+                }
 
                 /// Check larger comment in DatabaseOnDisk::createTableFromAST
                 /// TL;DR applySettingsFromQuery will move the settings from engine to query level
@@ -2164,13 +2244,37 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::shutdown");
-    stopReplication();
+
+    /// DatabaseAtomic::shutdown() (below) is what releases this database's table references (the
+    /// UUID -> storage mappings and the tables). stopReplication() runs first and can throw before
+    /// we get there (e.g. a ZooKeeper timeout in the DDL worker's tryRemove). If we let that escape,
+    /// the cleanup is skipped and the storages survive until DatabaseCatalog is destroyed at process
+    /// exit, which aborts. So remember the first error, still run the cleanup, then rethrow it.
+    std::exception_ptr first_error;
+    try
+    {
+        fiu_do_on(FailPoints::database_replicated_throw_on_stop_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while stopping replication of database {}", backQuoteIfNeed(getDatabaseName()));
+        });
+        stopReplication();
+    }
+    catch (...)
+    {
+        first_error = std::current_exception();
+        tryLogCurrentException(log, fmt::format("Failed to stop replication of database {}", backQuoteIfNeed(getDatabaseName())));
+    }
+
     {
         std::lock_guard lock{ddl_worker_mutex};
         ddl_worker_initialized = false;
         ddl_worker = nullptr;
     }
+
     DatabaseAtomic::shutdown();
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -2179,7 +2283,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
+    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn || startsWith(table_name, ".inner_id.") || startsWith(table_name, ".tmp.inner_id."));
     if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2189,8 +2293,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+        || table->getName() == "TimeSeries")
     {
+        /// Drop inner tables here while the metadata transaction is available, so the background
+        /// dropTableFinally task does not re-route the inner DROP through the replicated DDL log.
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);
     }
@@ -2211,7 +2318,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(txn);
+    chassert(txn);
 
     if (this != &to_database)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Moving tables between databases is not supported for Replicated engine");
@@ -2288,10 +2395,19 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
                        ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
 
     String statement = getObjectDefinitionFromCreateQuery(query.clone());
-    if (txn && txn->isInitialQuery() && !txn->isCreateOrReplaceQuery())
+
+    /// For CREATE OR REPLACE, the metadata node for the temporary table is intentionally omitted
+    /// from the transaction because renameTable will create it under the final name atomically.
+    /// However, inner tables (`.inner_id.*`) are NOT renamed during the exchange — they keep
+    /// their UUID-based name — so their metadata nodes must still be created here, as part of
+    /// the rename transaction that commits everything. Without this, an explicit DROP TABLE
+    /// after CREATE OR REPLACE would fail with a ZooKeeper "No node" error when trying to
+    /// remove the inner table's metadata node.
+    const bool is_inner_table = query.getTable().starts_with(".inner_id.");
+    if (txn && txn->isInitialQuery() && (!txn->isCreateOrReplaceQuery() || is_inner_table))
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
@@ -2316,7 +2432,7 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
                                           const String & statement, ContextPtr query_context)
 {
     auto txn = query_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker || !ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
@@ -2356,7 +2472,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for DETACH TABLE PERMANENTLY is disabled");
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
         /// We have to remove metadata from zookeeper, because we do not distinguish permanently detached tables
@@ -2381,7 +2497,7 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     waitDatabaseStarted();
 
     auto txn = local_context->getZooKeeperMetadataTransaction();
-    assert(!ddl_worker->isCurrentlyActive() || txn);
+    chassert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery() && attach)
     {
         String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_name);
@@ -2406,6 +2522,15 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
     {
         assertDigestInTransactionOrInline(local_context, txn);
     }
+}
+
+void DatabaseReplicated::adjustDigestOnTableLostFromRestart(const String & table_name)
+{
+    std::lock_guard lock{metadata_mutex};
+    tables_metadata_digest -= getMetadataHash(table_name);
+    LOG_WARNING(log, "Table {} was lost from in-memory tables map due to failed SYSTEM RESTART REPLICA. "
+                     "Adjusted in-memory digest to {}. The table will be restored on server restart or recovery.",
+                table_name, tables_metadata_digest);
 }
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
@@ -2577,6 +2702,7 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     return true;
 }
 
+void registerDatabaseReplicated(DatabaseFactory & factory);
 void registerDatabaseReplicated(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -2618,7 +2744,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         info.expand_for_database = true;
         info.table_id.database_name = args.database_name;
 
-        const bool is_on_cluster = args.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        const bool is_on_cluster = args.context->isDDLOrOnClusterInternal();
         /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries
         /// and if UUID was explicitly passed in CREATE DATABASE (like for ATTACH)
         bool allow_uuid_macro = is_on_cluster || args.create_query.attach || args.create_query.has_uuid;
@@ -2650,7 +2776,185 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true});
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
+        .description = R"DOCS_MD(
+The engine is based on the [Atomic](../../engines/database-engines/atomic.md) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
+
+One ClickHouse server can have multiple replicated databases running and updating at the same time. But there can't be multiple replicas of the same replicated database.
+
+## Creating a database {#creating-a-database}
+```sql
+CREATE DATABASE testdb [UUID '...'] ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name') [SETTINGS ...]
+```
+
+**Engine Parameters**
+
+- `zoo_path` — ZooKeeper path. The same ZooKeeper path corresponds to the same database.
+- `shard_name` — Shard name. Database replicas are grouped into shards by `shard_name`.
+- `replica_name` — Replica name. Replica names must be different for all replicas of the same shard.
+
+Parameters can be omitted, in such case missing parameters are substituted with defaults.
+
+If `zoo_path` contains macro `{uuid}`, it is required to specify explicit UUID or add [ON CLUSTER](../../sql-reference/distributed-ddl.md) to create statement to ensure all replicas use the same UUID for this database.
+
+For [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables if no arguments provided, then default arguments are used: `/clickhouse/tables/{uuid}/{shard}` and `{replica}`. These can be changed in the server settings [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Macro `{uuid}` is unfolded to table's uuid, `{shard}` and `{replica}` are unfolded to values from server config, not from database engine arguments. But in the future, it will be possible to use `shard_name` and `replica_name` of Replicated database.
+
+Auxiliary ZooKeeper cluster is also supported for storing metadata of a replicated database instead of using the default ZooKeeper cluster. We can use SQL to create the replicated database with auxiliary ZooKeeper cluster as follows:
+
+```sql
+CREATE DATABASE database_name ENGINE = Replicated('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'shard_name', 'replica_name')
+```
+
+## Specifics and recommendations {#specifics-and-recommendations}
+
+DDL queries with `Replicated` database work in a similar way to [ON CLUSTER](../../sql-reference/distributed-ddl.md) queries, but with minor differences.
+
+First, the DDL request tries to execute on the initiator (the host that originally received the request from the user). If the request is not fulfilled, then the user immediately receives an error, other hosts do not try to fulfill it. If the request has been successfully completed on the initiator, then all other hosts will automatically retry until they complete it. The initiator will try to wait for the query to be completed on other hosts (no longer than [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout)) and will return a table with the query execution statuses on each host.
+
+The behavior in case of errors is regulated by the [distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode) setting, for a `Replicated` database it is better to set it to `null_status_on_timeout` — i.e. if some hosts did not have time to execute the request for [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout), then do not throw an exception, but show the `NULL` status for them in the table.
+
+The [system.clusters](../../operations/system-tables/clusters.md) system table contains a cluster named like the replicated database, which consists of all replicas of the database. This cluster is updated automatically when creating/deleting replicas, and it can be used for [Distributed](/engines/table-engines/special/distributed) tables.
+
+When creating a new replica of the database, this replica creates tables by itself. If the replica has been unavailable for a long time and has lagged behind the replication log — it checks its local metadata with the current metadata in ZooKeeper, moves the extra tables with data to a separate non-replicated database (so as not to accidentally delete anything superfluous), creates the missing tables, updates the table names if they have been renamed. The data is replicated at the `ReplicatedMergeTree` level, i.e. if the table is not replicated, the data will not be replicated (the database is responsible only for metadata).
+
+[`ALTER TABLE FREEZE|ATTACH|FETCH|DROP|DROP DETACHED|DETACH PARTITION|PART`](../../sql-reference/statements/alter/partition.md) queries are allowed but not replicated. The database engine will only add/fetch/remove the partition/part to the current replica. However, if the table itself uses a Replicated table engine, then the data will be replicated after using `ATTACH`.
+
+In case you need only configure a cluster without maintaining table replication, refer to [Cluster Discovery](../../operations/cluster-discovery.md) feature.
+
+## Usage example {#usage-example}
+
+Creating a cluster with three hosts:
+
+```sql
+node1 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','replica1');
+node2 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','shard1','other_replica');
+node3 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','{replica}');
+```
+
+Creating database on cluster with implicit parameters:
+
+```sql
+CREATE DATABASE r ON CLUSTER default ENGINE=Replicated;
+```
+
+Running the DDL-query:
+
+```sql
+CREATE TABLE r.rmt (n UInt64) ENGINE=ReplicatedMergeTree ORDER BY n;
+```
+
+```text
+┌─────hosts────────────┬──status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ shard1|replica1      │    0    │       │          2          │        0         │
+│ shard1|other_replica │    0    │       │          1          │        0         │
+│ other_shard|r1       │    0    │       │          0          │        0         │
+└──────────────────────┴─────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+Showing the system table:
+
+```sql
+SELECT cluster, shard_num, replica_num, host_name, host_address, port, is_local
+FROM system.clusters WHERE cluster='r';
+```
+
+```text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+Creating a distributed table and inserting the data:
+
+```sql
+node2 :) CREATE TABLE r.d (n UInt64) ENGINE=Distributed('r','r','rmt', n % 2);
+node3 :) INSERT INTO r.d SELECT * FROM numbers(10);
+node1 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+```text
+┌─hosts─┬─groupArray(n)─┐
+│ node3 │  [1,3,5,7,9]  │
+│ node2 │  [0,2,4,6,8]  │
+└───────┴───────────────┘
+```
+
+Adding replica on the one more host:
+
+```sql
+node4 :) CREATE DATABASE r ENGINE=Replicated('some/path/r','other_shard','r2');
+```
+
+Adding replica on the one more host if macro `{uuid}` is used in `zoo_path`:
+```sql
+node1 :) SELECT uuid FROM system.databases WHERE database='r';
+node4 :) CREATE DATABASE r UUID '<uuid from previous query>' ENGINE=Replicated('some/path/{uuid}','other_shard','r2');
+```
+
+The cluster configuration will look like this:
+
+```text
+┌─cluster─┬─shard_num─┬─replica_num─┬─host_name─┬─host_address─┬─port─┬─is_local─┐
+│ r       │     1     │      1      │   node3   │  127.0.0.1   │ 9002 │     0    │
+│ r       │     1     │      2      │   node4   │  127.0.0.1   │ 9003 │     0    │
+│ r       │     2     │      1      │   node2   │  127.0.0.1   │ 9001 │     0    │
+│ r       │     2     │      2      │   node1   │  127.0.0.1   │ 9000 │     1    │
+└─────────┴───────────┴─────────────┴───────────┴──────────────┴──────┴──────────┘
+```
+
+The distributed table also will get data from the new host:
+
+```sql
+node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY host;
+```
+
+```text
+┌─hosts─┬─groupArray(n)─┐
+│ node2 │  [1,3,5,7,9]  │
+│ node4 │  [0,2,4,6,8]  │
+└───────┴───────────────┘
+```
+
+## Settings {#settings}
+The following settings are supported:
+
+| Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
+|------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `max_broken_tables_ratio`                                                    | 1                              | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                           |
+| `max_replication_lag_to_enqueue`                                             | 50                             | Replica will throw exception on attempt to execute query if its replication lag greater                                                                                                                                                                                                                                               |
+| `wait_entry_commited_timeout_sec`                                            | 3600                           | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet                                                                                                                                                                                                                                       |
+| `collection_name`                                                            |                                | A name of a collection defined in server's config where all info for cluster authentication is defined                                                                                                                                                                                                                                |
+| `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
+| `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
+| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
+| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
+| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
+| `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
+| `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
+| `internal_replication`                                                       | false                          | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas) |
+
+Default values may be overwritten in the configuration file
+```xml
+<clickhouse>
+    <database_replicated>
+        <max_broken_tables_ratio>0.75</max_broken_tables_ratio>
+        <max_replication_lag_to_enqueue>100</max_replication_lag_to_enqueue>
+        <wait_entry_commited_timeout_sec>1800</wait_entry_commited_timeout_sec>
+        <collection_name>postgres1</collection_name>
+        <check_consistency>false</check_consistency>
+        <max_retries_before_automatic_recovery>5</max_retries_before_automatic_recovery>
+        <default_replica_path>/clickhouse/databases/{uuid}</default_replica_path>
+        <default_replica_shard_name>{shard}</default_replica_shard_name>
+        <default_replica_name>{replica}</default_replica_name>
+        <internal_replication>false</internal_replication>
+    </database_replicated>
+</clickhouse>
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name')",
+        .related = {"Atomic"}});
 }
 
 BlockIO DatabaseReplicated::getQueryStatus(

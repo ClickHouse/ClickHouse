@@ -1,0 +1,104 @@
+--- String ASC ---
+	6
+apple	1
+apple	4
+apple	8
+banana	3
+banana	5
+cherry	2
+cherry	7
+--- String DESC ---
+cherry	2
+cherry	7
+banana	3
+banana	5
+apple	1
+apple	4
+apple	8
+	6
+--- FixedString ASC ---
+aaaa	6
+appl	1
+appl	4
+bana	3
+bana	5
+bana	8
+cher	2
+cher	7
+--- FixedString DESC ---
+cher	2
+cher	7
+bana	3
+bana	5
+bana	8
+appl	1
+appl	4
+aaaa	6
+--- Nullable(String) ASC NULLS FIRST ---
+\N	4
+\N	5
+	6
+apple	1
+apple	8
+banana	3
+cherry	2
+cherry	7
+--- Nullable(String) ASC NULLS LAST ---
+	6
+apple	1
+apple	8
+banana	3
+cherry	2
+cherry	7
+\N	4
+\N	5
+--- Nullable(FixedString) ASC NULLS FIRST ---
+\N	4
+\N	5
+aaaa	6
+appl	1
+bana	3
+bana	8
+cher	2
+cher	7
+--- Nullable(FixedString) ASC NULLS LAST ---
+aaaa	6
+appl	1
+bana	3
+bana	8
+cher	2
+cher	7
+\N	4
+\N	5
+--- Mixed: String + UInt32 ---
+	6
+apple	8
+apple	4
+apple	1
+banana	5
+banana	3
+cherry	7
+cherry	2
+--- Mixed: UInt32 + FixedString ---
+1	appl
+2	cher
+3	bana
+4	appl
+5	bana
+6	aaaa
+7	cher
+8	bana
+--- Mixed: Nullable(String) + FixedString ---
+	aaaa	6
+apple	appl	1
+apple	bana	8
+banana	bana	3
+cherry	cher	2
+cherry	cher	7
+\N	appl	4
+\N	bana	5
+--- Empty string edge case ---
+	6
+apple	1
+apple	4
+apple	8

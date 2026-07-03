@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -101,6 +102,7 @@ void ExpressionStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
     auto expression = std::make_shared<ExpressionActions>(actions_dag.clone());
+
     if (!settings.compact)
         expression->describeActions(settings.out, prefix);
 }
@@ -132,11 +134,10 @@ QueryPlanStepPtr ExpressionStep::deserialize(Deserialization & ctx)
 
 bool ExpressionStep::canRemoveUnusedColumns() const
 {
-    // At the time of writing ActionsDAG doesn't handle removal of unused actions well in case of duplicated names in input or outputs
-    return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
+    return true;
 }
 
-IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+ExpressionStep::RemoveUnusedColumnsResult ExpressionStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
@@ -146,72 +147,93 @@ IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMul
     if (prevent_input_removal)
         remove_inputs = false;
 
-    const auto required_output_count = required_outputs.size();
-    auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
+    const auto required_output_count = required_output_positions.size();
+    const auto & input_header = input_headers.front();
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
-    const auto actions_dag_required_outputs = getRequiredOutputNamesInOrder(std::move(split_results.output_names), actions_dag);
-    auto updated_actions = actions_dag.removeUnusedActions(actions_dag_required_outputs, remove_inputs);
+    /// The output header is structured as:
+    /// [DAG output 0, ..., DAG output N-1, pass-through input 0, pass-through input 1, ...]
+    /// Split required positions into DAG output indices and pass-through input indices.
+    auto [required_dag_indices, required_passthrough_indices]
+        = actions_dag.splitOutputPositions(required_output_positions);
 
-    const auto & input_header = input_headers.front();
-    // Number of input columns that are not removed by actions
-    const auto pass_through_inputs = input_header->columns() - actions_dag_input_count_before;
-    const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
-    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
+    /// Build the list of pass-through input columns (input header columns not consumed by DAG inputs).
+    auto passthrough_input_header_positions = actions_dag.matchInputPositionsToHeader(*input_header).passthrough;
 
-    const auto build_required_inputs_set = [this, &not_output_names = split_results.not_output_names]()
+    /// Determine which pass-through inputs are required by the caller.
+    std::set<size_t> required_passthrough_header_positions;
+    for (size_t pt_idx : required_passthrough_indices)
     {
-        std::unordered_set<String> required_inputs_set;
+        if (pt_idx >= passthrough_input_header_positions.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", pt_idx);
+        required_passthrough_header_positions.insert(passthrough_input_header_positions[pt_idx]);
+    }
 
-        for (const auto * input_node : actions_dag.getInputs())
-            required_inputs_set.insert(input_node->result_name);
+    const auto num_passthrough = passthrough_input_header_positions.size();
+    const auto has_to_remove_any_pass_through = num_passthrough > required_passthrough_indices.size();
 
-        for (const auto & pass_through_input : not_output_names)
-            required_inputs_set.insert(pass_through_input);
+    /// Keep only the required DAG output nodes.
+    auto & dag_outputs = actions_dag.getOutputs();
+    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
+    new_dag_outputs.reserve(required_dag_indices.size());
+    for (size_t idx : required_dag_indices)
+        new_dag_outputs.push_back(dag_outputs[idx]);
+    dag_outputs = std::move(new_dag_outputs);
 
-        return required_inputs_set;
-    };
+    auto updated_actions = actions_dag.removeUnusedActions(remove_inputs);
 
+    /// If we cannot remove inputs but need to remove pass-through outputs,
+    /// convert unrequired pass-through inputs into DAG inputs so they stop being pass-throughs.
+    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through;
     if (has_to_add_input_to_actions)
     {
-        const auto required_inputs_set = build_required_inputs_set();
-
-        for (const auto & name_and_type : *input_header)
-            if (!required_inputs_set.contains(name_and_type.name))
-                actions_dag.addInput(name_and_type.name, name_and_type.type);
-
+        for (size_t pt_pos : passthrough_input_header_positions)
+        {
+            if (!required_passthrough_header_positions.contains(pt_pos))
+            {
+                const auto & col = input_header->getByPosition(pt_pos);
+                actions_dag.addInput(col.name, col.type);
+            }
+        }
         updated_actions = true;
     }
 
-    // If the actions are not updated and no outputs has to be removed, then there is nothing to update
-    // Note: required_outputs must be a subset of already existing outputs
     if (!updated_actions && output_header->columns() == required_output_count)
-        return RemovedUnusedColumns::None;
+        return {};
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
     const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
-    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
+    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through);
 
     if (update_inputs)
     {
-        const auto required_inputs_set = build_required_inputs_set();
-        Block new_input_header{};
+        /// Build the set of required input header positions: DAG inputs that survived pruning + required pass-throughs.
+        auto matched_positions = actions_dag.matchInputPositionsToHeader(*input_header).matched;
+        std::set<size_t> required_input_positions(matched_positions.begin(), matched_positions.end());
 
-        for (const auto & col_type_and_name : *input_header)
-            if (required_inputs_set.contains(col_type_and_name.name))
-                new_input_header.insert(col_type_and_name);
+        /// Add required pass-through input positions.
+        for (size_t pt_pos : required_passthrough_header_positions)
+            required_input_positions.insert(pt_pos);
+
+        /// Build the result vector and update the input header.
+        std::vector<size_t> result_positions(required_input_positions.begin(), required_input_positions.end());
+
+        Block new_input_header{};
+        for (size_t pos : result_positions)
+            new_input_header.insert(input_header->getByPosition(pos));
 
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
 
-        return RemovedUnusedColumns::OutputAndInput;
+        return {true, {std::move(result_positions)}, required_output_positions};
     }
 
     updateOutputHeader();
 
-    return RemovedUnusedColumns::OutputOnly;
+    /// Outputs changed but inputs didn't.
+    return {true, {}, required_output_positions};
 }
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const
@@ -227,6 +249,7 @@ QueryPlanStepPtr ExpressionStep::clone() const
     return std::make_unique<ExpressionStep>(*this);
 }
 
+void registerExpressionStep(QueryPlanStepRegistry & registry);
 void registerExpressionStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Expression", ExpressionStep::deserialize);

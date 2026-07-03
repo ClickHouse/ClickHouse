@@ -305,6 +305,11 @@ public:
         return delegate->recordAsRemoved(blobs);
     }
 
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
+    {
+        return delegate->hasPendingRemovalBlobs(blobs);
+    }
+
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override
     {
         return delegate->getBlobsToReplicate(cluster, max_count);

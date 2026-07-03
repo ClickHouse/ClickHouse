@@ -17,7 +17,7 @@ SELECT __getScalar('aaa'); -- { serverError BAD_ARGUMENTS }
 SELECT __getScalar(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT __getScalar(1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT __getScalar(materialize('1')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT __getScalar(concat(toNullable(materialize(1))) - NULL); -- { serverError BAD_ARGUMENTS }
+SELECT __getScalar(concat(toNullable(materialize(1))) - NULL); -- { serverError BAD_ARGUMENTS,ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT __scalarSubqueryResult('1');
 SELECT 'a' || __scalarSubqueryResult(a), materialize('1') as a;

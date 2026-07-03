@@ -3,7 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunctionHelper.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -136,7 +136,7 @@ SQLQueryPiece applyDateTimeFunction(
             context.scalar_data_type);
     };
 
-    auto res = applySimpleFunctionHelper(function_node, context, apply_function_to_ast, std::move(arguments));
+    auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
     return dropMetricName(std::move(res), context);
 }
 

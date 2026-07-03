@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -279,9 +279,24 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
 void ColumnTuple::insertDefault()
 {
+    /// Must be exception-safe: if some nested column throws (e.g. on a memory limit),
+    /// the already modified nested columns have to be rolled back, otherwise the tuple
+    /// is left with nested columns of different sizes, which later leads to over-popping
+    /// in popBack during rollback of a partially read row.
+    size_t i = 0;
+    try
+    {
+        for (; i < columns.size(); ++i)
+            columns[i]->insertDefault();
+    }
+    catch (...)
+    {
+        for (size_t rollback = 0; rollback < i; ++rollback)
+            columns[rollback]->popBack(1);
+        throw;
+    }
+
     ++column_length;
-    for (auto & column : columns)
-        column->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
@@ -409,15 +424,46 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
         column->updateHashWithValue(n, hash);
 }
 
-WeakHash32 ColumnTuple::getWeakHash32() const
+void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    auto s = size();
-    WeakHash32 hash(s);
-
     for (const auto & column : columns)
-        hash.update(column->getWeakHash32());
+        column->updateHashWithValueRange(begin, end, hash);
+}
 
-    return hash;
+void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    const size_t n = row_end - row_begin;
+
+    if (columns.empty())
+    {
+        /// Empty tuple: a single fixed per-row hash (all bits set).
+        if (initial)
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        else
+            for (size_t i = 0; i < n; ++i)
+                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
+        return;
+    }
+
+    if (initial)
+    {
+        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        for (const auto & column : columns)
+            column->computeHashInto(row_begin, row_end, hash_out, false);
+        return;
+    }
+
+    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
+    /// single value into the prior key columns' hash (rather than streaming elements straight into
+    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
+    for (const auto & column : columns)
+        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
+    for (size_t i = 0; i < n; ++i)
+        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -586,7 +632,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res;
+        int res = 0;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -627,7 +673,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res;
+            int res = 0;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else
@@ -876,7 +922,7 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
     nested_source_columns.resize(columns.size());
@@ -891,14 +937,50 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const VectorWithMemoryTr
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
+        columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
+}
+
+
+bool ColumnTuple::hasStatistics() const
+{
+    for (const auto & column : columns)
+    {
+        if (column->hasStatistics())
+            return true;
+    }
+    return false;
+}
+
+void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+{
+    for (size_t i = 0; i != columns.size(); ++i)
+    {
+        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
+        elem_source_columns.reserve(source_columns.size());
+        for (const auto & source_column : source_columns)
+        {
+            if (!source_column)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
+
+            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
+            if (!source_tuple)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
+
+            elem_source_columns.push_back(source_tuple->columns[i]);
+        }
+
+        if (!columns[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
+
+        columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
+    }
 }
 
 void ColumnTuple::fixDynamicStructure()

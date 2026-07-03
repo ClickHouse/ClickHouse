@@ -44,4 +44,18 @@ enum class MergeTreeDynamicSerializationVersion : uint8_t
     V3,
 };
 
+enum class MergeTreeMapSerializationVersion : uint8_t
+{
+    BASIC = 0,
+    WITH_BUCKETS = 1,
+};
+
+enum class MergeTreeMapBucketsStrategy : uint8_t
+{
+    CONSTANT = 0,
+    SQRT = 1,
+    LINEAR = 2,
+};
+
+
 }

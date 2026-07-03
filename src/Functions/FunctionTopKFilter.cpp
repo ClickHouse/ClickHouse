@@ -1,3 +1,4 @@
+#include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -19,7 +20,7 @@ extern const int LOGICAL_ERROR;
 extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionTopKFilter : public IFunction
+class FunctionTopKFilter final : public IFunction
 {
 public:
     static constexpr auto name = "__topKFilter";
@@ -81,7 +82,7 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable())
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);

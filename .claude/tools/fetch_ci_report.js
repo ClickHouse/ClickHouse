@@ -16,7 +16,7 @@
  *   --all            Show all test results (not just summary)
  *   --links          Show artifact links
  *   --cidb           Show CIDB links for failed tests
- *   --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+ *   --download-logs [path]  Download logs to given path (default: /tmp/ci_logs.tar.gz or .tar.zst)
  *   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
  *   --credentials <user,password>  HTTP Basic Auth credentials (comma-separated). Only for ClickHouse_private repository
  *
@@ -34,7 +34,7 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const zlib = require('zlib');
 
 /**
@@ -217,12 +217,21 @@ function parseTestResults(jsonData) {
           test.links = result.links;
         }
 
-        // Extract CIDB links from ext.hlabels
-        if (result.ext && result.ext.hlabels) {
+        // Extract CIDB links from unified ext.labels (or legacy ext.hlabels).
+        if (result.ext) {
           const cidbLinks = [];
-          for (const hlabel of result.ext.hlabels) {
-            if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
-              cidbLinks.push(hlabel[1]);
+          if (Array.isArray(result.ext.labels)) {
+            for (const label of result.ext.labels) {
+              if (label && typeof label === 'object' && label.name === 'cidb' && label.link) {
+                cidbLinks.push(label.link);
+              }
+            }
+          }
+          if (Array.isArray(result.ext.hlabels)) {
+            for (const hlabel of result.ext.hlabels) {
+              if (Array.isArray(hlabel) && hlabel[0] === 'cidb' && hlabel[1]) {
+                cidbLinks.push(hlabel[1]);
+              }
             }
           }
           if (cidbLinks.length > 0) {
@@ -278,12 +287,21 @@ function extractArtifactLinks(jsonData) {
 
   extractFromResults(jsonData.results);
 
-  // Filter to only artifact links
-  return links.filter(link =>
-    link.href.includes('.tar.gz') ||
-    link.href.includes('.log') ||
-    link.href.includes('configs')
-  );
+  // Filter to artifact/log links; exclude json.html navigation links and raw binaries
+  return links.filter(link => {
+    const h = link.href;
+    // Exclude CI navigation/report links
+    if (h.includes('json.html')) return false;
+    // Include all log and archive formats
+    if (h.includes('.log') || h.includes('.log.zst')) return true;
+    if (h.includes('.tar.gz') || h.includes('.tar.zst') || h.includes('.tgz')) return true;
+    if (h.includes('.zst')) return true;
+    if (h.includes('.html') && !h.includes('json.html')) return true;
+    if (h.includes('.tsv')) return true;
+    if (h.includes('configs')) return true;
+    if (h.includes('artifact_report')) return true;
+    return false;
+  });
 }
 
 /**
@@ -618,17 +636,19 @@ async function fetchReport(inputUrl, options = {}) {
 
     // Download logs if requested
     if (options.downloadLogs) {
-      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz'));
+      const logsLink = artifactLinks.find(l => l.href.includes('logs.tar.gz') || l.href.includes('logs.tar.zst'));
       if (logsLink) {
         console.log(`\nDownloading logs from: ${logsLink.href}`);
-        const logsPath = '/tmp/ci_logs.tar.gz';
-        execSync(`curl -sL "${logsLink.href}" -o ${logsPath}`);
+        const ext = logsLink.href.endsWith('.zst') ? '.tar.zst' : '.tar.gz';
+        const logsPath = options.downloadLogs !== true ? options.downloadLogs : `/tmp/ci_logs${ext}`;
+        execFileSync('curl', ['-sL', logsLink.href, '-o', logsPath]);
         console.log(`Logs saved to: ${logsPath}`);
 
-        // List contents
+        // List contents (tar auto-detects compression format with -tf)
         try {
           console.log('\nLogs archive contents (pytest logs):');
-          const contents = execSync(`tar -tzf ${logsPath} | grep -E "pytest.*\\.log$|pytest.*\\.jsonl$" | head -20`).toString();
+          const listing = execFileSync('tar', ['-tf', logsPath]).toString();
+          const contents = listing.split('\n').filter(l => /pytest.*\.(log|jsonl)$/.test(l)).slice(0, 20).join('\n');
           console.log(contents || '(no pytest logs found)');
         } catch (e) {
           // Ignore errors from grep/head
@@ -664,7 +684,7 @@ Options:
   --all            Show all test results (not just summary)
   --links          Show artifact links
   --cidb           Show CIDB links for failed tests
-  --download-logs  Download logs.tar.gz to /tmp/ci_logs.tar.gz
+  --download-logs [path]  Download logs to path (default: /tmp/ci_logs.tar.{gz,zst})
   --report <number> For PR URLs: fetch only one specific report (default: fetch all)
   --credentials <user,password>  HTTP Basic Auth credentials
 
@@ -709,7 +729,12 @@ Examples:
         options.showCidb = true;
         break;
       case '--download-logs':
-        options.downloadLogs = true;
+        // Optional path argument: if next arg doesn't start with -- and isn't a URL, use it as path
+        if (i + 1 < args.length && !args[i + 1].startsWith('--') && !args[i + 1].startsWith('http')) {
+          options.downloadLogs = args[++i];
+        } else {
+          options.downloadLogs = true;
+        }
         break;
       case '--report':
         options.reportIndex = args[++i];

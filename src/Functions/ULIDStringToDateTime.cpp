@@ -29,7 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionULIDStringToDateTime : public IFunction
+class FunctionULIDStringToDateTime final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;
@@ -147,6 +147,18 @@ public:
 
     static DateTime64 decode(const UInt8 * data)
     {
+        /// Validate that all bytes are ASCII before passing to ulid_decode,
+        /// which uses char values as array indices. Signed chars with values
+        /// >= 128 would produce negative indices and out-of-bounds reads.
+        for (size_t i = 0; i < ULID_LENGTH; ++i)
+        {
+            if (data[i] >= 128)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse ULID: non-ASCII character at position {}",
+                    i);
+        }
+
         unsigned char buffer[16];
         int ret = ulid_decode(buffer, reinterpret_cast<const char *>(data));
         if (ret != 0)

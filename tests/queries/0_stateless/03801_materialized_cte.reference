@@ -1,108 +1,108 @@
-QUERY id: 0
+QUERY id: N
   PROJECTION COLUMNS
     name String
   PROJECTION
-    LIST id: 1, nodes: 1
-      COLUMN id: 2, column_name: name, result_type: String, source_id: 3
+    LIST id: N, nodes: 1
+      COLUMN id: N, column_name: name, result_type: String, source_id: N
   JOIN TREE
-    QUERY id: 3, alias: __table1, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+    QUERY id: N, alias: __table1, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
       PROJECTION COLUMNS
         name String
       PROJECTION
-        LIST id: 4, nodes: 1
-          COLUMN id: 5, column_name: name, result_type: String, source_id: 6
+        LIST id: N, nodes: 1
+          COLUMN id: N, column_name: name, result_type: String, source_id: N
       JOIN TREE
-        TABLE id: 6, alias: __table2, table_name: default.users
-QUERY id: 0
+        TABLE id: N, alias: __table2, table_name: default.users
+QUERY id: N
   PROJECTION COLUMNS
     count() UInt64
   PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+    LIST id: N, nodes: 1
+      FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    JOIN id: 3, strictness: ALL, kind: INNER
+    JOIN id: N, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+        TABLE id: N, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
-            QUERY id: 5, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+            QUERY id: N, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
                 uid Int16
                 name String
                 age Int16
               PROJECTION
-                LIST id: 6, nodes: 3
-                  COLUMN id: 7, column_name: uid, result_type: Int16, source_id: 8
-                  COLUMN id: 9, column_name: name, result_type: String, source_id: 8
-                  COLUMN id: 10, column_name: age, result_type: Int16, source_id: 8
+                LIST id: N, nodes: 3
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  COLUMN id: N, column_name: name, result_type: String, source_id: N
+                  COLUMN id: N, column_name: age, result_type: Int16, source_id: N
               JOIN TREE
-                TABLE id: 8, alias: __table3, table_name: default.users
+                TABLE id: N, alias: __table3, table_name: default.users
       RIGHT TABLE EXPRESSION
-        TABLE id: 11, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+        TABLE id: N, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
-            QUERY id: 12, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+            QUERY id: N, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
                 uid Int16
                 name String
                 age Int16
               PROJECTION
-                LIST id: 13, nodes: 3
-                  COLUMN id: 14, column_name: uid, result_type: Int16, source_id: 15
-                  COLUMN id: 16, column_name: name, result_type: String, source_id: 15
-                  COLUMN id: 17, column_name: age, result_type: Int16, source_id: 15
+                LIST id: N, nodes: 3
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  COLUMN id: N, column_name: name, result_type: String, source_id: N
+                  COLUMN id: N, column_name: age, result_type: Int16, source_id: N
               JOIN TREE
-                TABLE id: 15, alias: __table6, table_name: default.users
+                TABLE id: N, alias: __table6, table_name: default.users
       JOIN EXPRESSION
-        FUNCTION id: 18, function_name: equals, function_type: ordinary, result_type: UInt8
+        FUNCTION id: N, function_name: equals, function_type: ordinary, result_type: UInt8
           ARGUMENTS
-            LIST id: 19, nodes: 2
-              COLUMN id: 20, column_name: uid, result_type: Int16, source_id: 4
-              COLUMN id: 21, column_name: uid, result_type: Int16, source_id: 11
-QUERY id: 0
+            LIST id: N, nodes: 2
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+QUERY id: N
   PROJECTION COLUMNS
     count() UInt64
   PROJECTION
-    LIST id: 1, nodes: 1
-      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+    LIST id: N, nodes: 1
+      FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
-    JOIN id: 3, strictness: ALL, kind: INNER
+    JOIN id: N, strictness: ALL, kind: INNER
       LEFT TABLE EXPRESSION
-        TABLE id: 4, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+        TABLE id: N, alias: __table1, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
-            QUERY id: 5, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+            QUERY id: N, alias: __table2, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
                 uid Int16
                 count() UInt64
               PROJECTION
-                LIST id: 6, nodes: 2
-                  COLUMN id: 7, column_name: uid, result_type: Int16, source_id: 8
-                  FUNCTION id: 9, function_name: count, function_type: aggregate, result_type: UInt64
+                LIST id: N, nodes: 2
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
               JOIN TREE
-                TABLE id: 8, alias: __table3, table_name: default.users
+                TABLE id: N, alias: __table3, table_name: default.users
               GROUP BY
-                LIST id: 10, nodes: 1
-                  COLUMN id: 11, column_name: uid, result_type: Int16, source_id: 8
+                LIST id: N, nodes: 1
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
       RIGHT TABLE EXPRESSION
-        TABLE id: 12, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
+        TABLE id: N, alias: __table4, table_name: _temporary_and_external_tables._tmp_UNIQ_ID, temporary_table_name: _materialized_cte_UNIQ_ID
           MATERIALIZED CTE SUBQUERY
-            QUERY id: 13, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
+            QUERY id: N, alias: __table5, is_subquery: 1, is_cte: 1, is_materialized: 1, cte_name: a
               PROJECTION COLUMNS
                 uid Int16
                 count() UInt64
               PROJECTION
-                LIST id: 14, nodes: 2
-                  COLUMN id: 15, column_name: uid, result_type: Int16, source_id: 16
-                  FUNCTION id: 17, function_name: count, function_type: aggregate, result_type: UInt64
+                LIST id: N, nodes: 2
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+                  FUNCTION id: N, function_name: count, function_type: aggregate, result_type: UInt64
               JOIN TREE
-                TABLE id: 16, alias: __table6, table_name: default.users
+                TABLE id: N, alias: __table6, table_name: default.users
               GROUP BY
-                LIST id: 18, nodes: 1
-                  COLUMN id: 19, column_name: uid, result_type: Int16, source_id: 16
+                LIST id: N, nodes: 1
+                  COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
       JOIN EXPRESSION
-        FUNCTION id: 20, function_name: equals, function_type: ordinary, result_type: UInt8
+        FUNCTION id: N, function_name: equals, function_type: ordinary, result_type: UInt8
           ARGUMENTS
-            LIST id: 21, nodes: 2
-              COLUMN id: 22, column_name: uid, result_type: Int16, source_id: 4
-              COLUMN id: 23, column_name: uid, result_type: Int16, source_id: 12
+            LIST id: N, nodes: 2
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
+              COLUMN id: N, column_name: uid, result_type: Int16, source_id: N
 MaterializingCTEs (Materialize CTEs before main query execution)
 Header: count() UInt64
   Expression ((Project names + Projection))

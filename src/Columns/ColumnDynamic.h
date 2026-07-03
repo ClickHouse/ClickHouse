@@ -5,7 +5,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
-#include <Common/WeakHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -37,16 +36,6 @@ public:
 
     struct Statistics
     {
-        enum class Source
-        {
-            READ,  /// Statistics were loaded into column during reading from MergeTree.
-            MERGE, /// Statistics were calculated during merge of several MergeTree parts.
-        };
-
-        explicit Statistics(Source source_) : source(source_) {}
-
-        /// Source of the statistics.
-        Source source;
         /// Statistics data for usual variants: (variant name) -> (total variant size in data part).
         UnorderedMapWithMemoryTracking<String, size_t> variants_statistics;
         /// Statistics data for variants from shared variant: (variant name) -> (total variant size in data part).
@@ -202,9 +191,18 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override
+    /// Used for deduplication: hashes the raw in-memory representation of the variant column.
+    /// The hash is the same for the same INSERT data, but NOT necessarily the same for
+    /// logically equivalent data with different variant layouts (e.g. value stored in a typed
+    /// variant vs the shared variant).
+    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
+
+    /// Weak hash of the raw variant storage. Like `updateHashWithValueRange`, this is NOT guaranteed
+    /// to be equal for logically equal values stored with different variant layouts (typed variant
+    /// vs the shared variant); the in-memory scatter consumers only need fast per-query partitioning.
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override
     {
-        return variant_column_ptr->getWeakHash32();
+        variant_column_ptr->computeHashInto(row_begin, row_end, hash_out, initial);
     }
 
     void updateHashFast(SipHash & hash) const override
@@ -214,7 +212,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
-        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     void filter(const Filter & filt) override
@@ -235,12 +233,12 @@ public:
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->index(indexes, limit), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override
     {
-        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
+        return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types, statistics);
     }
 
     VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override
@@ -249,7 +247,7 @@ public:
         VectorWithMemoryTracking<MutableColumnPtr> scattered_columns;
         scattered_columns.reserve(num_columns);
         for (auto & scattered_variant_column : scattered_variant_columns)
-            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types));
+            scattered_columns.emplace_back(create(std::move(scattered_variant_column), variant_info, max_dynamic_types, global_max_dynamic_types, statistics));
 
         return scattered_columns;
     }
@@ -389,7 +387,9 @@ public:
 
     /// Apply null map to a nested Variant column.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 
@@ -404,12 +404,15 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
+    StatisticsPtr getOrCalculateStatistics() const;
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    bool hasStatistics() const override { return true; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getGlobalMaxDynamicTypes() const { return global_max_dynamic_types; }
@@ -489,7 +492,7 @@ private:
     /// Store and use pointer to ColumnVariant to avoid virtual calls.
     /// ColumnDynamic is widely used inside ColumnObject for each path and
     /// with hundreds of paths these virtual calls are noticeable.
-    ColumnVariant * variant_column_ptr;
+    ColumnVariant * variant_column_ptr{};
     /// Store the type of current variant with some additional information.
     VariantInfo variant_info;
     /// The maximum number of different types that can be stored in this Dynamic column.
@@ -499,12 +502,12 @@ private:
     size_t max_dynamic_types;
     /// The types limit specified in the data type by the user Dynamic(max_types=N).
     /// max_dynamic_types in all column instances of this Dynamic type can be only smaller
-    /// (for example, max_dynamic_types can be reduced in takeDynamicStructureFromSourceColumns
-    /// before merge of different Dynamic columns).
+    /// (for example, max_dynamic_types can be reduced in `chooseDynamicStructureForMerge`
+    /// or `takeExactDynamicStructureFrom` before merge of different Dynamic columns).
     size_t global_max_dynamic_types;
 
     /// Size statistics of each variants from MergeTree data part.
-    /// Used in takeDynamicStructureFromSourceColumns and set during deserialization.
+    /// Used in `chooseDynamicStructureForMerge` and set during deserialization.
     StatisticsPtr statistics;
 
     /// Cache (Variant name) -> (global discriminators mapping from this variant to current variant in Dynamic column).

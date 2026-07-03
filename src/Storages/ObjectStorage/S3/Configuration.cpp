@@ -45,6 +45,7 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
+    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace S3AuthSetting
@@ -58,6 +59,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -106,9 +108,11 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_strategy",
     "partition_columns_in_data_file",
     "storage_class_name",
+    "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
+    "external_id", /// for extra_credentials
     "http_client", /// For GCP
     "metadata_service", /// For GCP
     "service_account", /// For GCP
@@ -197,12 +201,14 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         url = S3::URI(
             std::filesystem::path(collection.get<String>("url")) / filename,
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+            /*uri_style*/ settings[Setting::s3_uri_style]);
     else
         url = S3::URI(
             collection.get<String>("url"),
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
+            /*uri_style*/ settings[Setting::s3_uri_style]);
 
     const auto & config = context->getConfigRef();
 
@@ -238,10 +244,16 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>(
-        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    if (collection.has("partition_columns_in_data_file"))
+    {
+        partition_columns_in_data_file = collection.get<bool>("partition_columns_in_data_file");
+        partition_columns_in_data_file_was_set = true;
+    }
+    else
+        partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
+    s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
@@ -317,6 +329,8 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
+        else if (arg_name == "external_id")
+            auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }
@@ -327,6 +341,12 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto object_storage = disk->getObjectStorage();
+    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
+    /// `assert_cast` checks `typeid` exactly, so calling it on a wrapper would throw a
+    /// LOGICAL_ERROR even though the wrapper exposes the same interface and ultimately
+    /// holds an `S3ObjectStorage`. See https://github.com/ClickHouse/ClickHouse/issues/89300.
+    while (auto inner = object_storage->getUnderlying())
+        object_storage = std::move(inner);
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
@@ -345,6 +365,33 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
+}
+
+namespace
+{
+
+/// Whether an ambiguous positional literal is a partition strategy (vs a compression method). Exact enum
+/// spellings (incl. uppercase `NONE`) match for backward compatibility; matching is also case-insensitive
+/// for real strategies (`hive`), but lowercase `none` is left to mean the `compression_method`.
+bool looksLikeExplicitPartitionStrategy(const String & arg)
+{
+    if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(arg))
+        return true;
+    const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
+    return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
+}
+
+/// Whether a positional argument is a bool literal (`partition_columns_in_data_file`) rather than a
+/// `partition_strategy` string. Matches `checkAndGetLiteralArgument<bool>`: a `Bool` or a `UInt64`.
+bool looksLikeBoolArgument(const ASTPtr & arg)
+{
+    const auto * literal = arg ? arg->as<ASTLiteral>() : nullptr;
+    if (!literal)
+        return false;
+    const auto type = literal->value.getType();
+    return type == Field::Types::Which::Bool || type == Field::Types::Which::UInt64;
+}
+
 }
 
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -539,7 +586,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            if (looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -564,7 +611,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            /// A bool last argument means args[6] is the partition strategy; otherwise inspect args[6].
+            /// This keeps the valid `(..., 'NONE', 1)` form working.
+            if (looksLikeBoolArgument(args[7]) || looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
@@ -600,7 +649,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     url = S3::URI(
         checkAndGetLiteralArgument<String>(args[0], "url"),
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
+        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -613,6 +663,12 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
+
+    /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
+    s3_settings->request_settings.updateFromSettings(
+        context->getSettingsRef(),
+        /* if_changed */ true,
+        context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())
@@ -650,6 +706,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         partition_columns_in_data_file_value.has_value())
     {
         partition_columns_in_data_file = partition_columns_in_data_file_value.value();
+        partition_columns_in_data_file_was_set = true;
     }
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
@@ -682,8 +739,11 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
     }
 
-    if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
-        storage_class_name.has_value())
+    /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+    auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
+    if (!storage_class_name.has_value())
+        storage_class_name = getFromPositionOrKeyValue<String>("storage_class", args, {}, key_value_args);
+    if (storage_class_name.has_value())
     {
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
@@ -737,7 +797,10 @@ static void addStructureAndFormatToArgsIfNeededS3(
         if (count > max_number_of_arguments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Expected 1 to {} arguments in table function s3, got {}",
+                max_number_of_arguments,
+                count);
         }
 
         auto format_literal = make_intrusive<ASTLiteral>(format_);
@@ -1009,7 +1072,7 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     parsed_arguments.fromAST(args, context, with_structure);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
-    assert(s3_settings != nullptr);
+    chassert(s3_settings != nullptr);
     if (!biglake_adc_client_id.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";

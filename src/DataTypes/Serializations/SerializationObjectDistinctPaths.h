@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 
-
 namespace DB
 {
 
@@ -16,8 +15,16 @@ namespace ErrorCodes
 /// It reads only streams that contain path names.
 class SerializationObjectDistinctPaths final : public SimpleTextSerialization
 {
-public:
+private:
     explicit SerializationObjectDistinctPaths(const std::vector<String> & typed_paths_);
+
+public:
+    static UInt128 getHash(const std::vector<String> & typed_paths_);
+
+    static SerializationPtr create(const std::vector<String> & typed_paths_);
+
+    size_t allocatedBytes() const override;
+    bool supportsPooling() const override { return shared_data_paths_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

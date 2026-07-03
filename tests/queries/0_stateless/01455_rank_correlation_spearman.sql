@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 
-CREATE DATABASE IF NOT EXISTS db_01455_rank_correlation;
-USE db_01455_rank_correlation;
+CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
 
@@ -26,6 +26,6 @@ SELECT roundBankers(rankCorr(a, b), 3) from circles;
 
 DROP TABLE IF EXISTS moons;
 DROP TABLE IF EXISTS circles;
-DROP DATABASE IF EXISTS db_01455_rank_correlation;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
 

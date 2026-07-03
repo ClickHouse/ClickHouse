@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -34,9 +35,9 @@ namespace Format
     static inline void init(
         const String & pattern,
         size_t argument_number,
-        const std::vector<std::optional<String>> & constant_strings,
+        const VectorWithMemoryTracking<std::optional<String>> & constant_strings,
         IndexPositions & index_positions,
-        std::vector<String> & substrings)
+        VectorWithMemoryTracking<String> & substrings)
     {
         /// Is current position after open curly brace.
         bool is_open_curly = false;

@@ -18,7 +18,6 @@ struct StorageSnapshot
 {
     const IStorage & storage;
     const StorageMetadataPtr metadata;
-    const VirtualsDescriptionPtr virtual_columns;
 
     /// Additional data, on which set of columns may depend.
     /// E.g. data parts in MergeTree, list of blocks in Memory, etc.
@@ -37,17 +36,6 @@ struct StorageSnapshot
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_,
-        VirtualsDescriptionPtr virtual_columns_);
-
-    StorageSnapshot(
-        const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        DataPtr data_);
-
-    StorageSnapshot(
-        const IStorage & storage_,
-        StorageMetadataPtr metadata_,
-        VirtualsDescriptionPtr virtual_columns_,
         DataPtr data_);
 
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;

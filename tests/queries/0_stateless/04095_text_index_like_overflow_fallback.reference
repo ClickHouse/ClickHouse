@@ -1,0 +1,15 @@
+LIKE with overflow
+3995
+3995
+broad LIKE with overflow
+100000
+100000
+LIKE without overflow
+3995
+3995
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%pa%\' SETTINGS text_index_like_max_postings_to_read = 5;	1
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%pa%\' SETTINGS use_skip_indexes = 0;	0
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%p%\' SETTINGS text_index_like_max_postings_to_read = 5;	1
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%p%\' SETTINGS use_skip_indexes = 0;	0
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%pa%\' SETTINGS text_index_like_max_postings_to_read = 10000;	0
+SELECT count() FROM t_text_index_like_overflow WHERE message LIKE \'%pa%\' SETTINGS use_skip_indexes = 0;	0

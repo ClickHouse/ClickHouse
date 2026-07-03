@@ -4,7 +4,6 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/WeakHash.h>
 #include <IO/BufferWithOwnMemory.h>
 
 
@@ -32,7 +31,7 @@ namespace ErrorCodes
   *
   * Also in-memory compression allows to keep more data in RAM.
   */
-class ColumnCompressed : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
+class ColumnCompressed final : public COWHelper<IColumnHelper<ColumnCompressed>, ColumnCompressed>
 {
 public:
     using Lazy = std::function<ColumnPtr()>;
@@ -103,7 +102,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
     void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
-    WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
+    void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
     void filter(const Filter &) override { throwMustBeDecompressed(); }
@@ -137,8 +136,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeDecompressed(); }
 
     bool hasDynamicStructure() const override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromSourceColumns(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
-    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwMustBeDecompressed(); }
+    void takeExactDynamicStructureFrom(const IColumn &) override { throwMustBeDecompressed(); }
+    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwMustBeDecompressed(); }
     void fixDynamicStructure() override { throwMustBeDecompressed(); }
 
 protected:

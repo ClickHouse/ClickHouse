@@ -86,9 +86,26 @@ public:
 
     virtual bool canSkipMark(size_t, size_t) { return false; }
 
+    /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
+    /// Independent of any particular mark index. Used by callers that need to know upfront whether
+    /// the reader chain may filter marks before the PREWHERE step runs — for example, to decide
+    /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
+    virtual bool canSkipAnyMark() const { return false; }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
+    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
+
 protected:
+    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
+    /// propagated. Used when compiling default or virtual-column expressions at read time.
+    ContextPtr createContextForDefaultExpressions() const;
+
+    /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
+    /// columns that carry a default expression. Required by evaluateMissingDefaults so that it can
+    /// resolve default expressions for virtual columns.
+    ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
+
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
@@ -189,5 +206,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    bool can_skip_mark);
+    const IndexGranulesMap & index_granules);
 }

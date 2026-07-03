@@ -57,7 +57,7 @@ struct AbsImpl
         }
         else if (type->isDoubleTy() || type->isFloatTy())
         {
-            auto * func_fabs = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::fabs, {type});
+            auto * func_fabs = llvm::Intrinsic::getOrInsertDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::fabs, {type});
             return b.CreateCall(func_fabs, {arg});
         }
         else

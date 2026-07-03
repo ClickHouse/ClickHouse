@@ -7,8 +7,6 @@ title: 'Replicated* table engines'
 doc_type: 'reference'
 ---
 
-# Replicated* table engines
-
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
 
@@ -26,15 +24,16 @@ ENGINE = ReplicatedMergeTree
 ```
 :::
 
-Replication is only supported for tables in the MergeTree family:
+Replication is only supported for tables in the MergeTree family
 
-- ReplicatedMergeTree
 - ReplicatedSummingMergeTree
+- ReplicatedCoalescingMergeTree
+- ReplicatedVersionedCollapsingMergeTree
+- ReplicatedCollapsingMergeTree
+- ReplicatedGraphiteMergeTree
+- ReplicatedMergeTree
 - ReplicatedReplacingMergeTree
 - ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
@@ -187,7 +186,7 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the [macros](/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
+As the example shows, these parameters can contain substitutions in `{}`. The substituted values are taken from the [macros](/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
 
 Example:
 

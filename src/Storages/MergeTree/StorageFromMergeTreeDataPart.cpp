@@ -45,10 +45,4 @@ void StorageFromMergeTreeDataPart::read(
         analysis_result_ptr));
 }
 
-StorageSnapshotPtr
-StorageFromMergeTreeDataPart::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
-{
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-}
-
 }

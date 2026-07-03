@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -12,6 +11,7 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnSparse.h>
@@ -145,41 +145,30 @@ Columns indexColumns(const Columns & columns, const PaddedPODArray<UInt64> & ind
     return new_columns;
 }
 
-bool ALWAYS_INLINE sameNext(const FullMergeJoinCursor & impl)
+size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 {
-    if (impl.isLast())
-        return false;
+    chassert(impl.isValid());
+    const size_t start_pos = impl.getRow();
+    size_t run_end = impl.rows;
 
-    size_t pos = impl.getRow();
+    /// Find the end of the run of rows that share the same (multi-column) key, starting at start_pos.
     for (size_t i = 0; i < impl.sort_columns.size(); ++i)
     {
         const auto * nm = getNullMapData(impl.null_maps[i]);
-        if (nm && ((*nm)[pos] != (*nm)[pos + 1]))
-            return false;
+        const bool ref_is_null = nm && (*nm)[start_pos] != 0;
 
-        if (nm && (*nm)[pos])
-            continue;
+        if (nm)
+            run_end = findEqualRangeEndAssumeSorted(start_pos, run_end, 16, [&](size_t row) { return ((*nm)[row] != 0) == ref_is_null; });
 
-        const auto & col = *impl.sort_columns[i];
-        if (auto cmp = col.compareAt(pos, pos + 1, col, 1); cmp != 0)
-            return false;
+        if (!ref_is_null)
+            run_end = impl.sort_columns[i]->getEqualRangeEndAssumeSorted(start_pos, run_end, 1);
+
+        if (run_end <= start_pos + 1)
+            break;
     }
-    return true;
-}
 
-size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
-{
-    assert(impl.isValid());
-    size_t start_pos = impl.getRow();
-    while (sameNext(impl))
-    {
-        impl.next();
-    }
-    impl.next();
-
-    if (impl.isValid())
-        return impl.getRow() - start_pos;
-    return impl.rows - start_pos;
+    impl.pos = run_end;
+    return run_end - start_pos;
 }
 
 ColumnPtr replicateRow(const IColumn & column, size_t num)
@@ -207,7 +196,7 @@ void copyColumnsResized(const TColumns & cols, size_t start, size_t size, Chunk 
         else
         {
             /// cut column
-            assert(start + size <= col->size());
+            chassert(start + size <= col->size());
             result_chunk.addColumn(col->cut(start, size));
         }
     }
@@ -230,7 +219,7 @@ Chunk getRowFromChunk(const Chunk & chunk, size_t pos)
 
 void inline addRange(PaddedPODArray<UInt64> & values, UInt64 start, UInt64 end)
 {
-    assert(end > start);
+    chassert(end > start);
     for (UInt64 i = start; i < end; ++i)
         values.push_back(i);
 }
@@ -544,7 +533,7 @@ struct AllJoinImpl
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
         int cmp = 0;
-        assert(left_cursor.isValid() && right_cursor.isValid());
+        chassert(left_cursor.isValid() && right_cursor.isValid());
         while (left_cursor.isValid() && right_cursor.isValid())
         {
             lpos = left_cursor.getRow();
@@ -569,7 +558,7 @@ struct AllJoinImpl
                 }
                 else
                 {
-                    assert(state == nullptr);
+                    chassert(state == nullptr);
                     state = std::make_unique<AllJoinState>(left_cursor, lpos, right_cursor, rpos);
                     state->addRange(0, left_cursor.getCurrent().clone(), lpos, lnum);
                     state->addRange(1, right_cursor.getCurrent().clone(), rpos, rnum);
@@ -653,7 +642,7 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAllJoinState
 
     if (all_join_state)
     {
-        assert(cursors.size() == 2);
+        chassert(cursors.size() == 2);
         /// Accumulate blocks with same key in all_join_state
         for (size_t i = 0; i < 2; ++i)
         {
@@ -755,7 +744,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::allJoin()
     PaddedPODArray<UInt64> idx_map[2];
 
     dispatchKind<AllJoinImpl>(kind, cursors[0], cursors[1], max_block_size, idx_map[0], idx_map[1], all_join_state, null_direction_hint);
-    assert(idx_map[0].size() == idx_map[1].size());
+    chassert(idx_map[0].size() == idx_map[1].size());
 
     Chunk result;
 
@@ -816,7 +805,7 @@ struct AnyJoinImpl
                      AnyJoinState & any_join_state,
                      int null_direction_hint)
     {
-        assert(enabled);
+        chassert(enabled);
 
         size_t num_rows = isLeft(kind) ? left_cursor.rowsLeft() :
                           isRight(kind) ? right_cursor.rowsLeft() :
@@ -830,7 +819,7 @@ struct AnyJoinImpl
 
         size_t rpos = std::numeric_limits<size_t>::max();
         size_t lpos = std::numeric_limits<size_t>::max();
-        assert(left_cursor.isValid() && right_cursor.isValid());
+        chassert(left_cursor.isValid() && right_cursor.isValid());
         int cmp = 0;
         while (left_cursor.isValid() && right_cursor.isValid())
         {
@@ -957,7 +946,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::anyJoin()
 
     dispatchKind<AnyJoinImpl>(kind, cursors[0], cursors[1], idx_map[0], idx_map[1], any_join_state, null_direction_hint);
 
-    assert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
+    chassert(idx_map[0].empty() || idx_map[1].empty() || idx_map[0].size() == idx_map[1].size());
     size_t num_result_rows = std::max(idx_map[0].size(), idx_map[1].size());
 
     /// build result block from indices

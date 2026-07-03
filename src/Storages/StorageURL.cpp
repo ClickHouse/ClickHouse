@@ -1,22 +1,30 @@
 #include <Storages/StorageURL.h>
+#include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
+#include <boost/algorithm/string/predicate.hpp>
+#include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -30,6 +38,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -52,6 +61,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Timestamp.h>
 
 namespace ProfileEvents
 {
@@ -62,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -79,6 +90,7 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsString url_base;
 }
 
 namespace ErrorCodes
@@ -87,6 +99,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -110,10 +123,37 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
+namespace
+{
+    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
+    {
+        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+            return;
+
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Wildcard expansion for `ENGINE = URL` from HTTP index pages is experimental. "
+            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+    }
+}
+
 
 bool urlWithGlobs(const String & uri)
 {
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
+}
+
+bool urlPathHasListableGlobs(std::string_view uri)
+{
+    const size_t scheme_pos = uri.find("://");
+    const size_t authority_start = (scheme_pos == std::string_view::npos) ? 0 : scheme_pos + 3;
+    const size_t path_start = uri.find('/', authority_start);
+    if (path_start == std::string_view::npos)
+        return false;
+
+    const size_t path_end = uri.find_first_of("?#", path_start);
+    const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
+    return path.contains('*');
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -211,10 +251,11 @@ IStorageURLBase::IStorageURLBase(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
-    setVirtuals(virtual_columns_desc);
+    storage_metadata.setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -304,16 +345,7 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
 {
-    const auto & user_info = request_uri.getUserInfo();
-    if (!user_info.empty())
-    {
-        std::size_t n = user_info.find(':');
-        if (n != std::string::npos)
-        {
-            credentials.setUsername(user_info.substr(0, n));
-            credentials.setPassword(user_info.substr(n + 1));
-        }
-    }
+    setCredentialsFromURL(credentials, request_uri);
 }
 
 StorageURLSource::StorageURLSource(
@@ -333,7 +365,8 @@ StorageURLSource::StorageURLSource(
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
-    bool need_only_count_)
+    bool need_only_count_,
+    StorageID storage_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -349,6 +382,7 @@ StorageURLSource::StorageURLSource(
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -381,7 +415,7 @@ StorageURLSource::StorageURLSource(
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
         curr_uri = uri_and_buf.first;
-        auto last_mod_time = uri_and_buf.second->tryGetLastModificationTime();
+        current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
@@ -391,7 +425,7 @@ StorageURLSource::StorageURLSource(
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
         if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
-            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), last_mod_time);
+            num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
         {
@@ -485,7 +519,9 @@ Chunk StorageURLSource::generate()
                 HivePartitioningUtils::addPartitionColumnsToChunk(
                     chunk,
                     hive_partition_columns_to_read_from_file_path,
-                    path);
+                    path,
+                    format_settings,
+                    getContext());
             }
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -493,9 +529,14 @@ Chunk StorageURLSource::generate()
                 requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
+                    .storage_id = storage_id,
                     .size = current_file_size,
+                    .last_modified = current_file_last_modified
+                        ? std::optional<Poco::Timestamp>(Poco::Timestamp::fromEpochTime(*current_file_last_modified))
+                        : std::nullopt,
                 },
-                getContext());
+                getContext(),
+                format_settings);
 
             chassert(dynamic_cast<ReadWriteBufferFromHTTP *>(read_buf.get()));
             if (need_headers_virtual_column)
@@ -529,6 +570,8 @@ Chunk StorageURLSource::generate()
     return {};
 }
 
+void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
+
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
@@ -549,7 +592,7 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
     for (; option != end; ++option)
     {
-        bool skip_url_not_found_error = glob_url && read_settings.http_skip_not_found_url_for_globs && option == std::prev(end);
+        bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
         for (const auto & [param, value] : params)
@@ -810,10 +853,10 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
-    class ReadBufferIterator : public IReadBufferIterator, WithContext
+    class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
-        ReadBufferIterator(
+        URLReadBufferIterator(
             const std::vector<String> & urls_to_check_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
@@ -1034,6 +1077,12 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const ContextPtr & context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
+    /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
+    /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
+    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    HTTPHeaderEntries headers_to_check(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1043,7 +1092,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1087,12 +1136,14 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr()->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
@@ -1112,6 +1163,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
+    bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
     ReadFromURL(
         const Names & column_names_,
@@ -1168,6 +1220,12 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
+    if (boost::iequals(storage->format_name, "Parquet") || boost::iequals(storage->format_name, "ORC"))
+        prepareEagerKeyConditionSets(
+            filter_actions_dag,
+            storage_snapshot, info.source_header,
+            query_info.prewhere_info, query_info.row_level_filter, getContext());
+
     createIterator(predicate);
 }
 
@@ -1189,7 +1247,8 @@ void IStorageURLBase::read(
     size_t num_streams)
 {
     if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
@@ -1270,7 +1329,7 @@ void ReadFromURL::createIterator(const ActionsDAG::Node * predicate)
     else if (is_url_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage->getVirtualsList(), info.hive_partition_columns_to_read_from_file_path, context);
+        auto glob_iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(storage->uri, max_addresses, predicate, storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), info.hive_partition_columns_to_read_from_file_path, context);
 
         /// check if we filtered out all the paths
         if (glob_iterator->size() == 0)
@@ -1338,7 +1397,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             storage->headers,
             read_uri_params,
             is_url_with_globs,
-            need_only_count);
+            need_only_count,
+            storage->getStorageID());
 
         pipes.emplace_back(std::move(source));
     }
@@ -1670,9 +1730,258 @@ void StorageURL::processNamedCollectionResult(Configuration & configuration, con
     configuration.structure = collection.getOrDefault<String>("structure", "auto");
 }
 
+/// RFC 3986 Section 5.2.4: Remove dot segments ("." and "..") from an absolute path.
+/// E.g. "/dir/../a.csv" → "/a.csv", "/dir/./a.csv" → "/dir/a.csv".
+static String removeDotSegments(const String & path)
+{
+    /// Fast path: no dot segments present.
+    if (path.find("/.") == String::npos)
+        return path;
+
+    /// Split the path into segments and process each one.
+    std::vector<String> segments;
+    size_t pos = 0;
+
+    while (pos < path.size())
+    {
+        /// Each segment runs from a '/' to the next '/' (exclusive) or end of string.
+        size_t next = path.find('/', pos + 1);
+        if (next == String::npos)
+            next = path.size();
+
+        String segment = path.substr(pos, next - pos);
+        pos = next;
+
+        if (segment == "/.")
+        {
+            /// Current-directory segment: skip, but preserve trailing slash at end of path.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else if (segment == "/..")
+        {
+            /// Parent-directory segment: go up one level.
+            if (!segments.empty())
+                segments.pop_back();
+            /// At end of path, preserve trailing slash.
+            if (pos == path.size())
+                segments.emplace_back("/");
+        }
+        else
+        {
+            segments.push_back(std::move(segment));
+        }
+    }
+
+    if (segments.empty())
+        return "/";
+
+    String result;
+    for (const auto & seg : segments)
+        result += seg;
+    return result;
+}
+
+/// Apply dot-segment normalization to the path portion of a full URL.
+/// The authority_start parameter is the position right after "://".
+static String normalizeDotSegmentsInURL(const String & url, size_t authority_start)
+{
+    /// Find where the path starts (first '/' after the authority).
+    auto path_start = url.find('/', authority_start);
+    if (path_start == String::npos)
+        return url;
+
+    /// Find where the path ends (before '?' or '#').
+    size_t path_end = url.size();
+    for (size_t i = path_start; i < url.size(); ++i)
+    {
+        if (url[i] == '?' || url[i] == '#')
+        {
+            path_end = i;
+            break;
+        }
+    }
+
+    String path = url.substr(path_start, path_end - path_start);
+
+    /// Fast check: no dot segments.
+    if (path.find("/.") == String::npos)
+        return url;
+
+    String normalized = removeDotSegments(path);
+    return url.substr(0, path_start) + normalized + url.substr(path_end);
+}
+
+/// Returns true if the URL has a userinfo component (`user[:password]@`) in its authority part.
+/// Used to avoid persisting credentials into the CREATE TABLE AST when materializing a URL
+/// resolved through `url_base`.
+static bool urlHasUserInfo(const String & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == String::npos)
+        return false;
+    auto authority_start = scheme_end + 3;
+    auto authority_end = url.find_first_of("/?#", authority_start);
+    auto at_pos = url.find('@', authority_start);
+    if (at_pos == String::npos)
+        return false;
+    return authority_end == String::npos || at_pos < authority_end;
+}
+
+String StorageURL::resolveURLBase(const String & url, const String & base)
+{
+    if (base.empty())
+        return url;
+
+    /// Empty relative reference per RFC 3986: return the base URI without the fragment.
+    if (url.empty())
+    {
+        auto fragment_pos = base.find('#');
+        return (fragment_pos == String::npos) ? base : base.substr(0, fragment_pos);
+    }
+
+    /// If the URL already contains a scheme at the beginning, return as-is.
+    /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
+    /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
+    /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
+    {
+        auto colon_pos = url.find(':');
+        auto first_special = url.find_first_of("/?#");
+        if (colon_pos != String::npos && (first_special == String::npos || colon_pos < first_special))
+        {
+            /// Verify all characters before the colon are valid scheme characters.
+            bool valid_scheme = true;
+            for (size_t i = 1; i < colon_pos; ++i)
+            {
+                char c = url[i];
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+                {
+                    valid_scheme = false;
+                    break;
+                }
+            }
+            if (valid_scheme)
+                return url;
+        }
+    }
+
+    auto scheme_end = base.find("://");
+    if (scheme_end == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
+
+    /// Find the boundary of the path component in the base URL (before '?' or '#').
+    auto authority_start = scheme_end + 3; /// skip "://"
+    auto query_or_fragment = base.find_first_of("?#", authority_start);
+    /// The part of the base URL up to (but not including) the query/fragment.
+    auto base_before_query = (query_or_fragment == String::npos) ? base : base.substr(0, query_or_fragment);
+
+    /// Scheme-relative URL: //host/path → prepend scheme from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("//"))
+    {
+        String merged = base.substr(0, scheme_end + 1) + url;
+        return normalizeDotSegmentsInURL(merged, scheme_end + 3);
+    }
+
+    /// Host-relative URL: /path → use scheme and authority from base.
+    /// Dot segments in the path are normalized per RFC 3986.
+    if (url.starts_with("/"))
+    {
+        auto authority_end = base_before_query.find('/', authority_start);
+        String merged = (authority_end == String::npos)
+            ? base_before_query + url
+            : base_before_query.substr(0, authority_end) + url;
+        return normalizeDotSegmentsInURL(merged, authority_start);
+    }
+
+    /// Query-only relative reference: ?query → append to full base path (before any existing query/fragment).
+    if (url.starts_with("?"))
+        return base_before_query + url;
+
+    /// Fragment-only relative reference: #frag → append to base URL preserving the query string.
+    /// Only strip any existing fragment from the base, keep everything else.
+    if (url.starts_with("#"))
+    {
+        auto existing_fragment = base.find('#', authority_start);
+        auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
+        return base_without_fragment + url;
+    }
+
+    /// Path-relative URL: merge with the base path per RFC 3986.
+    /// Replace everything after the last '/' in the path portion of the base URL,
+    /// then normalize dot segments ("." and "..") in the resulting path.
+    auto authority_end = base_before_query.find('/', authority_start);
+    String merged;
+    if (authority_end == String::npos)
+        merged = base_before_query + "/" + url;
+    else
+    {
+        auto last_slash = base_before_query.rfind('/');
+        merged = base_before_query.substr(0, last_slash + 1) + url;
+    }
+    return normalizeDotSegmentsInURL(merged, authority_start);
+}
+
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+
+    /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    /// `skip_userinfo=true` avoids persisting credentials that may originate from `url_base`
+    /// into the CREATE TABLE AST.
+    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true);
+}
+
+void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo)
+{
+    if (args.empty())
+        return;
+
+    if (skip_userinfo && urlHasUserInfo(resolved_url))
+        return;
+
+    /// Positional form: `URL('url', ...)` — replace the first literal argument.
+    if (const auto * existing_literal = args[0]->as<ASTLiteral>();
+        existing_literal && existing_literal->value.getType() == Field::Types::String)
+    {
+        const auto & current_url = existing_literal->value.safeGet<String>();
+        if (current_url != resolved_url)
+            args[0] = make_intrusive<ASTLiteral>(resolved_url);
+        return;
+    }
+
+    /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
+    {
+        Configuration unresolved;
+        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
+        if (unresolved.url == resolved_url)
+            return;
+    }
+
+    /// If a `url='...'` key-value override is already present, update its literal in place.
+    /// Otherwise, append a `url='<resolved>'` override so that named-collection resolution
+    /// picks up the resolved URL.
+    for (auto & arg : args)
+    {
+        auto * func = arg->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments)
+            continue;
+        auto * func_args = func->arguments->as<ASTExpressionList>();
+        if (!func_args || func_args->children.size() != 2)
+            continue;
+        const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
+        if (!key_ast || key_ast->name() != "url")
+            continue;
+        func_args->children[1] = make_intrusive<ASTLiteral>(resolved_url);
+        return;
+    }
+
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(resolved_url)};
+    args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
 StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
@@ -1698,8 +2007,25 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
 
+    /// Resolve relative URLs against the url_base setting.
+    /// For the URL engine, the resolved URL is later materialized into the engine args
+    /// AST by `addInferredEngineArgsToCreateQuery`, so DETACH/ATTACH and server restart
+    /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
+    const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
+    configuration.url = resolveURLBase(configuration.url, url_base);
+
     if (configuration.format == "auto")
-        configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+    {
+        /// `resolveURLBase` tolerates malformed inputs via string manipulation, so the resolved URL
+        /// may contain characters that `Poco::URI` rejects. Fall back to "auto" instead of throwing.
+        try
+        {
+            configuration.format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(configuration.url).getPath()).value_or("auto");
+        }
+        catch (const Poco::Exception &) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
 
     for (const auto & [header, value] : configuration.headers)
     {
@@ -1711,14 +2037,14 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
 }
 
 
+void registerStorageURL(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
 
@@ -1726,26 +2052,193 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return std::make_shared<StorageURL>(
-                configuration.url,
+            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+            const bool use_object_storage
+                = config.http_method.empty()
+                && urlPathHasListableGlobs(config.url);
+
+            if (!use_object_storage)
+            {
+                return std::make_shared<StorageURL>(
+                    config.url,
+                    args.table_id,
+                    config.format,
+                    format_settings,
+                    args.columns,
+                    args.constraints,
+                    args.comment,
+                    context,
+                    config.compression_method,
+                    config.headers,
+                    config.http_method,
+                    partition_by,
+                    /* distributed_processing */ false);
+            }
+
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                checkExperimentalURLWildcardFromIndexPages(context);
+
+            /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
+            /// still holds the raw user-provided URL. Without this override, e.g.
+            /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
+            /// would build the object storage from an unresolved relative URL.
+            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
+            /// not persisted to the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
+
+            auto configuration = std::make_shared<StorageWebConfiguration>();
+            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
+
+            ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+            Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+            context_copy->setSettings(settings_copy);
+
+            return std::make_shared<StorageObjectStorage>(
+                configuration,
+                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+                context_copy,
                 args.table_id,
-                configuration.format,
-                format_settings,
                 args.columns,
                 args.constraints,
                 args.comment,
-                context,
-                configuration.compression_method,
-                configuration.headers,
-                configuration.http_method,
-                partition_by);
+                format_settings,
+                args.mode,
+                configuration->getCatalog(context, args.table_id),
+                args.query.if_not_exists,
+                /* is_datalake_query */ false,
+                /* distributed_processing */ false,
+                partition_by,
+                /* order_by */ nullptr,
+                /* is_table_function */ false,
+                /* lazy_init */ false);
         },
         {
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::URL,
             .has_builtin_setting_fn = Settings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the [File](../../../engines/table-engines/special/file.md) engine.
+
+Syntax: `URL(URL [,Format] [,CompressionMethod])`
+
+- The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
+
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
+
+    If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
+
+- `CompressionMethod` indicates that whether the HTTP body should be compressed. If the compression is enabled, the HTTP packets sent by the URL engine contain 'Content-Encoding' header to indicate which compression method is used.
+
+To enable compression, please first make sure the remote HTTP endpoint indicated by the `URL` parameter supports corresponding compression algorithm.
+
+The supported `CompressionMethod` should be one of following:
+- gzip or gz
+- deflate
+- brotli or br
+- lzma or xz
+- zstd or zst
+- lz4
+- bz2
+- snappy
+- none
+- auto
+
+If `CompressionMethod` is not specified, it defaults to `auto`. This means ClickHouse detects compression method from the suffix of `URL` parameter automatically. If the suffix matches any of compression method listed above, corresponding compression is applied or there won't be any compression enabled.
+
+For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` compression method is applied, but for `URL('http://localhost/test.fr')`, no compression is enabled because the suffix `fr` does not match any compression methods above.
+
+## Usage {#using-the-engine-in-the-clickhouse-server}
+
+`INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
+respectively. For processing `POST` requests, the remote server must support
+[Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
+
+## Example {#example}
+
+**1.** Create a `url_engine_table` table on the server :
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Create a basic HTTP server using the standard Python 3 tools and
+start it:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Request data:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+## Details of Implementation {#details-of-implementation}
+
+- Reads and writes can be parallel
+- Not supported:
+  - `ALTER` and `SELECT...SAMPLE` operations.
+  - Indexes.
+  - Replication.
+
+## Virtual columns {#virtual-columns}
+
+- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
+- `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
+- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
+- `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
+
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [url_base](/operations/settings/settings.md#url_base) setting allows using a relative URL in the `URL` engine. When `url_base` is set, the URL passed to the engine is resolved against it per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For a full description of the resolution rules, see the [url table function docs](../../../sql-reference/table-functions/url.md#resolving-relative-urls).
+
+**Example**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+## Storage settings {#storage-settings}
+
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [url_base](/operations/settings/settings.md#url_base) - base URL for resolving relative URLs passed to the engine.
+)DOCS_MD",
+            .syntax = "ENGINE = URL(url[, format[, compression]])",
+            .related = {"File"}});
 }
 
 }

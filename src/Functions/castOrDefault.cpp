@@ -99,11 +99,34 @@ public:
         return result_type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
+    {
+        const ColumnWithTypeAndName & column_to_cast = arguments[0];
+
+        /// If the source column is const (and default value column, if present, is also const),
+        /// execute on a single row and wrap the result in ColumnConst.
+        bool input_is_const = isColumnConst(*column_to_cast.column);
+        bool default_is_const = arguments.size() < 3 || isColumnConst(*arguments[2].column);
+
+        if (input_is_const && default_is_const)
+        {
+            ColumnsWithTypeAndName single_row_args = arguments;
+            for (auto & arg : single_row_args)
+                if (arg.column)
+                    arg.column = arg.column->cloneResized(1);
+
+            auto single_result = executeOnNonConstArguments(single_row_args, return_type, 1);
+            return ColumnConst::create(std::move(single_result), input_rows_count);
+        }
+
+        return executeOnNonConstArguments(arguments, return_type, input_rows_count);
+    }
+
+    ColumnPtr executeOnNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t /*input_rows_count*/) const
     {
         const ColumnWithTypeAndName & column_to_cast = arguments[0];
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
-        ColumnWithTypeAndName column_to_cast_non_const { non_const_column_to_cast, column_to_cast.type, column_to_cast.name };
+        ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
         auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
 

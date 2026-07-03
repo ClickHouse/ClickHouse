@@ -1,6 +1,7 @@
 -- Tests for NATURAL JOIN syntax.
 -- NATURAL JOIN automatically joins on all columns with matching names,
 -- equivalent to JOIN ... USING (col1, col2, ...) for all common column names.
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE t1 (id UInt64, name String) ENGINE = Memory;
 CREATE TABLE t2 (id UInt64, value UInt64) ENGINE = Memory;
@@ -41,6 +42,13 @@ SELECT * FROM t1 NATURAL CROSS JOIN t2; -- { clientError SYNTAX_ERROR } Error: N
 CREATE TABLE t4 (x UInt64) ENGINE = Memory;
 INSERT INTO t4 VALUES (1);
 SELECT * FROM t1 NATURAL JOIN t4 ORDER BY id;
+
+-- Regression test for https://github.com/ClickHouse/ClickHouse/issues/100220
+-- NATURAL JOIN with no common columns must not reconstruct as invalid NATURAL CROSS JOIN in the AST
+SELECT count() FROM (
+    SELECT * FROM (EXPLAIN QUERY TREE dump_ast = 1 SELECT * FROM t1 NATURAL JOIN t4 ORDER BY id)
+    WHERE explain LIKE '%NATURAL CROSS JOIN%'
+);
 
 -- Multi-table joins: NATURAL JOIN mixed with other join types
 CREATE TABLE t5 (id UInt64, flag UInt64) ENGINE = Memory;

@@ -62,7 +62,8 @@ node8 = cluster.add_instance(
     "node8",
     main_configs=[
         "configs/remote_servers_with_disable_dns_setting.xml",
-        "configs/listen_host.xml"
+        "configs/listen_host.xml",
+        "configs/dns_update_short.xml",
     ],
     # Disable `with_remote_database_disk` as the `test_reload_cluster_config_if_host_address_change` may simulate DNS service outage, causing it to fail to start.
     with_remote_database_disk=False,
@@ -520,11 +521,11 @@ def test_reload_cluster_config_if_host_address_change(cluster_ready):
     # Restore the original DNS configuration to simulate DNS service recovery
     node.exec_in_container(["bash", "-c", f"echo '{resolv_conf_bak}' > /etc/resolv.conf"], privileged=True, user="root")
     node.exec_in_container(["bash", "-c", f"echo '{hosts_bak}' > /etc/hosts"], privileged=True, user="root")
-    # Wait a bit until dns cache will be updated
-    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1")
+    # Wait until dns cache will be updated (dns_cache_update_period is 10s, so we need enough retries)
+    assert_eq_with_retry(node, "SELECT is_local FROM system.clusters WHERE cluster='test_cluster' AND host_name='node8'", "1", retry_count=40)
 
     # Change the resolved IPs of node8
-    node.exec_in_container(["bash", "-c", f"echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo -e '127.0.0.1 node8\n192.168.1.1 node8\n192.168.1.2 node8' > /etc/hosts"], privileged=True, user="root")
     # During this update period, the cluster config was reloaded
     assert node.wait_for_log_line(
         regexp="DNSCacheUpdater: IPs of host name node8 have been changed",
@@ -534,7 +535,7 @@ def test_reload_cluster_config_if_host_address_change(cluster_ready):
     assert node.query("SELECT ip_address FROM system.dns_cache WHERE hostname='node8'") == "127.0.0.1\n192.168.1.1\n192.168.1.2\n"
 
     # Change the resolved IPs' order of node8
-    node.exec_in_container(["bash", "-c", f"echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
+    node.exec_in_container(["bash", "-c", "echo -e '192.168.1.2 node8\n192.168.1.1 node8\n127.0.0.1 node8' > /etc/hosts"], privileged=True, user="root")
     # During this update period, the cluster config was not reloaded yet
     assert node.wait_for_log_line(
         regexp="DNSResolver: Updated DNS cache",

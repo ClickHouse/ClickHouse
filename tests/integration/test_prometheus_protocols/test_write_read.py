@@ -2,7 +2,14 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_read_request_to_protobuf,
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    get_response_to_remote_read,
+    receive_protobuf_from_remote_read,
+    send_protobuf_to_remote_write,
+)
 import re
 import requests
 import time
@@ -54,19 +61,19 @@ def send_big_data(metric_name="big_data", start_time=1724112000, end_time=172411
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_reader_ip,
-        cluster.prometheus_reader_port,
+        cluster.prometheus_ip["reader"],
+        cluster.prometheus_port["reader"],
         "/api/v1/query",
         query,
         timestamp,
     )
 
 
-# Executes a query in the "prometheus_receiver" service. We send data to this service via the RemoteWrite protocol.
+# Executes a query in the "prometheus_writer" service. This service sends data to ClickHouse via the RemoteWrite protocol.
 def execute_query_in_prometheus_writer(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_writer_ip,
-        cluster.prometheus_writer_port,
+        cluster.prometheus_ip["writer"],
+        cluster.prometheus_port["writer"],
         "/api/v1/query",
         query,
         timestamp,
@@ -106,11 +113,11 @@ def test_handle_normal_scrape():
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
+    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
     assert re.match(pattern, result)
     chresult = execute_query_in_clickhouse(query, evaluation_time)
     print(f"chresult={chresult}")
-    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
+    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
     assert re.match(chpattern, chresult)
 
 

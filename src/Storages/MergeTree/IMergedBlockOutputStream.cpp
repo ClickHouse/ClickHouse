@@ -14,6 +14,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -28,11 +29,12 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , reset_columns(reset_columns_)
     , info_settings
     {
-        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        static_cast<double>((*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
         (*storage_settings)[MergeTreeSetting::serialization_info_version],
         (*storage_settings)[MergeTreeSetting::string_serialization_version],
         (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
+        (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     }
     , new_serialization_infos(info_settings)

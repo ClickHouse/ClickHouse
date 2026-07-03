@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -32,9 +33,9 @@ class ApproxSampler
 public:
     struct Stats
     {
-        T value;     // The sampled value
-        Int64 g;     // The minimum rank jump from the previous value's minimum rank
-        Int64 delta; // The maximum span of the rank
+        T value{};     // The sampled value
+        Int64 g{};     // The minimum rank jump from the previous value's minimum rank
+        Int64 delta{}; // The maximum span of the rank
 
         Stats() = default;
         Stats(T value_, Int64 g_, Int64 delta_) : value(value_), g(g_), delta(delta_) { }
@@ -198,7 +199,7 @@ public:
                 const Stats & other_sample = other.sampled[other_idx];
 
                 // Detect next sample
-                Stats next_sample;
+                Stats next_sample{};
                 Int64 additional_delta = 0;
                 if (self_sample.value < other_sample.value)
                 {
@@ -272,6 +273,11 @@ public:
 
         size_t sampled_len = 0;
         readBinaryLittleEndian(sampled_len, buf);
+        /// Guard against allocation bombs: a crafted state can declare a huge
+        /// length and make resize_exact allocate gigabytes before any data is read.
+        if (sampled_len > 100'000'000)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size ({}) in quantileGK deserialization", sampled_len);
         sampled.resize_exact(sampled_len);
 
         for (size_t i = 0; i < sampled_len; ++i)
@@ -334,7 +340,7 @@ private:
 
             // If it is the first one to insert, of if it is the last one
             ++current_count;
-            Int64 delta;
+            Int64 delta = 0;
             if (backup_sampled.empty() || (sample_idx == sampled.size() && ops_idx == (head_sampled.size() - 1)))
                 delta = 0;
             else
@@ -397,10 +403,10 @@ private:
         std::swap(sampled, backup_sampled);
     }
 
-    double relative_error;
-    size_t compress_threshold;
-    size_t count;
-    bool compressed;
+    double relative_error{};
+    size_t compress_threshold{};
+    size_t count{};
+    bool compressed{};
 
     PaddedPODArray<Stats> sampled;
     PaddedPODArray<Stats> backup_sampled;
@@ -472,7 +478,7 @@ public:
         if (!data.isCompressed())
             data.compress();
 
-        Value res;
+        Value res{};
         size_t indice = 0;
         data.query(&level, &indice, 1, &res);
         return res;
@@ -538,6 +544,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

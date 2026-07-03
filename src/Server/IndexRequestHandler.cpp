@@ -4,6 +4,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/HTTPCommon.h>
 
+/// Embedded HTML pages
 constexpr unsigned char resource_index_html[] =
 {
 #embed "../../programs/server/index.html"
