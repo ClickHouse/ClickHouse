@@ -605,21 +605,40 @@ private:
         RPN & out,
         bool allow_constant_transformation);
 
+    /// The result of mapping a set-membership predicate expression onto key columns
+    /// (see `analyzePredicateExpressionForSetIndex`).
+    struct SetIndexAnalysisResult
+    {
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+        std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
+        DataTypes data_types;
+        /// The number of tuple components of the predicate expression (1 for a scalar).
+        size_t args_count = 1;
+        /// Some component mapping goes through a non-injective deterministic DAG; the set
+        /// check as a whole then only describes a superset of the matching values. This is
+        /// distinct from the per-element `RPNElement::relaxed`.
+        bool is_relaxed = false;
+    };
+
     /// This function maps the predicate expression whose values are tested for set
     /// membership (the left-hand side of IN, or the element argument of `has`) onto
     /// key columns. It produces one `KeyTuplePositionMapping` per tuple component that
     /// reaches a key column, either directly through a monotonic chain or via a
-    /// deterministic set-transforming DAG. `out_relaxed` is set when some mapping goes
-    /// through a non-injective DAG; in that case the set check as a whole only
-    /// describes a superset of the matching values. This is distinct from the
-    /// per-element `RPNElement::relaxed`.
-    void analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg,
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
-        DataTypes & data_types,
-        size_t & args_count,
+    /// deterministic set-transforming DAG.
+    SetIndexAnalysisResult analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg, const BuildInfo & info);
+
+    /// The shared core of set-atom extraction for IN and `has`: given the membership
+    /// predicate's key-side expression, the materialized set columns and the analyzed
+    /// key mapping, appends the direct set atom and one wrapped-set atom per remaining
+    /// key column that is a deterministic function of the expression.
+    void extractSetAtomsForKeyArgument(
+        const RPNBuilderTreeNode & key_arg,
         const BuildInfo & info,
-        bool & out_relaxed);
+        const Columns & set_columns,
+        const DataTypes & set_types,
+        SetIndexAnalysisResult analysis,
+        bool allow_constant_transformation,
+        RPN & out);
 
     /// Checks that the index can not be used.
     ///

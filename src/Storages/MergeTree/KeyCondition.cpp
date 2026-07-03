@@ -2293,14 +2293,11 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
 }
 
 
-void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNode & arg,
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
-        std::vector<std::optional<DeterministicKeyTransformDag>> &set_transforming_dags,
-        DataTypes & data_types,
-        size_t & args_count,
-        const BuildInfo & info,
-        bool & out_relaxed)
+KeyCondition::SetIndexAnalysisResult KeyCondition::analyzePredicateExpressionForSetIndex(
+    const RPNBuilderTreeNode & arg, const BuildInfo & info)
 {
+    SetIndexAnalysisResult result;
+
     auto get_key_tuple_position_mapping = [&](const RPNBuilderTreeNode & node, size_t tuple_index)
     {
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
@@ -2312,9 +2309,9 @@ void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNod
                 node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
-            indexes_mapping.push_back(index_mapping);
-            data_types.push_back(data_type);
-            set_transforming_dags.push_back(std::nullopt);
+            result.indexes_mapping.push_back(index_mapping);
+            result.data_types.push_back(data_type);
+            result.set_transforming_dags.push_back(std::nullopt);
         }
         else
         {
@@ -2322,16 +2319,15 @@ void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNod
             if (canSetValuesBeWrappedByDeterministicKeyFunctions(
                     node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
             {
-                indexes_mapping.push_back(index_mapping);
-                data_types.push_back(data_type);
-                set_transforming_dags.push_back(std::move(set_transforming_dag));
+                result.indexes_mapping.push_back(index_mapping);
+                result.data_types.push_back(data_type);
+                result.set_transforming_dags.push_back(std::move(set_transforming_dag));
                 if (!is_injective)
-                    out_relaxed = true;
+                    result.is_relaxed = true;
             }
         }
     };
 
-    args_count = 1;
     if (arg.isFunction())
     {
         /// Note: in case of ActionsDAG, tuple may be a constant.
@@ -2339,8 +2335,8 @@ void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNod
         auto arg_tuple = arg.toFunctionNode();
         if (arg_tuple.getFunctionName() == "tuple" && arg_tuple.getArgumentsSize() > 1)
         {
-            args_count = arg_tuple.getArgumentsSize();
-            for (size_t i = 0; i < args_count; ++i)
+            result.args_count = arg_tuple.getArgumentsSize();
+            for (size_t i = 0; i < result.args_count; ++i)
                 get_key_tuple_position_mapping(arg_tuple.getArgumentAt(i), i);
         }
         else
@@ -2352,6 +2348,8 @@ void KeyCondition::analyzePredicateExpressionForSetIndex(const RPNBuilderTreeNod
     {
         get_key_tuple_position_mapping(arg, 0);
     }
+
+    return result;
 }
 
 static bool tryPrepareSetColumnsForIndex(
@@ -2528,68 +2526,19 @@ String getExprNameOrEmptyForSetWrapping(const RPNBuilderTreeNode & node, const N
 }
 }
 
-void KeyCondition::tryPrepareSetAtomsForIn(
-    const RPNBuilderFunctionTreeNode & func,
+void KeyCondition::extractSetAtomsForKeyArgument(
+    const RPNBuilderTreeNode & key_arg,
     const BuildInfo & info,
-    RPN & out,
-    bool allow_constant_transformation)
+    const Columns & set_columns,
+    const DataTypes & set_types,
+    SetIndexAnalysisResult analysis,
+    bool allow_constant_transformation,
+    RPN & out)
 {
-    out.clear();
-
-    if (func.getArgumentsSize() != 2)
-        return;
-
-    const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
-    DataTypes data_types;
-    size_t left_args_count = 0;
-    bool set_is_relaxed = false;
-
-    analyzePredicateExpressionForSetIndex(
-        left_arg,
-        indexes_mapping,
-        set_transforming_dags,
-        data_types,
-        left_args_count,
-        info,
-        set_is_relaxed);
-
-    /// If no direct key mapping was found AND no extra candidates are possible
-    /// (the left arg is not a key subexpression), return early to avoid building the set
-    /// unnecessarily
-    if (indexes_mapping.empty()
-        && !(
-            left_args_count == 1 && allow_constant_transformation
-            && !getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names).empty()))
-        return;
-
-    const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
-    auto future_set = right_arg.tryGetPreparedSet();
-    if (!future_set)
-        return;
-
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
-    if (!prepared_set)
-        return;
-
-    /// The index can be prepared if the elements of the set were saved in advance.
-    if (!prepared_set->hasExplicitSetElements())
-        return;
-
-    /** Try to convert set columns to primary key columns.
-      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
-      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
-      * we need to convert set column to primary key column.
-      */
-    const auto set_columns = prepared_set->getSetElements();
-    const auto set_types = future_set->getTypes();
-
     chassert(set_types.size() == set_columns.size());
 
-    /// This lambda is kept in sync with the `try_build_atom` in `tryPrepareSetAtomsForHas`.
-    /// The only difference is the tuple-repack special case below, which `has` does not
-    /// need because it always supplies a single set column.
+    /// This builds one set atom: it converts the set columns into the key space of the
+    /// given mapping and wraps them into a `MergeTreeSetIndex`.
     auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
                               const std::vector<std::optional<DeterministicKeyTransformDag>> & atom_set_transforming_dags,
                               const DataTypes & atom_data_types,
@@ -2606,7 +2555,8 @@ void KeyCondition::tryPrepareSetAtomsForIn(
         ///
         /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
         /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
-        /// the key column type when preparing index conditions.
+        /// the key column type when preparing index conditions. (For a single-column set, such as
+        /// the array elements of `has`, this branch is never taken.)
         if (args_count == 1 && atom_data_types.size() == 1 && atom_set_columns.size() > 1)
         {
             DataTypePtr key_type = removeNullable(atom_data_types[0]);
@@ -2637,17 +2587,19 @@ void KeyCondition::tryPrepareSetAtomsForIn(
         for (const auto & index_mapping : adjusted_indexes_mapping)
             element.key_columns.push_back(index_mapping.key_index);
 
-        /// Mark the atom as relaxed when the set check is not exact.
+        /// Mark the atom as relaxed when the set check is not exact: some tuple components
+        /// were dropped or deduplicated, so the mapping is not 1:1.
         if (adjusted_indexes_mapping.size() < atom_set_types.size())
             element.relaxed = true;
 
         return element;
     };
 
-    if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, left_args_count))
+    if (auto atom = try_build_atom(
+            std::move(analysis.indexes_mapping), analysis.set_transforming_dags, analysis.data_types, analysis.args_count))
     {
         /// Propagate relaxation from analyzePredicateExpressionForSetIndex (non-injective deterministic transforms).
-        if (set_is_relaxed)
+        if (analysis.is_relaxed)
             atom->relaxed = true;
         out.emplace_back(std::move(*atom));
     }
@@ -2671,13 +2623,12 @@ void KeyCondition::tryPrepareSetAtomsForIn(
                 has_atom_for_key_column[column_idx] = true;
     }
 
-    /// If LHS is a single value (not a tuple), also add set-wrapping atoms for all PK components
-    /// that are deterministic functions of that value (by transforming the set elements).
-    /// For each additional key column, extract a `DeterministicKeyTransformDag` and let
-    /// `tryPrepareSetColumnsForIndex` + `applyDeterministicDagToColumn` handle the transformation.
-    if (left_args_count == 1 && allow_constant_transformation)
+    /// If the predicate expression is a single value (not a tuple), also add set-wrapping
+    /// atoms for all key columns that are deterministic functions of that value (by
+    /// transforming the set elements).
+    if (analysis.args_count == 1 && allow_constant_transformation)
     {
-        const String expr_name = getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names);
+        const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
         if (!expr_name.empty())
         {
             auto candidates = collectKeyWrappingDags(expr_name, info);
@@ -2700,37 +2651,71 @@ void KeyCondition::tryPrepareSetAtomsForIn(
                 DataTypes candidate_data_types;
                 candidate_data_types.emplace_back(candidate.key_column_type);
 
-                auto candidate_set_columns = set_columns;
-                auto candidate_set_types = set_types;
-
-                if (!tryPrepareSetColumnsForIndex(
-                        candidate_set_columns,
-                        candidate_set_types,
-                        candidate_dags,
-                        candidate_data_types,
-                        candidate_indexes_mapping,
-                        /*args_count*/ 1))
+                auto candidate_atom = try_build_atom(
+                    std::move(candidate_indexes_mapping), candidate_dags, candidate_data_types, /*args_count*/ 1);
+                if (!candidate_atom)
                     continue;
 
-                RPNElement candidate_element;
-                candidate_element.set_index = std::make_shared<MergeTreeSetIndex>(
-                    candidate_set_columns, std::move(candidate_indexes_mapping));
+                /// Wrapped-set atoms are always relaxed: the transformed set only describes
+                /// a superset of the matching values.
+                candidate_atom->relaxed = true;
 
-                const auto & adjusted = candidate_element.set_index->getIndexesMapping();
-                for (const auto & idx : adjusted)
-                    candidate_element.key_columns.push_back(idx.key_index);
-
-                candidate_element.relaxed = true;
-
-                for (size_t column_idx : candidate_element.key_columns)
+                for (size_t column_idx : candidate_atom->key_columns)
                     if (column_idx < has_atom_for_key_column.size())
                         has_atom_for_key_column[column_idx] = true;
 
-                out.emplace_back(std::move(candidate_element));
+                out.emplace_back(std::move(*candidate_atom));
             }
         }
     }
+}
 
+void KeyCondition::tryPrepareSetAtomsForIn(
+    const RPNBuilderFunctionTreeNode & func,
+    const BuildInfo & info,
+    RPN & out,
+    bool allow_constant_transformation)
+{
+    out.clear();
+
+    if (func.getArgumentsSize() != 2)
+        return;
+
+    const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
+
+    auto analysis = analyzePredicateExpressionForSetIndex(left_arg, info);
+
+    /// If no direct key mapping was found AND no extra candidates are possible
+    /// (the left arg is not a key subexpression), return early to avoid building the set
+    /// unnecessarily
+    if (analysis.indexes_mapping.empty()
+        && !(
+            analysis.args_count == 1 && allow_constant_transformation
+            && !getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names).empty()))
+        return;
+
+    const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
+    auto future_set = right_arg.tryGetPreparedSet();
+    if (!future_set)
+        return;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    if (!prepared_set)
+        return;
+
+    /// The index can be prepared if the elements of the set were saved in advance.
+    if (!prepared_set->hasExplicitSetElements())
+        return;
+
+    /** Try to convert set columns to primary key columns.
+      * Example: SELECT id FROM test_table WHERE id IN (SELECT 1);
+      * In this example table `id` column has type UInt64, Set column has type UInt8. To use index
+      * we need to convert set column to primary key column.
+      */
+    const auto set_columns = prepared_set->getSetElements();
+    const auto set_types = future_set->getTypes();
+
+    extractSetAtomsForKeyArgument(left_arg, info, set_columns, set_types, std::move(analysis), allow_constant_transformation, out);
 }
 
 void KeyCondition::tryPrepareSetAtomsForHas(
@@ -2749,16 +2734,9 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
 
-    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-    std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
-    DataTypes data_types;
-    size_t key_args_count = 0;
-    bool set_is_relaxed = false;
+    auto analysis = analyzePredicateExpressionForSetIndex(key_arg, info);
 
-    analyzePredicateExpressionForSetIndex(
-        key_arg, indexes_mapping, set_transforming_dags, data_types, key_args_count, info, set_is_relaxed);
-
-    if (indexes_mapping.empty())
+    if (analysis.indexes_mapping.empty())
         return;
 
     /// Check if array argument is usable
@@ -2791,122 +2769,7 @@ void KeyCondition::tryPrepareSetAtomsForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
-    /// This lambda is kept in sync with the `try_build_atom` in `tryPrepareSetAtomsForIn`.
-    /// The tuple-repack special case is not needed here because there is always a single
-    /// set column.
-    auto try_build_atom = [&](std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> atom_indexes_mapping,
-                              const std::vector<std::optional<DeterministicKeyTransformDag>> & atom_set_transforming_dags,
-                              const DataTypes & atom_data_types,
-                              size_t args_count) -> std::optional<RPNElement>
-    {
-        if (atom_indexes_mapping.empty())
-            return std::nullopt;
-
-        auto atom_set_columns = set_columns;
-        auto atom_set_types = set_types;
-
-        if (!tryPrepareSetColumnsForIndex(
-                atom_set_columns,
-                atom_set_types,
-                atom_set_transforming_dags,
-                atom_data_types,
-                atom_indexes_mapping,
-                args_count))
-            return std::nullopt;
-
-        RPNElement element;
-        element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(atom_indexes_mapping));
-
-        /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
-        const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
-        for (const auto & index_mapping : adjusted_indexes_mapping)
-            element.key_columns.push_back(index_mapping.key_index);
-
-        if (adjusted_indexes_mapping.size() < atom_set_types.size())
-            element.relaxed = true;
-
-        return element;
-    };
-
-    if (auto atom = try_build_atom(indexes_mapping, set_transforming_dags, data_types, key_args_count))
-    {
-        /// Propagate relaxation from analyzePredicateExpressionForSetIndex (non-injective deterministic transforms).
-        if (set_is_relaxed)
-            atom->relaxed = true;
-        out.emplace_back(std::move(*atom));
-    }
-
-    /// Propagate to KeyCondition-level relaxed flag (NOT element-level).
-    for (const auto & element : out)
-        if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
-            relaxed = true;
-
-    /// This records the key columns that are already covered by the direct atom.
-    /// The wrapped-set candidates below only fill in the columns that have no atom yet,
-    /// because the direct atom is more precise.
-    std::vector<bool> has_atom_for_key_column(num_key_columns, false);
-    for (const auto & element : out)
-    {
-        for (size_t column_idx : element.key_columns)
-            if (column_idx < has_atom_for_key_column.size())
-                has_atom_for_key_column[column_idx] = true;
-    }
-
-    if (key_args_count == 1 && allow_constant_transformation)
-    {
-        const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
-        if (!expr_name.empty())
-        {
-            auto candidates = collectKeyWrappingDags(expr_name, info);
-
-            for (auto & candidate : candidates)
-            {
-                if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
-                    continue;
-
-                MergeTreeSetIndex::KeyTuplePositionMapping mapping;
-                mapping.tuple_index = 0;
-                mapping.key_index = candidate.key_column_num;
-
-                std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
-                candidate_indexes_mapping.emplace_back(std::move(mapping));
-
-                std::vector<std::optional<DeterministicKeyTransformDag>> candidate_dags;
-                candidate_dags.emplace_back(std::move(candidate.dag));
-
-                DataTypes candidate_data_types;
-                candidate_data_types.emplace_back(candidate.key_column_type);
-
-                auto candidate_set_columns = set_columns;
-                auto candidate_set_types = set_types;
-
-                if (!tryPrepareSetColumnsForIndex(
-                        candidate_set_columns,
-                        candidate_set_types,
-                        candidate_dags,
-                        candidate_data_types,
-                        candidate_indexes_mapping,
-                        /*args_count*/ 1))
-                    continue;
-
-                RPNElement candidate_element;
-                candidate_element.set_index = std::make_shared<MergeTreeSetIndex>(
-                    candidate_set_columns, std::move(candidate_indexes_mapping));
-
-                const auto & adjusted = candidate_element.set_index->getIndexesMapping();
-                for (const auto & idx : adjusted)
-                    candidate_element.key_columns.push_back(idx.key_index);
-
-                candidate_element.relaxed = true;
-
-                for (size_t column_idx : candidate_element.key_columns)
-                    if (column_idx < has_atom_for_key_column.size())
-                        has_atom_for_key_column[column_idx] = true;
-
-                out.emplace_back(std::move(candidate_element));
-            }
-        }
-    }
+    extractSetAtomsForKeyArgument(key_arg, info, set_columns, set_types, std::move(analysis), allow_constant_transformation, out);
 }
 
 
