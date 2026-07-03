@@ -135,6 +135,7 @@ The supported formats are:
 | [MySQLDump](./formats/MySQLDump.md)                                                                        | ✔   | ✗     |
 | [GeoJSON](./formats/GeoJSON.md)                                                                            | ✔   | ✔     |
 | [DWARF](./formats/DWARF.md)                                                                                | ✔   | ✗     |
+| [PCAP](./formats/PCAP.md)                                                                                  | ✔   | ✗     |
 | [Markdown](./formats/Markdown.md)                                                                          | ✗   | ✔     |
 | [Form](./formats/Form.md)                                                                                  | ✔   | ✗     |
 
