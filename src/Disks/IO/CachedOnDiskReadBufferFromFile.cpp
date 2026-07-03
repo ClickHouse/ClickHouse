@@ -1815,9 +1815,12 @@ std::string CachedOnDiskReadBufferFromFile::getInfoForLog(
         wb << "bytes_to_predownload: " << state->bytes_to_predownload << ", ";
         if (state->buf)
         {
-            wb << "buf.available: " << state->buf->available() << ", ";
-            wb << "buf.offset: " << state->buf->offset() << ", ";
-            wb << "buf.size: " << state->buf->buffer().size() << ", ";
+            /// NOTE: state->buf can be a remote reader shared between segments (see
+            /// getRemoteReadBuffer), and this logging can run after the buffer was
+            /// released, while another thread already reads through it. So only read
+            /// getFileOffsetOfBufferEnd() here, which is atomic. available()/offset()/
+            /// buffer().size() read working_buffer pointers non-atomically and race
+            /// with SwapHelper in BoundedReadBuffer::nextImpl().
             wb << "buf.buffer_end_offset: " << state->buf->getFileOffsetOfBufferEnd() << ", ";
         }
     }
