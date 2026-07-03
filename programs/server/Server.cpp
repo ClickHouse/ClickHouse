@@ -2403,6 +2403,22 @@ try
 
     HashiCorpVault::instance().load(config(), "hashicorp_vault");
 
+    /// Add vault SSL certificate and CA paths to the watched file set so that
+    /// rotating them on disk triggers a config reload (same as server/protocol
+    /// TLS paths above).
+    if (config().has("hashicorp_vault.ssl"))
+    {
+        auto add_vault_ssl_path = [&](const std::string & ssl_key)
+        {
+            auto ssl_val = config().getString("hashicorp_vault.ssl." + ssl_key, "");
+            if (!ssl_val.empty())
+                extra_paths.push_back(ssl_val);
+        };
+        add_vault_ssl_path("privateKeyFile");
+        add_vault_ssl_path("certificateFile");
+        add_vault_ssl_path("caConfig");
+    }
+
     auto transient_vault = std::make_shared<HashiCorpVault>();
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(

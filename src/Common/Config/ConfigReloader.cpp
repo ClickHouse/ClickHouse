@@ -170,17 +170,6 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             return std::nullopt;
         }
 
-        /** We should remember last modification time if and only if config was successfully loaded
-         * Otherwise a race condition could occur during config files update:
-         *  File is contain raw (and non-valid) data, therefore config is not applied.
-         *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
-         */
-        if (!loaded_config.loaded_from_preprocessed)
-        {
-            files = std::move(new_files);
-            need_reload_from_zk = false;
-        }
-
         /// Invoke pre-updater hook (e.g. to reload HashiCorp Vault) and
         /// re-process config if it returns true (two-pass loading).
         bool needs_reprocess = false;
@@ -219,6 +208,15 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
 
             LOG_ERROR(log, "Error updating configuration from '{}': {}", config_path, getExceptionMessageForLogging(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
             return std::nullopt;
+        }
+
+        /// Remember last modification time only after the hook, second pass,
+        /// and updater all succeeded. If any of those stages throw, the
+        /// background reloader must retry on the next periodic tick.
+        if (!loaded_config.loaded_from_preprocessed)
+        {
+            files = std::move(new_files);
+            need_reload_from_zk = false;
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", config_path);

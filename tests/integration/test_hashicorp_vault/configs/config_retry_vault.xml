@@ -1,0 +1,7 @@
+<clickhouse>
+    <hashicorp_vault>
+        <url>http://hashicorpvault:8200</url>
+        <token>foobar</token>
+    </hashicorp_vault>
+    <config_reload_interval_ms>1000</config_reload_interval_ms>
+</clickhouse>
