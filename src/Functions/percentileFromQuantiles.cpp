@@ -94,6 +94,10 @@ public:
         Float64 const_percentile_value = 0.0;
         bool is_percentile_const = false;
         const ColumnFloat64 * col_percentile = nullptr;
+        /// Owns the (possibly casted) percentile column for the whole call. `col_percentile` may point
+        /// into it and is dereferenced in the loop below, so this must outlive the loop; keeping it in an
+        /// inner scope would free the casted column early and leave `col_percentile` dangling (use-after-free).
+        ColumnPtr percentile_column;
 
         // Check if percentile is a constant
         if (const auto * col_const = checkAndGetColumnConst<ColumnFloat64>(arguments[1].column.get()))
@@ -108,7 +112,7 @@ public:
         else
         {
             // Try to cast the column
-            ColumnPtr percentile_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
+            percentile_column = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
 
             if (const auto * col_const_casted = checkAndGetColumnConst<ColumnFloat64>(percentile_column.get()))
             {
