@@ -1,0 +1,13 @@
+sum	7.5	Nullable(Float64)
+avg	1.25	Nullable(Float64)
+min/max	0	2.5
+sumWithOverflow	7.5
+sumKahan	7.5
+sumIf	3
+sumState/Merge	7.5
+groupBy	0	4.5
+groupBy	1	3
+uint	3006	Nullable(UInt64)
+all null	\N	\N	\N
+empty	\N	\N
+native	4	Variant(String, UInt64)	4

@@ -1,15 +1,20 @@
 #include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/assert_cast.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -25,6 +30,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_AGGREGATION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -98,6 +104,47 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
     auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
 
+    /// If one of the arguments is a Variant, and the requested function does not support it natively,
+    /// we aggregate over the least common supertype of the variants (see AggregateFunctionVariantAdapter).
+    if (std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
+        [](const auto & type) { return isVariant(type); }))
+    {
+        /// Window functions must handle their argument types themselves, so don't adapt them.
+        auto properties = tryGetProperties(name, action);
+        bool is_window_function = properties.has_value() && properties->is_window_function;
+        if (!is_window_function)
+        {
+            std::exception_ptr native_error;
+            try
+            {
+                return getWithoutVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                    throw;
+                native_error = std::current_exception();
+            }
+
+            if (auto adapter = tryGetVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
+                return adapter;
+
+            /// The Variant cannot be aggregated via its supertype either; report the original error.
+            std::rethrow_exception(native_error);
+        }
+    }
+
+    return getWithoutVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant);
+}
+
+AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
+    const String & name,
+    NullsAction action,
+    const DataTypes & types_without_low_cardinality,
+    const Array & parameters,
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant) const
+{
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
     /// they must handle the nullability themselves.
@@ -134,6 +181,56 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
     return with_original_arguments;
+}
+
+AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
+    const String & name,
+    NullsAction action,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    AggregateFunctionProperties & out_properties,
+    AggregateFunctionStateVariant state_variant) const
+{
+    /// Replace every Variant argument with Nullable(least common supertype of its nested types). Nullable is used
+    /// so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
+    DataTypes nested_argument_types;
+    nested_argument_types.reserve(argument_types.size());
+    for (const auto & type : argument_types)
+    {
+        if (isVariant(type))
+        {
+            const auto & variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
+            auto supertype = tryGetLeastSupertype(variants);
+            /// getLeastSupertype is strict and reports no common type for e.g. Decimal + Float64 or Int64 + Float64
+            /// (there is no lossless conversion). For aggregation, a mix of numeric types is naturally computed in
+            /// Float64 (exactly as arithmetic does: Decimal + Float64 -> Float64), so fall back to Float64 when all
+            /// the variants are numeric.
+            if (!supertype && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); }))
+                supertype = std::make_shared<DataTypeFloat64>();
+            /// No common supertype, or it is itself a composite type (e.g. Variant) that cannot be put inside
+            /// Nullable: such a Variant cannot be aggregated this way.
+            if (!supertype || !supertype->canBeInsideNullable())
+                return nullptr;
+            nested_argument_types.push_back(makeNullable(supertype));
+        }
+        else
+            nested_argument_types.push_back(type);
+    }
+
+    /// Resolve the function over the supertypes. If it does not support them either, there is nothing we can do.
+    AggregateFunctionPtr nested_function;
+    try
+    {
+        nested_function = getWithoutVariantAdapter(name, action, nested_argument_types, parameters, out_properties, state_variant);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+            return nullptr;
+        throw;
+    }
+
+    return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, argument_types, nested_argument_types, parameters);
 }
 
 std::optional<AggregateFunctionWithProperties>
@@ -274,7 +371,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+        /// Resolve the combinator's nested function without the Variant fallback adapter: this keeps the adapter
+        /// (when needed for a Variant argument) as the outermost wrapper, so combinators like -If/-Array are applied
+        /// inside it in the usual order (e.g. Adapter(Null(If(sum))) rather than If(Adapter(Null(sum)))).
+        /// The argument types here are already recursively free of LowCardinality (stripped by the top-level get()).
+        AggregateFunctionPtr nested_function = getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         /// Same invariant as above.
         chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),

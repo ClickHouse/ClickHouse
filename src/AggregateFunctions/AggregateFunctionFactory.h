@@ -109,6 +109,26 @@ private:
         bool has_null_arguments,
         AggregateFunctionStateVariant state_variant) const;
 
+    /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
+    /// Variant fallback. `argument_types` must already have LowCardinality removed.
+    AggregateFunctionPtr getWithoutVariantAdapter(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant) const;
+
+    /// Try to wrap the function in AggregateFunctionVariantAdapter so it can be applied to Variant arguments by
+    /// aggregating over the least common supertype of the variants. Returns nullptr if that is not possible.
+    AggregateFunctionPtr tryGetVariantAdapter(
+        const String & name,
+        NullsAction action,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        AggregateFunctionProperties & out_properties,
+        AggregateFunctionStateVariant state_variant) const;
+
     using AggregateFunctions = std::unordered_map<String, Value>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using ActionMap = NameToNameMap;
 
