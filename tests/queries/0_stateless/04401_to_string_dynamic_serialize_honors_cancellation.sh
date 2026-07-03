@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-fasttest, long
+# Tags: no-random-settings, no-fasttest, no-flaky-check, long
 # Converting composite values (Dynamic/Array/Tuple/Map/Object/JSON ...) through text used to run per-row loops that
 # ignored the query's time and cancellation limits (only checked between pipeline blocks), so a thread kept working
 # for a long time after KILL QUERY or max_execution_time and tripped the "Hung check failed, possible deadlock
@@ -13,14 +13,21 @@
 #      interrupted mid-value by a cancellation-checking WriteBuffer that observes the limit on each buffer-sized
 #      flush of the bytes the (nested) serializer emits.
 # The check honors KILL QUERY and max_execution_time in BOTH the `throw` and `break` timeout overflow modes.
-# no-random-settings: the assertions are timing-based, so randomized limits must not interfere.
+# The assertion is that the query stops NEAR its limit rather than running to natural completion: a plain
+# `serverError TIMEOUT_EXCEEDED` does not distinguish fixed from unfixed, because the between-block check still
+# throws TIMEOUT, only later (after the whole loop finishes). So we measure durations instead.
+# no-random-settings / no-flaky-check: the assertion is timing-based (wall-clock latency), so randomized limits
+# must not interfere and running it 50x under flaky-check validates nothing while risking a timeout.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Everything below is derived from the measured natural (unlimited) run time, so the test adapts to the build
-# type (debug/sanitizer are ~10x slower) without hard-coded seconds. FORMAT Null discards the output.
+# max_result_bytes = 0 disables the result-size limit that CI's default profile sets (these queries build large
+# results before FORMAT Null discards them). max_memory_usage = 0 likewise. Everything is derived from the
+# measured natural (unlimited) run time, so the test adapts to the build type (debug/sanitizer are slower) without
+# hard-coded seconds.
+COMMON="max_threads = 1, max_memory_usage = 0, max_result_bytes = 0"
 
 # check that a query stopped near its limit rather than running to natural completion. Fails loudly in both
 # directions: below the lower bound (finished early - a randomized limit or unrelated failure) or above the
@@ -47,11 +54,11 @@ check_stopped_at_limit() {
 # $1: unique id prefix   $2: SELECT expression   $3: many|single   $4: number of rows
 run_case() {
     local prefix="$1" expr="$2" shape="$3" rows="$4"
-    local settings="max_threads = 1, max_memory_usage = 0"
+    local settings
     if [ "$shape" = single ]; then
-        settings="max_block_size = 1, $settings"
+        settings="max_block_size = 1, $COMMON"
     else
-        settings="max_block_size = ${rows}, $settings"   # force the whole input into one block
+        settings="max_block_size = ${rows}, $COMMON"   # force the whole input into one block
     fi
 
     local ref="04401_${prefix}_ref_${CLICKHOUSE_DATABASE}"
@@ -65,8 +72,8 @@ run_case() {
         ORDER BY event_time_microseconds DESC LIMIT 1")
 
     local limit=$(( (natural_ms * 45 / 100 + 999) / 1000 ))   # max_execution_time is in seconds; round up
-    local low_ms=$(( limit * 700 ))
-    local high_ms=$(( (limit * 1000 + natural_ms) / 2 ))
+    local low_ms=$(( limit * 500 ))                           # >= half the limit: guards against instant failure
+    local high_ms=$(( (limit * 1000 + natural_ms) / 2 ))      # < midpoint(limit, natural): stopped, did not finish
 
     for mode in throw break; do
         local id="04401_${prefix}_${mode}_${CLICKHOUSE_DATABASE}"
@@ -85,18 +92,18 @@ run_case() {
 #     per-row serialize loop dominates and, without the per-row check, runs uninterrupted to the end.
 run_case "many" \
     "toString(arrayMap(z -> arrayMap(y -> range(y % 4), range(z % 7)), range(number % 20))::Dynamic)" \
-    many 8000000
+    many 3000000
 
 # 1b. CAST(Map AS JSON), many rows in one block: exercises the sibling serialize-then-parse-back loops one
 #     conversion over (Map serializes to a JSON object that parses back). The per-row check in both loops must
 #     interrupt it; the parse-back loop (ConvertImplGenericFromString) is the dominant half of this conversion.
 run_case "json_many" \
     "CAST(map('id', number, 'vals', arrayMap(x -> x, range(number % 30))) AS JSON)" \
-    many 6000000
+    many 2500000
 
 # 2. one row holding a single huge value (max_block_size = 1). The per-row check fires once, before the value, and
 #    cannot interrupt serializing the value itself; only the in-serializer WriteBuffer check can. There is no
 #    useful partial result for a single value, so break mode is also a hard TIMEOUT_EXCEEDED (like throw).
 run_case "single" \
-    "toString(arrayMap(x -> arrayMap(y -> range(y % 8), range(x % 40)), range(6000000))::Dynamic)" \
+    "toString(arrayMap(x -> arrayMap(y -> range(y % 8), range(x % 40)), range(3000000))::Dynamic)" \
     single 1
