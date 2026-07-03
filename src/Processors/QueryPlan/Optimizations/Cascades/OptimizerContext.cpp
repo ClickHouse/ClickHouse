@@ -124,13 +124,36 @@ GroupPtr OptimizerContext::getGroup(GroupId group_id)
 
 void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
 {
-    auto group_id = expression->group_id;
-    auto group = memo.getGroup(group_id);
+    /// No pruning: an expression that loses to the current best still keeps its cost, so the
+    /// enforcer-input selection can consider it as an acyclic fallback.
+    costAndUpdateBest(expression, /*prune_against_best=*/false);
+}
+
+bool OptimizerContext::costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best)
+{
+    const auto & cost_config = memo.getCostConfig();
+    auto group = memo.getGroup(expression->group_id);
     auto cost = cost_estimator.estimateCost(expression);
+
+    if (prune_against_best)
+    {
+        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
+        Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
+        if (std::isfinite(current_best) && subtree_weighted >= current_best)
+        {
+            LOG_TEST(log, "Pruned expression '{}' in group #{}: "
+                "cost {} >= current best {}",
+                expression->getDescription(), expression->group_id,
+                subtree_weighted, current_best);
+            return false;
+        }
+    }
+
     expression->cost = cost;
     LOG_TEST(log, "group #{} expression '{}' cost {}",
-        group_id, expression->getDescription(), cost.subtree_cost.total(memo.getCostConfig()));
-    group->updateBestImplementation(expression, memo.getCostConfig());
+        expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
+    group->updateBestImplementation(expression, cost_config);
+    return true;
 }
 
 void OptimizerContext::deriveStatistics(GroupId group_id)
@@ -163,25 +186,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 
     /// All inputs ready — compute cost directly, bypassing the OptimizeInputsTask chain.
     deriveStatistics(expression->group_id);
-
-    auto group = getGroup(expression->group_id);
-    auto cost = cost_estimator.estimateCost(expression);
-    Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
-
-    Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
-    if (std::isfinite(current_best) && subtree_weighted >= current_best)
-    {
-        LOG_TEST(log, "Pruned expression '{}' in group #{}: "
-            "cost {} >= current best {}",
-            expression->getDescription(), expression->group_id,
-            subtree_weighted, current_best);
-        return true;
-    }
-
-    expression->cost = cost;
-    LOG_TEST(log, "group #{} expression '{}' cost {}",
-        expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
-    group->updateBestImplementation(expression, cost_config);
+    costAndUpdateBest(expression, /*prune_against_best=*/true);
     return true;
 }
 

@@ -271,24 +271,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 
         /// Compute the cost and check if this expression beats the current best
         /// before storing it (branch-and-bound pruning).
-        auto group = optimizer_context.getGroup(expression->group_id);
-        auto cost = optimizer_context.getCostEstimator().estimateCost(expression);
-        Float64 subtree_weighted = cost.subtree_cost.total(cost_config);
-
-        Float64 current_best = group->getBestCostForProperties(expression->properties, cost_config);
-        if (std::isfinite(current_best) && subtree_weighted >= current_best)
-        {
-            LOG_TEST(optimizer_context.log, "Pruned expression '{}' in group #{}: "
-                "cost {} >= current best {}",
-                expression->getDescription(), expression->group_id,
-                subtree_weighted, current_best);
-            return;
-        }
-
-        expression->cost = cost;
-        LOG_TEST(optimizer_context.log, "group #{} expression '{}' cost {}",
-            expression->group_id, expression->getDescription(), cost.subtree_cost.total(cost_config));
-        group->updateBestImplementation(expression, cost_config);
+        optimizer_context.costAndUpdateBest(expression, /*prune_against_best=*/true);
         return;
     }
     else

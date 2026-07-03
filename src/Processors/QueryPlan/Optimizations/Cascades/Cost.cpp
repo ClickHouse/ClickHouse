@@ -118,15 +118,199 @@ static constexpr Float64 funnel_sequential_cost_per_row = 1.0;
 /// N-way merge of sorted streams advances one cursor at a time.
 static constexpr Float64 merge_sequential_cost_per_row = 1.0;
 
-static GroupPtr getInputGroupWithStats(Memo & memo, const GroupExpressionPtr & expression, size_t input_index)
+/// Reads the statistics of the given input, throwing if the input group had none derived.
+static const ExpressionStatistics & inputStats(const CostInputs & inputs, size_t input_index)
 {
-    auto input_group = memo.getGroup(expression->inputs[input_index].group_id);
-    if (!input_group->statistics.has_value())
+    if (input_index >= inputs.input_stats.size() || !inputs.input_stats[input_index])
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "CostEstimator: statistics not derived for input group #{} of expression '{}' (group #{}).\n"
-            "Input group state:\n{}",
-            expression->inputs[input_index].group_id, expression->getDescription(), expression->group_id, input_group->dump(memo.getCostConfig()));
-    return input_group;
+            "CostEstimator: statistics not derived for input #{} of step '{}'",
+            input_index, inputs.step ? inputs.step->getName() : "<none>");
+    return *inputs.input_stats[input_index];
+}
+
+/// Hash join: left probe + right build + output. The build side is materialized fully per node
+/// for a broadcast join and 1/N per node otherwise. Network is modeled by the exchange steps.
+static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
+{
+    const auto & left_stats = inputStats(inputs, 0);
+    const auto & right_stats = inputStats(inputs, 1);
+
+    Cost cost;
+    cost.work = (left_stats.estimated_row_count
+                 + hash_table_build_factor * right_stats.estimated_row_count
+                 + inputs.output_stats.estimated_row_count) / inputs.parallelism;
+
+    /// Hash table materialization: memory allocation + cache pressure.
+    const Float64 ht_bytes = right_stats.estimated_row_count * right_stats.estimated_bytes_per_row;
+    if (is_broadcast)
+    {
+        cost.work += ht_bytes;
+        cost.sequential += hash_table_build_factor * right_stats.estimated_row_count;
+    }
+    else
+    {
+        cost.work += ht_bytes / inputs.parallelism;
+        cost.sequential += hash_table_build_factor * right_stats.estimated_row_count / inputs.parallelism;
+    }
+    return cost;
+}
+
+/// One node reads the whole table.
+static Cost fullReadCost(const CostInputs & inputs)
+{
+    return Cost{.work = inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row};
+}
+
+/// Hash table build + probe + output materialization, divided when each node handles 1/N.
+static Cost aggregationCost(const CostInputs & inputs, Float64 divide_by)
+{
+    Cost cost;
+    cost.work = (inputs.output_stats.estimated_row_count
+                 + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+                 + inputStats(inputs, 0).estimated_row_count) / divide_by;
+    return cost;
+}
+
+Cost LocalJoinStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return hashJoinCost(inputs, /*is_broadcast=*/false);
+}
+
+Cost BroadcastJoinStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return hashJoinCost(inputs, /*is_broadcast=*/true);
+}
+
+Cost ShuffleJoinStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return hashJoinCost(inputs, /*is_broadcast=*/false);
+}
+
+Cost LocalAggregationStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return aggregationCost(inputs, 1.0);
+}
+
+Cost ShuffleAggregationStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return aggregationCost(inputs, inputs.parallelism);
+}
+
+Cost PartialAggregationStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    return aggregationCost(inputs, inputs.parallelism);
+}
+
+Cost ParallelReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    /// Each of N nodes reads 1/N.
+    Cost cost = fullReadCost(inputs);
+    cost.work /= inputs.node_count;
+    return cost;
+}
+
+Cost ReplicatedReadStrategy::estimateOperatorCost(const CostInputs & inputs) const
+{
+    /// Shared storage: every node reads the full table from S3. No network.
+    return fullReadCost(inputs);
+}
+
+Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrategy * strategy)
+{
+    const IQueryPlanStep * step = inputs.step;
+
+    if (typeid_cast<const JoinStepLogical *>(step))
+    {
+        if (const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(strategy))
+            return join_strategy->estimateOperatorCost(inputs);
+        /// A join without a strategy (not yet implemented): price as a non-broadcast hash join.
+        return hashJoinCost(inputs, /*is_broadcast=*/false);
+    }
+
+    if (typeid_cast<const ReadFromMergeTree *>(step))
+    {
+        if (const auto * read_strategy = dynamic_cast<const IReadStrategy *>(strategy))
+            return read_strategy->estimateOperatorCost(inputs);
+        /// Single-node local read.
+        return fullReadCost(inputs);
+    }
+
+    if (typeid_cast<const FilterStep *>(step) || typeid_cast<const ExpressionStep *>(step))
+        return Cost{.work = expression_cost_per_row * inputStats(inputs, 0).estimated_row_count / inputs.parallelism};
+
+    if (typeid_cast<const AggregatingStep *>(step))
+    {
+        if (const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(strategy))
+            return aggregation_strategy->estimateOperatorCost(inputs);
+        /// Fallback (e.g. DefaultImplementation). Same as Local.
+        return aggregationCost(inputs, 1.0);
+    }
+
+    if (typeid_cast<const MergingAggregatedStep *>(step))
+    {
+        Cost cost;
+        cost.work = (inputs.output_stats.estimated_row_count
+            + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+            + inputStats(inputs, 0).estimated_row_count) / inputs.parallelism;
+        /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
+        /// merge for large outputs; bucket-level merge within a node is parallel.
+        cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
+        return cost;
+    }
+
+    if (dynamic_cast<const BroadcastExchangeStep *>(step))
+    {
+        Cost cost;
+        /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
+        /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
+        cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+            * std::max(1.0, inputs.node_count);
+        cost.sequential += inputs.config.exchange_fixed_overhead;
+        return cost;
+    }
+
+    if (dynamic_cast<const LogicalExchangeStep *>(step))
+    {
+        /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
+        /// not the group's trimmed L; the caller resolves that override from the memo.
+        const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
+        Cost cost;
+        /// Each row crosses the network once.
+        cost.network += rows * inputs.output_stats.estimated_bytes_per_row;
+        cost.sequential += inputs.config.exchange_fixed_overhead;
+        /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
+        /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
+        /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
+        /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+        if (dynamic_cast<const GatherExchangeStep *>(step) || dynamic_cast<const ScatterExchangeStep *>(step))
+            cost.sequential += funnel_sequential_cost_per_row * rows;
+        return cost;
+    }
+
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
+    {
+        Float64 rows = inputs.output_stats.estimated_row_count;
+        /// A bounded (top-N) sort scans all of its input rows, keeping only the best L; the group
+        /// stats are already trimmed to L, so read the input cardinality from the input.
+        if (sorting_step->getLimit() > 0)
+            rows = inputStats(inputs, 0).estimated_row_count;
+        /// A top-N keeps a heap of at most L rows (n * log L); a full sort is n * log n.
+        const Float64 sorted_rows = sorting_step->getLimit() > 0
+            ? std::min(rows, Float64(sorting_step->getLimit()))
+            : rows;
+        Cost cost;
+        cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
+        /// N-way merge is single-threaded and sees only the rows the sort emits.
+        cost.sequential += merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
+        return cost;
+    }
+
+    if (inputs.input_stats.empty())
+        return Cost{.work = unknown_leaf_cost};
+
+    /// Non-leaf steps without a specific model (e.g. `LimitStep`, `BuildRuntimeFilterStep`) get zero
+    /// local cost: they are cheap per row and identical across the alternatives being compared.
+    return {};
 }
 
 struct PartialTopNInputInfo
@@ -174,105 +358,36 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         ? 1.0
         : distribution_node_count;
 
-    ExpressionCost total_cost;
-    const IQueryPlanStep * expression_plan_step = expression->getQueryPlanStep();
-    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(expression_plan_step))
+    /// The physical row count through a sorted gather over a partial top-N is the one local-cost
+    /// input that needs the memo; resolve it here so estimateOperatorCost stays pure.
+    std::optional<Float64> exchange_rows_override;
+    if (dynamic_cast<const GatherExchangeStep *>(expression->getQueryPlanStep()))
     {
-        const auto & left_input = expression->inputs[0];
-        const auto & right_input = expression->inputs[1];
-        auto left_input_group = memo.getGroup(left_input.group_id);
-        auto right_input_group = memo.getGroup(right_input.group_id);
-        const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression->strategy.get());
-        total_cost = estimateHashJoinCost(*join_step, join_strategy, *group->statistics, *left_input_group->statistics, *right_input_group->statistics, parallelism);
-    }
-    else if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression_plan_step))
-    {
-        const auto * read_strategy = dynamic_cast<const IReadStrategy *>(expression->strategy.get());
-        total_cost = estimateReadCost(*read_step, read_strategy, *group->statistics, distribution_node_count);
-    }
-    else if (typeid_cast<const FilterStep *>(expression_plan_step))
-    {
-        auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.work = expression_cost_per_row * input_group->statistics->estimated_row_count / parallelism;
-    }
-    else if (typeid_cast<const ExpressionStep *>(expression_plan_step))
-    {
-        auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.work = expression_cost_per_row * input_group->statistics->estimated_row_count / parallelism;
-    }
-    else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(expression_plan_step))
-    {
-        auto input_group = getInputGroupWithStats(memo, expression, 0);
-        const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(expression->strategy.get());
-        total_cost = estimateAggregationCost(*aggregating_step, aggregation_strategy, *group->statistics, *input_group->statistics, parallelism);
-    }
-    else if (typeid_cast<const MergingAggregatedStep *>(expression_plan_step))
-    {
-        auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.work = (group->statistics->estimated_row_count
-            + group->statistics->estimated_row_count * group->statistics->estimated_bytes_per_row
-            + input_group->statistics->estimated_row_count) / parallelism;
-        /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
-        /// merge for large outputs; bucket-level merge within a node is parallel.
-        total_cost.cost.sequential = group->statistics->estimated_row_count / parallelism;
-    }
-    else if (dynamic_cast<const BroadcastExchangeStep *>(expression_plan_step))
-    {
-        auto bytes_per_row = group->statistics->estimated_bytes_per_row;
-        /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
-        /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
-        const Float64 receiver_count = Float64(std::max<size_t>(1, expression->properties.distribution.node_count));
-        total_cost.cost.network += group->statistics->estimated_row_count * bytes_per_row * receiver_count;
-        total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
-    }
-    else if (dynamic_cast<const LogicalExchangeStep *>(expression_plan_step))
-    {
-        Float64 rows = group->statistics->estimated_row_count;
-        /// A sorted gather over a partial top-N receives up to L rows from EACH producer node, so it
-        /// transfers min(input_rows, L * node_count) rows, not the group's trimmed L.
-        if (dynamic_cast<const GatherExchangeStep *>(expression_plan_step))
+        if (auto partial = getPartialTopNInputInfo(memo, expression, 0))
         {
-            if (auto partial = getPartialTopNInputInfo(memo, expression, 0))
-            {
-                const Float64 producer_node_count = std::max<Float64>(1, Float64(expression->inputs[0].required_properties.distribution.node_count));
-                rows = std::min(partial->input_rows, partial->limit * producer_node_count);
-            }
+            const Float64 producer_node_count = std::max<Float64>(1, Float64(expression->inputs[0].required_properties.distribution.node_count));
+            exchange_rows_override = std::min(partial->input_rows, partial->limit * producer_node_count);
         }
-        const auto bytes_per_row = group->statistics->estimated_bytes_per_row;
-        /// Each row crosses the network once.
-        total_cost.cost.network += rows * bytes_per_row;
-        total_cost.cost.sequential += memo.getCostConfig().exchange_fixed_overhead;
-        /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
-        /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
-        /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
-        /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
-        if (dynamic_cast<const GatherExchangeStep *>(expression_plan_step)
-            || dynamic_cast<const ScatterExchangeStep *>(expression_plan_step))
-            total_cost.cost.sequential += funnel_sequential_cost_per_row * rows;
-    }
-    else if (const auto * sorting_step = typeid_cast<const SortingStep *>(expression_plan_step))
-    {
-        Float64 rows = group->statistics->estimated_row_count;
-        /// A bounded (top-N) sort scans all of its input rows, keeping only the best L; the group
-        /// stats are already trimmed to L, so read the input cardinality from the input group.
-        if (sorting_step->getLimit() > 0)
-            rows = getInputGroupWithStats(memo, expression, 0)->statistics->estimated_row_count;
-        /// A top-N keeps a heap of at most L rows (n * log L); a full sort is n * log n.
-        const Float64 sorted_rows = sorting_step->getLimit() > 0
-            ? std::min(rows, Float64(sorting_step->getLimit()))
-            : rows;
-        total_cost.cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / parallelism;
-        /// N-way merge is single-threaded and sees only the rows the sort emits.
-        total_cost.cost.sequential += merge_sequential_cost_per_row * group->statistics->estimated_row_count / parallelism;
-    }
-    else
-    {
-        if (expression->inputs.empty())
-            total_cost.cost.work = unknown_leaf_cost;
-        /// Non-leaf steps without a specific model (e.g. `LimitStep`, `BuildRuntimeFilterStep`) get zero
-        /// local cost: they are cheap per row and identical across the alternatives being compared.
     }
 
+    CostInputs inputs{
+        .step = expression->getQueryPlanStep(),
+        .output_stats = *group->statistics,
+        .input_stats = {},
+        .parallelism = parallelism,
+        .node_count = distribution_node_count,
+        .exchange_rows_override = exchange_rows_override,
+        .config = memo.getCostConfig(),
+    };
+    inputs.input_stats.reserve(expression->inputs.size());
+    for (const auto & input : expression->inputs)
+    {
+        auto input_group = memo.getGroup(input.group_id);
+        inputs.input_stats.push_back(input_group->statistics ? &*input_group->statistics : nullptr);
+    }
+
+    ExpressionCost total_cost;
+    total_cost.cost = estimateOperatorCost(inputs, expression->strategy.get());
     total_cost.subtree_cost = total_cost.cost;
 
     /// Add input subtree costs. Unsatisfiable inputs produce infinity.
@@ -299,121 +414,5 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     return total_cost;
 }
 
-ExpressionCost CostEstimator::estimateHashJoinCost(
-    const JoinStepLogical & /*join_step*/,
-        const IJoinStrategy * strategy,
-        const ExpressionStatistics & this_step_statistics,
-        const ExpressionStatistics & left_statistics,
-        const ExpressionStatistics & right_statistics,
-        Float64 parallelism)
-{
-    const bool is_broadcast = dynamic_cast<const BroadcastJoinStrategy *>(strategy) != nullptr;
-
-    ExpressionCost join_cost;
-
-    /// Hash join: left probe + right build + output.
-    join_cost.cost.work = (left_statistics.estimated_row_count
-                           + hash_table_build_factor * right_statistics.estimated_row_count
-                           + this_step_statistics.estimated_row_count) / parallelism;
-
-    /// Hash table materialization: memory allocation + cache pressure.
-    const Float64 ht_bytes = right_statistics.estimated_row_count * right_statistics.estimated_bytes_per_row;
-
-    if (is_broadcast)
-    {
-        /// Full right table per node. Network modeled by BroadcastExchange.
-        join_cost.cost.work += ht_bytes;
-        join_cost.cost.sequential += hash_table_build_factor * right_statistics.estimated_row_count;
-    }
-    else
-    {
-        /// 1/N of right table per node. Network modeled by ShuffleExchange.
-        join_cost.cost.work += ht_bytes / parallelism;
-        join_cost.cost.sequential += hash_table_build_factor * right_statistics.estimated_row_count / parallelism;
-    }
-
-    return join_cost;
-}
-
-ExpressionCost CostEstimator::estimateReadCost(
-    const ReadFromMergeTree & /*read_step*/,
-    const IReadStrategy * strategy,
-    const ExpressionStatistics & this_step_statistics,
-    Float64 distribution_node_count)
-{
-    auto bytes_per_row = this_step_statistics.estimated_bytes_per_row;
-
-    if (dynamic_cast<const ParallelReadStrategy *>(strategy) != nullptr)
-    {
-        /// Each of N nodes reads 1/N.
-        return ExpressionCost{
-            .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row / distribution_node_count},
-            .subtree_cost = {},
-        };
-    }
-
-    if (dynamic_cast<const ReplicatedReadStrategy *>(strategy) != nullptr)
-    {
-        /// Shared storage: every node reads full table from S3. No network.
-        return ExpressionCost{
-            .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row},
-            .subtree_cost = {},
-        };
-    }
-
-    /// Single-node local read.
-    return ExpressionCost{
-        .cost = Cost{.work = this_step_statistics.estimated_row_count * bytes_per_row},
-        .subtree_cost = {},
-    };
-}
-
-ExpressionCost CostEstimator::estimateAggregationCost(
-    const AggregatingStep & /*aggregating_step*/,
-    const IAggregationStrategy * strategy,
-    const ExpressionStatistics & this_step_statistics,
-    const ExpressionStatistics & input_statistics,
-    Float64 parallelism)
-{
-    const bool is_local = dynamic_cast<const LocalAggregationStrategy *>(strategy) != nullptr;
-    const bool is_shuffle = dynamic_cast<const ShuffleAggregationStrategy *>(strategy) != nullptr;
-    const bool is_partial = dynamic_cast<const PartialAggregationStrategy *>(strategy) != nullptr;
-
-    ExpressionCost aggregation_cost;
-
-    if (is_local)
-    {
-        /// Hash table build + probe + output materialization.
-        aggregation_cost.cost.work +=
-            this_step_statistics.estimated_row_count +
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row +
-            input_statistics.estimated_row_count;
-    }
-    else if (is_shuffle)
-    {
-        /// Per-node 1/N. Network modeled by ShuffleExchange child.
-        aggregation_cost.cost.work +=
-            this_step_statistics.estimated_row_count / parallelism +
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism +
-            input_statistics.estimated_row_count / parallelism;
-    }
-    else if (is_partial)
-    {
-        aggregation_cost.cost.work +=
-            this_step_statistics.estimated_row_count / parallelism +
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row / parallelism +
-            input_statistics.estimated_row_count / parallelism;
-    }
-    else
-    {
-        /// Fallback (e.g. DefaultImplementation). Same as Local.
-        aggregation_cost.cost.work +=
-            this_step_statistics.estimated_row_count +
-            this_step_statistics.estimated_row_count * this_step_statistics.estimated_bytes_per_row +
-            input_statistics.estimated_row_count;
-    }
-
-    return aggregation_cost;
-}
 
 }

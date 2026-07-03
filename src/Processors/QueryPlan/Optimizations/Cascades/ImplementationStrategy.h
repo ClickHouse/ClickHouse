@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <base/types.h>
 #include <memory>
 
@@ -14,27 +15,39 @@ struct IImplementationStrategy
     virtual String getName() const = 0;
 };
 
-/// Per-operator-family bases. Cost functions take these as typed pointers,
-/// preventing e.g. an aggregation strategy from reaching join cost logic.
-struct IJoinStrategy : IImplementationStrategy {};
-struct IAggregationStrategy : IImplementationStrategy {};
-struct IReadStrategy : IImplementationStrategy {};
+/// Per-operator-family bases. Each physical strategy owns its local cost function
+/// (defined in Cost.cpp, so all cost formulas stay in one file).
+struct IJoinStrategy : IImplementationStrategy
+{
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+};
+struct IAggregationStrategy : IImplementationStrategy
+{
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+};
+struct IReadStrategy : IImplementationStrategy
+{
+    virtual Cost estimateOperatorCost(const CostInputs & inputs) const = 0;
+};
 
 /// --- Join strategies ---
 
 struct LocalJoinStrategy final : IJoinStrategy
 {
     String getName() const override { return "Local HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct BroadcastJoinStrategy final : IJoinStrategy
 {
     String getName() const override { return "Broadcast HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct ShuffleJoinStrategy final : IJoinStrategy
 {
     String getName() const override { return "Shuffle HashJoin"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Aggregation strategies ---
@@ -42,16 +55,19 @@ struct ShuffleJoinStrategy final : IJoinStrategy
 struct LocalAggregationStrategy final : IAggregationStrategy
 {
     String getName() const override { return "LocalAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct ShuffleAggregationStrategy final : IAggregationStrategy
 {
     String getName() const override { return "ShuffleAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 struct PartialAggregationStrategy final : IAggregationStrategy
 {
     String getName() const override { return "PartialAggregation"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// --- Top-N (sort + limit) strategies ---
@@ -68,6 +84,7 @@ struct PartialTopNStrategy final : IImplementationStrategy
 struct ParallelReadStrategy final : IReadStrategy
 {
     String getName() const override { return "ParallelRead"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 /// Replicated read on shared storage: every node reads the full table from object storage.
@@ -76,6 +93,7 @@ struct ParallelReadStrategy final : IReadStrategy
 struct ReplicatedReadStrategy final : IReadStrategy
 {
     String getName() const override { return "ReplicatedRead"; }
+    Cost estimateOperatorCost(const CostInputs & inputs) const override;
 };
 
 using ImplementationStrategyPtr = std::shared_ptr<const IImplementationStrategy>;

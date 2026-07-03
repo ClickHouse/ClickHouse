@@ -6,6 +6,8 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -96,15 +98,32 @@ using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
 
 using GroupId = size_t;
 
-class JoinStepLogical;
-class ReadFromMergeTree;
-class FilterStep;
-class ExpressionStep;
-class AggregatingStep;
+class IQueryPlanStep;
+struct IImplementationStrategy;
 
-struct IJoinStrategy;
-struct IAggregationStrategy;
-struct IReadStrategy;
+/// Everything the local (single-operator) cost functions may read. Deliberately holds no memo
+/// access, so operator costing stays a pure function of statistics and configuration.
+struct CostInputs
+{
+    /// The plan step; used by the type dispatcher, ignored by the strategy cost functions.
+    const IQueryPlanStep * step = nullptr;
+    const ExpressionStatistics & output_stats;
+    /// Per-input statistics, aligned with the expression inputs; an entry is null when the
+    /// input group has no derived statistics.
+    std::vector<const ExpressionStatistics *> input_stats;
+    /// Partitioned = node_count per node; replicated = 1 (each node does the full work).
+    Float64 parallelism = 1.0;
+    /// Node count of the expression's own distribution property.
+    Float64 node_count = 1.0;
+    /// Physical rows through a gather over a partial top-N: min(input_rows, L * producers).
+    /// Computed by the caller from the memo; overrides the trimmed output row count.
+    std::optional<Float64> exchange_rows_override;
+    const CostConfig & config;
+};
+
+/// Local cost of one operator: dispatches to the strategy's cost function when the expression
+/// has one, otherwise prices the step by its type. Pure; no memo access.
+Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrategy * strategy);
 
 class CostEstimator
 {
@@ -113,30 +132,11 @@ public:
         : memo(memo_)
     {}
 
+    /// Local operator cost plus the subtree cost accumulated from the inputs' best
+    /// implementations (infinity when an input is unsatisfiable).
     ExpressionCost estimateCost(GroupExpressionPtr expression);
 
 private:
-    ExpressionCost estimateHashJoinCost(
-        const JoinStepLogical & join_step,
-        const IJoinStrategy * strategy,
-        const ExpressionStatistics & this_step_statistics,
-        const ExpressionStatistics & left_statistics,
-        const ExpressionStatistics & right_statistics,
-        Float64 parallelism);
-
-    ExpressionCost estimateReadCost(
-        const ReadFromMergeTree & read_step,
-        const IReadStrategy * strategy,
-        const ExpressionStatistics & this_step_statistics,
-        Float64 distribution_node_count);
-
-    ExpressionCost estimateAggregationCost(
-        const AggregatingStep & aggregating_step,
-        const IAggregationStrategy * strategy,
-        const ExpressionStatistics & this_step_statistics,
-        const ExpressionStatistics & input_statistics,
-        Float64 parallelism);
-
     Memo & memo;
     LoggerPtr log = getLogger("CostEstimator");
 };
