@@ -1,3 +1,4 @@
+
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <mutex>
 #include <DataTypes/DataTypesNumber.h>
@@ -93,7 +94,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table
