@@ -68,18 +68,25 @@ SELECT count() > 0 FROM (
 -- logical stage where this deferral runs. So parallel_hash is treated conservatively as
 -- non-order-preserving too: the pushdown must fire in pass 1 instead of deferring to a pass-2
 -- read-in-order path that the physical gate can refuse.
+-- enable_analyzer is pinned to 1 here: this deferral runs on the logical JoinStepLogical, which
+-- only exists in the new analyzer. Under the old analyzer topKThroughJoin sees the already-built
+-- physical ConcurrentHashJoin and reads its exact preservesLeftBlockOrder() (true for the
+-- two-level UInt64 map used here), so it correctly defers and read-in-order fires instead - a
+-- different, also-correct plan that would flip this assertion to 0. Pinned on both the wrapper
+-- and the EXPLAIN because the old-analyzer job forbids changing enable_analyzer in a subquery.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
     FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
     ORDER BY tl_04499.pk LIMIT 10
-    SETTINGS join_algorithm = 'parallel_hash',
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1,
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
         query_plan_join_swap_table = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
-) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
 
 -- The default `direct,parallel_hash,hash` list has a `hash` fallback, but `PlannerJoins::tryCreateJoin`
 -- still picks `ConcurrentHashJoin` when there is no right-side estimate or the right side is at least
@@ -87,18 +94,22 @@ SELECT count() > 0 FROM (
 -- type and the right-side size are unknown at this logical stage, so the deferral must treat the list
 -- as possibly non-order-preserving and fire the pushdown; otherwise a large-RHS single-level join would
 -- defer to a second pass that then bails on the physical `!preservesLeftBlockOrder()` gate, losing both.
+-- enable_analyzer pinned to 1 for the same reason as the parallel_hash probe above: the list is only
+-- treated as possibly-non-order-preserving on the logical JoinStepLogical (new analyzer); under the old
+-- analyzer the physical join is inspected directly and correctly defers, flipping this assertion to 0.
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT tl_04499.pk, tr_04499.v
     FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
     ORDER BY tl_04499.pk LIMIT 10
-    SETTINGS join_algorithm = 'direct,parallel_hash,hash',
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash', enable_analyzer = 1,
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
         query_plan_join_swap_table = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
-) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
 
 -- Order-preserving `hash` must be unchanged: it legitimately defers to read-in-order-through-join
 -- (which keeps the left primary-key order across the join), so there is no explicit pushed Limit.
