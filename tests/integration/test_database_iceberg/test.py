@@ -1551,3 +1551,40 @@ def test_namespace_prefix_query_cache_isolation(started_cluster):
     count_2 = int(node.query(f"USE {CATALOG_NAME}.{ns_2}; {query}"))
     assert count_1 == 2, f"Expected 2 rows in {ns_1}, got {count_1}"
     assert count_2 == 5, f"Expected 5 rows in {ns_2} (cache must not leak across namespaces), got {count_2}"
+
+
+def test_namespace_prefix_grants(started_cluster):
+    """
+    GRANT on a bare table name under USE db.namespace must target the
+    namespace-qualified table that SELECT resolves to.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_grant_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "grant_test_table"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"USE {CATALOG_NAME}.{namespace}; GRANT SELECT ON {table_name} TO {user}")
+        grants = node.query(f"SHOW GRANTS FOR {user}")
+        assert (
+            f"`{namespace}.{table_name}`" in grants
+        ), f"grant is not namespace-qualified: {grants}"
+
+        # A whole-database grant under the prefix scopes to the namespace.
+        node.query(f"USE {CATALOG_NAME}.{namespace}; GRANT INSERT ON * TO {user}")
+        grants = node.query(f"SHOW GRANTS FOR {user}")
+        assert (
+            f"`{namespace}.`*" in grants
+        ), f"any-table grant is not namespace-scoped: {grants}"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
