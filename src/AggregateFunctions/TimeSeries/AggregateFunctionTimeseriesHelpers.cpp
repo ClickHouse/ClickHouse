@@ -321,6 +321,7 @@ timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(times
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -348,6 +349,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -398,6 +400,7 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -425,6 +428,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -475,6 +479,7 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -502,6 +507,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -553,6 +559,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -580,6 +587,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -630,6 +638,7 @@ timeSeriesDerivToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
     {
         "Calculate derivative values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -657,6 +666,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -706,6 +716,7 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
     {
         "Calculate predict_linear values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210] with a 60 second offset",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -734,6 +745,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -784,6 +796,7 @@ timeSeriesChangesToGrid(start_timestamp, end_timestamp, grid_step, staleness)(ti
     {
         "Calculate changes values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -811,6 +824,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 5, 5, 8, 12, 13]::Array(Float32) AS values,
@@ -859,6 +873,7 @@ timeSeriesResetsToGrid(start_timestamp, end_timestamp, grid_step, staleness)(tim
     {
         "Calculate resets values on the grid [90, 105, 120, 135, 150, 165, 180, 195, 210, 225]",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -886,6 +901,7 @@ FROM
     {
         "Same query with array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values,
@@ -937,6 +953,7 @@ timeSeriesResampleToGridWithStaleness(start_timestamp, end_timestamp, grid_step,
     {
         "Basic usage with individual timestamp-value pairs",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to staleness window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -964,6 +981,7 @@ FROM
     {
         "Using array arguments",
         R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,

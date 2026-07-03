@@ -51,6 +51,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
@@ -61,6 +62,13 @@ namespace CurrentMetrics
     extern const Metric TaskTrackerThreads;
     extern const Metric TaskTrackerThreadsActive;
     extern const Metric TaskTrackerThreadsScheduled;
+}
+
+namespace ProfileEvents
+{
+    extern const Event DistributedPlanRemoteTasks;
+    extern const Event DistributedPlanLocalExecution;
+    extern const Event DistributedPlanHostsUsed;
 }
 
 
@@ -1042,6 +1050,10 @@ public:
         for (const auto & worker : task_to_host_map->getWorkerAddresses())
             worker_hosts.push_back(worker.host);
         LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(worker_hosts, ", "));
+        UnorderedSetWithMemoryTracking<String> distinct_hosts;
+        for (const auto & [task_id, host] : task_to_host_map->getTaskHosts())
+            distinct_hosts.insert(host.host);
+        ProfileEvents::increment(ProfileEvents::DistributedPlanHostsUsed, distinct_hosts.size());
     }
 
     void cleanup() override
@@ -1523,6 +1535,7 @@ protected:
                 throw;
             }
             running_tasks.addTask(stage_name, task_info);
+            ProfileEvents::increment(ProfileEvents::DistributedPlanRemoteTasks);
         }
     }
 
@@ -1661,7 +1674,10 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     bool run_locally = context->getSettingsRef()[Setting::distributed_plan_execute_locally];
     std::unique_ptr<DistributedQueryPlanExecutor> executor;
     if (run_locally)
+    {
+        ProfileEvents::increment(ProfileEvents::DistributedPlanLocalExecution);
         executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context, is_cancelled);
+    }
     else
         executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, task_to_host_map, context, is_cancelled);
 
