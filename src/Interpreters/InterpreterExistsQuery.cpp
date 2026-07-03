@@ -42,6 +42,16 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     ASTQueryWithTableAndOutput * exists_query = nullptr;
     bool result = false;
 
+    /// Under `USE db.namespace` (DataLakeCatalog) an unqualified name refers to the
+    /// namespace-qualified table, the same way `Context::resolveStorageID` resolves it.
+    const auto current_db_info = getContext()->getCurrentDatabase();
+    auto with_table_prefix = [&](const String & table_name, const String & query_database)
+    {
+        if (query_database.empty() && !current_db_info.table_prefix.empty())
+            return current_db_info.table_prefix + "." + table_name;
+        return table_name;
+    };
+
     if ((exists_query = query_ptr->as<ASTExistsTableQuery>()))
     {
         if (exists_query->isTemporary())
@@ -52,7 +62,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         else
         {
             String database = getContext()->resolveDatabase(exists_query->getDatabase());
-            const auto & table = exists_query->getTable();
+            const String table = with_table_prefix(exists_query->getTable(), exists_query->getDatabase());
             /// A dictionary created by a DDL query is also registered among tables, so a plain `EXISTS <name>`
             /// query can refer to a dictionary. For such a dictionary `SHOW DICTIONARIES` is sufficient, which
             /// matches the behaviour of `EXISTS DICTIONARY <name>` and what the documentation promises.
@@ -95,8 +105,9 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         else
         {
             String database = getContext()->resolveDatabase(exists_query->getDatabase());
-            getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-            auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
+            const String table_name = with_table_prefix(exists_query->getTable(), exists_query->getDatabase());
+            getContext()->checkAccess(AccessType::SHOW_TABLES, database, table_name);
+            auto table = DatabaseCatalog::instance().tryGetTable({database, table_name}, getContext());
             result = table && table->isView();
         }
     }
@@ -111,8 +122,9 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         if (exists_query->isTemporary())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Temporary dictionaries are not possible.");
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
-        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, exists_query->getTable());
-        result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
+        const String table_name = with_table_prefix(exists_query->getTable(), exists_query->getDatabase());
+        getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, table_name);
+        result = DatabaseCatalog::instance().isDictionaryExist({database, table_name});
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{
