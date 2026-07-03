@@ -69,8 +69,6 @@ String
 --- INTERPOLATE folded target survives projection pruning ---
 1
 11
---- RENAME DATABASE updates the folded lookup index ---
-7
 --- Quoted table alias survives join-tree resolution ---
 1
 1

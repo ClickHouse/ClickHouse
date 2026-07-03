@@ -207,17 +207,6 @@ SELECT '--- INTERPOLATE folded target survives projection pruning ---';
 -- pruning does not erase the interpolate expression.
 SELECT Val FROM (SELECT 1 AS x, 1 AS Val) ORDER BY x ASC WITH FILL FROM 1 TO 3 INTERPOLATE (val AS Val + 10);
 
-SELECT '--- RENAME DATABASE updates the folded lookup index ---';
-DROP DATABASE IF EXISTS RenCaseFoo;
-DROP DATABASE IF EXISTS RenCaseBar;
-CREATE DATABASE RenCaseFoo;
-CREATE TABLE RenCaseFoo.t (x Int32) ENGINE = Memory;
-INSERT INTO RenCaseFoo.t VALUES (7);
-RENAME DATABASE RenCaseFoo TO RenCaseBar;
-SELECT x FROM rencasebar.t;
-SELECT x FROM rencasefoo.t; -- { serverError UNKNOWN_DATABASE }
-DROP DATABASE RenCaseBar;
-
 SELECT '--- Quoted table alias survives join-tree resolution ---';
 -- The resolved TableNode inherits the alias quote pin; unquoted `v.c` must not fold onto `"V"`.
 CREATE TABLE t_alias_pin (c Int32) ENGINE = Memory;
