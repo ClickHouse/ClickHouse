@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessFlags.h>
+#include <Interpreters/Context_fwd.h>
 #include <IO/WriteBuffer.h>
 #include <tuple>
 
@@ -95,6 +96,11 @@ struct AccessRightsElement
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 
+    /// Same, but under `USE db.namespace` (DataLakeCatalog databases) also scopes unqualified
+    /// table targets to the namespace, matching how the session resolves table names:
+    /// `ON t` -> `ON db.\`namespace.t\``, any-table targets -> the `namespace.` wildcard prefix.
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
+
     /// Checks if the current access type is deprecated and replaces it with the correct one.
     void replaceDeprecated();
 
@@ -135,6 +141,11 @@ public:
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
+
+    /// Same, but under `USE db.namespace` (DataLakeCatalog databases) also scopes unqualified
+    /// table targets to the namespace, matching how the session resolves table names:
+    /// `ON t` -> `ON db.\`namespace.t\``, any-table targets -> the `namespace.` wildcard prefix.
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
