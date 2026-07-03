@@ -39,27 +39,31 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 5. groupPolygonUnion: reject oversized polygon count (varint 100000)
+-- 5. groupPolygonUnion: reject a polygon count that exceeds the cumulative ring budget.
+--    Per-multipolygon polygon counts are no longer capped on their own (any count the aggregate
+--    can produce within the point budget must round-trip); the cumulative ring budget bounds the
+--    total instead. 10,000,001 polygons > MAX_RINGS_IN_POLYGONAL_STATE (10,000,000).
 SELECT 'union_oversized_polygons';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',      -- version
-        '01',      -- 1 chunk
-        'A08D06',  -- 100000 polygons (limit 10000)
-        '00'
+        '01',          -- version
+        '01',          -- 1 chunk
+        '81ADE204'     -- 10000001 polygons (cumulative ring budget 10000000)
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 6. groupPolygonUnion: reject oversized inner ring count (varint 100000)
+-- 6. groupPolygonUnion: reject an inner-ring count that exceeds the cumulative ring budget.
+--    Inner-ring counts are no longer capped on their own; the cumulative ring budget bounds the
+--    total. The single polygon already charges one (outer) ring, so 10,000,001 inner rings
+--    exceeds MAX_RINGS_IN_POLYGONAL_STATE (10,000,000).
 SELECT 'union_oversized_rings';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',      -- version
-        '01',      -- 1 chunk
-        '01',      -- 1 polygon
-        '00',      -- 0-point outer ring
-        'A08D06',  -- 100000 inner rings (limit 10000)
-        '00'
+        '01',          -- version
+        '01',          -- 1 chunk
+        '01',          -- 1 polygon
+        '00',          -- 0-point outer ring
+        '81ADE204'     -- 10000001 inner rings (cumulative ring budget 10000000)
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 

@@ -32,17 +32,18 @@ static constexpr UInt8 GEO_SERDE_VERSION = 1;
 
 /// Deserialization guards.
 static constexpr size_t MAX_POINTS_PER_RING = 10'000'000;
-static constexpr size_t MAX_RINGS_PER_POLYGON = 10'000;
-static constexpr size_t MAX_POLYGONS_PER_MULTIPOLYGON = 10'000;
 static constexpr size_t MAX_CHUNKS_PER_STATE = 10'000;
 static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
 static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
-/// Cumulative cap on the number of polygons and rings allocated while deserializing a
-/// single polygonal state. The per-container limits (`MAX_POLYGONS_PER_MULTIPOLYGON`,
-/// `MAX_RINGS_PER_POLYGON`) bound each `resize` individually, but their product across
-/// chunks/polygons can still amplify a metadata-only payload (every ring of size `0`)
-/// into a huge allocation while the point budget stays at zero. This cap is checked
-/// before every metadata `resize` so such payloads are rejected early.
+/// Cumulative cap on the number of polygons and rings allocated while deserializing a single
+/// polygonal state. Individual containers (the polygon count of a `MultiPolygon`, the inner-ring
+/// count of a `Polygon`) are deliberately not capped on their own: any shape the aggregate can
+/// produce within the point budget must round-trip through serialization, and a union of many
+/// disjoint polygons can legitimately hold far more than a few thousand components. This
+/// cumulative cap bounds the total metadata allocation instead: it is charged before every
+/// container is read, and the containers are filled incrementally, so a metadata-only payload
+/// (every ring of size `0`) is rejected before it can amplify into a huge allocation while the
+/// point budget stays at zero.
 static constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = 10'000'000;
 
 /// Cumulative allocation budget threaded through polygonal-state deserialization.
@@ -276,19 +277,18 @@ inline CartesianPolygon deserializeGeoPolygon(ReadBuffer & buf, const char * fun
 
     UInt64 inner_count = 0;
     readVarUInt(inner_count, buf);
-    if (inner_count > MAX_RINGS_PER_POLYGON)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Corrupted state of aggregate function {}: polygon has {} inner rings (limit {})",
-            function_name,
-            inner_count,
-            MAX_RINGS_PER_POLYGON);
 
-    /// Bound metadata allocation before reserving ring storage.
+    /// The inner-ring count is not capped on its own: a polygon the aggregate produces may hold
+    /// any number of holes within the point budget, and such a state must round-trip. Bound the
+    /// allocation with the cumulative ring budget instead, then read the inner rings incrementally
+    /// (bounded initial reservation + `push_back`) so a truncated payload that advertises a large
+    /// count but carries no ring bytes cannot pre-allocate storage proportional to that count.
     chargeRingBudget(inner_count, function_name, budget);
-    poly.inners().resize(inner_count);
+    static constexpr UInt64 deserialize_ring_batch = 4096;
+    auto & inners = poly.inners();
+    inners.reserve(inner_count < deserialize_ring_batch ? static_cast<size_t>(inner_count) : deserialize_ring_batch);
     for (UInt64 i = 0; i < inner_count; ++i)
-        poly.inners()[i] = deserializeGeoRing(buf, function_name, budget);
+        inners.push_back(deserializeGeoRing(buf, function_name, budget));
     return poly;
 }
 
@@ -296,20 +296,19 @@ inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const 
 {
     UInt64 poly_count = 0;
     readVarUInt(poly_count, buf);
-    if (poly_count > MAX_POLYGONS_PER_MULTIPOLYGON)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Corrupted state of aggregate function {}: multi-polygon has {} polygons (limit {})",
-            function_name,
-            poly_count,
-            MAX_POLYGONS_PER_MULTIPOLYGON);
 
-    /// Bound metadata allocation before reserving polygon storage.
+    /// The per-multipolygon polygon count is not capped on its own: a union of many disjoint
+    /// polygons can legitimately produce far more than a few thousand components, and such a state
+    /// must round-trip. Bound the allocation with the cumulative ring budget instead (each polygon
+    /// contributes at least its outer ring), then read the polygons incrementally (bounded initial
+    /// reservation + `push_back`) so a truncated payload that advertises a large count but carries
+    /// no polygon bytes cannot pre-allocate storage proportional to that count.
     chargeRingBudget(poly_count, function_name, budget);
+    static constexpr UInt64 deserialize_polygon_batch = 4096;
     CartesianMultiPolygon mp;
-    mp.resize(poly_count);
+    mp.reserve(poly_count < deserialize_polygon_batch ? static_cast<size_t>(poly_count) : deserialize_polygon_batch);
     for (UInt64 i = 0; i < poly_count; ++i)
-        mp[i] = deserializeGeoPolygon(buf, function_name, budget);
+        mp.push_back(deserializeGeoPolygon(buf, function_name, budget));
     return mp;
 }
 
