@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
