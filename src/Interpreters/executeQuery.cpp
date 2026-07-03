@@ -1300,6 +1300,11 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// skips it, so this never detaches an unrelated existing table with the same in-backup name.)
         for (const auto & element : backup->elements)
         {
+            /// A `TEMPORARY TABLE` element names a session-local temporary table whose name is unqualified.
+            /// Resolving it through the persistent catalog would detach an unrelated persistent table of the
+            /// same name that the query never touches, so skip temporary-table elements.
+            if (element.type == ASTBackupQuery::TEMPORARY_TABLE)
+                continue;
             if (backup->kind == ASTBackupQuery::RESTORE)
                 data.addTableIfNotEmpty(element.new_database_name, element.new_table_name, active_ctes);
             else
@@ -1308,7 +1313,12 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
     }
     else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
     {
-        data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes);
+        /// `... TEMPORARY TABLE t` (e.g. `EXISTS TEMPORARY TABLE t`, `DROP TEMPORARY TABLE t`,
+        /// `SHOW CREATE TEMPORARY TABLE t`) names a session-local temporary table, and its name is
+        /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
+        /// table of the same name that the query never touches, so skip temporary-table references.
+        if (!query_with_output->isTemporary())
+            data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes);
     }
 
     for (const auto & child : ast->children)

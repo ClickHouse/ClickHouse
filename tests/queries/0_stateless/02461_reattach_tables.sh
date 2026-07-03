@@ -62,6 +62,13 @@ check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reatt
 check_if_detached "EXISTS TABLE t_reattach_1" "t_reattach_1"
 check_if_detached "SHOW CREATE TABLE t_reattach_1" "t_reattach_1"
 
+# A `... TEMPORARY TABLE t` statement targets a session-local temporary table, not the persistent table of
+# the same (unqualified) name. With no temporary `t_reattach_1` in the session, these queries do not touch
+# the persistent `t_reattach_1`, so the reattach hook must NOT detach it. `EXISTS TEMPORARY TABLE` returns 0
+# and `DROP TEMPORARY TABLE IF EXISTS` is a no-op, so both succeed without a temporary table present.
+check_if_not_detached "EXISTS TEMPORARY TABLE t_reattach_1" "t_reattach_1"
+check_if_not_detached "DROP TEMPORARY TABLE IF EXISTS t_reattach_1" "t_reattach_1"
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_1"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_2"
 
