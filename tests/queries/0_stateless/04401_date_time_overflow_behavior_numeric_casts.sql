@@ -27,6 +27,15 @@ SELECT CAST(999999999999::UInt64, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANG
 -- value and ignored the setting, so an out-of-range Int32 stayed verbatim while the 64-bit path threw.
 SELECT CAST(4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- UInt32 and the wide integer types (Int128 / UInt128 / Int256 / UInt256 / BFloat16) used to miss every
+-- branch of the DateTime/Time dispatch and fall through to convertNumericGeneral, which ignores the
+-- setting and truncates. UInt32 4000000 fits DateTime (max UInt32) but overflows Time (max 3599999).
+SELECT CAST(4000000::UInt32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(340282366920938463463374607431768211455::UInt128, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999999999999999999::Int256, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(99999999999999999999999999::Int256, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-99999999999999999999999999::Int256, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- throw: float extremes (huge / Inf / NaN) must raise a clean error, not narrow to garbage';
 -- Formatting the rejected value with static_cast<Int64>(from) was undefined behavior for these
@@ -77,6 +86,15 @@ SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Date32');
 -- value. Assert on toInt32 (the printed text 999:59:59 hides the stored 4000000).
 SELECT toInt32(CAST(4000000::Int32, 'Time'));
 SELECT toInt32(CAST(-4000000::Int32, 'Time'));
+-- UInt32 and wide integer types (UInt128 / UInt256 / Int256) must clamp to the boundary too, not truncate
+-- on the generic path. Assert the stored integer via toInt32 where the printed text could hide a wrap.
+SELECT toInt32(CAST(4000000::UInt32, 'Time'));
+SELECT toInt32(CAST(340282366920938463463374607431768211455::UInt128, 'Time'));
+SELECT toInt32(CAST(99999999999999999999999999::Int256, 'Time'));
+SELECT toInt32(CAST(-99999999999999999999999999::Int256, 'Time'));
+SELECT CAST(340282366920938463463374607431768211455::UInt128, 'DateTime');
+SELECT CAST(99999999999999999999999999::Int256, 'DateTime');
+SELECT CAST(-99999999999999999999999999::Int256, 'DateTime');
 SELECT CAST(1e300::Float64, 'Time');
 SELECT CAST(1e300::Float64, 'DateTime');
 SELECT CAST(3e38::Float32, 'DateTime');
@@ -105,6 +123,11 @@ SELECT CAST(9223372036854775813::UInt64, 'DateTime');
 SELECT '-- ignore: narrow signed Int32 -> Time must clamp too, not store the raw out-of-range value';
 SELECT toInt32(CAST(4000000::Int32, 'Time'));
 SELECT toInt32(CAST(-4000000::Int32, 'Time'));
+SELECT '-- ignore: UInt32 and wide integer types -> DateTime/Time must clamp too, not truncate on the generic path';
+SELECT toInt32(CAST(4000000::UInt32, 'Time'));
+SELECT toInt32(CAST(340282366920938463463374607431768211455::UInt128, 'Time'));
+SELECT CAST(340282366920938463463374607431768211455::UInt128, 'DateTime');
+SELECT CAST(99999999999999999999999999::Int256, 'DateTime');
 SELECT '-- ignore: NaN -> Date must clamp to the minimum, not fall through to a narrowing cast';
 SELECT CAST(nan::Float64, 'Date');
 SELECT CAST(nan::Float64, 'Date32');

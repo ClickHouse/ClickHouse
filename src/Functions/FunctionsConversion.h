@@ -2078,7 +2078,8 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
-        /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
+        /// Special case of converting Int8, Int16, Int32 to DateTime/Time (values that always fit the
+        /// signed path, no positive DateTime overflow).
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
@@ -2092,7 +2093,15 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
+        /// Unsigned sources to DateTime/Time. UInt32/UInt128/UInt256 must be routed here too (not just
+        /// UInt64): otherwise they fall through to convertNumericGeneral, which ignores
+        /// date_time_overflow_behavior and truncates (e.g. UInt32 4000000 -> Time keeps 4000000 instead
+        /// of clamping/throwing at 3599999). UInt8/UInt16 always fit both targets and stay on the generic path.
+        else if constexpr ((
+                std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>
+                || std::is_same_v<FromDataType, DataTypeUInt128>
+                || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
@@ -2102,10 +2111,16 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
+        /// Signed 64-bit / wide-int / floating sources to DateTime/Time. Int128/Int256/BFloat16 must be
+        /// routed here too: otherwise they fall through to convertNumericGeneral, which ignores
+        /// date_time_overflow_behavior and truncates a wide value instead of saturating/throwing.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeInt128>
+                || std::is_same_v<FromDataType, DataTypeInt256>
                 || std::is_same_v<FromDataType, DataTypeFloat32>
-                || std::is_same_v<FromDataType, DataTypeFloat64>)
+                || std::is_same_v<FromDataType, DataTypeFloat64>
+                || std::is_same_v<FromDataType, DataTypeBFloat16>)
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
