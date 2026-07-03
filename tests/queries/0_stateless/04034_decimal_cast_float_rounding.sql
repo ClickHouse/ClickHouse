@@ -84,6 +84,17 @@ SELECT CAST(materialize(toFloat32(-10)), 'Decimal256(38)') SETTINGS cast_float_t
 -- Zero still succeeds on this path.
 SELECT CAST(materialize(toFloat32(0)), 'Decimal256(38)') AS d_batch;
 
+-- Float32 -> wide Decimal (Decimal128/Decimal256) whose scaled value lands above the Int64 range
+-- but within the target's native range must convert through Float64: the wide-integer builtin-float
+-- constructor otherwise narrows through int64_t, producing garbage (~0.0922...) instead of ~1.
+-- `toFloat32(1)` at scale 20/30 scales to ~1e20 / ~1e30 (in range for Int128/Int256). The trailing
+-- digits are the exact Float32 representation of the scaled value; scalar and batch must agree.
+SELECT 'Float32 -> wide Decimal above Int64 range:';
+SELECT CAST(toFloat32(1), 'Decimal128(20)');
+SELECT CAST(materialize(toFloat32(1)), 'Decimal128(20)');
+SELECT CAST(toFloat32(1), 'Decimal256(30)');
+SELECT CAST(materialize(toFloat32(1)), 'Decimal256(30)');
+
 -- Compatibility: `cast_float_to_decimal_uses_rounding = 0` restores the old truncate-toward-zero
 -- behavior, both in the scalar and the vectorized (batch) paths.
 SELECT 'Truncation when rounding is disabled (scalar):';

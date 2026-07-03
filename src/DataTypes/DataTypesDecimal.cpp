@@ -454,7 +454,7 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
                 return ReturnType(false);
         }
 
-        result = static_cast<ToNativeType>(out);
+        result = static_cast<ToNativeType>(static_cast<Float64>(out));
         return ReturnType(true);
     }
     else
@@ -529,10 +529,15 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                 if constexpr (!tight)
                     overflow = overflow || !isFinite(out);
 
+                /// Widen to `Float64` before the integer cast: `wide::integer`'s builtin-float
+                /// constructor narrows a `Float32` through `int64_t`, so a `Float32` value above the
+                /// `Int64` range (e.g. `Float32` -> `Decimal128`/`Decimal256` at scale > 18) would be
+                /// cast incorrectly. `Float64` -> wide integer is safe; the widen is a no-op for
+                /// `Float64` and exact for `Float32`.
                 if constexpr (has_nullmap)
                 {
                     nullmap_ptr[i] = overflow;
-                    to_ptr[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(out);
+                    to_ptr[i] = overflow ? static_cast<ToNativeType>(0) : static_cast<ToNativeType>(static_cast<Float64>(out));
                 }
                 else
                 {
@@ -547,7 +552,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                                 "{} convert overflow. Float is out of Decimal range",
                                 ToDataType::family_name);
                     }
-                    to_ptr[i] = static_cast<ToNativeType>(out);
+                    to_ptr[i] = static_cast<ToNativeType>(static_cast<Float64>(out));
                 }
             }
         };

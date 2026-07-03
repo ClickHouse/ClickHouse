@@ -39,6 +39,11 @@ Zero is representable for every Decimal scale:
 0	0
 Float32 -> Decimal256 finite multiplier, infinite product:
 0
+Float32 -> wide Decimal above Int64 range:
+1.00000002004087734275
+1.00000002004087734275
+1.000000015047466219891198222336
+1.000000015047466219891198222336
 Truncation when rounding is disabled (scalar):
 0	0
 2	-2
