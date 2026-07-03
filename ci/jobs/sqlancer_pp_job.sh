@@ -37,8 +37,14 @@ chmod +x "$CLICKHOUSE_BIN"
     1>"$OUTPUT_PATH/clickhouse-server.log" \
     2>"$OUTPUT_PATH/clickhouse-server.log.err" &
 
+# Talk to the server over HTTP with `wget`, not `curl`: the shared
+# `clickhouse/sqlancer-test` image (ci/docker/sqlancer-test/Dockerfile) installs
+# `wget` but not `curl`, so any `curl` call dies with "command not found" and
+# fails the whole job. `sqlancer_job.sh` already uses `wget` for the same reason.
+# `--content-on-error` on the write queries below surfaces ClickHouse's error
+# body (wget still exits non-zero on HTTP >= 400, so `set -e` fails loud).
 for _ in $(seq 1 60); do
-    if [[ $(curl -fsS --max-time 1 'http://localhost:8123/' 2>/dev/null) == 'Ok.' ]]; then
+    if [[ $(wget -q -T 1 -O- 'http://localhost:8123/' 2>/dev/null) == 'Ok.' ]]; then
         break
     fi
     sleep 1
@@ -52,14 +58,14 @@ done
 # silently swallowing this would leave every oracle hitting an auth wall.
 SQLANCER_USER="sqlancer"
 SQLANCER_PASSWORD="sqlancer"
-curl -fsS --data "CREATE USER OR REPLACE ${SQLANCER_USER} IDENTIFIED WITH plaintext_password BY '${SQLANCER_PASSWORD}'" 'http://localhost:8123/'
+wget -q -O- --tries=1 --content-on-error --post-data="CREATE USER OR REPLACE ${SQLANCER_USER} IDENTIFIED WITH plaintext_password BY '${SQLANCER_PASSWORD}'" 'http://localhost:8123/'
 # Grant everything the `default` user itself holds (CURRENT GRANTS) rather than
 # `GRANT ALL`: on the embedded-config server the default user does not hold the
 # full ALL set (e.g. it lacks `SHOW NAMED COLLECTIONS SECRETS`), so a plain
 # `GRANT ALL ON *.* ... WITH GRANT OPTION` fails with ACCESS_DENIED (code 497)
 # on current ClickHouse. CURRENT GRANTS copies exactly the default user's
 # privileges, which is everything SQLancer++ needs (DDL/DML on any database).
-curl -fsS --data "GRANT CURRENT GRANTS ON *.* TO ${SQLANCER_USER} WITH GRANT OPTION" 'http://localhost:8123/'
+wget -q -O- --tries=1 --content-on-error --post-data="GRANT CURRENT GRANTS ON *.* TO ${SQLANCER_USER} WITH GRANT OPTION" 'http://localhost:8123/'
 
 cd /sqlancer-pp
 
@@ -91,7 +97,7 @@ for ORACLE in "${ORACLES[@]}"; do
     stdout_file="$OUTPUT_PATH/${ORACLE}.out"
     ATTACHED_FILES_ARRAY+=("$error_output_file" "$stdout_file")
 
-    if [[ $(curl -fsS --max-time 1 'http://localhost:8123/' 2>/dev/null) != 'Ok.' ]]; then
+    if [[ $(wget -q -T 1 -O- 'http://localhost:8123/' 2>/dev/null) != 'Ok.' ]]; then
         TEST_RESULTS+=("${ORACLE},ERROR,Server is not responding")
         OVERALL_STATUS="failure"
         continue
@@ -174,7 +180,7 @@ ls "$OUTPUT_PATH"
 pkill clickhouse || true
 
 for _ in $(seq 1 60); do
-    if [[ $(curl -fsS --max-time 1 'http://localhost:8123/' 2>/dev/null) == 'Ok.' ]]; then
+    if [[ $(wget -q -T 1 -O- 'http://localhost:8123/' 2>/dev/null) == 'Ok.' ]]; then
         sleep 1
     else
         break
