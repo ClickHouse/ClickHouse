@@ -56,7 +56,7 @@ public:
         data(place).add(columns[0]->getFloat64(row_num), columns[1]->getUInt(row_num));
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }

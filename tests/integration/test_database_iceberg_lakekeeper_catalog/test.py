@@ -1,9 +1,6 @@
-import json
-import random
 import requests
 import time
 import uuid
-from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
@@ -72,7 +69,7 @@ def create_warehouse(cluster, minio_ip, minio_port):
         else:
             response.raise_for_status()
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
         raise
 
 
@@ -201,7 +198,7 @@ def test_select(started_cluster):
 
         if test_table_identifier in existing_tables:
             catalog.drop_table(test_table_identifier)
-    except Exception as e:
+    except Exception:
         pass
 
     simple_schema = Schema(
@@ -232,9 +229,9 @@ def test_select(started_cluster):
     assert list(scan_result["id"]) == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert list(scan_result["data"]) == ["hello", "world", "from", "lakekeeper", "test"]
 
-    namespaces = catalog.list_namespaces()
+    catalog.list_namespaces()
 
-    tables = catalog.list_tables(namespace=test_namespace)
+    catalog.list_tables(namespace=test_namespace)
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
@@ -322,7 +319,7 @@ SETTINGS {",".join((k + "=" + repr(v) for k, v in settings.items()))}"""
                 f"Secret {secret!r} leaked into CREATE DATABASE error message"
             )
             assert minio_secret_key not in message, (
-                f"minio secret key leaked into CREATE DATABASE error message"
+                "minio secret key leaked into CREATE DATABASE error message"
             )
             return
 

@@ -491,7 +491,7 @@ Note: converting from `String` type is always performed through parsing, if you 
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
-```sql
+```text
 ┌─variant───┬─variant_type─┐
 │ [1, 2, 3] │ String       │
 └───────────┴──────────────┘
@@ -588,6 +588,7 @@ INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, [
 ```
 
 ```sql
+SET allow_suspicious_types_in_order_by = 1;
 SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
@@ -603,6 +604,7 @@ SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```sql
+SET use_variant_default_implementation_for_comparisons = 0;
 SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
 ```
 
@@ -623,6 +625,7 @@ If you need to find the row with specific `Variant` value, you can do one of the
 - Cast value to the corresponding `Variant` type:
 
 ```sql
+SET use_variant_default_implementation_for_comparisons = 0;
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
 ```
 
@@ -676,6 +679,7 @@ Example:
 
 ```sql
 SET allow_suspicious_variant_types = 1;
+SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
 SELECT v, variantType(v) FROM test ORDER by v;
@@ -740,6 +744,7 @@ This allows you to use regular functions with Variant columns without special ha
 **Example:**
 
 ```sql
+SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
 INSERT INTO test VALUES (42), ('hello'), (NULL);
 SELECT *, toTypeName(v) FROM test WHERE v = 42;
@@ -759,6 +764,7 @@ The result type depends on what the function returns for each variant:
 
 - **Different result types**: `Variant(T1, T2, ...)`
 ```sql
+SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
 INSERT INTO test2 VALUES (42::UInt64), (42.42);
 SELECT v + 1 AS result, toTypeName(result) FROM test2;
@@ -773,6 +779,7 @@ SELECT v + 1 AS result, toTypeName(result) FROM test2;
 
 - **Type incompatibility**: `NULL` for incompatible variants
 ```sql
+SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
 INSERT INTO test3 VALUES ([1,2,3]), (42);
 SELECT v + 10 AS result, toTypeName(result) FROM test3;

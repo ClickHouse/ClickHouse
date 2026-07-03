@@ -64,8 +64,10 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
+    REGULAR(s3_read_inject_etag_mismatch) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
@@ -101,6 +103,9 @@ static struct InitFiu
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
+    REGULAR(database_catalog_throw_on_table_shutdown) \
+    REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
+    REGULAR(database_replicated_throw_on_stop_replication) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(taskstats_counters_reset_throw) \
@@ -122,10 +127,15 @@ static struct InitFiu
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
+    REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -174,6 +184,10 @@ static struct InitFiu
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_commit) \
+    ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -196,16 +210,23 @@ static struct InitFiu
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
+    REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
+    PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
+    PAUSEABLE_ONCE(smt_clone_partition_pause_before_commit) \
     REGULAR(transaction_force_unknown_state_after_commit) \
+    ONCE(attach_to_group_failure) \
+    ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     REGULAR(tcp_handler_fail_connection_setup) \
-    REGULAR(distributed_plan_status_check_reenqueue_fault)
+    REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    ONCE(zk_send_thread_request_window_throw) \
+    ONCE(zk_send_thread_operations_insert_throw)
 
 namespace FailPoints
 {

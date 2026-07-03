@@ -42,6 +42,11 @@ Possible values:
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
 If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
+    DECLARE(Bool, output_format_csv_header_serialize_tuple_into_separate_columns, true, R"(
+When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each Tuple column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
+
+Note: a flattened header is not read back into a Tuple by name when `input_format_with_names_use_header = 1`. To read such data back into a Tuple, either set this setting to `0` on output, or read with `input_format_with_names_use_header = 0` (and, for the `*WithNamesAndTypes` formats `CSVWithNamesAndTypes` and `CustomSeparatedWithNamesAndTypes`, also `input_format_with_types_use_header = 0`, since the flattened types row is otherwise validated against the single top-level Tuple input field and rejected).
+)", 0) \
     DECLARE(Bool, input_format_csv_deserialize_separate_columns_into_tuple, true, R"(
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 )", 0) \
@@ -148,6 +153,9 @@ Possible values:
 )", IMPORTANT) \
     DECLARE(Bool, input_format_csv_empty_as_default, true, R"(
 Treat empty fields in CSV input as default values.
+)", 0) \
+    DECLARE(Bool, input_format_csv_missing_nullable_as_empty_string, false, R"(
+Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL.
 )", 0) \
     DECLARE(Bool, input_format_tsv_empty_as_default, false, R"(
 Treat empty fields in TSV input as default values.
@@ -1293,6 +1301,15 @@ Possible values:
 - `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
 
 This applies only when the `geometry` column is materialized. When it is not a requested output column, such a geometry is validated for well-formedness but does not trigger the handling.
+)", 0) \
+    DECLARE(Bool, format_geojson_validate_geometry, true, R"(
+Controls whether the `GeoJSON` format enforces RFC 7946 geometry validity, in both directions.
+
+When enabled (default), a geometry that violates the GeoJSON shape rules is rejected: a `LineString` (or a line of a `MultiLineString`) with fewer than two points; a `Polygon` or `MultiPolygon` ring with fewer than four points or whose first and last points differ (an unclosed ring); or an empty `MultiLineString`, `Polygon`, or `MultiPolygon`. This applies both when reading (such a document is rejected) and when writing (such a ClickHouse value is rejected instead of producing a document the input format would reject).
+
+When disabled, these shape rules are not enforced: such geometries are read as-is and written as-is, so degenerate geometries round-trip, but a written document may not be valid GeoJSON.
+
+The validation is structural only: it checks point counts and ring closure. It does not inspect the geometric correctness of a shape — ring orientation (the right-hand rule / winding order) is not enforced, and structurally valid but geometrically degenerate geometries are accepted, such as a zero-area polygon, a self-intersecting ring, or a polygon whose holes lie outside its outer ring. Non-finite coordinates (`NaN`, `Inf`) are always rejected regardless of this setting, because they cannot be represented as JSON numbers.
 )", 0) \
     DECLARE(String, errors_output_format, "CSV", R"(
 Method to write Errors to text output.
