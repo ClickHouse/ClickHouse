@@ -1643,7 +1643,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             "Temporary objects (tables/views) cannot be created ON CLUSTER."
             "You should not specify a cluster for a temporary objects.");
 
-    String current_database = getContext()->getCurrentDatabase().database;
+    const auto current_database_info = getContext()->getCurrentDatabase();
+    const String & current_database = current_database_info.database;
     auto database_name = create.database ? create.getDatabase() : current_database;
 
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
@@ -1821,19 +1822,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), current_database, /*only_replace_current_database_function*/ false,
+            /*only_replace_in_join*/ false, current_database_info.table_prefix);
         visitor.visit(*create.select);
     }
 
     if (create.refresh_strategy)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), current_database, /*only_replace_current_database_function*/ false,
+            /*only_replace_in_join*/ false, current_database_info.table_prefix);
         visitor.visit(*create.refresh_strategy);
     }
 
     if (create.columns_list)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        AddDefaultDatabaseVisitor visitor(
+            getContext(), current_database, /*only_replace_current_database_function*/ false,
+            /*only_replace_in_join*/ false, current_database_info.table_prefix);
         visitor.visit(*create.columns_list);
     }
 
