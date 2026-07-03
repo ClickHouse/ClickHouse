@@ -19,7 +19,7 @@ from pr_version_info import (
     original_pr_number_from_backport_ref,
     partition_merged_prs,
     release_from_backport_ref,
-    render_issue_comment,
+    render_issue_section,
     render_section,
     upsert_section,
     version_key,
@@ -53,7 +53,8 @@ class TestUpsertSection(unittest.TestCase):
         body = "Original description."
         section = render_section("26.6.1.1", [])
         result = upsert_section(body, section)
-        self.assertTrue(result.startswith("Original description.\n\n"))
+        # Two blank lines separate the section from the preceding description.
+        self.assertTrue(result.startswith("Original description.\n\n\n"))
         self.assertIn(SECTION_START, result)
         self.assertIn(SECTION_END, result)
         self.assertIn("Merged into: `26.6.1.1`", result)
@@ -92,25 +93,30 @@ class TestUpsertSection(unittest.TestCase):
         self.assertNotIn("old", updated)
 
 
-class TestRenderIssueComment(unittest.TestCase):
-    def test_wraps_section_with_markers_and_credit(self):
+class TestRenderIssueSection(unittest.TestCase):
+    def test_inserts_resolved_by_after_header(self):
         section = render_section("26.6.1.1", ["25.12.1.100"])
-        comment = render_issue_comment(12345, section)
-        self.assertTrue(comment.startswith(SECTION_START))
-        self.assertTrue(comment.endswith(SECTION_END))
-        self.assertIn("Merged into: `26.6.1.1`", comment)
-        self.assertIn("Backported to: `25.12.1.100`", comment)
+        issue_section = render_issue_section(12345, section)
+        # No delimiters here -- `upsert_section` adds them, as for PR bodies.
+        self.assertNotIn(SECTION_START, issue_section)
+        self.assertNotIn(SECTION_END, issue_section)
         # `Resolved by` is the first list item, right after the header.
-        self.assertIn(
-            "### Version info\n- Resolved by: #12345\n- Merged into:", comment
+        self.assertEqual(
+            issue_section,
+            "### Version info\n"
+            "- Resolved by: #12345\n"
+            "- Merged into: `26.6.1.1`\n"
+            "- Backported to: `25.12.1.100`",
         )
 
-    def test_idempotent_markers(self):
-        # The markers must match the PR-body section markers so the comment can
-        # be found and updated on later runs.
-        comment = render_issue_comment(1, render_section("26.6.1.1", []))
-        self.assertEqual(comment.count(SECTION_START), 1)
-        self.assertEqual(comment.count(SECTION_END), 1)
+    def test_upserts_into_issue_body_idempotently(self):
+        section = render_issue_section(1, render_section("26.6.1.1", []))
+        once = upsert_section("Issue description.", section)
+        twice = upsert_section(once, section)
+        self.assertEqual(once, twice)
+        self.assertEqual(once.count(SECTION_START), 1)
+        self.assertTrue(once.startswith("Issue description."))
+        self.assertIn("- Resolved by: #1", once)
 
 
 class TestVersionKey(unittest.TestCase):
