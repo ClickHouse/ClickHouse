@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <QueryPipeline/SizeLimits.h>
@@ -9,6 +10,13 @@ namespace DB
 {
 
 struct Settings;
+
+struct SharedRuntimeFilterDescriptor
+{
+    String filter_key;
+    String build_key_name;
+    DataTypePtr common_type;
+};
 
 struct JoinOperator
 {
@@ -29,9 +37,9 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
-    /// (filter_name, build-side key column name) pairs that HashJoin should publish as
-    /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
-    std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
+    /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
+    /// Set by the `joinRuntimeFilter` optimizer pass.
+    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
