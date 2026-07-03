@@ -699,23 +699,14 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 }
 
 /// `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N` over a *partial*
-/// aggregation: apply the top-K heap (`enable_group_by_top_k_optimization`).
-///
-/// A plan built for stage `WithMergeableState` (a distributed shard, a
-/// parallel-replicas follower, or the initiator's local replica plan) contains
-/// no SortingStep/LimitStep — those run on the initiator after the merge — so
-/// `tryOptimizeGroupByLimitPushdown` cannot match it.  Derive the same
-/// parameters from the analyzed query instead.  Each node plans the query text
-/// locally, so nothing is pushed across the wire.
-///
-/// Only Pattern 1 (with ORDER BY) is applied here.  Its rank is a pure function
-/// of the key, which makes shard-local pruning sound: a key pruned locally has
-/// at least N better-ranked keys locally, hence at least N globally, so the
-/// initiator's final sort+limit discards it; conversely a key in the global
-/// top-N is never evicted on any node, so its merged state is complete.
-/// Pattern 2 (no ORDER BY) must stay final-only: without an ordered final
-/// selection the initiator could return a group whose partial state lost rows
-/// to local pruning.
+/// aggregation (a shard or parallel-replicas follower planning the query text
+/// locally at stage `WithMergeableState`): its plan has no LimitStep for
+/// `tryOptimizeGroupByLimitPushdown` to match, so derive the heap parameters
+/// from the analyzed query.  Sound because the rank is a pure function of the
+/// key: a key pruned locally has >= N better keys globally, and the
+/// initiator's final sort+limit discards it.  Requires a real ORDER BY — the
+/// no-ORDER-BY promotion cannot help here, since the verifying sort would have
+/// to sit above the initiator's MergingAggregatedStep.
 static void applyTopKPushdownToPartialAggregation(
     AggregatingStep & aggregating_step,
     const QueryNode & query_node,
@@ -789,8 +780,7 @@ static void applyTopKPushdownToPartialAggregation(
         limit,
         std::move(directions),
         std::move(nulls_directions),
-        sort_description.size(),
-        /*requires_pruning=*/ false);
+        sort_description.size());
 }
 
 void addAggregationStep(QueryPlan & query_plan,

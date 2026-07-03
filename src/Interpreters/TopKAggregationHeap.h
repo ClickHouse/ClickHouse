@@ -18,22 +18,9 @@ namespace DB
 
 /** A bounded heap tracking the top-K best keys by the query's `ORDER BY`.
   * Supports single-column and composite (`ColumnTuple`) keys; the worst kept
-  * key (evicted next) sits at the front of `heap_indices`.
-  *
-  * Sizing model:
-  *   * `capacity` — the query's `LIMIT N`; the heap never keeps fewer keys.
-  *   * `next_trim_size` — trimming runs when the heap grows past this.  It
-  *     starts at 1.5x capacity so evictions amortize, and is bumped past a
-  *     boundary tie-set whenever the tie guard blocks eviction (see below).
-  *   * `tie_overflow_limit` (`capacity + 2^20`) — keys that compare equal to
-  *     the boundary can never be evicted (destroying such a group and later
-  *     re-admitting its rows would surface an incomplete aggregate), so a
-  *     tie-set can grow the heap without bound: distinct keys tie through NaN
-  *     payloads, and in prefix mode through every full key sharing the
-  *     boundary prefix.  Past this limit `tie_overflow` is raised and the
-  *     caller decides whether freezing is safe (`shouldFreeze`).
-  *   * `freeze_observation_threshold` — rows to observe before declaring a
-  *     full heap that never skipped or evicted anything pure overhead.
+  * key sits at the front of `heap_indices`.  Trimming runs past
+  * `next_trim_size` (~1.5x capacity).  Boundary ties are never evicted, so a
+  * tie-set can grow the heap; past `tie_overflow_limit` the heap freezes.
   */
 struct TopKAggregationHeap
 {
@@ -41,18 +28,14 @@ struct TopKAggregationHeap
 
     bool is_composite = false;
 
-    /// The heap ranks by a strict prefix of the GROUP BY key (Pattern 1 with a
-    /// prefix ORDER BY).  Distinct full keys sharing the boundary prefix tie.
+    /// The heap ranks by a strict prefix of the GROUP BY key; distinct full
+    /// keys sharing the boundary prefix tie.
     bool is_prefix_mode = false;
 
     bool frozen = false;
 
-    /// Arena slots of evicted groups' aggregate states, reusable for later
-    /// inserts (all states share one size and alignment).  Without reuse, a
-    /// stream that keeps admitting and evicting keys grows the arena by one
-    /// state per distinct key seen even though the hash table stays bounded.
-    /// The slots stay valid for the lifetime of the owning
-    /// `AggregatedDataVariants` (its arenas are only appended to, never freed).
+    /// Evicted groups' state slots (uniform size/alignment), reused by later
+    /// inserts so the arena doesn't grow by one state per distinct key seen.
     std::vector<AggregateDataPtr> free_states;
 
     TopKAggregationHeap() = default;
@@ -97,30 +80,20 @@ struct TopKAggregationHeap
         skipped_rows += skipped;
     }
 
-    /** Whether to freeze now (see `freeze`).  Two independent reasons:
-      *   * the heap is pure overhead: at capacity for many rows without ever
-      *     skipping a row or evicting a key (low-cardinality input), or
-      *   * a boundary tie-set overgrew it (`tie_overflow`).  Freezing keeps
-      *     every remaining group with a complete state, which is always safe
-      *     when a sort follows the aggregation (Pattern 1: the downstream
-      *     `LIMIT` discards any evicted-rank key).  Under `requires_pruning`
-      *     (Pattern 2, no downstream sort) it is only safe if nothing was ever
-      *     evicted or skipped: a returning key would otherwise surface an
-      *     incomplete group in the unsorted `LIMIT`.
-      */
-    bool shouldFreeze(bool requires_pruning) const
+    /// Freeze when the heap is pure overhead (full for many rows, never
+    /// rejected anything) or a boundary tie-set overgrew it; the downstream
+    /// sort+limit discards any group an earlier eviction left incomplete.
+    bool shouldFreeze() const
     {
         if (frozen || !heap_column)
             return false;
 
-        const bool never_rejected = skipped_rows == 0 && evicted_keys == 0;
-
         if (observed_rows >= freeze_observation_threshold
-            && never_rejected
+            && skipped_rows == 0 && evicted_keys == 0
             && heap_indices.size() >= capacity)
             return true;
 
-        return tie_overflow && (!requires_pruning || never_rejected);
+        return tie_overflow;
     }
 
     void freeze()

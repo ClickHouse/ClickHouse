@@ -61,8 +61,7 @@ public:
         size_t top_k,
         std::vector<int> directions,
         std::vector<int> nulls_directions,
-        size_t num_key_columns,
-        bool requires_pruning);
+        size_t num_key_columns);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
     void setLimitHint(size_t limit) { limit_hint = limit; }

@@ -57,44 +57,22 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
-/// Optimization for `GROUP BY ... [ORDER BY ...] LIMIT N` queries: maintain a
-/// bounded heap of the top-N keys during aggregation and skip rows whose
-/// grouping key cannot make it into the final result.
-///
-/// Two plan shapes are matched, differing only in the presence of a SortingStep:
-///
-/// Pattern 1: LimitStep -> SortingStep -> [ExpressionStep] -> AggregatingStep
-///   `GROUP BY <keys> ORDER BY <prefix of keys> LIMIT N`.  The heap tracks the
-///   ORDER BY columns (a leading prefix of the GROUP BY keys) with per-column
-///   direction and NULLS direction.
-///
-/// Pattern 2: LimitStep -> [ExpressionStep] -> AggregatingStep
-///   `GROUP BY <keys> LIMIT N` without ORDER BY.  Any N groups are a valid
-///   result; the heap tracks all GROUP BY keys in default ascending order.
-///   There is no downstream sort to rank stale partially-aggregated groups
-///   below complete ones, so this pattern is only sound with hash-table
-///   pruning — `requires_pruning` makes the aggregator disable the heap at
-///   runtime for methods that cannot erase evicted keys.
-///
-/// Note on partial aggregation: this optimizer only ever sees a local, final
-/// aggregation.  A plan built for stage `WithMergeableState` (a distributed
-/// shard or a parallel-replicas follower planning the query text locally) has
-/// no LimitStep/SortingStep to match — for that case the same parameters are
-/// derived from the analyzed query by `applyTopKPushdownToPartialAggregation`
-/// in `Planner.cpp` (Pattern 1 only; its key-deterministic rank makes local
-/// pruning sound under the initiator's final sort+limit).  The coordinator
-/// merges partial states with a `MergingAggregatedStep`, which this optimizer
-/// does not match.  Plans built for `make_distributed_plan` are skipped
-/// explicitly below and in the Planner hook.
-size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+/// `GROUP BY ... [ORDER BY <prefix of keys>] LIMIT N`: maintain a bounded heap
+/// of the top-N keys during aggregation and skip rows whose key cannot reach
+/// the result.  Matches `LimitStep -> SortingStep -> [ExpressionStep] ->
+/// AggregatingStep`.  A query without `ORDER BY` is promoted into that shape
+/// by synthesizing a `SortingStep` over all keys (any N groups are a valid
+/// answer, so any deterministic order works); the sort also discards any group
+/// a heap eviction left partially aggregated, which is what makes the heap
+/// sound in both cases.  Partial (shard-side) aggregation is handled from the
+/// query tree in `Planner.cpp` instead, since its plan has no LimitStep.
+size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
 
-    /// The heap is a local, final-aggregation optimization.  When the plan is
-    /// going to be distributed, the second optimizer pass splits aggregation into
-    /// independent partial aggregators that would each prune their own keys.  Skip
-    /// the optimization rather than annotate a step that will be distributed.
+    /// The distributed planner would split the annotated aggregation into
+    /// independent partial aggregators.
     if (settings.make_distributed_plan)
         return 0;
 
@@ -115,10 +93,7 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (limit < 1)
         return 0;
 
-    /// A limit too large to be selective makes the heap pure overhead: it never
-    /// reaches capacity, so it can neither skip rows nor freeze, yet every group
-    /// still pays a key copy into `heap_column` and a `std::push_heap`.  Cap it
-    /// by `query_plan_max_limit_for_top_k_optimization` (0 = no cap).
+    /// An unselective limit makes the heap pure overhead (0 = no cap).
     if (settings.max_limit_for_top_k_optimization != 0 && limit > settings.max_limit_for_top_k_optimization)
         return 0;
 
@@ -138,11 +113,13 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     }
 
     /// Allow an optional ExpressionStep ("Before ORDER BY" / projection).
+    QueryPlan::Node * node_above_aggregation = parent_node;
     const ExpressionStep * expression_step = typeid_cast<const ExpressionStep *>(next_node->step.get());
     if (expression_step)
     {
         if (next_node->children.size() != 1)
             return 0;
+        node_above_aggregation = next_node;
         next_node = next_node->children.front();
     }
 
@@ -150,6 +127,7 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     if (!aggregating_step)
         return 0;
 
+    QueryPlan::Node * aggregating_node = next_node;
     const auto & params = aggregating_step->getParams();
 
     std::vector<int> directions;
@@ -171,17 +149,10 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
             if (sort_description[i].column_name != params.keys[i])
                 return 0;
 
-            /// The name match above is only sound if an intervening projection
-            /// did not rewrite the key under the same name (see
-            /// `isSortKeyPassThrough`).  Without an `ExpressionStep` the sort
-            /// reads the aggregation output directly, so a name match already
-            /// means the same column.
             if (expression_step && !isSortKeyPassThrough(expression_step->getExpression(), params.keys[i]))
                 return 0;
 
-            /// Collated ORDER BY is not supported by the top-K heap: the heap
-            /// compares with `IColumn::compareAt`, which ignores collation.
-            /// It is niche, so keep it out of this optimization entirely.
+            /// The heap compares with `IColumn::compareAt`, which ignores collation.
             if (sort_description[i].collator)
                 return 0;
 
@@ -193,29 +164,36 @@ size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan:
     }
     else
     {
-        /// No explicit ORDER BY (Pattern 2).  Correctness relies on erasing
-        /// evicted keys from the hash table (`requires_pruning`).  External
-        /// aggregation is dangerous here: a spill flushes partial states and
-        /// resets the heap, so a spilled key later evicted from the fresh heap
-        /// would surface an incomplete group in the unsorted LIMIT.  But the
-        /// heap also bounds the table to ~1.5x the limit, so a spill never
-        /// actually triggers - `applyLimitPushdown` turns external aggregation
-        /// off for this step (see below), which both keeps the optimization and
-        /// removes the hazard.  (Pattern 1 is safe regardless: its downstream
-        /// sort discards evicted keys.)
-
-        /// Default ascending order with NULLS LAST over all keys.
+        /// No ORDER BY: synthesize the sort directly above the aggregation
+        /// (below any projection, so key names need no pass-through check).
         num_key_columns = params.keys.size();
         directions.assign(num_key_columns, 1);
         nulls_directions.assign(num_key_columns, 1);
+
+        SortDescription sort_description;
+        sort_description.reserve(num_key_columns);
+        for (const auto & key : params.keys)
+            sort_description.emplace_back(key, /*direction=*/ 1, /*nulls_direction=*/ 1);
+
+        auto synthesized_sort = std::make_unique<SortingStep>(
+            aggregating_node->step->getOutputHeader(),
+            std::move(sort_description),
+            limit,
+            SortingStep::Settings(settings.max_block_size));
+        synthesized_sort->setStepDescription("Sorting for GROUP BY top-K", settings.max_step_description_length);
+
+        auto & sort_node = nodes.emplace_back();
+        sort_node.step = std::move(synthesized_sort);
+        sort_node.children = {aggregating_node};
+        chassert(node_above_aggregation->children.front() == aggregating_node);
+        node_above_aggregation->children.front() = &sort_node;
     }
 
     aggregating_step->applyLimitPushdown(
         limit,
         std::move(directions),
         std::move(nulls_directions),
-        num_key_columns,
-        /*requires_pruning=*/ sorting_step == nullptr);
+        num_key_columns);
     return 0;
 }
 

@@ -560,10 +560,7 @@ void Aggregator::Params::explain(ExplainFormatSettings & settings) const
                 out << ',';
             out << top_k->directions[i];
         }
-        out << "]";
-        if (top_k->requires_pruning)
-            out << ", requires_pruning=1";
-        out << "\n";
+        out << "]\n";
     }
 }
 
@@ -599,8 +596,6 @@ void Aggregator::Params::explain(JSONBuilder::JSONMap & map) const
         for (int direction : top_k->directions)
             directions->add(direction);
         top_k_map->add("Directions", std::move(directions));
-        if (top_k->requires_pruning)
-            top_k_map->add("Requires Pruning", true);
         map.add("Top-K", std::move(top_k_map));
     }
 }
@@ -661,32 +656,6 @@ private:
 };
 
 #endif
-
-/// Whether `Method`'s hash table can erase evicted top-K keys.  Pattern 2 of
-/// the top-K optimization (`GROUP BY ... LIMIT`, no ORDER BY) is only sound
-/// with erasure: `FixedHashTable`-based methods have no `erase`, and
-/// `LowCardinality` keeps per-dictionary-index caches that pruning cannot
-/// invalidate.  Used both by the per-method compile-time dispatch in
-/// `executeImpl` and by the runtime check in the constructor below.
-template <typename Method>
-constexpr bool method_supports_top_k_pruning
-    = requires(typename Method::Data d, typename Method::Key k) { d.erase(k); }
-    && !Method::low_cardinality_optimization;
-
-static bool methodSupportsTopKPruning(AggregatedDataVariants::Type type)
-{
-    switch (type)
-    {
-#define M(NAME, IS_TWO_LEVEL) \
-        case AggregatedDataVariants::Type::NAME: \
-            return method_supports_top_k_pruning<std::remove_cvref_t<decltype(*std::declval<AggregatedDataVariants &>().NAME)>>;
-
-        APPLY_FOR_AGGREGATED_VARIANTS(M)
-#undef M
-        default:
-            return false;
-    }
-}
 
 Aggregator::Aggregator(const Block & header_, const Params & params_)
     : keys_positions(calculateKeysPositions(header_, params_))
@@ -778,24 +747,6 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     #undef M
         default:
             ;
-    }
-
-    /// Pattern 2 of the top-K optimization (`GROUP BY ... LIMIT`, no ORDER BY,
-    /// marked by `requires_pruning`) is only sound when evicted keys are erased
-    /// from the hash table.  Now that the method is known, either commit to the
-    /// heap — and disable external aggregation, whose spill would flush partial
-    /// states the heap could later re-admit as incomplete groups (the heap
-    /// bounds the table to ~1.5x the limit, so spilling is unnecessary) — or
-    /// fall back to normal aggregation with the configured spill threshold
-    /// intact.  Deciding earlier, at plan time, would strip spill protection
-    /// from queries whose method cannot prune (e.g. `LowCardinality` keys).
-    /// Two-level conversion preserves prunability, so the decision holds.
-    if (params.top_k && params.top_k->requires_pruning)
-    {
-        if (methodSupportsTopKPruning(method_chosen))
-            params.max_bytes_before_external_group_by = 0;
-        else
-            params.top_k.reset();
     }
 
     HashMethodContext::Settings cache_settings;
@@ -1066,31 +1017,13 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    /// When the plan has no sort above the aggregation (`GROUP BY ... LIMIT`
-    /// without `ORDER BY`), the heap is only sound if evicted keys are erased
-    /// from the hash table; methods whose hash table cannot erase
-    /// (`FixedHashTable`-based ones) must not use the heap in that mode.
-    ///
-    /// `LowCardinality` is excluded too: its `State` keeps per-dictionary-index
-    /// `visit_cache` / `mapped_cache` entries that the trim path cannot
-    /// invalidate, so erasing a key would leave the State handing back a
-    /// destroyed `AggregateDataPtr` for a later row with the same index.  It
-    /// therefore never prunes (see `trimHeapAndPruneHashTable`), which also
-    /// disables the heap for it under `top_k->requires_pruning`.
-    constexpr bool can_prune = method_supports_top_k_pruning<Method>;
-
-    /// Freeze the heap and route to the regular aggregation path when it is
-    /// pure overhead or a boundary tie-set overgrew it and freezing is safe for
-    /// the pattern — see `TopKAggregationHeap::shouldFreeze` for the rationale.
-    if (params.top_k && method.top_k_heap.shouldFreeze(params.top_k->requires_pruning))
+    if (params.top_k && method.top_k_heap.shouldFreeze())
     {
         method.top_k_heap.freeze();
         ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
     }
 
-    const bool top_k = params.top_k
-        && (can_prune || !params.top_k->requires_pruning)
-        && !method.top_k_heap.frozen;
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
 
     if (top_k)
         method.top_k_heap.initIfNeeded(
@@ -1178,10 +1111,7 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
             destroyed_states->push_back(mapped);
             for (size_t j = 0; j < aggregate_functions.size(); ++j)
                 aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
-            /// The slot is dead but its arena allocation is not reclaimable;
-            /// hand it to the heap for reuse by a later insert, else a stream
-            /// that keeps admitting/evicting keys grows the arena by one state
-            /// per distinct key seen.
+            /// Arena allocations are not reclaimable; reuse the slot instead.
             method.top_k_heap.free_states.push_back(mapped);
         };
 
@@ -1199,12 +1129,9 @@ void NO_INLINE Aggregator::trimHeapAndPruneHashTable(Method & method, Arena & po
         else
             heap_columns.push_back(method.top_k_heap.heap_column.get());
 
-        /// Constructed lazily, on the first actual eviction: some hashing
-        /// states (e.g. `HashMethodKeysFixed`) eagerly pack ALL rows of their
-        /// input in the constructor, which is O(heap size) — and a trim blocked
-        /// by a boundary tie-set evicts nothing while the tie-set (hence the
-        /// heap) keeps growing, so paying the packing on every such call is
-        /// quadratic overall.
+        /// Lazy: some states (`HashMethodKeysFixed`) pack all heap rows in the
+        /// constructor, and a tie-blocked trim evicts nothing — paying O(heap)
+        /// per such call is quadratic while a tie-set grows.
         std::optional<typename Method::StateNoCache> trim_state;
 
         const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
@@ -1529,22 +1456,18 @@ void NO_INLINE Aggregator::executeImplBatch(
     /// null-check), but avoids accumulating garbage state for stateful
     /// aggregates (`uniqExact`, `groupArray`, ...).
     ///
-    /// `destroyed_states` collects aggregate state pointers destroyed by
-    /// `trimHeapAndPruneHashTable` over the whole batch; `places` entries
-    /// pointing into it are cleared once, after the loop (a per-trim scan over
-    /// the processed prefix is quadratic in the block size under sustained
-    /// eviction).  Deferral is sound only because a slot freed during this
-    /// batch is not handed out again within it — see `reusable_free_states`.
+    /// States destroyed by trims over the whole batch; `places` is fixed up
+    /// once after the loop (a per-trim scan is quadratic under sustained
+    /// eviction).  Sound only because slots freed during this batch are not
+    /// reused within it — see `reusable_free_states`.
     [[maybe_unused]] std::vector<AggregateDataPtr> destroyed_states;
 
     /// For all rows.
     if (!no_more_keys)
     {
         [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
-        /// Only state slots freed by PREVIOUS batches may be reused within this
-        /// batch: a slot freed and reused within one batch would alias a dead
-        /// pointer still present in `places`, and the batch-end fixup would
-        /// wrongly null the new group's rows.
+        /// Slots freed within this batch would alias dead pointers still in
+        /// `places`, so only slots freed by previous batches are reusable.
         [[maybe_unused]] size_t reusable_free_states = 0;
         if constexpr (top_k)
         {
@@ -1600,11 +1523,6 @@ void NO_INLINE Aggregator::executeImplBatch(
 
                 if constexpr (top_k)
                 {
-                    /// Reuse an evicted group's state slot instead of growing the
-                    /// arena — only slots freed by previous batches (see above).
-                    /// The extracted slot is replaced by the vector's last element,
-                    /// which keeps any this-batch (non-reusable) slots above the
-                    /// shrinking `reusable_free_states` floor.
                     auto & free_states = method.top_k_heap.free_states;
                     if (reusable_free_states > 0)
                     {
@@ -1644,18 +1562,10 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (method.top_k_heap.needsTrim())
                 {
-                    /// Destroyed pointers accumulate in `destroyed_states`; the
-                    /// `places` fixup (including this row's own state, possibly
-                    /// inserted and immediately evicted) happens once after the
-                    /// loop.
                     trimHeapAndPruneHashTable(method, *aggregates_pool, &destroyed_states);
 
-                    /// The trim moved the heap boundary and may have erased keys,
-                    /// so the precomputed skip bitmap and the State's
-                    /// consecutive-key cache are now stale.  Drop both: remaining
-                    /// rows must re-check against the new boundary and re-probe the
-                    /// hash table rather than reuse a cached (possibly destroyed)
-                    /// `AggregateDataPtr`.
+                    /// The boundary moved and keys may be erased: the bitmap and
+                    /// the consecutive-key cache are stale.
                     skip_bitmap = nullptr;
                     state.resetCache();
                 }
@@ -1666,8 +1576,6 @@ void NO_INLINE Aggregator::executeImplBatch(
             places[i] = aggregate_data;
         }
 
-        /// Null out `places` entries whose groups were evicted by trims during
-        /// this batch, before the batch `add` calls below consume them.
         if constexpr (top_k)
         {
             if (!destroyed_states.empty())

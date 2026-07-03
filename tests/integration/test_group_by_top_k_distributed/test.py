@@ -378,18 +378,11 @@ def test_parallel_replicas_pattern1(start_cluster, max_parallel_replicas):
     assert off == expected
 
 
-def test_remote_partial_aggregation_has_no_top_k(start_cluster):
-    """The GROUP BY top-K pushdown is intentionally NOT applied to the partial
-    aggregation shipped to parallel-replicas followers: it would have to be
-    serialized through `AggregatingStep`, but the query-plan serialization
-    version is not negotiated on the cached-blob send path, so older followers
-    could not be told about the extra bytes.
-
-    Therefore the remote partial `AggregatingStep` must never carry a `Top-K`
-    annotation, regardless of `enable_group_by_top_k_optimization`.  Result
-    correctness is covered by the pattern tests; the optimization still applies
-    to the coordinator's final aggregation.
-    """
+def test_remote_partial_aggregation_top_k(start_cluster):
+    """Partial aggregation derives the top-K parameters from the analyzed
+    query in the Planner (each node plans the query text locally; nothing is
+    serialized), so with the optimization on the partial `AggregatingStep`
+    carries a `Top-K` annotation, and with it off nothing does."""
     table = "t_pr"
     _create_replicated_shards(table)
     query = (
@@ -401,15 +394,16 @@ def test_remote_partial_aggregation_has_no_top_k(start_cluster):
         "max_parallel_replicas": 2,
         "cluster_for_parallel_replicas": "one_shard_two_replicas",
         "serialize_query_plan": 1,
+        "query_plan_max_limit_for_top_k_optimization": 1000,
     }
     for opt in (0, 1):
         plan = node1.query(
             query, settings=dict(settings_base, enable_group_by_top_k_optimization=opt)
         )
-        assert "Top-K:" not in plan, (
-            f"Top-K must not be pushed into partial aggregation across the wire "
-            f"(enable_group_by_top_k_optimization={opt}).\nFull plan:\n{plan}"
-        )
+        if opt:
+            assert "Top-K:" in plan, f"Full plan:\n{plan}"
+        else:
+            assert "Top-K:" not in plan, f"Full plan:\n{plan}"
 
 
 @pytest.mark.parametrize("max_parallel_replicas", [2])

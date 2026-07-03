@@ -142,7 +142,6 @@ public:
             std::vector<int> directions;            /// per-column ORDER BY directions
             std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
-            bool requires_pruning = false;          /// Pattern 2: must erase evicted keys
         };
         std::optional<TopKParams> top_k;
 

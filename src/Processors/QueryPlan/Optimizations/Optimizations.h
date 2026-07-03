@@ -61,6 +61,9 @@ struct Optimization
         std::optional<bool> join_swap_table;
 
         bool enable_group_by_top_k_optimization;
+        /// For plan steps constructed inside optimizations (e.g. the SortingStep
+        /// injected by the GROUP BY top-K pushdown).
+        size_t max_block_size{};
 
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
