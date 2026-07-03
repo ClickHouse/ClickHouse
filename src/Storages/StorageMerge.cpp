@@ -1472,8 +1472,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                             /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) keeps the
                             /// subcolumn name here, but column-level grants are stored against top-level storage
                             /// columns only. Map subcolumns back to their parent column so that `GRANT SELECT(t)`
-                            /// implicitly covers `t.a`, `t.b`, etc.
-                            const auto columns_in_storage = storage_snapshot->getColumnNamesInStorageForAccessCheck(columns_to_check);
+                            /// implicitly covers `t.a`, `t.b`, etc. Resolve against the current child table's
+                            /// schema, not the merge table's: children may have different layouts, so the same
+                            /// dotted identifier can be a subcolumn of a `Tuple` column in one child and a real
+                            /// column named `a.b` in another, and the check is against the child table.
+                            auto child_metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                            const auto columns_in_storage = child_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(columns_to_check);
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_in_storage);
                         }
 

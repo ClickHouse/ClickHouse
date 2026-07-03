@@ -422,18 +422,22 @@ void StorageMaterializedView::readImpl(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    /// Bind to a local: getInMemoryMetadataPtr returns a lifetime-safe handle whose
-    /// rvalue operator-> is deleted, so it must not be dereferenced as a temporary.
-    auto view_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-
-    if (!view_metadata_snapshot->select.select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, view_metadata_snapshot->select.select_table_id, columns_for_access_check);
+    /// Check the source table using the requested column names as-is. Unlike the target check
+    /// above, the subcolumn-to-parent normalization must NOT be applied here: these are the
+    /// view's output names, and a materialized view can expose data derived from a differently
+    /// named source column, so inferring a parent-column grant on the source from an output
+    /// subcolumn name would be an RBAC bypass. Propagating parent-column grants to a view's
+    /// source would require analysing the inner SELECT's real column dependencies, which is out
+    /// of scope here; the source check therefore keeps its original column-name behaviour.
+    const auto & select_table_id = view_metadata->select.select_table_id;
+    if (!select_table_id.empty())
+        context->checkAccess(AccessType::SELECT, select_table_id, column_names);
 
     auto storage_id = storage->getStorageID();
 
     /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
     /// We don't need to check access if the inner table was created automatically.
-    if (!has_inner_table && !storage_id.empty() && view_metadata_snapshot->sql_security_type)
+    if (!has_inner_table && !storage_id.empty() && view_metadata->sql_security_type)
         context->checkAccess(AccessType::SELECT, storage_id, columns_for_access_check);
 
     auto src_table_query_info = query_info;

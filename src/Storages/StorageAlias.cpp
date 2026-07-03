@@ -60,7 +60,18 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
         if (access_check->column_names.empty())
             access_check->context->checkAccess(access_check->access_type, target_database, target_table);
         else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
+        {
+            /// Resolve subcolumns against the target table's schema so that a grant on a parent
+            /// column (e.g. `SELECT(t)`) covers its subcolumns (`t.a`). The check targets the
+            /// table identified by target_database.target_table.
+            Names column_names = access_check->column_names;
+            if (auto target = DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), access_check->context))
+            {
+                auto target_metadata_snapshot = target->getInMemoryMetadataPtr(access_check->context, false);
+                column_names = target_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(column_names);
+            }
+            access_check->context->checkAccess(access_check->access_type, target_database, target_table, column_names);
+        }
     }
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());

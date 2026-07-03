@@ -630,8 +630,13 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     }
 
     /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
-    /// current grants, a grant revoked since CREATE should deny the estimate
-    context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
+    /// current grants, a grant revoked since CREATE should deny the estimate.
+    /// Resolve subcolumns against the table's schema so a grant on a parent column covers them.
+    auto storage_metadata = read_step->getStorageMetadata();
+    context->checkAccess(
+        AccessType::SELECT,
+        data.getStorageID(),
+        storage_metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_helper->getColumnsRequiredForIndexCalc()));
 
     /// TODO(yariks5s): text indexes need a tokenized block layout the empirical pipeline doesn't build
     /// also, add a whitelist index types so the logic will not be broken by a new type

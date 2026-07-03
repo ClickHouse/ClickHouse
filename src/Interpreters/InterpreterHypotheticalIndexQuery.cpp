@@ -100,7 +100,10 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// SELECT — otherwise a user with table-level access could infer a restricted
     /// column's distribution from the reported skip ratio.
     if (index_desc.expression)
-        context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
+        context->checkAccess(
+            AccessType::SELECT,
+            table_id,
+            metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_desc.expression->getRequiredColumns()));
 
     /// Reject unsupported types before validate can throw a confusing type-specific error
     /// get() already throws INCORRECT_QUERY for unknown types, exactly as validate

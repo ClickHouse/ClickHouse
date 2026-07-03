@@ -332,14 +332,17 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
+        /// Resolve subcolumns against the destination's schema (the access check targets the
+        /// destination), which may differ from the Buffer table's layout, so the same dotted
+        /// identifier can resolve differently there.
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         local_context->checkAccess(
             AccessType::SELECT,
             destination->getStorageID(),
-            storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
+            destination_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(column_names));
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
         auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
