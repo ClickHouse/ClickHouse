@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Extracting a string JSON value into DateTime/DateTime64 is a string-to-type cast, so it
 -- must honour cast_string_to_date_time_mode rather than date_time_input_format.
 -- https://github.com/ClickHouse/ClickHouse/issues/109126
