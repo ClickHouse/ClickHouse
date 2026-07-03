@@ -116,7 +116,7 @@ wasmtime::Module compileModuleWithEngine(wasmtime::Engine & engine, std::string_
         return nullptr;
     };
 
-    pthread_t thread;
+    pthread_t thread{};
     if (int rc = pthread_create(&thread, &attr, compile_fn, &task); rc != 0)
         throw Exception(ErrorCodes::WASM_ERROR, "pthread_create failed: {}", rc);
 
