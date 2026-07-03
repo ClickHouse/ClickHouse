@@ -1,0 +1,44 @@
+--- schema ---
+number	UInt64
+timestamp	DateTime64(9)
+capture_length	UInt32
+original_length	UInt32
+link_type	LowCardinality(String)
+protocols	Array(LowCardinality(String))
+eth_src	Nullable(String)
+eth_dst	Nullable(String)
+eth_type	LowCardinality(String)
+vlan_id	Nullable(UInt16)
+ip_version	Nullable(UInt8)
+src_addr	Nullable(IPv6)
+dst_addr	Nullable(IPv6)
+ip_protocol	LowCardinality(String)
+ip_ttl	Nullable(UInt16)
+src_port	Nullable(UInt16)
+dst_port	Nullable(UInt16)
+tcp_flags	Nullable(String)
+tcp_seq	Nullable(UInt32)
+tcp_ack	Nullable(UInt32)
+payload_length	UInt32
+payload	String
+raw	String
+--- classic pcap (HTTP over TCP) ---
+1	ETHERNET_II	['ETHERNET_II','IP','TCP','RAW']	4	::ffff:10.0.0.5	::ffff:207.46.134.94	TCP	3267	80	ACK,PSH
+--- pcapng (DHCP over UDP) ---
+1	['ETHERNET_II','IP','UDP','RAW']	UDP	68	67
+2	['ETHERNET_II','IP','UDP','RAW']	UDP	67	68
+3	['ETHERNET_II','IP','UDP','RAW']	UDP	68	67
+4	['ETHERNET_II','IP','UDP','RAW']	UDP	67	68
+--- pcapng (ICMP) protocol/count ---
+ICMP	8
+--- tls pcap: all Ethernet/IPv4/TCP ---
+16	16	16	16
+--- length invariants hold across all fixtures ---
+http.pcap	0	0	0
+dhcp.pcapng	0	0	0
+icmp_ascii.pcapng	0	0	0
+tls13-20-chacha20poly1305.pcap	0	0	0
+--- subset of columns (only number, dst_port) ---
+1	80
+--- schema inference via file() extension is PCAP-explicit only (count) ---
+4
