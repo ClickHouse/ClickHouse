@@ -824,7 +824,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
         size_t prev_size = string_state->size_column->size();
         /// `size_column` may be shared: besides the persistent deserialize state it is also put
         /// into the substreams cache below, and that cached column can be handed out as the
-        /// `.size` subcolumn output. Appending through `assumeMutable()` would reallocate that
+        /// `.size` subcolumn output. Appending through `assumeMutable` would reallocate that
         /// shared buffer in place, freeing memory the cache or the emitted column still points
         /// at. Go through `IColumn::mutate` so a shared column is cloned before we append.
         auto mutable_sizes = IColumn::mutate(std::move(string_state->size_column));

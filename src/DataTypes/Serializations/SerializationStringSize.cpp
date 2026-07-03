@@ -224,11 +224,17 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        auto mutable_column = column->assumeMutable();
+        /// The result `.size` column may be shared: when the full String column is also read,
+        /// SerializationString picks this column up from the substreams cache into its persistent
+        /// deserialize state. Appending through assumeMutable would realloc that shared buffer in
+        /// place, freeing memory the persistent state still points at. Go through IColumn::mutate
+        /// so a shared column is cloned before we append.
+        auto mutable_column = IColumn::mutate(std::move(column));
         size_t prev_size = mutable_column->size();
         /// Deserialize rows_offset + limit rows, we will apply rows_offset later.
         deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, 0);
         num_read_rows = mutable_column->size() - prev_size;
+        column = std::move(mutable_column);
 
         if (cache)
         {
@@ -238,7 +244,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
             /// As we will apply offsets to the current column we cannot put in the cache, so we use cut()
             /// method to create a separate column with all the data from current range.
             if (rows_offset)
-                column_for_cache = mutable_column->cut(prev_size, num_read_rows);
+                column_for_cache = column->cut(prev_size, num_read_rows);
             else
                 column_for_cache = column;
 

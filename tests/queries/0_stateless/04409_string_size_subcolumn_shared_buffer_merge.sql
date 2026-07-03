@@ -5,12 +5,16 @@
 -- stream. The per-column deserialize state keeps the sizes column, and that same column is
 -- also placed into the substreams cache (and can be handed out as the `.size` subcolumn
 -- output). When a single read spans several granules (continue_reading, i.e. max_block_size
--- larger than index_granularity) the sizes were appended in place via `assumeMutable()`,
--- which reallocated the shared buffer and left the cache / emitted column pointing at freed
--- memory. Under sanitizers this shows up as a double-free in a background merge thread.
+-- larger than index_granularity) the sizes were appended in place via `assumeMutable`, which
+-- reallocated the shared buffer and left the cache / emitted column pointing at freed memory.
+-- Two symmetric append sites had the bug: the full-string path in SerializationString and the
+-- mirror `.size` path in SerializationStringSize (reached when the `.size` output column is
+-- shared with SerializationString's persistent state). Under sanitizers this shows up as a
+-- double-free in a background merge thread. Both sites now clone via `IColumn::mutate`.
 --
--- The test forces that path (tiny granule, wide part, a read spanning many granules) and
--- checks that the `.size` values are correct. Without the fix it crashes under ASan.
+-- The test forces those paths (tiny granule, wide part, reads spanning many granules, and a
+-- read over several discontiguous mark ranges) and checks that the `.size` values are correct.
+-- Without the fix it crashes under ASan.
 
 DROP TABLE IF EXISTS t_string_size_shared;
 
@@ -35,6 +39,18 @@ SELECT countIf(s.size != length(s)) AS bad_s,
        count() AS total
 FROM t_string_size_shared
 SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+
+-- Exercise the mirror path in SerializationStringSize: read the `.size` subcolumn AND the full
+-- string over several discontiguous mark ranges (disjoint key intervals). Appending the second
+-- and later ranges hits the shared-column case (`.size` output aliased by SerializationString's
+-- persistent state) that must clone instead of appending in place.
+SELECT countIf(s.size != length(s)) AS bad_s,
+       countIf(big.size != length(big)) AS bad_big,
+       count() AS total
+FROM t_string_size_shared
+WHERE k < 500 OR (k >= 5000 AND k < 5500) OR (k >= 15000 AND k < 15500)
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0,
+         merge_tree_min_rows_for_seek = 0, merge_tree_min_bytes_for_seek = 0;
 
 -- Same, reading the `.size` subcolumns only (they are served from the shared sizes buffer).
 SELECT sum(s.size) AS sum_s, sum(big.size) AS sum_big
