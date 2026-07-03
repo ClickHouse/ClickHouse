@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -9,6 +10,9 @@
 
 namespace DB
 {
+
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 struct Settings;
 struct DistributedSettings;
@@ -63,6 +67,24 @@ class SelectStreamFactory;
 ///
 /// @return new Context with adjusted settings
 ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table);
+
+/// Full version of the above: additionally updates the client info and handles
+/// distributed-query-specific settings (offset/limit reset, leaf limits, etc.).
+/// Pass a null `additional_filter_ast` to skip propagating `additional_table_filters`
+/// to shards (used by the plan-level distributed read, where the filter travels
+/// as a `FilterStep` of the serialized plan instead of a setting).
+ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
+    bool is_remote_function,
+    ContextPtr context,
+    const Settings & settings,
+    const StorageID & main_table,
+    ASTPtr additional_filter_ast,
+    LoggerPtr log,
+    const DistributedSettings * distributed_settings);
+
+/// Network throttler for a distributed query
+/// (max_network_bandwidth / max_network_bytes on top of the user-level throttler).
+ThrottlerPtr getThrottler(const ContextPtr & context);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 AdditionalShardFilterGenerator

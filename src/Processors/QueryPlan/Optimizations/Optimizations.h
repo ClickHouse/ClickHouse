@@ -266,6 +266,29 @@ void resolveMaterializingCTEs(const QueryPlanOptimizationSettings & optimization
 /// in case it was enabled for local plan
 void enableMemoryBoundMerging(QueryPlan::Node & node);
 
+/// True if the plan reads from remote shards: it contains a `ReadFromRemotePlanStep` placeholder
+/// or a `ReadFromRemote` step, possibly nested in a child plan of a step (e.g. `ReadFromMerge`).
+/// Such a plan must not additionally go through the MPP `make_distributed_plan` conversion —
+/// the distributed split has already been decided. Non-const because enumerating child plans
+/// may create them (`ReadFromMerge` builds its children lazily).
+bool planReadsFromRemote(QueryPlan::Node & root);
+
+/// Push a serializable `ExpressionStep`/`FilterStep` sitting directly above a `ReadFromRemotePlanStep`
+/// placeholder into the placeholder's inner (per-shard) plan, so the expression/filter executes on the
+/// shards instead of on the initiator. A `LimitStep` above the placeholder is copied (not moved) into
+/// the inner plan when `distributed_push_down_limit` allows it. Runs in the same bottom-up traversal
+/// as the `tryMakeDistributed*` rules and before `finalizeReadFromRemotePlan`.
+void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Replace every `ReadFromRemotePlanStep` placeholder with a `ReadFromRemote` step whose shards
+/// carry the (shared) inner query plan. Runs unconditionally at the end of the second optimization
+/// pass, so `EXPLAIN PLAN` already shows the final `ReadFromRemote` step and a placeholder planted
+/// by a subquery/view with its own `make_distributed_plan = 1` never survives into pipeline
+/// building even when the outer query has the setting off. `walk_child_plans` (the raw
+/// `make_distributed_plan` setting) additionally descends into `getChildPlans` of steps like
+/// `ReadFromMerge`; when it is false the scan touches only `node->children` and has no side effects.
+void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans);
+
 }
 
 }

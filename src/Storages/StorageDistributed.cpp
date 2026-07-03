@@ -95,6 +95,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromRemotePlanStep.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -136,6 +138,7 @@ namespace ProfileEvents
     extern const Event DistributedRejectedInserts;
     extern const Event DistributedDelayedInserts;
     extern const Event DistributedDelayedInsertsMilliseconds;
+    extern const Event Shards;
 }
 
 namespace CurrentMetrics
@@ -160,6 +163,7 @@ namespace Setting
     extern const SettingsBool distributed_background_insert_split_batch_on_failure;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
@@ -167,6 +171,7 @@ namespace Setting
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool optimize_distributed_group_by_sharding_key;
@@ -507,6 +512,66 @@ StorageDistributed::StorageDistributed(
 }
 
 
+namespace
+{
+
+/// `shardNum` and `shardCount` read the special scalars `_shard_num` / `_shard_count`, which exist
+/// only in the query context of a shard (they are delivered with the query, see `ReadFromRemote`).
+/// Until such expressions are pushed down to the shards, evaluating them on the initiator would
+/// silently return 0, so queries referencing them fall back to the existing read path.
+/// The `_shard_num` virtual column is covered too: the analyzer rewrites it to `shardNum()`.
+bool queryTreeContainsShardDependentFunctions(const QueryTreeNodePtr & root)
+{
+    if (!root)
+        return false;
+
+    std::vector<const IQueryTreeNode *> stack = {root.get()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (const auto * function_node = node->as<FunctionNode>())
+        {
+            const auto & name = function_node->getFunctionName();
+            if (name == "shardNum" || name == "shardCount")
+                return true;
+        }
+
+        for (const auto & child : node->getChildren())
+        {
+            if (child)
+                stack.push_back(child.get());
+        }
+    }
+    return false;
+}
+
+}
+
+bool StorageDistributed::useDistributedPlanForReading(
+    const ContextPtr & local_context, const ClusterPtr & cluster, const SelectQueryInfo & query_info) const
+{
+    const auto & settings = local_context->getSettingsRef();
+
+    return settings[Setting::make_distributed_plan]
+        && settings[Setting::allow_experimental_analyzer]
+        && !settings[Setting::distributed_group_by_no_merge]
+        /// The plan path evaluates IN/JOIN subqueries over Distributed tables once on the initiator
+        /// (`GLOBAL IN`-like semantics). `distributed_product_mode = 'local'` instead demands
+        /// per-shard subquery rewriting to local tables, which the plan path does not implement, so
+        /// fall back to the legacy path. Coarse: applied regardless of whether the query has such
+        /// subqueries.
+        && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL
+        && !local_context->canUseParallelReplicasCustomKeyForCluster(*cluster)
+        && !local_context->canUseTaskBasedParallelReplicas()
+        /// Phase 1: plain remote tables only, no remote table functions.
+        && !remote_table_function_ptr
+        /// Requires the analyzer, so the query tree must be present.
+        && query_info.query_tree
+        && !queryTreeContainsShardDependentFunctions(query_info.query_tree);
+}
+
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
@@ -567,6 +632,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// Complete does not leak into outer headers.
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
+
+    /// Plan-level distributed execution: `read` adds a `ReadFromRemotePlanStep` placeholder and the
+    /// Planner builds the complete single-node plan above it, so the storage advertises `FetchColumns`.
+    /// This also applies when `to_stage == WithMergeableState` (nested distributed) — `FetchColumns`
+    /// is a legal answer for any `to_stage`. The `nodes == 1` proxy optimization and the `nodes == 0`
+    /// branch below are kept (they are handled by the existing path).
+    if (nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info))
+        return QueryProcessingStage::FetchColumns;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -1005,9 +1078,77 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+void StorageDistributed::readWithDistributedPlan(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    const SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    const ClusterPtr & cluster)
+{
+    const auto & settings = local_context->getSettingsRef();
+
+    if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
+        throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
+
+    auto remote_context = ClusterProxy::updateSettingsAndClientInfoForCluster(
+        *cluster,
+        is_remote_function,
+        local_context,
+        settings,
+        remote_storage,
+        /// In this mode the additional filter is already a `FilterStep` in the initiator plan and
+        /// travels as part of the serialized plan; forwarding it via the `additional_table_filters`
+        /// setting too would double-apply it when a shard re-plans a nested Distributed leaf.
+        /* additional_filter_ast= */ nullptr,
+        log,
+        distributed_settings.get());
+    remote_context->increaseDistributedDepth();
+
+    ProfileEvents::increment(ProfileEvents::Shards, cluster->getShardCount());
+
+    /// The inner plan is seeded with a bare read from the remote table producing the same sample
+    /// block a logical plan would (see the `build_logical_plan` emission in `PlannerJoinTree`).
+    auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+
+    /// When `remote_database` is empty (per-shard `default_database` clusters), a one-part
+    /// identifier resolves on the shard against the connection's database, which is
+    /// `ShardInfo::default_database`. So one shared inner plan serves all shards.
+    String remote_table_name;
+    if (remote_database.empty())
+        remote_table_name = backQuoteIfNeed(remote_table);
+    else
+        remote_table_name = backQuoteIfNeed(remote_database) + "." + backQuoteIfNeed(remote_table);
+
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+    if (const auto * query_info_table_node = query_info.table_expression->as<TableNode>())
+        table_expression_modifiers = query_info_table_node->getTableExpressionModifiers();
+    else if (const auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
+        table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
+
+    auto inner_plan = std::make_unique<QueryPlan>();
+    inner_plan->addStep(std::make_unique<ReadFromTableStep>(
+        sample_block,
+        remote_table_name,
+        table_expression_modifiers.value_or(TableExpressionModifiers{})));
+
+    query_plan.addStep(std::make_unique<ReadFromRemotePlanStep>(
+        std::move(inner_plan),
+        cluster,
+        /// The name of the non-optimized cluster.
+        query_info.cluster->getName(),
+        remote_context,
+        remote_storage,
+        remote_table_function_ptr,
+        /* query_for_logging_= */ query_info.query,
+        query_info.storage_limits,
+        log));
+    query_plan.addInterpreterContext(remote_context);
+}
+
 void StorageDistributed::read(
     QueryPlan & query_plan,
-    const Names &,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
@@ -1020,6 +1161,18 @@ void StorageDistributed::read(
     SelectQueryInfo modified_query_info = query_info;
 
     const auto & settings = local_context->getSettingsRef();
+
+    /// Plan-level distributed execution. Mirrors the `FetchColumns` decision of
+    /// `getQueryProcessingStage` (the stage check covers callers that ask for another stage,
+    /// e.g. `StorageMerge`; they take the existing path below).
+    if (ClusterPtr query_cluster = query_info.getCluster();
+        processed_stage == QueryProcessingStage::FetchColumns
+        && getClusterQueriedNodes(settings, query_cluster) > 1
+        && useDistributedPlanForReading(local_context, query_cluster, query_info))
+    {
+        readWithDistributedPlan(query_plan, column_names, storage_snapshot, query_info, local_context, query_cluster);
+        return;
+    }
 
     if (settings[Setting::allow_experimental_analyzer])
     {

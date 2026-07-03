@@ -141,6 +141,22 @@ public:
 private:
     void renameOnDisk(const String & new_path_to_table_data);
 
+    /// Whether reading should produce a `ReadFromRemotePlanStep` placeholder over the inner logical
+    /// per-shard plan (plan-level distributed execution, `make_distributed_plan`) instead of the
+    /// AST/query-tree based path.
+    bool useDistributedPlanForReading(
+        const ContextPtr & local_context, const ClusterPtr & cluster, const SelectQueryInfo & query_info) const;
+
+    /// The `make_distributed_plan` branch of read: adds a single `ReadFromRemotePlanStep`
+    /// holding the cluster and an inner plan seeded with a bare read from the remote table.
+    void readWithDistributedPlan(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        const SelectQueryInfo & query_info,
+        ContextPtr local_context,
+        const ClusterPtr & cluster);
+
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
     const String & getRelativeDataPath() const { return relative_data_path; }

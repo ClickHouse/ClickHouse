@@ -21,6 +21,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool enable_full_text_index;
@@ -212,6 +213,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     is_parallel_replicas_initiator_with_projection_support = is_parallel_replicas_initiator_with_projection_support_;
 
     make_distributed_plan = from[Setting::make_distributed_plan];
+
+    /// `distributed_push_down_limit` is a `UInt64` for historical reasons; the legacy path also
+    /// treats any non-zero value as enabled.
+    distributed_push_down_limit = from[Setting::distributed_push_down_limit] != 0;
 
     /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
     /// buckets the part, so the projection would be counted once per bucket and multiply the result.
