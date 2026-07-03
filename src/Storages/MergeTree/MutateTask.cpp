@@ -2725,6 +2725,22 @@ private:
                     projection_part->checksums.getTotalChecksumUInt128());
             }
 
+            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
+            /// Such an entry points at a directory missing from the new part, so the projection
+            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
+            /// An inherited entry is an orphan when both hold:
+            ///   1. the directory was not hardlinked into the new part, and
+            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
+            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
+            /// one above operate on disjoint sets and never fight over the same checksum entry.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                const auto projection_file = projection.getDirectoryName();
+                if (ctx->files_to_skip.contains(projection_file)
+                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {

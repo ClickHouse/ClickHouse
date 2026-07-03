@@ -227,6 +227,11 @@ protected:
 
     static fs::path getHistoryFilePath();
 private:
+    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
+    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
+    /// output path, so it neither prints anything nor disturbs the visible query state.
+    Block fetchDocumentation(const String & query, const String & word);
+
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
     void receiveLogsAndProfileEvents(ASTPtr parsed_query);
@@ -274,6 +279,12 @@ private:
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
+    /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
+    /// matches exactly, lists similar names and entities whose documentation mentions the word.
+    /// Always returns true: the input was consumed as a meta-command.
+    bool processHelpCommand(const String & word);
 
 protected:
 
@@ -341,6 +352,7 @@ protected:
     bool echo_queries = false; /// Print queries before execution (defaults to on in interactive mode, off in batch mode).
     bool echo_query_formatted = false; /// Format echoed queries (defaults to on in interactive mode, off in batch mode).
     bool echo_query_id = false; /// Print query_id before execution (defaults to on in interactive mode, off in batch mode).
+    String echo_query_separator; /// Optional separator printed before the formatted echoed query (empty = disabled).
     bool highlight_queries = true; /// Highlight the command prompt and the echoed queries.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool inline_insert_data = false; /// Send INSERT data as is in the query text instead of converting to native blocks.
