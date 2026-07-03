@@ -42,6 +42,7 @@
 #include <Analyzer/Passes/MultiIfToIfPass.h>
 #include <Analyzer/Passes/NormalizeCountVariantsPass.h>
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
+#include <Analyzer/Passes/OptimizeStringConversionComparisonPass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
@@ -277,6 +278,9 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<DictGetTupleElementPass>());
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
+    /// Should run before LogicalExpressionOptimizerPass, so that the constants produced by pruning
+    /// impossible string comparisons are folded in the surrounding logical expressions.
+    manager.addPass(std::make_unique<OptimizeStringConversionComparisonPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
