@@ -190,6 +190,7 @@ SELECT NOW, CURRENT_TIMESTAMP
 
     factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("localtimestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

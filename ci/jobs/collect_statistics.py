@@ -8,7 +8,6 @@ from ci.praktika.result import Result
 from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.praktika.settings import Settings
 
 # Job collects overall CI statistics per each job
 
@@ -125,7 +124,7 @@ if __name__ == "__main__":
     names = None
     results = []
 
-    print(f"--- Get Job Names ---")
+    print("--- Get Job Names ---")
 
     def get_all_job_names():
         query = JOB_NAMES_QUERY.format(DAYS=3, BASE_REF=BASE_REF)
@@ -139,7 +138,7 @@ if __name__ == "__main__":
     if not results[-1].is_ok():
         sys.exit()
 
-    print(f"--- Get statistics for each job ---")
+    print("--- Get statistics for each job ---")
     overall_statistics = {}
     is_collected = False
     results_stat = []
@@ -171,7 +170,7 @@ if __name__ == "__main__":
         )
     )
 
-    print(f"--- Upload statistics ---")
+    print("--- Upload statistics ---")
     statistics_link = None
     if is_collected:
 

@@ -28,6 +28,8 @@ public:
     GetPriorityForLoadBalancing(const GetPriorityForLoadBalancing & other)
         : hostname_prefix_distance(other.hostname_prefix_distance)
         , hostname_levenshtein_distance(other.hostname_levenshtein_distance)
+        , hostname_longest_common_prefix(other.hostname_longest_common_prefix)
+        , hostname_longest_common_suffix(other.hostname_longest_common_suffix)
         , load_balancing(other.load_balancing)
         , last_used(other.last_used.load(std::memory_order_relaxed))
     {
@@ -39,6 +41,8 @@ public:
         {
             hostname_prefix_distance = other.hostname_prefix_distance;
             hostname_levenshtein_distance = other.hostname_levenshtein_distance;
+            hostname_longest_common_prefix = other.hostname_longest_common_prefix;
+            hostname_longest_common_suffix = other.hostname_longest_common_suffix;
             load_balancing = other.load_balancing;
             last_used.store(other.last_used.load(std::memory_order_relaxed), std::memory_order_relaxed);
         }
@@ -48,6 +52,8 @@ public:
     GetPriorityForLoadBalancing(GetPriorityForLoadBalancing && other) noexcept
         : hostname_prefix_distance(std::move(other.hostname_prefix_distance))
         , hostname_levenshtein_distance(std::move(other.hostname_levenshtein_distance))
+        , hostname_longest_common_prefix(std::move(other.hostname_longest_common_prefix))
+        , hostname_longest_common_suffix(std::move(other.hostname_longest_common_suffix))
         , load_balancing(other.load_balancing)
         , last_used(other.last_used.load(std::memory_order_relaxed))
     {
@@ -59,6 +65,8 @@ public:
         {
             hostname_prefix_distance = std::move(other.hostname_prefix_distance);
             hostname_levenshtein_distance = std::move(other.hostname_levenshtein_distance);
+            hostname_longest_common_prefix = std::move(other.hostname_longest_common_prefix);
+            hostname_longest_common_suffix = std::move(other.hostname_longest_common_suffix);
             load_balancing = other.load_balancing;
             last_used.store(other.last_used.load(std::memory_order_relaxed), std::memory_order_relaxed);
         }
@@ -69,7 +77,9 @@ public:
     {
         return load_balancing == other.load_balancing
             && hostname_prefix_distance == other.hostname_prefix_distance
-            && hostname_levenshtein_distance == other.hostname_levenshtein_distance;
+            && hostname_levenshtein_distance == other.hostname_levenshtein_distance
+            && hostname_longest_common_prefix == other.hostname_longest_common_prefix
+            && hostname_longest_common_suffix == other.hostname_longest_common_suffix;
     }
 
     bool operator != (const GetPriorityForLoadBalancing & other) const
@@ -83,6 +93,8 @@ public:
 
     std::vector<size_t> hostname_prefix_distance; /// Prefix distances from name of this host to the names of hosts of pools.
     std::vector<size_t> hostname_levenshtein_distance; /// Levenshtein Distances from name of this host to the names of hosts of pools.
+    std::vector<size_t> hostname_longest_common_prefix; /// Lengths of the longest common prefix of this host name and the names of hosts of pools.
+    std::vector<size_t> hostname_longest_common_suffix; /// Lengths of the longest common suffix of this host name and the names of hosts of pools.
 
     LoadBalancing load_balancing = LoadBalancing::RANDOM;
 

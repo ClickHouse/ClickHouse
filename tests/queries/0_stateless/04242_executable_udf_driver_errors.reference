@@ -1,0 +1,10 @@
+non_zero_exit_propagated
+workdir_clean
+config_clean
+sql_clean
+empty_output_detected
+unknown_driver_detected
+name_mismatch_detected
+mismatch_config_clean
+mismatch_other_config_clean
+mismatch_sql_clean

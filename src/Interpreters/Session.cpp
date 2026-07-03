@@ -11,6 +11,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -323,7 +324,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
         }
     }
 }
@@ -352,7 +353,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
 
         throw;
     }
@@ -428,8 +429,29 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
         info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::setClientCertificate(const X509Certificate & certificate)
+{
+#if USE_SSL
+    ClientCertificateInfo info;
+
+    auto subjects = certificate.extractAllSubjects();
+    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (const auto & subject : subjects.at(type))
+            info.subjects.push_back(subjects.toString(type) + ":" + subject);
+
+    info.serial = certificate.serialNumber();
+    info.issuer = certificate.issuerName();
+    info.not_before = certificate.notBefore();
+    info.not_after = certificate.notAfter();
+
+    certificate_info = std::move(info);
+#else
+    (void)certificate;
+#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -740,7 +762,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with);
+                                     user_authenticated_with,
+                                     certificate_info);
     }
 
     notified_session_log_about_login = true;

@@ -13,6 +13,7 @@
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {

@@ -45,6 +45,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -1789,12 +1790,24 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 }
 
 
-/// Columns that resolved from matcher can also match columns from JOIN USING.
-/// In that case we update type to type of column in USING section.
-/// TODO: It's not completely correct for qualified matchers, so t1.* should be resolved to left table column type.
-/// But in planner we do not distinguish such cases.
+/// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
+/// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
+///
+/// Unqualified matcher (`*`): the matched column IS the merged USING key of the top join, so it
+/// takes that key's type directly.
+///
+/// Qualified matcher (`t.*`): the matched column is `t`'s own column, so its type must equal what
+/// the explicit reference `t.col` resolves to. Rather than inspect the USING joins here, resolve
+/// `t.col` through the normal identifier flow and adopt its type. That flow
+/// (IdentifierResolver::tryResolveIdentifierFromJoin) follows only the joins `t` participates in,
+/// wherever the USING join sits in the tree, applies the same type correction, and registers the
+/// changed type in `scope.join_columns_with_changed_types`. So a USING key that `t.col` matches
+/// only by name in a join `t` does not take part in is naturally not applied, and no separate
+/// participation check or registration is needed.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
+    bool is_qualified_matcher,
+    const Identifier & matched_qualified_identifier,
     IdentifierResolveScope & scope)
 {
     auto * nearest_query_scope = scope.getNearestQueryScope();
@@ -1806,6 +1819,47 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "There are no table sources. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
+    }
+
+    if (is_qualified_matcher)
+    {
+        /// Only a JOIN USING key can change a matched column's type here; `join_use_nulls`
+        /// nullability for the matcher is applied later in resolveMatcher. With no USING join in
+        /// scope there is nothing to correct, so skip the per-column identifier resolution.
+        /// The count lives on the query scope whose join tree is inspected above, not on the
+        /// current scope: a matcher in a lambda body (`arrayMap(x -> t.*, ...)`) resolves through
+        /// a fresh child scope whose counter is zero, but still expands `t.*` from the parent query.
+        if (nearest_query_scope->using_joins_count == 0)
+            return;
+
+        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
+        {
+            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
+
+            Identifier explicit_identifier = matched_qualified_identifier;
+            explicit_identifier.push_back(matched_column_node_typed.getColumnName());
+            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+            IdentifierResolveContext explicit_resolve_settings;
+            explicit_resolve_settings.allow_to_check_cte = false;
+            explicit_resolve_settings.allow_to_check_database_catalog = false;
+            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+            if (!explicit_resolve_result.resolved_identifier)
+                continue;
+
+            auto resolved_type = explicit_resolve_result.resolved_identifier->getResultType();
+            if (resolved_type->equals(*matched_column_node_typed.getColumnType()))
+                continue;
+
+            auto it = node_to_projection_name.find(matched_column_node);
+            matched_column_node = matched_column_node->clone();
+            if (it != node_to_projection_name.end())
+                node_to_projection_name.emplace(matched_column_node, it->second);
+
+            matched_column_node->as<ColumnNode &>().setColumnType(resolved_type);
+            correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
+        }
+
+        return;
     }
 
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
@@ -1845,12 +1899,14 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                     }
                 }
 
+                auto using_column_type = join_using_column_node.getResultType();
+
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
                 if (it != node_to_projection_name.end())
                     node_to_projection_name.emplace(matched_column_node, it->second);
 
-                matched_column_node->as<ColumnNode &>().setColumnType(join_using_column_node.getResultType());
+                matched_column_node->as<ColumnNode &>().setColumnType(using_column_type);
                 correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
                 if (!matched_column_node->isEqual(*join_using_column_nodes.at(0)))
                     scope.join_columns_with_changed_types[matched_column_node] = join_using_column_nodes.at(0);
@@ -1945,6 +2001,39 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
             scope.scope_node->formatASTForErrorMessage());
     }
 
+    /// In the recursive term of a recursive CTE the qualifier names the CTE itself (e.g. `x.*` in
+    /// `WITH RECURSIVE x AS (... UNION ALL SELECT x.* FROM x ...)`). The qualifier resolves through
+    /// expression arguments to the synthetic self-reference table node registered in
+    /// expression_argument_name_to_node, whose AnalysisTableExpressionData is never populated in the nearest
+    /// query scope. A qualified column (`x.a`) or an unqualified matcher (`*`) instead binds to the initialized
+    /// join-tree table expression (the `FROM x` clone). Remap the matcher to that initialized join-tree node so
+    /// `x.*` expands the same columns, matching the column/unqualified-matcher behavior and avoiding the
+    /// uninitialized-data path.
+    auto * nearest_query_scope = scope.getNearestQueryScope();
+    if (nearest_query_scope
+        && table_identifier_resolve_result.isResolvedFromExpressionArguments()
+        && !nearest_query_scope->table_expression_node_to_data.contains(table_expression_node))
+    {
+        QueryTreeNodePtr remapped_table_expression_node;
+        if (auto * nearest_query_node = nearest_query_scope->scope_node->as<QueryNode>();
+            nearest_query_node && nearest_query_node->getJoinTree())
+        {
+            auto join_tree_resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(
+                table_identifier_lookup, nearest_query_node->getJoinTree(), *nearest_query_scope);
+            if (join_tree_resolve_result.resolved_identifier
+                && nearest_query_scope->table_expression_node_to_data.contains(join_tree_resolve_result.resolved_identifier))
+                remapped_table_expression_node = join_tree_resolve_result.resolved_identifier;
+        }
+
+        if (!remapped_table_expression_node)
+            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+                "Qualified matcher {} cannot be resolved against an in-progress table expression. In scope {}",
+                matcher_node->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        table_expression_node = std::move(remapped_table_expression_node);
+    }
+
     NamesAndTypes matched_columns;
 
     auto * table_expression_query_node = table_expression_node->as<QueryNode>();
@@ -1978,7 +2067,8 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
         matched_columns,
         scope);
 
-    updateMatchedColumnsFromJoinUsing(result_matched_column_nodes_with_names, scope);
+    updateMatchedColumnsFromJoinUsing(
+        result_matched_column_nodes_with_names, /*is_qualified_matcher=*/ true, matcher_node_typed.getQualifiedIdentifier(), scope);
 
     return result_matched_column_nodes_with_names;
 }
@@ -2233,7 +2323,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             table_expression_columns,
             scope);
 
-        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, scope);
+        updateMatchedColumnsFromJoinUsing(matched_column_nodes_with_names, /*is_qualified_matcher=*/ false, {}, scope);
 
         table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_column_nodes_with_names));
     }
@@ -2371,7 +2461,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
-                node = it->node->clone();
+                /// See resolveExpressionNode: for a constant keep the matched node's own source
+                /// expression instead of the stored key, which may be a different colliding constant.
+                node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                 node->convertToNullable();
             }
         }
@@ -2892,14 +2984,19 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
       * Example: WITH (x -> x + lambda_2(x)) AS lambda_1, (x -> x + lambda_1(x)) AS lambda_2 SELECT 1;
+      *
+      * A recursive reference resolves to a fresh clone of the alias node, so re-entry must be
+      * detected by structure (tree hash), not by pointer identity. Compute that hash once here and
+      * reuse it for the contains/insert/erase below, instead of letting each operation recompute the
+      * lambda body's full getTreeHash (this guard is on the hot path for queries with large lambdas).
       */
-    auto it = lambdas_in_resolve_process.find(lambda_node);
-    if (it != lambdas_in_resolve_process.end())
+    const QueryTreeNodePtrWithHash lambda_with_hash{lambda_node};
+    if (lambdas_in_resolve_process.contains(lambda_with_hash))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
-    lambdas_in_resolve_process.emplace(lambda_node);
+    lambdas_in_resolve_process.insert(lambda_with_hash);
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -2952,7 +3049,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    lambdas_in_resolve_process.erase(lambda_node);
+    lambdas_in_resolve_process.erase(lambda_with_hash);
 
     return result_projection_names;
 }
@@ -3129,6 +3226,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 resolveUnion(mat_subquery, mat_subquery_scope);
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
+
+                            const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
+                                ? mat_subquery->as<QueryNode>()->isCorrelated()
+                                : mat_subquery->as<UnionNode>()->isCorrelated();
+                            if (mat_subquery_is_correlated)
+                                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                    "Materialized CTE '{}' cannot be correlated. In scope {}",
+                                    materialized_cte_ptr->cte_name,
+                                    scope.scope_node->formatASTForErrorMessage());
                         }
 
                         /// Create temp table only if no other clone has done it yet.
@@ -3425,7 +3531,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                 auto it = scope_ptr->nullable_group_by_keys.find(node);
                 if (it != scope_ptr->nullable_group_by_keys.end())
                 {
-                    node = it->node->clone();
+                    /// Clone the GROUP BY key and convert it to Nullable. For a constant we clone the
+                    /// matched node itself rather than the stored key `it->second`: two constants equal
+                    /// in value and type but with different source expressions share a single map entry,
+                    /// and the source expression determines the action node name (hence which aggregation
+                    /// key column the projection reads), so the matched node's own one must be preserved.
+                    node = (node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second)->clone();
                     node->convertToNullable();
                     break;
                 }
@@ -3693,12 +3804,114 @@ void expandTuplesInList(QueryTreeNodes & key_list)
     key_list = std::move(expanded_keys);
 }
 
+bool nodeSupportsConvertToNullable(const QueryTreeNodePtr & node)
+{
+    auto node_type = node->getNodeType();
+    return node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::FUNCTION;
+}
+
+/** Convert maximal subtrees that are GROUP BY keys to Nullable and recompute the types of all
+  * nodes above them. This mirrors what resolveExpressionNode does during bottom-up resolution
+  * of an expression containing GROUP BY keys as subexpressions: a subexpression equal to a key
+  * is replaced with a clone of the key converted to Nullable, and the functions above it are
+  * resolved with the new argument types.
+  * Returns true if any key was converted inside the given subtree.
+  */
+bool convertNestedGroupByKeysToNullable(
+    QueryTreeNodePtr & node,
+    const QueryTreeNodePtrWithHashIgnoreAliasesMap<QueryTreeNodePtr> & nullable_group_by_keys,
+    const ContextPtr & context)
+{
+    if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
+    {
+        node->convertToNullable();
+        return true;
+    }
+
+    auto node_type = node->getNodeType();
+    if (node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::LAMBDA && node_type != QueryTreeNodeType::LIST)
+        return false;
+
+    bool converted = false;
+    for (auto & child : node->getChildren())
+    {
+        if (child && convertNestedGroupByKeysToNullable(child, nullable_group_by_keys, context))
+            converted = true;
+    }
+
+    if (!converted)
+        return false;
+
+    if (auto * function_node = node->as<FunctionNode>())
+    {
+        rerunFunctionResolve(function_node, context);
+    }
+    else if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        const auto * lambda_type = typeid_cast<const DataTypeFunction *>(lambda_node->getResultType().get());
+        if (!lambda_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lambda node {} result type is not a function type",
+                lambda_node->formatASTForErrorMessage());
+
+        lambda_node->resolve(std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), lambda_node->getExpression()->getResultType()));
+    }
+
+    return true;
+}
+
+/** Register GROUP BY keys in scope.nullable_group_by_keys in every shape in which an expression
+  * equal to a key can arrive at the lookup in resolveExpressionNode, so that the lookup can use
+  * exact comparison (including types):
+  * - the original form, for keys resolved from scratch;
+  * - the form with every maximal proper sub-key already converted to Nullable and the types of
+  *   the nodes above recomputed, for keys that contain other keys as subexpressions;
+  * - the form converted to Nullable itself, for already converted expressions resolved again
+  *   (for example, reused through an alias).
+  * All shapes are mapped to the original key node.
+  */
+void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        scope.nullable_group_by_keys.emplace(key, key);
+
+    for (const auto & key : group_by_keys)
+    {
+        if (key->as<FunctionNode>())
+        {
+            auto key_with_converted_sub_keys = key->clone();
+            bool converted = false;
+
+            for (auto & child : key_with_converted_sub_keys->getChildren())
+            {
+                if (child && convertNestedGroupByKeysToNullable(child, scope.nullable_group_by_keys, scope.context))
+                    converted = true;
+            }
+
+            if (converted)
+            {
+                rerunFunctionResolve(key_with_converted_sub_keys->as<FunctionNode>(), scope.context);
+                scope.nullable_group_by_keys.emplace(std::move(key_with_converted_sub_keys), key);
+            }
+        }
+
+        if (nodeSupportsConvertToNullable(key))
+        {
+            auto converted_key = key->clone();
+            converted_key->convertToNullable();
+            scope.nullable_group_by_keys.emplace(std::move(converted_key), key);
+        }
+    }
+}
+
 }
 
 /** Resolve GROUP BY clause.
   */
 void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
 {
+    QueryTreeNodes nullable_group_by_keys;
+
     if (query_node_typed.isGroupByWithGroupingSets())
     {
         for (auto & grouping_sets_keys_list_node : query_node_typed.getGroupBy().getNodes())
@@ -3719,7 +3932,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             {
                 validateGroupByKeyType(group_by_elem->getResultType(), scope);
                 if (scope.group_by_use_nulls)
-                    scope.nullable_group_by_keys.insert(group_by_elem);
+                    nullable_group_by_keys.push_back(group_by_elem);
             }
         }
     }
@@ -3738,10 +3951,17 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             validateGroupByKeyType(group_by_elem->getResultType(), scope);
             if (scope.group_by_use_nulls)
-                scope.nullable_group_by_keys.insert(group_by_elem);
+                nullable_group_by_keys.push_back(group_by_elem);
         }
     }
 
+    if (!nullable_group_by_keys.empty())
+        registerNullableGroupByKeys(nullable_group_by_keys, scope);
+
+    /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
+    /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
+    /// lookup. Clear the resolution caches so that this re-resolution actually re-runs instead of
+    /// reusing the non-Nullable results cached during the first resolution.
     if (!scope.nullable_group_by_keys.empty())
     {
         resolved_expressions.clear();
@@ -3977,6 +4197,8 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpression());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 ++scope.joins_count;
+                if (join.isUsingJoinExpression())
+                    ++scope.using_joins_count;
                 break;
             }
             default:
@@ -5020,6 +5242,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
         join_node_typed.setUsingJoinExpression();
+
+        /// initializeQueryJoinTreeNode counts USING joins before this NATURAL -> USING conversion,
+        /// when the join still has no USING expression. Count it here so the qualified-matcher guard
+        /// in updateMatchedColumnsFromJoinUsing sees the synthesized key and corrects the matched type.
+        ++scope.using_joins_count;
     }
 
     if (join_node_typed.isOnJoinExpression())
