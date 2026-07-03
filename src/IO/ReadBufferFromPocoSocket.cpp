@@ -172,4 +172,12 @@ void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
     handshake_stopwatch.stop();
 }
 
+void ReadBufferFromPocoSocketBase::setAsyncCallback(AsyncCallback async_callback_)
+{
+    if (async_callback_ && !socket.impl()->supportsExternalPolling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot set an async callback on a socket that does not support external polling");
+    async_callback = std::move(async_callback_);
+}
+
 }

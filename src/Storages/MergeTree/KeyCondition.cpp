@@ -519,7 +519,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+
+                /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 
@@ -543,7 +555,19 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+
+                /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
+                /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
+                /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
+                if (is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                    out.range = Range(prefix);
+                    return true;
+                }
+
+                /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
                 if (prefix.empty())
                     return false;
 
@@ -1740,6 +1764,57 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
             if (!isFunctionReallyMonotonic(func, type))
                 return false;
 
+            /// `assumeNotNull` is not always monotonic on `Nullable` input:
+            /// `NULL` sorts after every non-`NULL` value, but `assumeNotNull` maps a `NULL` row
+            /// to an ordinary nested value, which then sorts among non-`NULL` keys instead of at
+            /// the end.
+            ///
+            /// That would be unsafe if we were transforming a key range. Here we are doing
+            /// something weaker: we only push the constant side of the predicate through the key
+            /// expression, then build a relaxed atom from the transformed constant.
+            ///
+            /// Example:
+            ///   key: `ORDER BY assumeNotNull(d)`, where `d` is `Nullable(Date)`
+            ///   predicate: `d < '2015-01-01'`
+            ///
+            /// `NULL` constants are rejected before we get here, so the constant side is unchanged:
+            /// `assumeNotNull('2015-01-01') = '2015-01-01'`.
+            ///
+            /// The relaxed rewrite is:
+            ///   `d < '2015-01-01'` -> `assumeNotNull(d) <= '2015-01-01'`
+            ///
+            /// At pruning time, `checkInHyperrectangle` sees only the key range of the granule,
+            /// `[k_min, k_max]`, where the key is `assumeNotNull(d)`.
+            ///
+            /// Suppose the granule values of `d` were `['2014-12-31', '2015-01-02']`.
+            /// Then the key-sorted range is the same: `['2014-12-31', '2015-01-02']`.
+            /// This range intersects `(-Inf, '2015-01-01']`, so we keep the granule.
+            /// That is correct, because it contains a matching row.
+            ///
+            /// Suppose the granule values of `d` were `[NULL, '2016-01-01', '2035-01-01']`.
+            /// The non-`NULL` rows are all to the right of the bound, but the `NULL` row may
+            /// contribute some ordinary key value through `assumeNotNull`.
+            /// If that key is `<= '2015-01-01'`, then the key range intersects
+            /// `(-Inf, '2015-01-01']` and we keep the granule as a false positive.
+            /// If that key is `> '2015-01-01'`, then pruning is still correct, because the
+            /// original predicate is false for both the non-`NULL` rows and the `NULL` row.
+            ///
+            /// Suppose the relaxed atom does prune the granule.
+            /// Then the key-sorted range is entirely to the right of the bound, for example
+            /// `['2015-01-02', '2016-01-01']`.
+            /// In that case the granule cannot contain any non-`NULL` row with
+            /// `d < '2015-01-01'`, because such a row would contribute a key
+            /// `<= '2015-01-01'` inside the same range.
+            ///
+            /// So the rewrite may over-read, but it does not incorrectly prune matching rows.
+            ///
+            /// The same argument applies to `>`, `>=`, `<=`, and `=`.
+            /// It does not apply to `!=`: `notEquals` is in `no_relaxed_atom_functions`, so if
+            /// analysis would need to push the constant through a monotonic function chain, we do
+            /// not create a relaxed atom for `!=` on this path.
+            if (func.getName() == "assumeNotNull")
+                return true;
+
             /// Range is irrelevant in this case.
             auto monotonicity = func.getMonotonicityForRange(type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
@@ -1956,23 +2031,32 @@ static bool applyDeterministicDagToColumn(
             return true;
         }
 
-        if (!target_type->isNullable() && !target_type->canBeInsideNullable())
+        /// `castColumnAccurateOrNull` needs a target that can represent NULLs so a lossy cast is
+        /// observable. `LowCardinality` is only an encoding and is not itself nullable-able, so run
+        /// the accuracy probe against the `LowCardinality`-stripped target; otherwise a key column of
+        /// type `LowCardinality(FixedString)` (and similar) is wrongly rejected here, which silently
+        /// disables partition/key pruning. The requested `target_type` is re-applied afterwards so the
+        /// transform DAG still receives the type it was built against.
+        const DataTypePtr probe_type = removeLowCardinality(target_type);
+
+        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
         }
 
-        column = castColumnAccurateOrNull({column, type, ""}, target_type);
-        const auto & n = assert_cast<const ColumnNullable &>(*column);
+        ColumnPtr probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+        const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
         /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
         for (char8_t b : n.getNullMapData())
             if (b)
                 return false;
 
-        if (!target_type->isNullable())
-            column = n.getNestedColumnPtr();
-
+        /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
+        /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
+        /// here because the probe above already proved every value fits.
+        column = castColumnAccurate({column, type, ""}, target_type);
         type = target_type;
         return true;
     };
@@ -2995,8 +3079,6 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                 if (cur_node->type == ActionsDAG::ActionType::FUNCTION && cur_node->children.size() <= 2)
                 {
-                    is_valid_chain = always_monotonic(*cur_node->function_base, *cur_node->result_type);
-
                     const ActionsDAG::Node * next_node = nullptr;
                     for (const auto * arg : cur_node->children)
                     {
@@ -3011,6 +3093,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
 
                     if (!next_node)
                         is_valid_chain = false;
+
+                    /// next_node is the non-constant child of cur_node, so next_node->result_type
+                    /// is the child's output type, which is the input type to cur_node's function.
+                    if (is_valid_chain)
+                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
 
                     cur_node = next_node;
                 }
@@ -3467,7 +3554,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             out.point_in_polygon_function_name = func_name;
 
             /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
-            chassert(WhichDataType(const_type).isArray());
+            /// The polygon argument may be a constant of a wrapper type (Variant, Dynamic, ...)
+            /// holding an array; only a plain Array constant can be turned into a skip-index atom.
+            if (!WhichDataType(const_type).isArray())
+                return false;
             for (const auto & elem : const_value.safeGet<Array>())
             {
                 if (elem.getType() != Field::Types::Tuple)
@@ -3814,6 +3904,46 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return true;
         }
     }
+
+    /// A bare numeric key column used directly as a boolean condition, for example `WHERE id` or
+    /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
+    /// constants are handled above), so this matches exactly the boolean-predicate positions that
+    /// `RPNBuilder::traverseTree` descends to through `and` / `or` / `not` / `indexHint`. Treat the
+    /// column as `key != 0`, so that primary-key and skip-index analysis can prune on it. The negated
+    /// form `WHERE NOT key` is covered for free: the surrounding `not` inverts this atom into
+    /// `key == 0`. `LowCardinality` is handled through the nested type. See #89222.
+    {
+        size_t key_column_num = size_t(-1);
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain chain;
+
+        if (isKeyPossiblyWrappedByMonotonicFunctions(
+                node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
+        {
+            auto key_type_not_low_cardinality = removeLowCardinality(key_column_type);
+
+            /// Skip a `Nullable` (or `LowCardinality(Nullable)`) key. Primary-key analysis maps a NULL
+            /// key value to `+Inf` (for `NULLS LAST` ordering), so a granule that holds only NULL looks
+            /// definitely outside `[0, 0]` and the `key != 0` atom would report it as an exact, definite
+            /// match. But `WHERE nullable_key` is NULL for those rows and filters them out. Ordinary
+            /// pruning only ever over-reads, so it stays correct, but the exact-count / implicit-projection
+            /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
+            /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
+            /// reverts to reading and filtering those rows, which is correct.
+            if (!key_type_not_low_cardinality->isNullable()
+                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(Field(UInt64(0)));
+                out.key_columns.push_back(key_column_num);
+                out.monotonic_functions_chain = std::move(chain);
+                out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -4889,7 +5019,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
             auto to_invert_ranges = rpn_stack.top();
             rpn_stack.pop();
 
-            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
+            auto reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
 
             if (reverted_ranges.size() == 1)
                 rpn_stack.emplace(std::move(reverted_ranges[0]));

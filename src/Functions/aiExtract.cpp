@@ -35,6 +35,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
+            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"instruction_or_schema", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
@@ -48,9 +49,9 @@ public:
 
 private:
     static constexpr float default_temp = 0.0f;
-    static constexpr size_t prompt_arg_index = 0;
-    static constexpr size_t instruction_arg_index = 1;
-    static constexpr size_t temp_arg_idx = 2;
+    static constexpr size_t prompt_arg_index = 1;
+    static constexpr size_t instruction_arg_index = 2;
+    static constexpr size_t temp_arg_idx = 3;
 
     String functionName() const override { return name; }
 
@@ -225,24 +226,25 @@ REGISTER_FUNCTION(AiExtract)
         .description = R"(
 Extracts structured information from unstructured text using an LLM provider.
 
-The second argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
+The third argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
 JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 )",
-        .syntax = "aiExtract(text, instruction_or_schema[, temperature])",
+        .syntax = "aiExtract(collection, text, instruction_or_schema[, temperature])",
         .arguments = {
+            {"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
             {"text", "Text to extract information from.", {"String"}},
             {"instruction_or_schema", "Free-form extraction instruction, or a constant JSON object describing the fields to extract.", {"const String"}},
             {"temperature", "Sampling temperature controlling randomness. Default: `0.0`.", {"const Float64"}},
         },
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'", "late and damaged package"},
-            {"Schema extraction", R"(SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
+            {"Free-form instruction", "SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')", "late and damaged package"},
+            {"Schema extraction", R"(SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});
