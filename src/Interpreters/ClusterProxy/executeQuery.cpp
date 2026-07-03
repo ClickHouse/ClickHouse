@@ -695,6 +695,22 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
+size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+{
+    const size_t all_nodes_count = cluster->getShardsInfo().at(0).getAllNodeCount();
+
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    /// Liveness unknown, or it does not line up with the cluster definition: fall back to the registered count,
+    /// exactly as `prepareConnectionPoolsForParallelReplicas` does when sizing the coordinator.
+    if (is_active.empty() || is_active.size() != all_nodes_count)
+        return all_nodes_count;
+
+    const size_t active_count = std::count(is_active.begin(), is_active.end(), true);
+    /// The local replica is the initiator, so at least one replica is always active. If liveness disagrees,
+    /// ignore it rather than sizing the segment heuristic by zero (which would divide by zero downstream).
+    return active_count == 0 ? all_nodes_count : active_count;
+}
+
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();

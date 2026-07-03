@@ -92,5 +92,10 @@ def test_inactive_replica_excluded_from_parallel_replicas(start_cluster):
         assert not node1.contains_in_log(
             "Creating parallel replicas coordinator with replicas_count=3"
         )
+
+        # The mark-segment-size heuristic (which derives its work-distribution denominator from the replica
+        # count) must use the same active count as the coordinator: 2, not the 3 registered replicas.
+        assert node1.contains_in_log("number_of_replicas=2,")
+        assert not node1.contains_in_log("number_of_replicas=3,")
     finally:
         node3.start_clickhouse()
