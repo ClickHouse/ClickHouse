@@ -10,7 +10,6 @@ This test suite validates:
 
 import pytest
 import urllib.parse
-import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
