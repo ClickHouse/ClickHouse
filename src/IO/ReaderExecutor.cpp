@@ -2486,53 +2486,65 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// (`BytesFromSource`, filling the cell) and the cache read (serving it back out); the two count
     /// distinct operations and legitimately overlap.
     {
-        const CoverageMap & geom = *read_plan.geometry();
+        const auto & r = read_plan.schedule.retrieves[ri];
         while (!committedCellCovers(window_phys))
         {
-            /// The fetch starts at the CELL's append-only frontier - the first uncommitted byte of
-            /// the cell-aligned window (`fetchWindowAt`), NOT `r.range.offset + st.fetched`. The
-            /// retrieve's `r.range` can span an embedded faster-tier HIT (the schedule merges the
-            /// gaps around it), and that hit is served from the upper tier + down-filled, not
-            /// fetched - so the cell frontier advances PAST it while `st.fetched` does not. Keying
-            /// the base off the live cell state (which the down-fill updates) makes the next fill
-            /// resume after the hit instead of re-fetching it from source, and still fills a
-            /// mid-cell read from the cell floor (append-only).
-            const ByteRange aligned = geom.fetchWindowAt(window_phys);
-            const size_t base = committedCellPrefixEnd(aligned);
-            if (base >= window_phys.end())
-                break;   /// the window is committed to its end (defensive: the while would exit)
-            /// Fetch the whole cell-aligned miss run from the cell floor up to the cell edge, but
-            /// STOP at the first embedded faster-tier hit: `fetchWindowAt` tail-extends to the
-            /// (possibly merged) miss run end, which can span a hit a faster tier holds resident;
-            /// that hit fills the lower cell DOWN from the faster tier (`downFillScheduledLower`),
-            /// it is not re-fetched from the source. `gapEndWithin` caps the launch there.
-            const size_t run_end = geom.gapEndWithin(base, aligned.end());
-            const ByteRange run{base, run_end - base};
+            /// The next PIECE of this retrieve, straight off the schedule: the job's `fetch_runs`
+            /// are the source ranges (split at every embedded resident region - served / filled
+            /// down from its tier, never scheduled as a source read), and its fetch grids give
+            /// the cell-fill granularity. The piece starts at the display frontier of the
+            /// grid-floored window start - a mid-cell read fills from the cell floor
+            /// (append-only), and a down-filled hit advances the frontier past itself so the
+            /// next piece resumes after it - and runs to the window's end ceiled to the grid
+            /// (the whole-cell over-read that makes one cold cell ONE source read), clamped
+            /// into the run. No geometry is consulted here - the schedule is the job.
+            const size_t missing = committedCellPrefixEnd(window_phys);
+            const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
+            const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
+            /// The append-only floor: grid-floor the first missing byte (clamped to the job) and
+            /// walk the display frontier from there - ACROSS runs, so a before-slack run no serve
+            /// window ever reaches (a seek past it) is still fetched and the cell fills whole
+            /// from its floor.
+            const size_t floor_off = std::max(r.range.offset, missing / head_grid * head_grid);
+            const size_t base = floor_off < missing
+                ? committedCellPrefixEnd(ByteRange{floor_off, missing - floor_off})
+                : missing;
+            /// The piece: from the frontier to the end of the first run past it. The frontier can
+            /// sit in an inter-run resident hole (its down-fill write was skipped by the
+            /// append-only cell); the piece then reads THROUGH the hole from the source so the
+            /// cell still completes - the legacy assembler's behavior.
+            ByteRange piece{};
+            for (const auto & fr : r.fetch_runs)
+                if (fr.end() > base)
+                {
+                    const size_t bound
+                        = std::min(fr.end(), (window_phys.end() + tail_grid - 1) / tail_grid * tail_grid);
+                    piece = ByteRange{base, bound - base};
+                    break;
+                }
+            if (piece.size == 0)
+                break;   /// no scheduled source byte past the frontier - the fallback below resolves it
             if (machineFor(ri))
                 collectInFlightInto(ri);
             else if (!machine)
             {
-                if (reached_eof || !launchMachineForWindow(ri, run, *local_runner))
+                if (reached_eof || !launchMachineForWindow(ri, piece, *local_runner))
                     break;
                 collectInFlightInto(ri);
-                /// The inline Fill fetched the WHOLE cell-aligned run `[base, run_end)` - head-
-                /// aligned to the cell floor and tail-extended to the cell edge (or the next
-                /// embedded hit) - a segment-aligned over-read that fills the whole cell. So
-                /// one cold cell is ONE source read and the cursor's later windows in the cell are
-                /// served from it. The bytes outside the cursor window - the `[base, cursor)` head
-                /// and the `[cursor.end, run_end)` tail - are over-read: source bytes the request
-                /// did not ask for. The inline collect writes the cells via `pushChainToWriters`,
-                /// which (unlike the sync `assembleAndWriteBack`) does not account over-read, so
-                /// record it here. A later read that consumes the range removes it
-                /// (`overread_pending.remove`); what is never read back is the net `OverReadBytes`.
-                /// Key off the committed frontier so a short (EOF / contended) fill records only the
-                /// bytes that actually landed.
-                const size_t frontier = committedCellPrefixEnd(run);
-                if (base < window_phys.offset)
-                    overread_pending.add(ByteRange{base, std::min(frontier, window_phys.offset) - base});
+                /// The bytes outside the cursor window - the `[piece.offset, cursor)` head and the
+                /// `[cursor.end, piece.end)` tail of the cell-bounded piece - are over-read: source
+                /// bytes the request did not ask for. The inline collect writes the cells via
+                /// `pushChainToWriters`, which (unlike the sync `assembleAndWriteBack`) does not
+                /// account over-read, so record it here. A later read that consumes the range
+                /// removes it (`overread_pending.remove`); what is never read back is the net
+                /// `OverReadBytes`. Key off the committed frontier so a short (EOF / contended)
+                /// fill records only the bytes that actually landed.
+                const size_t frontier = committedCellPrefixEnd(piece);
+                if (piece.offset < window_phys.offset)
+                    overread_pending.add(ByteRange{piece.offset, std::min(frontier, window_phys.offset) - piece.offset});
                 if (frontier > window_phys.end())
                 {
-                    const size_t tail = std::max(base, window_phys.end());
+                    const size_t tail = std::max(piece.offset, window_phys.end());
                     overread_pending.add(ByteRange{tail, frontier - tail});
                 }
             }
@@ -2541,7 +2553,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
             /// No progress means the frontier is stuck behind a sibling-led segment (the contended
             /// collect commits only its led prefix inline, then revokes): stop and serve that prefix
             /// below. Guards against re-launching forever.
-            if (committedCellPrefixEnd(aligned) <= base)
+            if (committedCellPrefixEnd(piece) <= piece.offset)
                 break;
         }
         /// A sibling-led hole or EOF stopped the fill short of the window: narrow to the contiguous

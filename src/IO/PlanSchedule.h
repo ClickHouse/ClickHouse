@@ -59,6 +59,20 @@ struct PlanSchedule
         Source source = Source::Remote;
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
         VectorWithMemoryTracking<size_t> deps;        /// same-segment predecessors (natural order)
+        /// The sub-ranges of `range` to read from the SOURCE (`Remote` only, empty otherwise).
+        /// `range` merges adjacent cell-aligned gaps, so it can span an embedded resident
+        /// region - served / filled down from its tier, never SCHEDULED as a source read; the
+        /// runs split at every one. (Whether the executor reads THROUGH one at run time - its
+        /// down-fill was skipped by the append-only cell - is a display-state decision, not a
+        /// schedule property.) Executable as written: the executor fetches these runs verbatim,
+        /// with no geometry query at serve time.
+        VectorWithMemoryTracking<ByteRange> fetch_runs;
+        /// The fetch alignment grids (`Remote` only): a piece of a run is fetched with its head
+        /// floored and its tail ceiled to these grids (clamped into the run), so a touched cache
+        /// cell is filled whole. The coarsest grid across the plan's tiers (every Remote byte is
+        /// a miss on every tier, so the coarsest extension applies).
+        size_t fetch_head_grid = 1;
+        size_t fetch_tail_grid = 1;
     };
 
     /// One readNextWindow output and the retrieval it waits on (its READY

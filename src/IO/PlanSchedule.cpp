@@ -76,6 +76,37 @@ VectorWithMemoryTracking<ByteRange> fillRegion(const CoverageMap & g, ByteRange 
     return mergeSorted(std::move(parts));
 }
 
+/// The source-fetch runs of one fill part: `part` minus every plan-resident region (a resident
+/// region is served / filled down from its tier, never SCHEDULED as a source read - whether the
+/// executor reads through one at run time is a display-state decision, not a schedule property:
+/// see the drain-loop's frontier-in-hole read-through). Beyond the plan span the geometry has no
+/// residency info (`gapEnd` returns `plan_end`), so the remainder - the fill closure's
+/// after-slack - extends the run.
+VectorWithMemoryTracking<ByteRange> fetchRunsFor(const CoverageMap & g, ByteRange part)
+{
+    VectorWithMemoryTracking<ByteRange> runs;
+    size_t pos = part.offset;
+    const size_t end = part.end();
+    while (pos < end)
+    {
+        const auto res = g.residentAt(pos);
+        if (res.resident())
+        {
+            pos = std::min(res.run_end, end);
+            continue;
+        }
+        size_t run_end = std::min(g.gapEnd(pos), end);
+        if (run_end <= pos)
+            run_end = end;   /// past the plan span: no residency info
+        if (!runs.empty() && runs.back().end() == pos)
+            runs.back().size = run_end - runs.back().offset;
+        else
+            runs.push_back(ByteRange{pos, run_end - pos});
+        pos = run_end;
+    }
+    return runs;
+}
+
 /// The cells connection `conn` populates. A cell holding USER bytes is filled in
 /// every tier that misses it (promotion of the request up the chain); a slack-
 /// only cell is filled ONLY in the tier that owns it - the coarsest-alignment
@@ -216,12 +247,25 @@ PlanSchedule buildSchedule(
     /// its own job. The runtime decides how many source connections span them (a held connection
     /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
     /// `scheduleLookaheadReach` / `canContinue`); the schedule only says WHAT to read.
+    /// The coarsest fetch grids across the plan's tiers: every Remote byte is a miss on every
+    /// tier, so the coarsest head/tail extension applies to any fetch piece.
+    size_t fetch_head_grid = 1;
+    size_t fetch_tail_grid = 1;
+    for (const auto & e : geometry.entries)
+    {
+        fetch_head_grid = std::max(fetch_head_grid, e.head_align);
+        fetch_tail_grid = std::max(fetch_tail_grid, e.tail_align);
+    }
+
     for (const auto & f : fill)
     {
         PlanSchedule::Retrieve r;
         r.range = f;
         r.source = PlanSchedule::Source::Remote;
         r.into = writeTargetsFor(geometry, f, request);
+        r.fetch_runs = fetchRunsFor(geometry, f);
+        r.fetch_head_grid = fetch_head_grid;
+        r.fetch_tail_grid = fetch_tail_grid;
         sched.retrieves.push_back(std::move(r));
     }
 

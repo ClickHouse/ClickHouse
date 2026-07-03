@@ -202,6 +202,57 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     EXPECT_EQ(*s.steps[1].require_retrieve, 0u);
 }
 
+/// `fetch_runs` are the schedule's EXECUTABLE source ranges: the retrieve's (merged,
+/// cell-aligned) `range` minus every embedded resident region - resident bytes are
+/// served / filled down from their tier, never SCHEDULED as a source read, regardless
+/// of `min_bytes_for_seek` (whether the executor reads through one at run time is a
+/// display-state decision). The executor fetches the runs verbatim - no geometry query
+/// at serve time.
+TEST(PlanScheduleRetrieves, FetchRunsSplitAtEmbeddedResident)
+{
+    /// The worked example: the merged range [0,8) spans the embedded page hit [3,5).
+    auto g = geometry(0, 8, {
+        tierEntry(CacheTier::PageCache, {{3, 2}}, {{5, 3}}, /*head*/1, /*tail*/2),
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 6}, {6, 2}}, /*head*/6),
+    });
+
+    /// The seek bound shapes bridging (a connection decision) - NOT the fetch runs.
+    for (size_t min_bytes_for_seek : {2u, 4u})
+    {
+        auto s = describeSeek(g, {4, 4}, min_bytes_for_seek);  // request [4,8)
+        ASSERT_FALSE(s.retrieves.empty());
+        const auto & r = s.retrieves[0];
+        ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
+        EXPECT_EQ(r.range.offset, 0u);
+        EXPECT_EQ(r.range.size, 8u);
+        ASSERT_EQ(r.fetch_runs.size(), 2u)
+            << "the merged range splits at the embedded page hit (min_bytes_for_seek=" << min_bytes_for_seek << ")";
+        EXPECT_EQ(r.fetch_runs[0].offset, 0u);
+        EXPECT_EQ(r.fetch_runs[0].size, 3u);
+        EXPECT_EQ(r.fetch_runs[1].offset, 5u);
+        EXPECT_EQ(r.fetch_runs[1].size, 3u);
+    }
+}
+
+/// A cold gap's after-slack can extend past `plan_end` (the cell is object-bounded,
+/// not plan-bounded); the geometry has no residency info there, so the run extends
+/// to the range end - one maximal run, not split at the plan boundary.
+TEST(PlanScheduleRetrieves, FetchRunsColdGapIsOneRunAcrossPlanEnd)
+{
+    auto g = geometry(0, 8, {
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}, /*head*/12, /*tail*/12),
+    });
+    auto s = describe(g, {0, 8});
+
+    ASSERT_EQ(s.retrieves.size(), 1u);
+    const auto & r = s.retrieves[0];
+    EXPECT_EQ(r.range.offset, 0u);
+    EXPECT_EQ(r.range.size, 12u) << "tail-aligned to the cell, past plan_end";
+    ASSERT_EQ(r.fetch_runs.size(), 1u) << "no resident region: one maximal run";
+    EXPECT_EQ(r.fetch_runs[0].offset, 0u);
+    EXPECT_EQ(r.fetch_runs[0].size, 12u);
+}
+
 /// Slack is filled only into the owning (coarser) lower tier, never promoted
 /// into a faster tier that also misses it.
 TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
