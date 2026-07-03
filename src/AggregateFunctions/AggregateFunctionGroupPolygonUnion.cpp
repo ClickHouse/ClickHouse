@@ -174,7 +174,7 @@ public:
         AggregateFunctionGroupPolygonUnion::data(place).add(std::move(mp), getName().c_str());
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         AggregateFunctionGroupPolygonUnion::data(place).merge(
             AggregateFunctionGroupPolygonUnion::data(rhs), getName().c_str());

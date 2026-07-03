@@ -277,7 +277,7 @@ public:
         AggregateFunctionGroupConvexHull::data(place).addMany(new_points, getName().c_str());
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         AggregateFunctionGroupConvexHull::data(place).merge(
             AggregateFunctionGroupConvexHull::data(rhs), getName().c_str());
