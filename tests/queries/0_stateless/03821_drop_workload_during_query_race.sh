@@ -13,10 +13,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKLOAD_NAME="wl_03821"
 RESOURCE_NAME="rs_03821"
 
+# Non-empty if any client call is killed by its per-call timeout below (exit 124),
+# i.e. the drop/create race actually wedged a query or DDL. Checked after `wait`.
+WEDGE_FLAG="${CLICKHOUSE_TMP}/03821_wedged_${CLICKHOUSE_TEST_UNIQUE_NAME}.flag"
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
     $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS $RESOURCE_NAME" 2>/dev/null ||:
+    rm -f "$WEDGE_FLAG"
 }
 
 # Clean up any previous state
@@ -39,6 +44,8 @@ function thread_query()
         # Ignore expected errors when workload is dropped during query
         timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
             | { grep -v -e "RESOURCE_ACCESS_DENIED" -e "INVALID_SCHEDULER_NODE" -e "There is no resource" -e "^$" || true; }
+        # PIPESTATUS[0] is timeout(1)'s exit: 124 means it killed a wedged query.
+        [ "${PIPESTATUS[0]}" = 124 ] && echo wedged > "$WEDGE_FLAG"
     done
 }
 
@@ -49,8 +56,13 @@ function thread_drop_create()
     do
         # Drop and recreate the workload while queries may be running
         # This creates the race condition when queries are releasing their leases
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
+        # Tolerate expected race errors, but record a per-call timeout (124 = wedged DDL).
+        local rc=0
+        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
+        [ "$rc" = 124 ] && echo wedged > "$WEDGE_FLAG"
+        rc=0
+        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
+        [ "$rc" = 124 ] && echo wedged > "$WEDGE_FLAG"
     done
 }
 
@@ -72,6 +84,13 @@ thread_query &
 thread_drop_create &
 
 wait
+
+# If any client call hit its per-call timeout, the race actually wedged a query or DDL.
+# Fail loudly instead of masking the very hang this test is meant to surface.
+if [ -e "$WEDGE_FLAG" ]; then
+    echo "FAIL: a query or DDL was wedged for ${CALL_TIMEOUT}s (scheduler race), killed by timeout" >&2
+    exit 1
+fi
 
 # Server should still be alive
 timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "SELECT 1"
