@@ -11,9 +11,13 @@
 # user-scoped entry (query_cache_share_between_users = 0), and execute on their own - producing 5 Writes
 # for U2 (0 Read) and failing this test.
 #
-# The slow executor's sleep is deliberately longer than the U1->U2 launch stagger so that U1's executor is
-# guaranteed in-flight when U2 starts, and U1's waiters read U1's entry well before U2's executor overwrites
-# the AST-keyed cache slot (the cache map key is AST-only; per-user separation is enforced on read).
+# The cache map key is AST-only (Key::operator== ignores the user; per-user separation is enforced on read),
+# so both users write the *same* cache slot. Ordering therefore matters: U1's executor must insert before
+# U2's, so that U1's waiters read U1's entry before U2 overwrites the slot, and U2's waiters read U2's entry
+# (written last) rather than momentarily observing U1's user-scoped entry, missing it and re-executing (which
+# would produce a spurious 5/0 even with a correct, user-scoped HerdCoalescingKey). Instead of guessing a
+# fixed launch stagger (which flakes under CI scheduling jitter), we poll system.processes and only launch
+# U2's wave once U1's executor is demonstrably in-flight - so U1 reliably inserts before U2.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +33,10 @@ cleanup()
 }
 trap cleanup EXIT
 
-# The default sleep cap is 3s, so it is raised here - otherwise sleep(4) would throw TOO_SLOW.
-QUERY="SELECT sleep(4) FORMAT Null SETTINGS use_query_cache=1, query_cache_min_query_duration=0, query_cache_min_query_runs=0, query_cache_share_between_users=0, query_cache_nondeterministic_function_handling='save', function_sleep_max_microseconds_per_block=20000000"
+# The default sleep cap is 3s (function_sleep_max_microseconds_per_block), so it is raised here - otherwise
+# sleep(8) would throw TOO_SLOW and the executor would fail instantly instead of staying in-flight. The sleep
+# is long enough that the executor is comfortably still running while we poll for it and launch U2's wave.
+QUERY="SELECT sleep(8) FORMAT Null SETTINGS use_query_cache=1, query_cache_min_query_duration=0, query_cache_min_query_runs=0, query_cache_share_between_users=0, query_cache_nondeterministic_function_handling='save', function_sleep_max_microseconds_per_block=20000000"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
@@ -47,8 +53,20 @@ for i in $(seq 1 5); do
     ${CLICKHOUSE_CLIENT} --user "${U1}" --query "${QUERY}" --query_id "${P1}_${i}" >/dev/null 2>&1 &
 done
 
-# Let U1's executor get in-flight, then start U2's herd while it is still running.
-sleep 2
+# Wait until U1's executor is demonstrably in-flight (a U1 query has been running for a couple of seconds, so
+# its token is installed and it is mid-sleep) before starting U2. This guarantees U1's executor started - and
+# therefore inserts into the shared AST-keyed slot - before U2's, avoiding the cross-user overwrite race
+# described above. Bounded so the test cannot hang if U1 never starts. system.processes is queried as the
+# default user, which sees all users' running queries.
+for _ in $(seq 1 60); do
+    running=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count()
+        FROM system.processes
+        WHERE query_id LIKE '${P1}_%' AND elapsed >= 2
+    ")
+    [ "${running}" -ge 1 ] && break
+    sleep 0.3
+done
 
 # Wave 2: user U2's herd, concurrently with U1's still-running executor.
 for i in $(seq 1 5); do
