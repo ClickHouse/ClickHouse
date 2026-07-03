@@ -79,7 +79,12 @@ SELECT '--';
 
 SELECT 1 FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 USING (id) {{ second_join_type }} JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 
+{% if first_join_type == 'INNER' -%}
+-- The first join equates t1.id and t2.id, so `id` is an unambiguous INNER-JOIN key that USING can pick up.
+SELECT id FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id {{ second_join_type }} JOIN test_table_join_3 AS t3 USING (id) ORDER BY ALL;
+{% else -%}
 SELECT id FROM test_table_join_1 AS t1 {{ first_join_type }} JOIN test_table_join_2 AS t2 ON t1.id = t2.id {{ second_join_type }} JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
+{% endif -%}
 
 {% endfor %}
 {% endfor %}
