@@ -223,7 +223,7 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     {
         if (const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(strategy))
             return join_strategy->estimateOperatorCost(inputs);
-        /// A join without a strategy (not yet implemented): price as a non-broadcast hash join.
+        /// A logical join not yet given a physical strategy: price as a non-broadcast hash join.
         return hashJoinCost(inputs, /*is_broadcast=*/false);
     }
 
@@ -242,7 +242,7 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     {
         if (const auto * aggregation_strategy = dynamic_cast<const IAggregationStrategy *>(strategy))
             return aggregation_strategy->estimateOperatorCost(inputs);
-        /// Fallback (e.g. DefaultImplementation). Same as Local.
+        /// An aggregation without a strategy (e.g. from `DefaultImplementation`): price as Local.
         return aggregationCost(inputs, 1.0);
     }
 
@@ -313,39 +313,11 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     return {};
 }
 
-struct PartialTopNInputInfo
-{
-    Float64 limit;       /// per-node top-N bound L
-    Float64 input_rows;  /// total rows feeding the partial sort, before trimming to L
-};
-
-/// If the given input of `expression` is a partial top-N group (built by TwoStageTopN), return the
-/// per-node limit L and the total input row count. A sorted gather over it transfers up to
-/// min(input_rows, L * node_count) rows: each of the N producer nodes emits at most L, but no more
-/// than the input holds.
-static std::optional<PartialTopNInputInfo> getPartialTopNInputInfo(Memo & memo, const GroupExpressionPtr & expression, size_t input_index)
-{
-    auto input_group = memo.getGroup(expression->inputs[input_index].group_id);
-    for (const auto & candidate : input_group->physical_expressions)
-    {
-        if (!dynamic_cast<const PartialTopNStrategy *>(candidate->strategy.get()))
-            continue;
-        const auto * sort = typeid_cast<const SortingStep *>(candidate->getQueryPlanStep());
-        if (!sort || candidate->inputs.empty())
-            return std::nullopt;
-        auto sort_input = memo.getGroup(candidate->inputs[0].group_id);
-        if (!sort_input->statistics.has_value())
-            return std::nullopt;
-        return PartialTopNInputInfo{Float64(sort->getLimit()), sort_input->statistics->estimated_row_count};
-    }
-    return std::nullopt;
-}
-
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
 
-    /// Statistics should have been derived before calling estimateCost
+    /// Statistics must be derived before `estimateCost` is called.
     if (!group->statistics.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "CostEstimator: statistics not derived for group #{} (expression '{}') before estimateCost.\n"
@@ -358,17 +330,34 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         ? 1.0
         : distribution_node_count;
 
-    /// The physical row count through a sorted gather over a partial top-N is the one local-cost
-    /// input that needs the memo; resolve it here so estimateOperatorCost stays pure.
-    std::optional<Float64> exchange_rows_override;
-    if (dynamic_cast<const GatherExchangeStep *>(expression->getQueryPlanStep()))
+    /// Select the best implementation of each input first: the subtree cost accumulates over
+    /// them, and an exchange prices its transfer on the selected child's physical output rows.
+    std::vector<ExpressionWithCost> selected_inputs;
+    selected_inputs.reserve(expression->inputs.size());
+    bool has_unsatisfiable_input = false;
+    for (const auto & input : expression->inputs)
     {
-        if (auto partial = getPartialTopNInputInfo(memo, expression, 0))
-        {
-            const Float64 producer_node_count = std::max<Float64>(1, Float64(expression->inputs[0].required_properties.distribution.node_count));
-            exchange_rows_override = std::min(partial->input_rows, partial->limit * producer_node_count);
-        }
+        ExpressionWithCost best;
+        if (input.group_id == expression->group_id)
+            /// Self-referential enforcer input: price it against an acyclic source (excluding
+            /// itself), so the cost reflects a plan that can actually be built.
+            best = memo.getGroup(input.group_id)->selectInputImplementation(
+                input.required_properties, memo.getCostConfig(),
+                std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
+        else
+            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig());
+
+        if (!best.expression)
+            has_unsatisfiable_input = true;
+        selected_inputs.push_back(std::move(best));
     }
+
+    /// A selected child whose physical output differs from the group's logical statistics
+    /// (a partial top-N emits up to L rows per node) overrides the exchange row count.
+    std::optional<Float64> exchange_rows_override;
+    if (dynamic_cast<const LogicalExchangeStep *>(expression->getQueryPlanStep())
+        && !selected_inputs.empty() && selected_inputs[0].expression)
+        exchange_rows_override = selected_inputs[0].expression->physical_output_rows;
 
     CostInputs inputs{
         .step = expression->getQueryPlanStep(),
@@ -386,30 +375,30 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         inputs.input_stats.push_back(input_group->statistics ? &*input_group->statistics : nullptr);
     }
 
+    /// A partial top-N emits at most L rows on each of its nodes, while the group statistics are
+    /// trimmed to the final L. Record the physical output for parents; the input statistics are
+    /// available here because costing runs after derivation.
+    if (dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()))
+    {
+        const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
+        if (sorting_step && !inputs.input_stats.empty() && inputs.input_stats[0])
+            expression->physical_output_rows = std::min(
+                inputs.input_stats[0]->estimated_row_count,
+                Float64(sorting_step->getLimit()) * distribution_node_count);
+    }
+
     ExpressionCost total_cost;
     total_cost.cost = estimateOperatorCost(inputs, expression->strategy.get());
     total_cost.subtree_cost = total_cost.cost;
 
     /// Add input subtree costs. Unsatisfiable inputs produce infinity.
-    for (const auto & input : expression->inputs)
+    if (has_unsatisfiable_input)
     {
-        ExpressionWithCost best;
-        if (input.group_id == expression->group_id)
-            /// Self-referential enforcer input: price it against an acyclic source (excluding
-            /// itself), so the cost reflects a plan that can actually be built.
-            best = memo.getGroup(input.group_id)->selectInputImplementation(
-                input.required_properties, memo.getCostConfig(),
-                std::unordered_set<GroupExpression *>{expression.get()}, /*input_is_self_referential=*/true);
-        else
-            best = memo.getGroup(input.group_id)->getBestImplementation(input.required_properties, memo.getCostConfig());
-
-        if (!best.expression)
-        {
-            total_cost.subtree_cost = Cost::infinity();
-            return total_cost;
-        }
-        total_cost.subtree_cost += best.cost.subtree_cost;
+        total_cost.subtree_cost = Cost::infinity();
+        return total_cost;
     }
+    for (const auto & selected : selected_inputs)
+        total_cost.subtree_cost += selected.cost.subtree_cost;
 
     return total_cost;
 }

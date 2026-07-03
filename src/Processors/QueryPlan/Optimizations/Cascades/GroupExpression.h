@@ -85,6 +85,11 @@ public:
     std::unordered_set<RulePropertiesKey, RulePropertiesKeyHash> applied_rules;
 
     std::optional<ExpressionCost> cost;
+
+    /// Physical output row count when it differs from the group's logical statistics: a partial
+    /// top-N emits up to L rows on each of its nodes while the group stats are trimmed to L.
+    /// Set during costing (statistics are derived by then); parents price exchanges on it.
+    std::optional<Float64> physical_output_rows;
 };
 
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;

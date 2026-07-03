@@ -21,10 +21,10 @@ namespace DB
 ///
 /// Three dimensions:
 ///   - `work`: rows or bytes processed, divided by parallelism (merges old cpu + io).
-///     NOTE: the unit is currently operator-dependent — scans and materialization terms are
-///     byte-denominated while probe/sort terms count rows — so `work_weight` compares
-///     mixed units. Unit normalization is planned; until then treat cross-operator
-///     `work` ratios as approximate.
+///     NOTE: the unit is currently operator-dependent — scan and materialization terms are
+///     in bytes while probe/sort terms count rows — so `work_weight` compares mixed units.
+///     Unit normalization is planned; until then treat cross-operator `work` ratios as
+///     approximate.
 ///   - `network`: bytes transferred over the network between nodes
 ///   - `sequential`: single-threaded phases (hash table builds, merge cursors) that
 ///     cannot be parallelized within a node.  Its weight relative to `work_weight`
@@ -115,8 +115,9 @@ struct CostInputs
     Float64 parallelism = 1.0;
     /// Node count of the expression's own distribution property.
     Float64 node_count = 1.0;
-    /// Physical rows through a gather over a partial top-N: min(input_rows, L * producers).
-    /// Computed by the caller from the memo; overrides the trimmed output row count.
+    /// Physical rows through the exchange when the selected child emits more than the group
+    /// statistics say (a partial top-N emits up to L rows per node). Resolved by the caller
+    /// from the selected child; overrides the trimmed output row count.
     std::optional<Float64> exchange_rows_override;
     const CostConfig & config;
 };
