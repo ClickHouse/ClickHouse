@@ -1099,9 +1099,21 @@ protected:
     {
         if (auto info = chunk.getChunkInfos().extract<OriginalRowOrderInfo>())
         {
+            const size_t num_rows = chunk.getNumRows();
+
+            /// The info must be extracted at the top of a view branch, before the view's inner
+            /// query: RestoreChunkInfosTransform re-attaches the consumed chunk's infos to the
+            /// chunks the inner query produces, which may have a different number of rows, and
+            /// applying the permutation to those would read out of bounds. This is guaranteed
+            /// by construction (restores are only placed at branch tops, and the conditional
+            /// ones only on the first level); check it rather than corrupt data if it breaks.
+            if (info->inverse_permutation->size() != num_rows)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Row order permutation size {} does not match chunk rows {}",
+                    info->inverse_permutation->size(), num_rows);
+
             if (condition_description.empty() || originalOrderIsSortedByCondition(chunk, *info->inverse_permutation))
             {
-                const size_t num_rows = chunk.getNumRows();
                 Columns restored_columns;
                 restored_columns.reserve(chunk.getNumColumns());
                 for (const auto & column : chunk.getColumns())
@@ -1295,10 +1307,7 @@ std::optional<SortDescription> InsertDependenciesBuilder::conditionalRestoreDesc
 
     auto root_description = sortingKeyDescriptionForHeader(metadata_snapshots.at(root_inner_table_id), *header);
     if (!root_description)
-    {
-        LOG_DEBUG(logger, "conditionalRestore {}: no root description, header {}", view_id, header->dumpNames());
         return std::nullopt; /// The presort is not active in this case.
-    }
 
     const auto & target_table_id = inner_tables.at(view_id);
     if (!dynamic_cast<const MergeTreeData *>(storages.at(target_table_id).get()))
@@ -1313,15 +1322,11 @@ std::optional<SortDescription> InsertDependenciesBuilder::conditionalRestoreDesc
     /// column is renamed or computed by the view query, the check is impossible - do nothing.
     auto target_description = sortingKeyDescriptionForHeader(target_metadata, *header);
     if (!target_description)
-    {
-        LOG_DEBUG(logger, "conditionalRestore {}: no target description, header {}", view_id, header->dumpNames());
         return std::nullopt;
-    }
 
     if (isSortDescriptionPrefix(*target_description, *root_description))
         return std::nullopt; /// Compatible: the branch benefits from the presorted order as is.
 
-    LOG_DEBUG(logger, "conditionalRestore {}: conditional restore on {}", view_id, target_description->front().column_name);
     return target_description;
 }
 
@@ -1919,6 +1924,9 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
             }
             else if (view_id == root_view)
             {
+                /// First level only: deeper branches receive chunks produced by the parent view's
+                /// query, where the saved permutation no longer matches the rows (see the row
+                /// count check in RestoreOriginalRowOrderTransform).
                 if (auto condition = conditionalRestoreDescription(child_view_id))
                     chain.addSink(std::make_shared<RestoreOriginalRowOrderTransform>(input_headers.at(child_view_id), std::move(*condition)));
             }
