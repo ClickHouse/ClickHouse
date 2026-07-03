@@ -98,15 +98,20 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// (`MergeJoin`), `FULL_SORTING_MERGE` (`FullSortingMergeJoin`), or `AUTO`
 /// (`JoinSwitcher`).
 ///
-/// `PARALLEL_HASH` (`ConcurrentHashJoin`) is a special case: it preserves the left order
-/// only with a shared two-level map, and scatters it with single-level maps (key8 / key16,
-/// or a single non-nullable LowCardinality key). The map type is not known at the logical
-/// stage. We only treat it as non-order-preserving when it is forced without a `HASH`
-/// fallback: when `HASH` is also enabled the planner picks plain `HashJoin` (which preserves
-/// order) unless the right side is large enough to switch to `ConcurrentHashJoin`, and in
-/// that switched case the second pass's precise physical `preservesLeftBlockOrder()` gate
-/// still refuses order propagation - so correctness holds either way, and we avoid disabling
-/// the deferral for the common `hash`-fallback path.
+/// `PARALLEL_HASH` (`ConcurrentHashJoin`) preserves the left order only with a shared
+/// two-level map, and scatters it with single-level maps (key8 / key16, or a single
+/// non-nullable LowCardinality key). We treat it as non-order-preserving whenever it is
+/// enabled, even alongside a `HASH` fallback. The map type and the right-side size are not
+/// known at this logical stage (`rhs_size_estimation` is filled in the second pass), so we
+/// cannot tell whether the planner will pick plain `HashJoin` or switch to
+/// `ConcurrentHashJoin`: `PlannerJoins::tryCreateJoin` chooses `ConcurrentHashJoin` when
+/// `HASH` is disabled, when there is no size estimate, or when the right side is at least
+/// `parallel_hash_join_threshold` - so a `hash` fallback does not guarantee order
+/// preservation. Deferring would then bail in the second pass on the physical
+/// `!preservesLeftBlockOrder()` gate and disable both passes. Running the pushdown here
+/// instead is never worse: the injected `Sort + Limit` on the preserved input is itself
+/// satisfied by a read-in-order scan of the primary key when applicable, and the pushdown
+/// soundness does not depend on the join algorithm.
 bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -117,14 +122,13 @@ bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
         const auto & algorithms = logical->getJoinSettings().join_algorithms;
-        const bool hash_fallback = TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::HASH);
-        return std::ranges::any_of(algorithms, [&](JoinAlgorithm a)
+        return std::ranges::any_of(algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
                 || a == JoinAlgorithm::FULL_SORTING_MERGE
                 || a == JoinAlgorithm::AUTO
-                || (a == JoinAlgorithm::PARALLEL_HASH && !hash_fallback);
+                || a == JoinAlgorithm::PARALLEL_HASH;
         });
     }
     /// Unknown step kind - be conservative.
@@ -378,10 +382,10 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Likewise, the join must preserve the left block order. `findReadingStep` also gates
     /// the second pass on `join->preservesLeftBlockOrder()`, which is `false` for
     /// `partial_merge` / `prefer_partial_merge` (`MergeJoin`), `full_sorting_merge`
-    /// (`FullSortingMergeJoin`), `auto` (`JoinSwitcher`), and forced `parallel_hash` without
-    /// a `hash` fallback (`ConcurrentHashJoin` with single-level maps). Read-in-order was
-    /// never going to fire for those, so deferring to it would just disable both passes;
-    /// instead let the sound `Sort + Limit` pushdown below run in this pass.
+    /// (`FullSortingMergeJoin`), `auto` (`JoinSwitcher`), and `parallel_hash`
+    /// (`ConcurrentHashJoin` with single-level maps). Read-in-order was never going to fire
+    /// for those, so deferring to it would just disable both passes; instead let the sound
+    /// `Sort + Limit` pushdown below run in this pass.
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join

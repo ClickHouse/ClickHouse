@@ -66,20 +66,26 @@ SET query_plan_join_swap_table = 0;
 -- must not be applied on top of the join. Every a in 0..7 matches exactly one right row, so the
 -- correct count is 8 per group. Before the fix the sorted consumer saw a=[0..7, 0..7, ...] and
 -- closed the first 7 groups after one row each (count 1), lumping the remaining 57 rows into a=7.
+-- Pin the whole read-in-order trio (the stateless runner randomizes all three): with
+-- query_plan_read_in_order = 0 the sorted consumer is never planted, so the query is correct even
+-- on an unfixed binary and the guard goes blind.
 SET optimize_aggregation_in_order = 1;
-SELECT a, count() FROM t3_04498 LEFT ALL JOIN t4_04498 ON t3_04498.j = t4_04498.j GROUP BY a ORDER BY a;
+SELECT a, count() FROM t3_04498 LEFT ALL JOIN t4_04498 ON t3_04498.j = t4_04498.j GROUP BY a ORDER BY a
+SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
 
 -- The read-in-order-through-join propagation must NOT reach the MergeTree read for this
 -- single-level (key8) parallel_hash join: no left read is done InOrder (assertion result 0).
 SELECT count() FROM (
     EXPLAIN PLAN
     SELECT a, count() FROM t3_04498 LEFT ALL JOIN t4_04498 ON t3_04498.j = t4_04498.j GROUP BY a ORDER BY a
-    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
 -- With a wide (UInt64 -> two-level) key the map is shared and joinBlock does NOT scatter, so
 -- left order is preserved and read-in-order legitimately still fires (assertion result >= 1).
 -- This proves the fix is precise (order preservation keyed on the map type), not a blanket disable.
+-- The trio is pinned here too: with query_plan_read_in_order = 0 no read is done InOrder and this
+-- `> 0` assertion would fail spuriously.
 DROP TABLE IF EXISTS t5_04498;
 DROP TABLE IF EXISTS t6_04498;
 CREATE TABLE t5_04498 (a UInt32, j UInt64) ENGINE = MergeTree ORDER BY (a, j);
@@ -89,7 +95,7 @@ INSERT INTO t6_04498 SELECT (number % 8)::UInt64, number FROM numbers(8);
 SELECT count() > 0 FROM (
     EXPLAIN PLAN
     SELECT a, count() FROM t5_04498 LEFT ALL JOIN t6_04498 ON t5_04498.j = t6_04498.j GROUP BY a ORDER BY a
-    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
 DROP TABLE t3_04498;

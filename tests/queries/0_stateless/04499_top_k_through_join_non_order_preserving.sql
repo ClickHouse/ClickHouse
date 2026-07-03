@@ -81,6 +81,25 @@ SELECT count() > 0 FROM (
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
+-- The default `direct,parallel_hash,hash` list has a `hash` fallback, but `PlannerJoins::tryCreateJoin`
+-- still picks `ConcurrentHashJoin` when there is no right-side estimate or the right side is at least
+-- `parallel_hash_join_threshold` - and on a single-level map key that scatters the left order. The map
+-- type and the right-side size are unknown at this logical stage, so the deferral must treat the list
+-- as possibly non-order-preserving and fire the pushdown; otherwise a large-RHS single-level join would
+-- defer to a second pass that then bails on the physical `!preservesLeftBlockOrder()` gate, losing both.
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash',
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
+
 -- Order-preserving `hash` must be unchanged: it legitimately defers to read-in-order-through-join
 -- (which keeps the left primary-key order across the join), so there is no explicit pushed Limit.
 SELECT count() FROM (
