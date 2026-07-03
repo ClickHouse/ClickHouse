@@ -33,6 +33,15 @@ class Git:
             )
         )
 
+    @staticmethod
+    def branch_exists(name: str) -> bool:
+        # A remote-tracking branch: the release job fetches every head into
+        # refs/remotes/origin/*, so this is the reliable place to look.
+        return Shell.check(
+            f"git show-ref --verify --quiet refs/remotes/origin/{shlex.quote(name)}",
+            verbose=False,
+        )
+
     def __init__(self):
         self.latest_tag = Shell.get_output("git describe --tags --abbrev=0") or ""
         self.new_tag = ""

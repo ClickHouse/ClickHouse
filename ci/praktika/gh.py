@@ -1038,6 +1038,34 @@ class GH:
             print(f"ERROR: PR not found for branch [{branch}]")
         return url
 
+    @staticmethod
+    def is_commit_ci_green(sha, repo=None):
+        """Whether the commit's CI has fully completed and passed.
+
+        Mirrors the auto-release readiness check: every check-run must be
+        `completed`, and the combined commit status (latest per context) must be
+        `success`. Uses the gh CLI (already App-authenticated), so it needs no
+        `tests/ci` dependency.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_sha = shlex.quote(sha)
+        incomplete = Shell.get_output(
+            f"gh api repos/{safe_repo}/commits/{safe_sha}/check-runs --paginate "
+            """--jq '.check_runs[] | select(.status != "completed") | .name'"""
+        )
+        if incomplete:
+            print(f"CI not completed for [{sha}]: {incomplete.splitlines()}")
+            return False
+        state = Shell.get_output(
+            f"gh api repos/{safe_repo}/commits/{safe_sha}/status --jq '.state'"
+        ).strip()
+        if state != "success":
+            print(f"CI not green for [{sha}]: combined status [{state}]")
+            return False
+        return True
+
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,
         Result.Status.FAIL: Result.GHStatus.FAILURE,
