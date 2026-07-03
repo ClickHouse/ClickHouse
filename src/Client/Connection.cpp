@@ -1143,6 +1143,18 @@ void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & resp
     out->next();
 }
 
+void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    /// Skip if the remote replica doesn't speak the new protocol.
+    if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return;
+
+    writeVarUInt(Protocol::Client::MergeTreeAllRangesAnnouncementResponse, *out);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    out->finishChunk();
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -1657,12 +1669,19 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto request = ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    /// `server_*` here is the FOLLOWER as seen from the initiator (we are the client of that
+    /// connection). Stash it on the request so the coordinator can recognise old followers and
+    /// degrade gracefully (instead of throwing on an unknown stream).
+    request.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return announcement;
 }
 
 
