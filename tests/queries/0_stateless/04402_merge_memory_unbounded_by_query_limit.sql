@@ -54,11 +54,17 @@ WHERE database = currentDatabase() AND table = 't_merge_memory' AND active;
 
 SYSTEM FLUSH LOGS part_log;
 
--- 'Manual' selection guarantees the only `MergeParts` row is the `OPTIMIZE` above. Its peak memory is
--- far above the 20 MB per-query limit, proving the merge is not bounded by `max_memory_usage`.
--- (Observed ~80 MiB; the assertion uses a generous margin to stay stable across builds and
--- architectures.)
-SELECT max(peak_memory_usage) > 20000000
+-- 'Manual' selection guarantees the only merge that runs for this table is the `OPTIMIZE` above.
+-- `system.part_log` is not cleared when a table is dropped, so an earlier run of this test in the same
+-- database (for example under the flaky check, which repeats a test) could have left an older
+-- `MergeParts` row behind. Pick the peak memory of the most recent `MergeParts` row (`argMax` over
+-- `event_time_microseconds`) so the assertion is always about the merge this run just forced, not a
+-- stale row - otherwise a change that made a merge respect `max_memory_usage` would be masked by old
+-- data and this regression canary would stay green on it.
+-- The merge's peak memory is far above the 20 MB per-query limit, proving the merge is not bounded by
+-- `max_memory_usage`. (Observed ~80 MiB; the assertion uses a generous margin to stay stable across
+-- builds and architectures.)
+SELECT argMax(peak_memory_usage, event_time_microseconds) > 20000000
 FROM system.part_log
 WHERE database = currentDatabase() AND table = 't_merge_memory' AND event_type = 'MergeParts';
 
