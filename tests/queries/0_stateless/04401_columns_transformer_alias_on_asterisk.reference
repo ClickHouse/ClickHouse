@@ -8,6 +8,8 @@ a	b
 2	2
 a	f_a	f_b
 99	1	2
+upper(toString(a))
+1
 toString(identity(a))
 1
 f_a	f_b
@@ -20,7 +22,9 @@ a	b
 2	2
 a	f_a	f_b
 99	1	2
-toString(p_a)
+upper(toString(a))
+1
+toString(identity(a))
 1
 toString(p_a)
 1

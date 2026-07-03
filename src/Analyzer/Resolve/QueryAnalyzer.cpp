@@ -2476,6 +2476,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
+            /// The node this transformer starts from. After resolution we compare against it to
+            /// tell an identity lambda (`x -> x` resolves back to this same node) from a freshly
+            /// created node (a function/lambda that wraps it). Only a reused node may overwrite
+            /// its cached projection name.
+            const IQueryTreeNode * input_node_before_transformer = node.get();
+
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
@@ -2583,6 +2589,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
 
+                /// The natural resolved name of `node` after this transformer (e.g. `toString(a)`,
+                /// `identity(a)`). A later chained transformer must see this as its argument name,
+                /// so this is what a freshly created node stores in node_to_projection_name.
+                String natural_projection_name = node_projection_names[0];
+
                 if (execute_apply_transformer && !apply_column_name_prefix.empty())
                 {
                     /// `APPLY (expr, 'prefix')` names the result `prefix` + the short column name
@@ -2594,20 +2605,37 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 }
                 else
                 {
-                    result_projection_names.back() = std::move(node_projection_names[0]);
-                    apply_prefixed_projection_name = result_projection_names.back();
+                    result_projection_names.back() = natural_projection_name;
+                    apply_prefixed_projection_name = natural_projection_name;
                 }
-                /// Overwrite, not emplace: an identity lambda leaves `node` pointing at the
-                /// original matched node, which is already in the map, so a chained transformer
-                /// must observe the updated name (`APPLY (identity, 'p_') APPLY toString`).
-                node_to_projection_name.insert_or_assign(node, result_projection_names.back());
-                /// An identity lambda also leaves the reused node cached in resolved_expressions
-                /// with its pre-prefix name; resolveExpressionNode reads that cache before
-                /// node_to_projection_name, so refresh it too when the entry already exists.
-                if (execute_apply_transformer)
+                /// Whether the transformer resolved back to the very node it started from
+                /// (an identity lambda `x -> x`). A function/lambda that wraps the input is a
+                /// fresh node instead.
+                const bool node_pointer_reused = node.get() == input_node_before_transformer;
+                if (node_pointer_reused)
                 {
-                    if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
-                        resolved_it->second = {result_projection_names.back()};
+                    /// Reused node: the legacy AST path has no equivalent (an identity lambda
+                    /// cannot be expressed there), so we carry the accumulated (prefixed) name.
+                    /// Overwrite, not emplace: the node is already in the map, so a chained
+                    /// transformer must observe the updated name (`APPLY (identity, 'p_') APPLY toString`
+                    /// -> `toString(p_a)`).
+                    node_to_projection_name.insert_or_assign(node, result_projection_names.back());
+                    /// The reused node is also cached in resolved_expressions with its pre-prefix
+                    /// name; resolveExpressionNode reads that cache before node_to_projection_name,
+                    /// so refresh it too when the entry already exists.
+                    if (execute_apply_transformer)
+                    {
+                        if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
+                            resolved_it->second = {result_projection_names.back()};
+                    }
+                }
+                else
+                {
+                    /// Freshly created node: store its natural name, not the prefix alias, so a
+                    /// later unprefixed `APPLY f` formats its argument from the real expression
+                    /// (`toString(identity(a))`, `upper(toString(a))`), matching the legacy path.
+                    /// The prefix only affects this column's terminal display name above.
+                    node_to_projection_name.emplace(node, natural_projection_name);
                 }
                 node_projection_names.clear();
             }
