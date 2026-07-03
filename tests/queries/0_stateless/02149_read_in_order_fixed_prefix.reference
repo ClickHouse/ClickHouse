@@ -119,7 +119,7 @@ SELECT
     date,
     i
 FROM t_read_in_order
-WHERE equals(date, \'2020-10-12\')
+WHERE date = \'2020-10-12\'
 ORDER BY i DESC
 LIMIT 5
 (Expression)

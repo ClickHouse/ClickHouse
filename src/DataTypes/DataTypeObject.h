@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class DataTypeObject final : public IDataType
+class DataTypeObject : public IDataType
 {
 public:
     enum class SchemaFormat
@@ -44,8 +44,6 @@ public:
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override { return Object(); }
-
-    void insertDefaultInto(IColumn & column) const override;
 
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

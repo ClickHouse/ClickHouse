@@ -56,8 +56,6 @@ Contains metadata of each table that the server knows about.
 - `loading_dependencies_table` ([Array(String)](/sql-reference/data-types/array)) — Table loading dependencies (list of objects which should be loaded before the current object).
 - `loading_dependent_database` ([Array(String)](/sql-reference/data-types/array)) — Dependent loading database.
 - `loading_dependent_table` ([Array(String)](/sql-reference/data-types/array)) — Dependent loading table.
-- `target_database` ([String](/sql-reference/data-types/string)) — For a materialized view, the database of the destination table the view writes to (the `TO` target, or the implicit `.inner.*` table). Empty for other engines.
-- `target_table` ([String](/sql-reference/data-types/string)) — For a materialized view, the name of the destination table the view writes to (the `TO` target, or the implicit `.inner.*` table). Empty for other engines.
 - `definer` ([String](/sql-reference/data-types/string)) — SQL security definer's name used for the table.
 
 **Aliases:**

@@ -20,7 +20,7 @@ class TraceCollector;
 struct MemoryTrackerBlockerInThread
 {
 private:
-    static thread_local constinit VariableContext level;
+    static thread_local VariableContext level;
 
     std::optional<VariableContext> previous_level;
 
