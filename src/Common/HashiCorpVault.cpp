@@ -11,6 +11,7 @@
 #    include <openssl/ssl.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
+#    include <openssl/pem.h>
 #    include <Poco/StringTokenizer.h>
 #endif
 
@@ -27,6 +28,7 @@ extern const int BAD_ARGUMENTS;
 extern const int CANNOT_PARSE_JSON;
 extern const int INVALID_JSON_STRUCTURE;
 extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+extern const int OPENSSL_ERROR;
 extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -90,6 +92,33 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "privateKeyFile is not specified for vault.");
     }
 
+    /// Check for passphrase-protected private key.
+    std::string passphrase_handler_name = config.getString(ssl_prefix + "privateKeyPassphraseHandler.name", "");
+    std::string passphrase;
+    if (!passphrase_handler_name.empty())
+    {
+        if (passphrase_handler_name == "KeyFileHandler")
+            passphrase = config.getString(ssl_prefix + "privateKeyPassphraseHandler.options.password", "");
+        else if (passphrase_handler_name == "KeyConsoleHandler")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeyConsoleHandler is not supported for vault. Use KeyFileHandler.");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown privateKeyPassphraseHandler name for vault: {}.", passphrase_handler_name);
+    }
+
+    /// For passphrase-protected keys, save the paths and clear params so
+    /// Poco::Net::Context does not try to load them (it uses the global
+    /// event-based passphrase mechanism which is not available for vault's
+    /// standalone context). Certs will be loaded manually after construction.
+    std::string passphrase_key_file;
+    std::string passphrase_cert_file;
+    if (!passphrase.empty() && !params.privateKeyFile.empty())
+    {
+        passphrase_key_file = params.privateKeyFile;
+        passphrase_cert_file = params.certificateFile;
+        params.privateKeyFile.clear();
+        params.certificateFile.clear();
+    }
+
     params.caLocation = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
 
     params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
@@ -119,6 +148,47 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     else if (require_tlsv1)
         usage = Poco::Net::Context::TLSV1_CLIENT_USE;
     request_context = new Poco::Net::Context(usage, params);
+
+    /// For passphrase-protected keys, load certificates manually using raw
+    /// OpenSSL calls with the passphrase, since Poco::Net::Context skipped them
+    /// (params were cleared above).
+    if (!passphrase.empty() && !passphrase_key_file.empty())
+    {
+        BIO * cert_bio = BIO_new_file(passphrase_cert_file.c_str(), "r");
+        if (!cert_bio)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot open certificate file {} for vault.", passphrase_cert_file);
+
+        X509 * cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+        BIO_free(cert_bio);
+        if (!cert)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Error loading certificate from file {} for vault.", passphrase_cert_file);
+
+        if (SSL_CTX_use_certificate(request_context->sslContext(), cert) != 1)
+        {
+            X509_free(cert);
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Use certificate failed for vault.");
+        }
+        X509_free(cert);
+
+        BIO * key_bio = BIO_new_file(passphrase_key_file.c_str(), "r");
+        if (!key_bio)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot open private key file {} for vault.", passphrase_key_file);
+
+        EVP_PKEY * pkey = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, const_cast<char *>(passphrase.c_str()));
+        BIO_free(key_bio);
+        if (!pkey)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Error loading private key from file {} for vault.", passphrase_key_file);
+
+        if (SSL_CTX_use_PrivateKey(request_context->sslContext(), pkey) != 1)
+        {
+            EVP_PKEY_free(pkey);
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Use private key failed for vault.");
+        }
+        EVP_PKEY_free(pkey);
+
+        if (SSL_CTX_check_private_key(request_context->sslContext()) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unusable key-pair for vault.");
+    }
 
     std::string disabled_protocols_list = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_DISABLE_PROTOCOLS, "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);

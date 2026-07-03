@@ -23,3 +23,7 @@ chmod 644 "${HASHICORP_VAULT_CERT_DIR}/ca.crt"
 # Generate combined PEM (certificate + private key in one file)
 cat "${HASHICORP_VAULT_CERT_DIR}/client.crt" "${HASHICORP_VAULT_CERT_DIR}/client.key" > "${HASHICORP_VAULT_CERT_DIR}/client_combined.pem"
 chmod 644 "${HASHICORP_VAULT_CERT_DIR}/client_combined.pem"
+
+# Generate encrypted client key (AES-256, passphrase: test)
+openssl rsa -aes256 -in "${HASHICORP_VAULT_CERT_DIR}/client.key" -out "${HASHICORP_VAULT_CERT_DIR}/client_encrypted.key" -passout pass:test
+chmod 644 "${HASHICORP_VAULT_CERT_DIR}/client_encrypted.key"
