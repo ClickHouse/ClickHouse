@@ -1289,10 +1289,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If the second argument of IN is a non-constant, non-table expression (e.g. a column reference
             /// from `IN (col)` where the parentheses were stripped by the parser), wrap it in tuple()
             /// so it can be handled by the tuple/array → has() rewrite below.
+            const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                    function_name == "notNullIn" || function_name == "globalNotNullIn");
+            const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
+            auto & fn_args = function_node.getArguments().getNodes();
+
             bool expand_single_tuple_value = false;
             bool wrapped_column_rhs = false;
             if (in_second_argument->as<ColumnNode>())
             {
+                if (isArray(in_second_argument->getResultType()))
+                    return buildHasExpression(node, fn_args[1], fn_args[0], is_not_in, transform_null_in,
+                        arguments_projection_names, parameters_projection_names, scope);
+
                 const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
                 const bool right_is_tuple = isTuple(removeNullable(in_second_argument->getResultType()));
                 expand_single_tuple_value = !left_is_tuple && right_is_tuple;
@@ -1307,10 +1316,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
             {
                 const auto & candidate_name = non_const_set_candidate->getFunctionName();
-                const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
-                                        function_name == "notNullIn" || function_name == "globalNotNullIn");
-                const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
-                auto & fn_args = function_node.getArguments().getNodes();
 
                 /// the type of the second argument
                 bool is_array_type = (candidate_name == "array") ||

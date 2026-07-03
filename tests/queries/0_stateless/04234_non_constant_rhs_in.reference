@@ -29,6 +29,10 @@ SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 N
 3	0	1
 4	1	0
 5	1	0
+SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number;
+0	1	0	0	1
+1	1	0	0	1
+2	1	0	0	1
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 0	1	0
 1	1	0
@@ -117,6 +121,10 @@ SELECT number, number % 3 IN arrayMap(x -> x + number % 2, [0, 1]), number % 3 N
 3	0	1
 4	1	0
 5	1	0
+SELECT number, number IN (arr), number NOT IN (arr), (number + 2) IN (arr), (number + 2) NOT IN (arr) FROM (SELECT number, [number, number + 1] AS arr FROM numbers(3)) ORDER BY number;
+0	1	0	0	1
+1	1	0	0	1
+2	1	0	0	1
 SELECT number, number % 3 GLOBAL IN (number % 2, 1), number % 3 GLOBAL NOT IN (number % 2, 1) FROM numbers(6) ORDER BY number;
 0	1	0
 1	1	0
