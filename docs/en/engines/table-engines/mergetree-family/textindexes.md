@@ -1323,11 +1323,10 @@ This optimization supports only functions `like` and `ilike`.
 
 ### Caching {#caching}
 
-Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
+Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
 Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
-They can be enabled via settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+Use settings [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), [use_text_index_tokens_cache](/operations/settings/settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
 
-By default, all caches are disabled.
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](../../../sql-reference/statements/system#drop-text-index-caches)
 
 Please refer the following server settings to configure the caches.
