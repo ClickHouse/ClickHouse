@@ -2084,7 +2084,7 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabaseWithLock(database, /*table_prefix*/ {}, lock);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -3469,21 +3469,23 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
     current_database = name;
 }
 
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const String & name, const String & table_prefix, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
     DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
+    /// The namespace prefix (USE db.namespace) is tied to the database it was selected with,
+    /// so every database change updates the (database, prefix) pair as a unit.
+    current_table_prefix = table_prefix;
     need_recalculate_access = true;
 }
 
 void Context::setCurrentDatabase(const String & name, const String & table_prefix)
 {
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
-    current_table_prefix = table_prefix;
+    setCurrentDatabaseWithLock(name, table_prefix, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3493,6 +3495,7 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    current_table_prefix.clear();
     need_recalculate_access = true;
 }
 

@@ -59,7 +59,7 @@ namespace
     /// Changes the session context to execute all following queries in this session as another user.
     void impersonateSessionContext(ContextMutablePtr context, const String & target_user_name)
     {
-        auto database = context->getCurrentDatabase().database;
+        const auto current_db_info = context->getCurrentDatabase();
         auto changed_settings = context->getSettingsRef().changes();
 
         context->setUser(context->getAccessControl().getID<User>(target_user_name));
@@ -71,8 +71,8 @@ namespace
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
 
-        if (!database.empty() && database != context->getCurrentDatabase().database)
-            context->setCurrentDatabase(database);
+        if (!current_db_info.database.empty() && current_db_info != context->getCurrentDatabase())
+            context->setCurrentDatabase(current_db_info.database, current_db_info.table_prefix);
     }
 }
 
