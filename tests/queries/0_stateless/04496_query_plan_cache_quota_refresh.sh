@@ -47,7 +47,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
 
 # Measure the weight W of one cached plan for this query. The cache is empty and server-wide, and
 # quota=0 (the default) admits unconditionally, so afterwards QueryPlanCacheBytes == W.
-$CLICKHOUSE_CLIENT --user="$user" --database="$CLICKHOUSE_DATABASE" \
+$CLICKHOUSE_CLIENT --user="$user" \
     --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --query "$QUERY" > /dev/null
 W=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheBytes'")
 
@@ -60,7 +60,7 @@ SETTINGS="--allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --
 run_query()
 {
     # shellcheck disable=SC2086
-    $CLICKHOUSE_CLIENT --user="$user" --database="$CLICKHOUSE_DATABASE" $SETTINGS --query "$QUERY"
+    $CLICKHOUSE_CLIENT --user="$user" $SETTINGS --query "$QUERY"
 }
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
