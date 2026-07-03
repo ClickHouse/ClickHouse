@@ -105,6 +105,11 @@ public:
         throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeReadTaskResponse in not supported with HedgedConnections");
     }
 
+    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &) override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "sendMergeTreeAllRangesAnnouncementResponse is not supported with HedgedConnections");
+    }
+
     Packet receivePacket() override;
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
