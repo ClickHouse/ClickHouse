@@ -627,13 +627,10 @@ private:
     /// Re-credit, BEFORE the source fetch, any committed prefix of a frozen
     /// miss that a writer has grown since plan-build: serve it from the write
     /// buffer's own `read`, marking it `covered` so only the truly-uncommitted
-    /// tail drives the fetch.
-    /// `cache_credit` (unified foreground): when non-null, only the part of each served range
-    /// that is ALREADY in the mask is counted as a cache hit; the rest is this serve's own source
-    /// fetch transiting the cell (counted as `BytesFromSource`), so crediting it as a cache hit
-    /// would double-count. Null (the legacy path) credits every served byte.
+    /// tail drives the fetch. Every byte read out of a cell counts as a cache read (the cache is
+    /// the buffer), including bytes this serve just fetched into the cell.
     void recreditCommittedPrefixes(ByteRange window, ChainedBuffers & result, IntervalSet & covered,
-        Stats & out_stats, const IntervalSet * cache_credit = nullptr);
+        Stats & out_stats);
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
     /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
@@ -820,7 +817,7 @@ private:
     /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /
     /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
     void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
-        Stats & out_stats, const IntervalSet * cache_credit = nullptr);
+        Stats & out_stats);
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
     /// Inline serve for a window no prefetch machine and no committed cell covers: a not-prefetched
     /// bypass gap (pure source fetch, banked) or a populatable gap whose cursor segment a sibling

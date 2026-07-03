@@ -4516,8 +4516,12 @@ PredictedKpi predictKpi(const PlanSchedule & s)
     for (const auto & r : s.retrieves)
         if (r.source == PlanSchedule::Source::Remote)
             k.from_source += r.range.size;
+    /// The cache is the buffer: EVERY delivered User byte is read out of a cell (a resident hit, or
+    /// a miss filled from the source then read back), so it all counts as a cache read - a cold miss
+    /// shows both `from_source` (filling the cell) and `served_from_cache` (serving it out). (These
+    /// plans have no bypass gap, the one path that serves from a bank instead of a cell.)
     for (const auto & tr : s.ranges)
-        if (tr.purpose == PlanSchedule::Purpose::User && tr.resident)
+        if (tr.purpose == PlanSchedule::Purpose::User)
             k.served_from_cache += tr.range.size;
     /// Net-waste over-read: this oracle is asserted only on a full-consume read (window >= file,
     /// `min_bytes_for_seek == 0`), so every fetched byte - including the segment-alignment prefill

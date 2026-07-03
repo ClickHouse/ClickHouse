@@ -1018,11 +1018,14 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     const auto hit_delta = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - hit_before;
     const auto miss_delta = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - miss_before;
 
-    /// Prefix served from the filesystem cache, tail from source.
-    EXPECT_EQ(hit_delta, half)
-        << "the warmed prefix must be a filesystem-cache hit (not re-read from source)";
+    /// The cache is the buffer, so every delivered byte is read out of a cell and counts as a
+    /// filesystem-cache read: the warmed prefix (a hit) AND the tail (fetched from the source, then
+    /// read back out of the filled cell). The tail therefore shows in BOTH counters - fetched from
+    /// the source once, served from the cache once - so `hit_delta` is the whole file.
+    EXPECT_EQ(hit_delta, file_size)
+        << "every delivered byte is read out of a cell (prefix hit + tail served from the filled cell)";
     EXPECT_EQ(miss_delta, file_size - half)
-        << "only the tail must miss";
+        << "only the tail is fetched from the source";
 }
 
 

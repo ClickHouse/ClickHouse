@@ -1377,26 +1377,8 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         writeSliceToWriter(view.writer, window, chain, out_stats, streaming);
 }
 
-namespace
-{
-/// Bytes of `r` to credit to a cache tier: all of `r` unless a `credit` mask is given
-/// (unified foreground), in which case only the part of `r` ALREADY committed before this
-/// serve started filling. The rest of `r` is this serve's own source fetch transiting the
-/// cell - already counted as `BytesFromSource` - so crediting it as a cache hit would
-/// double-count and make a cold all-miss report itself as served from cache.
-size_t cacheCredit(ByteRange r, const IntervalSet * credit)
-{
-    if (!credit)
-        return r.size;
-    size_t freshly_fetched = 0;
-    for (const auto & gap : credit->subtract(r))   /// `r` minus the mask = not pre-committed
-        freshly_fetched += gap.size;
-    return r.size - freshly_fetched;
-}
-}
-
 void ReaderExecutor::recreditCommittedPrefixes(
-    ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats, const IntervalSet * cache_credit)
+    ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
     /// Before the source fetch, re-credit any committed prefix of a frozen miss that a
     /// concurrent reader (or this plan's own write) has grown since plan-build: serve it
@@ -1442,7 +1424,7 @@ void ReaderExecutor::recreditCommittedPrefixes(
                         continue;  /// raced shrink/detach - fall back to the source path
                     result.append(chunk.slice(sub));
                     covered.add(sub);
-                    out_stats.add(tier_counter, cacheCredit(sub, cache_credit));
+                    out_stats.add(tier_counter, sub.size);
                 }
                 HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
                     static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
@@ -2498,13 +2480,11 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds the single
     /// slot, so we leave it and let the cell-serve / fallback below handle this window.
     ///
-    /// `pre_committed` is the cell coverage BEFORE this serve fills anything (a prior window's
-    /// over-read prefill or a worker's run-ahead). It is the cache-hit credit mask for the cell-
-    /// serve: bytes this serve fetches from the source below transit the cell but are counted as
-    /// `BytesFromSource`, not a cache hit - else a cold all-miss would report itself as served from
-    /// cache.
-    IntervalSet pre_committed = committedCoverage(window_phys);
-    const IntervalSet * cache_credit = &pre_committed;
+    /// The cache is the buffer: every byte the serve delivers is read OUT of a committed cell, so it
+    /// counts as a cache read (`BytesFrom{Fs,Page}Cache`) - including bytes this serve just fetched
+    /// into the cell from the source. A cold miss therefore shows BOTH the source fetch
+    /// (`BytesFromSource`, filling the cell) and the cache read (serving it back out); the two count
+    /// distinct operations and legitimately overlap.
     {
         const CoverageMap & geom = *read_plan.geometry();
         while (!committedCellCovers(window_phys))
@@ -2590,7 +2570,7 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         /// `out` is discarded and the foreground fallback re-reads the window, so folding here
         /// would double-count the discarded prefix against the cache counters.
         Stats cell_stats;
-        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats, cache_credit);
+        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats);
         if (covered.subtract(window_phys).empty())   /// fully served from the cells
         {
             stats += cell_stats;
@@ -2612,11 +2592,10 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
 }
 
 void ReaderExecutor::serveWindowFromCells(
-    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
-    Stats & out_stats, const IntervalSet * cache_credit)
+    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
 {
     /// The committed prefix first (fastest resident tier first, under the shared `covered`).
-    recreditCommittedPrefixes(window_phys, out, covered, out_stats, cache_credit);
+    recreditCommittedPrefixes(window_phys, out, covered, out_stats);
     if (!allow_wait || !machine)
         return;
 
@@ -2652,7 +2631,7 @@ void ReaderExecutor::serveWindowFromCells(
                     continue;   /// raced reset/short - the foreground fallback re-fetches it
                 out.append(c.slice(u));
                 covered.add(u);
-                out_stats.add(tier_counter, cacheCredit(u, cache_credit));
+                out_stats.add(tier_counter, u.size);
             }
         }
     }
