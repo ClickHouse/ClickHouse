@@ -20,7 +20,7 @@ struct StringKey24
 
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
-    chassert(n != 0);
+    assert(n != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
     else
@@ -28,7 +28,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
-    chassert(n.items[1] != 0);
+    assert(n.items[1] != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
     else
@@ -36,7 +36,7 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 }
 inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
-    chassert(n.c != 0);
+    assert(n.c != 0);
     if constexpr (std::endian::native == std::endian::big)
         return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
     else
@@ -132,17 +132,15 @@ struct StringHashTableHash
 };
 
 template <typename Cell>
-struct StringHashTableEmpty // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `zero_value_storage` is raw storage for placement new, only written when `has_zero` becomes true
+struct StringHashTableEmpty
 {
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)];
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
-
-    void prefetchByHash(size_t) const {} /// No-op: empty key storage is trivially small
 
     void setHasZero()
     {
@@ -277,14 +275,6 @@ public:
     {
     }
 
-    void reserve(size_t num_elements)
-    {
-        m1.reserve(num_elements / 4);
-        m2.reserve(num_elements / 4);
-        m3.reserve(num_elements / 4);
-        ms.reserve(num_elements / 4);
-    }
-
     StringHashTable(StringHashTable && rhs) noexcept
         : m0(std::move(rhs.m0))
         , m1(std::move(rhs.m1))
@@ -340,7 +330,7 @@ public:
         const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
-        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+        union
         {
             StringKey8 k8;
             StringKey16 k16;
@@ -424,27 +414,6 @@ public:
     void ALWAYS_INLINE emplace(KeyHolder && key_holder, LookupResult & it, bool & inserted)
     {
         this->dispatch(*this, key_holder, EmplaceCallable(it, inserted));
-    }
-
-    struct PrefetchCallable
-    {
-        template <typename Map, typename KeyHolder>
-        void ALWAYS_INLINE operator()(Map & map, KeyHolder && key_holder, size_t hash)
-        {
-            map.prefetchByHash(hash);
-            /// Release any temporary key memory held by the holder. Needed for the `ms` (long string) and
-            /// trailing-zero dispatch paths where `dispatch` forwards the holder without discarding.
-            /// For the short-string dispatch paths the holder was already discarded inside `dispatch`,
-            /// and the parameter received here is a `StringKey8`/`StringKey16`/`StringKey24`/`VoidKey`
-            /// for which `keyHolderDiscardKey` is a no-op.
-            keyHolderDiscardKey(key_holder);
-        }
-    };
-
-    template <typename KeyHolder>
-    void ALWAYS_INLINE prefetch(KeyHolder && key_holder)
-    {
-        this->dispatch(*this, std::forward<KeyHolder>(key_holder), PrefetchCallable{});
     }
 
     struct FindCallable

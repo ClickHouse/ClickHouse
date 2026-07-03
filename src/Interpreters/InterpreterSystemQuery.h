@@ -69,8 +69,6 @@ private:
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
 
-    void restartDisk(const String & disk_name);
-
     void scheduleMerge(ASTSystemQuery & query);
     void syncMerges();
 
