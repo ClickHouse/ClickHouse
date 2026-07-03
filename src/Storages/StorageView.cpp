@@ -59,6 +59,8 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool force_index_by_date;
+    extern const SettingsBool force_primary_key;
 }
 
 namespace ErrorCodes
@@ -135,6 +137,17 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
     }
+
+    /// force_index_by_date / force_primary_key can only be enforced on a MergeTree reading step that sees
+    /// the query's WHERE predicate. When reading through a view under parallel replicas, the view is
+    /// executed as its inner subquery and the outer WHERE predicate stays in a FilterStep above the view
+    /// boundary, so it never reaches the inner reading step: the key looks unused there even for a query
+    /// that does use it -> a false-positive INDEX_NOT_USED. Read the view without parallel replicas so the
+    /// whole query is planned as one plan, the predicate is pushed into the reading step, and the guards
+    /// are enforced correctly (they still throw for a genuinely unused index). See issue #108266.
+    if (context->canUseParallelReplicasOnInitiator()
+        && (view_settings[Setting::force_index_by_date] || view_settings[Setting::force_primary_key]))
+        view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
 
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
