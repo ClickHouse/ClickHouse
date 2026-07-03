@@ -136,6 +136,62 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
     return actions_dag.addFunction(filter_function, {&filter_label_node, filter_argument}, {});
 }
 
+static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
+    ActionsDAG & filter_dag,
+    QueryPlan::Node *& build_filter_node,
+    QueryPlan::Nodes & nodes,
+    JoinStepLogical & join_step,
+    const RuntimeFilterId & id,
+    const ColumnWithTypeAndName & join_key_probe_side,
+    const ColumnWithTypeAndName & join_key_build_side,
+    const DataTypePtr & common_type,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    bool check_left_does_not_contain)
+{
+    LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
+        id.name, join_key_build_side.name, join_key_probe_side.name);
+
+    /// Add filter lookup to the probe subtree.
+    const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
+
+    /// Add building filter to the build subtree of join.
+    QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
+    new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+        build_filter_node->step->getOutputHeader(),
+        join_key_build_side.name,
+        common_type,
+        id.name,
+        id.key,
+        optimization_settings.join_runtime_filter_exact_values_limit,
+        optimization_settings.join_runtime_bloom_filter_bytes,
+        optimization_settings.join_runtime_bloom_filter_hash_functions,
+        optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+        optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+        /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+    new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
+    new_build_filter_node->children = {build_filter_node};
+    build_filter_node = new_build_filter_node;
+
+    /// Record a descriptor so `HashJoin` can replace the `Set`/`BloomFilter` above with a
+    /// `SharedFixedHashTableRuntimeFilterImpl` when its build side ends up as a `FixedHashMap`;
+    /// otherwise the `Set`/`BloomFilter` stays active. Carry the rendezvous key (`id.key`),
+    /// NOT the stable display name: the filter is registered in the lookup under that key, so
+    /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key. Also
+    /// carry `common_type`, because it is the type used both by the probe-side cast before
+    /// `__applyFilter` and by `BuildRuntimeFilterStep`.
+    if (join_step.getJoinSettings().join_runtime_filter_from_fixed_hash_table
+        && !check_left_does_not_contain)
+    {
+        join_step.getJoinOperator().shared_runtime_filter_descriptors.push_back(SharedRuntimeFilterDescriptor{
+            id.key,
+            join_key_build_side.name,
+            common_type});
+    }
+
+    return filter_condition;
+}
+
 static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
 {
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
@@ -416,58 +472,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
             auto id = make_id(i);
-            const String filter_name = id.name;
 
             const auto & join_key_build_side = join_keys_build_side[i];
             const auto & join_key_probe_side = join_keys_probe_side[i];
             const auto & common_type = common_types[i];
 
-            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
-                filter_name, join_key_build_side.name, join_key_probe_side.name);
-
-            /// Add filter lookup to the probe subtree
-            const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
+            const auto & filter_condition = addJoinKeyRuntimeFilter(
+                filter_dag,
+                build_filter_node,
+                nodes,
+                *join_step,
+                id,
+                join_key_probe_side,
+                join_key_build_side,
+                common_type,
+                optimization_settings,
+                check_left_does_not_contain);
             all_filter_conditions.push_back(check_left_does_not_contain
                 ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
                 : &filter_condition);
-
-            /// Add building filter to the build subtree of join
-            {
-                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
-                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
-                    build_filter_node->step->getOutputHeader(),
-                    join_key_build_side.name,
-                    common_type,
-                    filter_name,
-                    id.key,
-                    optimization_settings.join_runtime_filter_exact_values_limit,
-                    optimization_settings.join_runtime_bloom_filter_bytes,
-                    optimization_settings.join_runtime_bloom_filter_hash_functions,
-                    optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-                    optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
-                    optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
-                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
-                new_build_filter_node->children = {build_filter_node};
-
-                build_filter_node = new_build_filter_node;
-            }
-
-            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
-            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
-            /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
-            /// NOT the stable display name: the filter is registered in the lookup under that key, so
-            /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key. Also
-            /// carry `common_type`, because it is the type used both by the probe-side cast before
-            /// `__applyFilter` and by `BuildRuntimeFilterStep`.
-            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
-                && !check_left_does_not_contain)
-            {
-                join_step->getJoinOperator().shared_runtime_filter_descriptors.push_back(SharedRuntimeFilterDescriptor{
-                    id.key,
-                    join_key_build_side.name,
-                    common_type});
-            }
         }
 
         if (all_filter_conditions.size() == 1)
