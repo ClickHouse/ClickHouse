@@ -784,19 +784,42 @@ void TCPHandler::runImpl()
                 }
             });
 
-            query_state->query_context->setMergeTreeAllRangesCallback([this, &query_state](InitialAllRangesAnnouncement announcement)
-            {
-                Stopwatch watch;
-                CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
+            query_state->query_context->setMergeTreeAllRangesCallback(
+                [this, &query_state](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
+                {
+                    Stopwatch watch;
+                    CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
-                std::lock_guard lock(*callback_mutex);
+                    std::lock_guard lock(*callback_mutex);
 
-                checkIfQueryCanceled(*query_state);
+                    checkIfQueryCanceled(*query_state);
 
-                sendMergeTreeAllRangesAnnouncement(*query_state, announcement);
-                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
-                ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
-            });
+                    try
+                    {
+                        const auto announcement_mode = announcement.mode;
+                        sendMergeTreeAllRangesAnnouncement(*query_state, std::move(announcement));
+                        ProfileEvents::increment(ProfileEvents::MergeTreeAllRangesAnnouncementsSent);
+                        ProfileEvents::increment(
+                            ProfileEvents::MergeTreeAllRangesAnnouncementsSentElapsedMicroseconds, watch.elapsedMicroseconds());
+
+                        /// Older initiators (protocol < ANNOUNCEMENT_RESPONSE) don't send a response.
+                        if (client_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+                            return std::nullopt;
+
+                        /// `Default` mode callers discard the response; the initiator side skips
+                        /// sending it (see `RemoteQueryExecutor::processMergeTreeInitialReadAnnouncement`).
+                        /// Don't block on a packet that will never arrive.
+                        if (announcement_mode == CoordinationMode::Default)
+                            return std::nullopt;
+
+                        return receiveAllRangesAnnouncementResponse(*query_state);
+                    }
+                    catch (...)
+                    {
+                        query_state->stop_query = true;
+                        throw;
+                    }
+                });
 
             query_state->query_context->setMergeTreeReadTaskCallback(
                 [this, &query_state](ParallelReadRequest request) -> std::optional<ParallelReadResponse>
@@ -2257,6 +2280,29 @@ std::optional<ParallelReadResponse> TCPHandler::receivePartitionMergeTreeReadTas
 }
 
 
+InitialAllRangesAnnouncementResponse TCPHandler::receiveAllRangesAnnouncementResponse(QueryState & state)
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+
+    switch (packet_type)
+    {
+        case Protocol::Client::Cancel:
+            processCancel(state);
+            return {};
+
+        case Protocol::Client::MergeTreeAllRangesAnnouncementResponse:
+            return InitialAllRangesAnnouncementResponse::deserialize(*in, client_parallel_replicas_protocol_version);
+
+        default:
+            throw Exception(
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                "Received {} packet after sending an initial parallel-replicas announcement",
+                Protocol::Client::toString(packet_type));
+    }
+}
+
+
 void TCPHandler::processClusterNameAndSalt()
 {
     readStringBinary(cluster, *in, MAX_HELLO_STRING_SIZE);
@@ -2447,6 +2493,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         throw exception; /// NOLINT
 #endif
     }
+
+    /// `client_info` is what the upstream sent us about itself; the parallel-replicas protocol
+    /// version, however, is negotiated at hello time per-connection — not over the wire as part of
+    /// `ClientInfo`. Stamp it locally so downstream code (e.g. `ReadFromMergeTree`) can recognise
+    /// when the upstream is too old to speak features added in newer protocol versions and degrade
+    /// gracefully instead of triggering rolling-upgrade incompatibilities.
+    client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
 
     state->query_context = session->makeQueryContext(client_info);
 
