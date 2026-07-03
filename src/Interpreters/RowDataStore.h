@@ -38,26 +38,19 @@ public:
 
     using RowLayout = std::vector<FieldLayout>;
 
-    struct RowLayoutWithColumnsFilter
-    {
-        RowLayout layout;
-        std::vector<bool> filter;
-    };
-
     /// Compute the row-major layout for `columns` in input order.
     static RowLayout computeLayout(const Columns & columns);
 
-    /// Same as above, but selects row store columns bounded by `capacity_bytes`.
-    static RowLayoutWithColumnsFilter computeLayout(const Columns & columns, size_t rows, size_t capacity_bytes);
-
-    static std::shared_ptr<RowDataStore> create();
-
-    /// Initialize the row store from a set of columns.
-    void init(const Columns & columns);
+    static std::shared_ptr<RowDataStore> create(const Columns & columns);
 
     /// Read `length` consecutive rows from `columns` starting at `start` and pack them into the row-major buffer.
     /// For nullable fields the null flag is written at the field's first byte followed by the value.
     void gatherRows(const Columns & columns, size_t start, size_t length);
+
+    /// Scatter `length` consecutive rows starting at `start` from the row-major buffer back into destination `columns`.
+    /// Nullable fields split their stored `[null_byte | value]` into `NullMap` + nested column.
+    void scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const;
+    void scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const;
 
     FieldLayout getFieldLayout(size_t input_col_index) const;
 
@@ -69,6 +62,8 @@ public:
     size_t byteSizeAt(size_t /*n*/) const { return row_length; }
     size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
 
+    MutableColumns buildEmptyColumns() const;
+
 private:
     using Chars = PaddedPODArray<char>;
 
@@ -76,7 +71,6 @@ private:
     Chars chars;
     RowLayout layout;
     size_t row_length;
-    bool init_flag = false;
 
     explicit RowDataStore(RowLayout && layout_);
 

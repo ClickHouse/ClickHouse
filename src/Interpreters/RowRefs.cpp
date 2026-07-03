@@ -220,20 +220,6 @@ private:
     }
 };
 
-std::pair<Columns, Columns> splitByAccessIndexes(const Columns & columns, const ColumnAccessIndexes & access_indexes)
-{
-    Columns row_store_columns;
-    Columns remaining_columns;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
-            row_store_columns.push_back(columns[i]);
-        else
-            remaining_columns.push_back(columns[i]);
-    }
-    return {row_store_columns, remaining_columns};
-}
-
 }
 
 ColumnsInfo::ColumnsInfo(Columns && columns_) : ColumnsInfo(std::move(columns_), nullptr) {}
@@ -266,14 +252,6 @@ size_t ColumnsInfo::rows() const
     if (!columns.empty())
         return columns.at(0)->size();
     return hasRowStore() ? row_store->size() : 0;
-}
-
-void ColumnsInfo::transferToRowStore(const ColumnAccessIndexes & access_indexes)
-{
-    auto [row_store_columns, remaining_columns] = splitByAccessIndexes(columns, access_indexes);
-    row_store->init(row_store_columns);
-    columns = std::move(remaining_columns);
-    rebuildReplicatedColumns();
 }
 
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)

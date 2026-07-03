@@ -46,7 +46,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"min_columns_for_hash_join_row_store", 0, 3, "Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation."},
-            {"max_bytes_for_hash_join_row_store", 128_MiB, 128_MiB, "Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled by the number of instances. 0 means no limit."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

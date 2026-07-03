@@ -86,7 +86,6 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const SettingsUInt64 min_columns_for_hash_join_row_store;
-    extern const SettingsUInt64 max_bytes_for_hash_join_row_store;
 }
 
 namespace ErrorCodes
@@ -234,7 +233,6 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , min_columns_for_hash_join_row_store(settings[Setting::min_columns_for_hash_join_row_store])
-    , max_bytes_for_hash_join_row_store(settings[Setting::max_bytes_for_hash_join_row_store])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -269,7 +267,6 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , min_columns_for_hash_join_row_store(settings.min_columns_for_hash_join_row_store)
-    , max_bytes_for_hash_join_row_store(settings.max_bytes_for_hash_join_row_store)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)

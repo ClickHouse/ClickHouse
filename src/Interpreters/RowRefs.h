@@ -61,9 +61,6 @@ struct ColumnsInfo
 
     size_t allocatedBytes() const;
     size_t rows() const;
-
-    /// Tranfers columns that are eligible for row-major storage from `columns` to `row_store`.
-    void transferToRowStore(const ColumnAccessIndexes & access_indexes);
 };
 
 /// Reference to the row in block.

@@ -7997,9 +7997,6 @@ Control the minimum number of payload columns from the left side required for en
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, R"(
 Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.
 )", 0) \
-    DECLARE(UInt64, max_bytes_for_hash_join_row_store, 128_MiB, R"(
-Maximum number of bytes per hash join instance to place into the row-major hash join storage. For `parallel_hash` the build is split across instances, so the budget is scaled by the number of instances. 0 means no limit.
-)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \

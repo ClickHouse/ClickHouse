@@ -132,6 +132,21 @@ Block materializeColumnsFromRightBlock(Block block, const Block & sample_block, 
     return block;
 }
 
+std::pair<Columns, Columns> extractRowStoreColumns(const Columns & columns, const ColumnAccessIndexes & access_indexes)
+{
+    Columns row_store_columns;
+    Columns remaining_columns;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
+            row_store_columns.push_back(columns[i]);
+        else
+            remaining_columns.push_back(columns[i]);
+    }
+
+    return {row_store_columns, remaining_columns};
+}
+
 }
 
 static void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
@@ -278,7 +293,6 @@ HashJoin::HashJoin(
     materializeBlockInplace(right_table_keys);
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
-    data->column_replicated_flags.resize(data->sample_block.columns(), false);
 
     if (!enable_row_store_ || !isRowStoreSupported() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
@@ -715,6 +729,66 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
     return DB::materializeColumnsFromRightBlock(std::move(block), savedBlockSample(), table_join->getAllNames(JoinTableSide::Right));
 }
 
+void HashJoin::initRowStore(const Block & block)
+{
+    /// Skip using row store when the right table rerange optimization could get triggered.
+    /// TODO: allow row store when right table could get reranged and build the reranged table
+    /// based on the row store instead.
+    if (isRightTableRerangeEnabled())
+    {
+        data->row_store_state = RowStoreState::Disabled;
+        return;
+    }
+    
+    /// Extract columns suitable for row store.
+    Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
+    const auto & columns = block_to_save.getColumns();
+    ColumnAccessIndexes access_indexes;
+    access_indexes.reserve(columns.size());
+    Columns row_store_columns;
+    size_t remaining_columns = 0;
+    for (const auto & column : columns)
+    {
+        if (isRowStorageUseful(column))
+        {
+            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_columns.size()});
+            row_store_columns.push_back(column);
+        }
+        else
+            access_indexes.push_back({ColumnAccessIndex::Type::Columns, remaining_columns++});
+    }
+
+    if (row_store_columns.size() < table_join->minColumnsForHashJoinRowStore())
+    {
+        data->row_store_state = RowStoreState::Disabled;
+        return;
+    }
+
+    /// Add each field's offset, size and nullability to the row store access indexes.
+    const RowDataStore::RowLayout layout = RowDataStore::computeLayout(row_store_columns);
+    for (auto & access_index : access_indexes)
+    {
+        if (access_index.type != ColumnAccessIndex::Type::RowStore)
+            continue;
+        const auto & field = layout[access_index.index];
+        access_index.field_offset = field.offset;
+        access_index.field_size = field.size;
+        access_index.is_nullable = field.is_nullable;
+    }
+
+    data->row_store_state = RowStoreState::Initialized;
+    data->column_access_indexes = std::move(access_indexes);
+}
+
+RowDataStorePtr HashJoin::createRowStoreForBlock(const Block & block) const
+{
+    if (data->row_store_state != RowStoreState::Initialized)
+        return nullptr;
+    Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
+    auto [columns, _] = extractRowStoreColumns(block_to_save.getColumns(), data->column_access_indexes);
+    return RowDataStore::create(columns);
+}
+
 Block HashJoin::prepareRightBlock(const Block & block, const Block & saved_block_sample_)
 {
     Block prepared_block = DB::materializeColumnsFromRightBlock(block, saved_block_sample_, {});
@@ -754,8 +828,9 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     if (unlikely(selector.size() > std::numeric_limits<RowRef::SizeT>::max()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
 
-    if (!row_store && data->row_store_state == RowStoreState::Enabled)
-        row_store = RowDataStore::create();
+    /// Initialize the row store layout based on the first block.
+    if (data->row_store_state == RowStoreState::Enabled)
+        initRowStore(block);
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.
@@ -855,18 +930,21 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             have_compressed = true;
         }
 
+        Columns columns = block_to_save.getColumns();
+        if (data->row_store_state == RowStoreState::Initialized)
+        {
+            auto [row_store_columns, remaining_columns] = extractRowStoreColumns(columns, data->column_access_indexes);
+            columns = remaining_columns;
+            if (!row_store)
+                row_store = RowDataStore::create(row_store_columns);
+        }
+
         doDebugAsserts();
-        data->columns.emplace_back(ColumnsInfo(block_to_save.getColumns(), std::move(row_store)), std::move(selector));
+        data->columns.emplace_back(ColumnsInfo(std::move(columns), std::move(row_store)), std::move(selector));
         const auto * stored_columns = &data->columns.back();
         size_t data_allocated_bytes = stored_columns->allocatedBytes();
         data->allocated_size += data_allocated_bytes;
         doDebugAsserts();
-
-        const auto & replicated_columns = stored_columns->columns_info.replicated_columns;
-        chassert(replicated_columns.size() == data->column_replicated_flags.size());
-        for (size_t i = 0; i < replicated_columns.size(); ++i)
-            if (replicated_columns[i] != nullptr)
-                data->column_replicated_flags[i] = true;
 
         bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
         const auto & onexprs = table_join->getClauses();
@@ -1600,7 +1678,7 @@ public:
         const Block & saved_block_sample = parent.savedBlockSample();
 
         output_access_indexes.reserve(saved_block_sample.columns());
-        if (parent.data->row_store_state == HashJoin::RowStoreState::Ready)
+        if (parent.data->row_store_state == HashJoin::RowStoreState::Initialized)
         {
             for (size_t i = 0; i < saved_block_sample.columns(); ++i)
             {
@@ -1626,7 +1704,7 @@ public:
         size_t rows_added = 0;
         if (unlikely(parent.data->type == HashJoin::Type::EMPTY))
         {
-            chassert(parent.data->row_store_state != HashJoin::RowStoreState::Ready);
+            chassert(parent.data->row_store_state != HashJoin::RowStoreState::Initialized);
             rows_added = fillColumnsFromData(parent.data->columns, columns_right);
         }
         else
@@ -2025,22 +2103,70 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
-    if (data->row_store_state == RowStoreState::Ready)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Row store should never reach releaseJoinedBlocks");
+    /// Reconstruct full column list from compact columns and row store
+    /// using the access indexes to place each column back at its original position.
+    /// TODO: make the row store spillable.
+    auto materialize_columns = [&](ScatteredColumns & scattered_columns)
+    {
+        const auto & columns_info = scattered_columns.columns_info;
+        const auto & access_indexes = data->column_access_indexes;
+        const auto & selector = scattered_columns.selector;
 
-    auto extract_source_blocks = [](ScatteredColumnsList && columns_list, const Block & sample_block)
+        MutableColumns row_store_columns;
+        if (columns_info.hasRowStore())
+        {
+            row_store_columns = columns_info.row_store->buildEmptyColumns();
+            std::vector<IColumn *> column_ptrs;
+            column_ptrs.reserve(row_store_columns.size());
+            for (auto & col : row_store_columns)
+                column_ptrs.push_back(col.get());
+
+            if (selector.isContinuousRange())
+            {
+                auto [start, end] = selector.getRange();
+                columns_info.row_store->scatterRows(column_ptrs, start, end - start);
+            }
+            else
+                columns_info.row_store->scatterRows(column_ptrs, selector.getIndexes().getData());
+        }
+
+        Columns columnar_columns;
+        columnar_columns.reserve(columns_info.columns.size());
+        if (selector.size() == columns_info.rows())
+            columnar_columns = columns_info.columns;
+        else if (selector.isContinuousRange())
+        {
+            auto [start, end] = selector.getRange();
+            for (const auto & c : columns_info.columns)
+                columnar_columns.push_back(c->cut(start, end - start));
+        }
+        else
+        {
+            const auto & indexes = selector.getIndexes();
+            for (const auto & c : columns_info.columns)
+                columnar_columns.push_back(c->index(indexes, /*limit*/ 0));
+        }
+
+        if (access_indexes.empty())
+            return columnar_columns;
+
+        Columns result(access_indexes.size());
+        for (size_t i = 0; i < access_indexes.size(); ++i)
+        {
+            const auto & access_index = access_indexes[i];
+            if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                result[i] = std::move(row_store_columns[access_index.index]);
+            else
+                result[i] = std::move(columnar_columns[access_index.index]);
+        }
+        return result;
+    };
+
+    auto extract_source_blocks = [&](ScatteredColumnsList && columns_list, const Block & sample_block)
     {
         BlocksList result;
         for (auto & columns : columns_list)
-        {
-            Block block = sample_block.cloneWithColumns(columns.columns_info.columns);
-            /// When used with ConcurrentHashJoin, each slot stores full original block columns
-            /// with a selector indicating which rows belong to that slot. Apply the selector
-            /// to materialize only the selected rows, avoiding duplication across slots.
-            ScatteredBlock scattered(std::move(block), std::move(columns.selector));
-            scattered.filterBySelector();
-            result.emplace_back(std::move(scattered.getSourceBlock()));
-        }
+            result.emplace_back(sample_block.cloneWithColumns(materialize_columns(columns)));
         return result;
     };
 
@@ -2048,8 +2174,9 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
+        auto result = extract_source_blocks(std::move(right_columns), sample_block);
         data.reset();
-        return extract_source_blocks(std::move(right_columns), sample_block);
+        return result;
     }
 
     data->maps.clear();
@@ -2072,11 +2199,12 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
     for (auto & saved_columns : right_columns)
     {
+        Columns all_columns = materialize_columns(saved_columns);
         Block restored_block;
         for (size_t i = 0; i < positions.size(); ++i)
         {
             auto column = data->sample_block.getByPosition(positions[i]);
-            column.column = saved_columns.columns_info.columns[positions[i]];
+            column.column = all_columns[positions[i]];
             correctNullabilityInplace(column, is_nullable[i]);
             restored_block.insert(column);
         }
@@ -2248,6 +2376,12 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
     }
 }
 
+bool HashJoin::isRightTableRerangeEnabled() const
+{
+    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
+        && strictness == JoinStrictness::All && data && !data->sorted && data->maps.size() == 1;
+}
+
 /// We should not rerange the right table on such conditions:
 /// 1. The right table is already reranged by key, or it is empty.
 /// 2. The join clauses size is greater than 1, for example:
@@ -2259,8 +2393,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
 ///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return table_join->allowJoinSorting() && !table_join->getMixedJoinExpression() && isInnerOrLeft(kind)
-        && strictness == JoinStrictness::All && data && !data->sorted && !data->columns.empty() && data->maps.size() == 1
+    return isRightTableRerangeEnabled() && !data->columns.empty()
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }
@@ -2815,133 +2948,6 @@ bool HashJoin::isRowStoreSupported() const
         && !table_join->getMixedJoinExpression();
 }
 
-void HashJoin::finalizeRowStoreStatus()
-{
-    /// In the case of concurrent hash join the row store is finalized once in `ConcurrentHashJoin`
-    /// for all hash join instances.
-    if (is_concurrent_hash_join)
-        return;
-
-    auto disable_row_store = [&]
-    {
-        for (auto & cols : data->columns)
-            cols.columns_info.row_store.reset();
-        data->row_store_state = RowStoreState::Disabled;
-    };
-
-    if (data->row_store_state != RowStoreState::Enabled
-        || data->columns.empty()
-        || rightTableCanBeReranged())
-    {
-        disable_row_store();
-        return;
-    }
-
-    /// Count the rows of hash join payload. Can differ from rows_to_join because of the Selector for ASOF join.
-    size_t payload_rows = 0;
-    for (const auto & scattered_cols : data->columns)
-        payload_rows += scattered_cols.columns_info.rows();
-
-    const Block & block = savedBlockSample();
-    auto access_indexes = computeColumnAccessIndexes(
-        block,
-        data->column_replicated_flags,
-        payload_rows,
-        table_join->maxBytesForHashJoinRowStore(),
-        table_join->minColumnsForHashJoinRowStore());
-
-    if (!access_indexes)
-    {
-        disable_row_store();
-        return;
-    }
-
-    data->row_store_state = RowStoreState::Finalized;
-    data->column_access_indexes = std::move(*access_indexes);
-
-    Strings row_store_column_names;
-    for (size_t i = 0; i < data->column_access_indexes.size(); ++i)
-        if (data->column_access_indexes[i].type == ColumnAccessIndex::Type::RowStore)
-            row_store_column_names.push_back(block.getByPosition(i).name);
-
-    LOG_DEBUG(log, "{}Initialized Row store with {} columns: {}.",
-        instance_log_id, row_store_column_names.size(), fmt::join(row_store_column_names, ", "));
-}
-
-std::optional<ColumnAccessIndexes> HashJoin::computeColumnAccessIndexes(
-    const Block & block,
-    const std::vector<bool> & column_replicated_flags,
-    size_t payload_rows,
-    size_t max_row_store_bytes,
-    size_t min_row_store_columns)
-{
-    /// Collect columns for which the row store is useful.
-    Columns eligible_columns;
-    std::vector<size_t> eligible_indexes;
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        const auto & col = block.getByPosition(i).column;
-        if (isRowStorageUseful(col) && !column_replicated_flags[i])
-        {
-            eligible_columns.push_back(col);
-            eligible_indexes.push_back(i);
-        }
-    }
-
-    /// Select the columns that fit into the capacity and compute the layout of the row store.
-    const auto [layout, filter] = RowDataStore::computeLayout(eligible_columns, payload_rows, max_row_store_bytes);
-    size_t row_store_size = std::ranges::count(filter, true);
-    if (row_store_size < min_row_store_columns)
-        return {};
-
-    /// Translate the filter over eligible columns to all columns to determine which ones stay columnar.
-    std::vector<bool> expanded_filter(block.columns(), false);
-    for (size_t i = 0; i < eligible_indexes.size(); ++i)
-        if (filter[i])
-            expanded_filter[eligible_indexes[i]] = true;
-
-    /// Initialize the final access indexes (columnar or row store) for the join payload.
-    ColumnAccessIndexes access_indexes;
-    access_indexes.reserve(block.columns());
-    size_t columns_index = 0;
-    size_t row_store_index = 0;
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        if (expanded_filter[i])
-        {
-            const auto & field = layout[row_store_index];
-            access_indexes.push_back({ColumnAccessIndex::Type::RowStore, row_store_index, field.offset, field.size, field.is_nullable});
-            ++row_store_index;
-        }
-        else
-        {
-            access_indexes.push_back({ColumnAccessIndex::Type::Columns, columns_index});
-            ++columns_index;
-        }
-    }
-
-    return access_indexes;
-}
-
-bool HashJoin::canConvertToRowStore() const
-{
-    return data->row_store_state == RowStoreState::Finalized;
-}
-
-void HashJoin::tryConvertToRowStore()
-{
-    if (!canConvertToRowStore())
-        return;
-    size_t new_allocated_size = 0;
-    for (auto & scattered_cols : data->columns)
-    {
-        scattered_cols.columns_info.transferToRowStore(data->column_access_indexes);
-        new_allocated_size += scattered_cols.allocatedBytes();
-    }
-    data->allocated_size = new_allocated_size;
-    data->row_store_state = RowStoreState::Ready;
-}
-
 void HashJoin::onBuildPhaseFinish()
 {
     reinitUsedFlags();
@@ -2953,7 +2959,6 @@ void HashJoin::onBuildPhaseFinish()
         LOG_DEBUG(log, "Promoting join strictness to RightAny, because all values in the right table are unique");
     }
     updateNonJoinedRowsStatus();
-    finalizeRowStoreStatus();
 
     build_phase_finished = true;
 
@@ -2970,15 +2975,13 @@ bool HashJoin::hasPostBuildPhase() const
         && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
-    return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish || canConvertToRowStore();
+    return rightTableCanBeReranged() || canConvertToFixedHashMap() || needs_shared_filter_publish;
 }
 
-bool HashJoin::runPostBuildPhase()
+void HashJoin::runPostBuildPhase()
 {
     tryRerangeRightTableData();
     tryConvertToFixedHashMap();
     publishSharedRuntimeFilters();
-    tryConvertToRowStore();
-    return false;
 }
 }

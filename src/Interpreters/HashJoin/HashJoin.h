@@ -191,7 +191,7 @@ public:
     void onBuildPhaseFinish() override;
 
     bool hasPostBuildPhase() const override;
-    bool runPostBuildPhase() override;
+    void runPostBuildPhase() override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -447,8 +447,7 @@ public:
     {
         Disabled,
         Enabled,
-        Finalized,
-        Ready,
+        Initialized,
     };
 
     struct RightTableData
@@ -478,8 +477,6 @@ public:
         /// Whether the right table reranged by key
         bool sorted = false;
         RowStoreState row_store_state = RowStoreState::Enabled;
-        /// Track which columns are present as `ColumnReplicated` in any block.
-        std::vector<bool> column_replicated_flags;
 
         /// For range types: the minimum key value and the range size from min_key to max_key.
         struct KeyRange
@@ -535,6 +532,9 @@ public:
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
+
+    void initRowStore(const Block & block);
+    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
 
     size_t getAndSetRightTableKeys() const;
 
@@ -659,6 +659,7 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
+    bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
@@ -676,17 +677,6 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     bool isRowStoreSupported() const;
-    /// Determine which columns can be added to the row store and which columns remain
-    /// columnar, and their indexes in the input block.
-    static std::optional<ColumnAccessIndexes> computeColumnAccessIndexes(
-        const Block & block,
-        const std::vector<bool> & column_replicated_flags,
-        size_t payload_rows,
-        size_t max_row_store_bytes,
-        size_t min_row_store_columns);
-    void finalizeRowStoreStatus();
-    bool canConvertToRowStore() const;
-    void tryConvertToRowStore();
 
     void reinitUsedFlags();
 

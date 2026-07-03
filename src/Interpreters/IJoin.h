@@ -181,8 +181,7 @@ public:
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.
     virtual bool hasPostBuildPhase() const { return false; }
-    virtual bool runPostBuildPhase() { return false; }
-    virtual void onPostBuildPhaseFinish() { }
+    virtual void runPostBuildPhase() { }
 
     /// Enables lazy columns indexing optimization on hash join variants
     virtual void setEnableLazyColumnsIndexing(bool /*value*/) { }

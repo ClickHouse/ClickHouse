@@ -191,7 +191,7 @@ public:
         const auto & access_indexes = join.getJoinedData()->column_access_indexes;
 
         lazy_output.output_access_indexes.reserve(right_indexes.size());
-        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Ready)
+        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized)
         {
             for (size_t right_index : right_indexes)
             {

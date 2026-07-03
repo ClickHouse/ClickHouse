@@ -61,7 +61,7 @@
     <query>SELECT * FROM rs_probe_100m l JOIN rs_right_mixed_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null</query>
 
     <!-- Wide build columns results in large blocks -->
-    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_wide_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, max_bytes_for_hash_join_row_store = 0</query>
+    <query>SELECT * FROM rs_probe_100m l JOIN rs_right_wide_10m r ON (l.k % toUInt64(10000000 / {match_rate})) = r.k FORMAT Null SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS rs_probe_100m</drop_query>
     <drop_query>DROP TABLE IF EXISTS rs_right_100k</drop_query>

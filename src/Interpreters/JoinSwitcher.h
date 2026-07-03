@@ -85,8 +85,7 @@ public:
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 
-    bool runPostBuildPhase() override { return join->runPostBuildPhase(); }
-    void onPostBuildPhaseFinish() override { join->onPostBuildPhaseFinish(); }
+    void runPostBuildPhase() override { join->runPostBuildPhase(); }
 
     void setEnableLazyColumnsIndexing(bool value) override { join->setEnableLazyColumnsIndexing(value); }
 

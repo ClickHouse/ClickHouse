@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <numeric>
 
 
 namespace DB
@@ -95,79 +94,26 @@ RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
     return layout;
 }
 
-RowDataStore::RowLayoutWithColumnsFilter RowDataStore::computeLayout(const Columns & columns, size_t rows, size_t capacity_bytes)
-{
-    const RowLayout full_layout = computeLayout(columns);
-
-    RowLayoutWithColumnsFilter filtered_layout;
-    filtered_layout.filter.assign(columns.size(), capacity_bytes == 0 || rows == 0);
-
-    if (capacity_bytes > 0 && rows > 0)
-    {
-        std::vector<size_t> indexes(columns.size());
-        std::iota(indexes.begin(), indexes.end(), 0);
-
-        /// Prefer smaller columns to fit as many as possible in the row store.
-        auto cmp_field_size = [&](size_t i, size_t j)
-        {
-            if (full_layout[i].size != full_layout[j].size)
-                return full_layout[i].size < full_layout[j].size;
-            return i < j;
-        };
-        std::ranges::sort(indexes, cmp_field_size);
-
-        size_t row_length = 0;
-        for (size_t index : indexes)
-        {
-            size_t field_size = full_layout[index].size;
-            if (rows * (row_length + field_size) > capacity_bytes)
-                break;
-            filtered_layout.filter[index] = true;
-            row_length += field_size;
-        }
-    }
-
-    /// Re-assign offsets over the filtered columns for the final layout.
-    size_t offset = 0;
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        if (!filtered_layout.filter[i])
-            continue;
-
-        FieldLayout field = full_layout[i];
-        field.offset = offset;
-        filtered_layout.layout.push_back(field);
-        offset += field.size;
-    }
-
-    return filtered_layout;
-}
-
 RowDataStore::RowDataStore(RowLayout && layout_)
     : layout(std::move(layout_))
     , row_length(layout.empty() ? 0 : layout.back().offset + layout.back().size)
 {
 }
 
-std::shared_ptr<RowDataStore> RowDataStore::create()
+std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
-    return std::shared_ptr<RowDataStore>(new RowDataStore(RowLayout{}));
-}
+    /// Columns are materialized to make sure all blocks have
+    /// the same split of columnar and row store columns.
+    Columns materialized_columns;
+    materialized_columns.reserve(columns.size());
+    for (const auto & col : columns)
+        materialized_columns.push_back(col->convertToFullIfNeeded());
 
-void RowDataStore::init(const Columns & columns)
-{
-    if (init_flag)
-        return;
-    init_flag = true;
-
-    layout = computeLayout(columns);
-    row_length = layout.empty() ? 0 : layout.back().offset + layout.back().size;
-
-    if (!columns.empty() && !columns[0]->empty())
-    {
-        chars.reserve_exact(columns[0]->size() * row_length);
-        gatherRows(columns, 0, columns[0]->size());
-    }
+    RowLayout layout = computeLayout(materialized_columns);
+    auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
+    if (!materialized_columns.empty() && !materialized_columns[0]->empty())
+        row_store->gatherRows(materialized_columns, 0, materialized_columns[0]->size());
+    return row_store;
 }
 
 void RowDataStore::doGatherRows(const Columns & columns, size_t start, size_t length, char * dst)
@@ -240,6 +186,82 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     }
 }
 
+void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const
+{
+    if (columns.size() != layout.size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Number of destination columns ({}) does not match the number of columns in the layout ({}).",
+            columns.size(),
+            layout.size());
+
+    const char * base = getRowAt(start);
+    for (size_t i = 0; i < layout.size(); ++i)
+    {
+        const auto & field_layout = layout[i];
+        if (field_layout.is_nullable)
+        {
+            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
+            auto & null_map = nullable_column->getNullMapData();
+            IColumn & nested_column = nullable_column->getNestedColumn();
+            const size_t value_size = field_layout.size - 1;
+
+            for (size_t row = 0; row < length; ++row)
+            {
+                const char * row_data = base + row * row_length + field_layout.offset;
+                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
+                nested_column.insertData(row_data + 1, value_size);
+            }
+        }
+        else
+        {
+            for (size_t row = 0; row < length; ++row)
+                columns[i]->insertData(base + row * row_length + field_layout.offset, field_layout.size);
+        }
+    }
+}
+
+void RowDataStore::scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const
+{
+    if (columns.size() != layout.size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Number of destination columns ({}) does not match the number of columns in the layout ({}).",
+            columns.size(),
+            layout.size());
+
+    size_t length = row_nums.size();
+    if (length == 0)
+        return;
+
+    for (size_t i = 0; i < layout.size(); ++i)
+    {
+        const auto & field_layout = layout[i];
+        if (field_layout.is_nullable)
+        {
+            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
+            auto & null_map = nullable_column->getNullMapData();
+            IColumn & nested_column = nullable_column->getNestedColumn();
+            const size_t value_size = field_layout.size - 1;
+
+            null_map.reserve(null_map.size() + length);
+            nested_column.reserve(nested_column.size() + length);
+            for (size_t j = 0; j < length; ++j)
+            {
+                const char * row_data = getRowAt(row_nums[j]) + field_layout.offset;
+                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
+                nested_column.insertData(row_data + 1, value_size);
+            }
+        }
+        else
+        {
+            columns[i]->reserve(columns[i]->size() + length);
+            for (size_t j = 0; j < length; ++j)
+                columns[i]->insertData(getRowAt(row_nums[j]) + field_layout.offset, field_layout.size);
+        }
+    }
+}
+
 RowDataStore::FieldLayout RowDataStore::getFieldLayout(size_t input_col_index) const
 {
     return layout[input_col_index];
@@ -255,6 +277,14 @@ std::optional<size_t> RowDataStore::getBatchSize() const
 
     const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
     return std::max<size_t>(1, batch_bytes / row_length);
+}
+
+MutableColumns RowDataStore::buildEmptyColumns() const
+{
+    MutableColumns columns(layout.size());
+    for (size_t i = 0; i < layout.size(); ++i)
+        columns[i] = layout[i].sample_column->cloneEmpty();
+    return columns;
 }
 
 bool isRowStorageUseful(const ColumnPtr & column)
