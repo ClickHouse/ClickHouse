@@ -4168,6 +4168,88 @@ def test_write_failure_does_not_crash_server(started_cluster, partitioned):
     )
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_external_cancel_does_not_crash_server(started_cluster, partitioned):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311,
+    # external-cancellation half. test_write_failure_does_not_crash_server drives
+    # the onException() path (an exception flowing through the pipeline ports). A
+    # KILL QUERY / client disconnect is a distinct path: the executor calls
+    # IProcessor::cancel() on every processor directly, with no exception through
+    # the ports, so onException() is never called. The inner sinks are then cleaned
+    # up only by the DeltaLakeSink / DeltaLakePartitionedSink destructors
+    # (`if (isCancelled()) cancelBuffers()`). Without that destructor cleanup the
+    # inner WriteBuffer reaches ~WriteBuffer neither finalized nor canceled and the
+    # server aborts (SIGABRT on debug/sanitizer builds); it also leaks the
+    # partially written parquet. This case exercises that destructor path so a
+    # regression there is caught even though the onException() test still passes.
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_cancel")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    query_id = str(uuid.uuid4())
+
+    def run_insert():
+        # sleepEachRow keeps the INSERT running long enough to KILL it mid-write,
+        # after >= 1 inner sink (both partitions when partitioned) has opened its
+        # write buffer. max_block_size = 1 delivers single-row chunks so a sink is
+        # created and its buffer opened well before the KILL arrives.
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} "
+            f"SELECT number::Int32, ((number % 2) + sleepEachRow(0.02))::Int32 "
+            f"FROM numbers(1000) "
+            f"SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 100000000",
+            query_id=query_id,
+        )
+        assert "QUERY_WAS_CANCELLED" in error, f"unexpected insert error: {error}"
+
+    insert_thread = threading.Thread(target=run_insert)
+    insert_thread.start()
+    try:
+        # Wait until the INSERT is running and has read at least a couple of rows,
+        # i.e. the sink has opened its write buffer, before cancelling.
+        for _ in range(100):
+            read_rows = instance.query(
+                f"SELECT sum(read_rows) FROM system.processes WHERE query_id='{query_id}'"
+            ).strip()
+            if read_rows not in ("", "0") and int(read_rows) >= 2:
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("INSERT did not start reading rows in time")
+
+        instance.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+    finally:
+        insert_thread.join()
+
+    # Server stays alive after the cancelled write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+    # The cancelled INSERT must not leave any orphan data file behind either. The
+    # table started empty, so no parquet file must remain.
+    orphan_parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert orphan_parquet_count == "0", (
+        f"orphan data file(s) left after cancelled insert: {orphan_parquet_count}"
+    )
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
