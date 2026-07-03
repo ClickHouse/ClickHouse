@@ -13,29 +13,37 @@ INSERT INTO FUNCTION file('04238.parquet') SELECT * FROM numbers(2000)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
 
 -- The file has 40 row groups, above the per-chunk floor in the splitter, so the
--- bucketed path can be taken when permitted.
+-- bucketed path can be taken when permitted. This tiny file is far below the default
+-- `input_format_parquet_min_bytes_to_split`, so we set that and
+-- `input_format_parquet_bytes_per_split_bucket` to 0 to opt out of the size-based split
+-- gate: whether the file is split then depends only on `parallelize_output_from_storages`,
+-- which is what this test covers.
 
 -- With parallelize_output_from_storages = 0 and max_threads = 8 the pipeline must
 -- contain a single (non-multiplied) `File 0 -> 1` source and no `Resize 1 -> N`.
 SELECT count() FROM (
     EXPLAIN PIPELINE SELECT * FROM file('04238.parquet')
-    SETTINGS parallelize_output_from_storages = 0, max_threads = 8
+    SETTINGS parallelize_output_from_storages = 0, max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0
 ) WHERE explain LIKE '%File ×%';
 
 SELECT count() FROM (
     EXPLAIN PIPELINE SELECT * FROM file('04238.parquet')
-    SETTINGS parallelize_output_from_storages = 0, max_threads = 8
+    SETTINGS parallelize_output_from_storages = 0, max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0
 ) WHERE explain LIKE '%Resize %';
 
 -- Sanity check: with parallelize_output_from_storages = 1 the same file IS split
 -- into multiple per-bucket sources (`File × N 0 -> 1`).
 SELECT count() FROM (
     EXPLAIN PIPELINE SELECT * FROM file('04238.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0
 ) WHERE explain LIKE '%File ×%';
 
 -- The result must be the same regardless of the setting.
 SELECT count() FROM file('04238.parquet')
     SETTINGS parallelize_output_from_storages = 0, max_threads = 8;
 SELECT count() FROM file('04238.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;

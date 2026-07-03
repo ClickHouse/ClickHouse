@@ -12,19 +12,26 @@
 -- split it: with `min_row_groups_per_chunk = 16` and at least 2 chunks needed,
 -- the file needs >= 32 row groups. We use 64 row groups (numbers(3200) at
 -- row-group size 50) so the file is fanned out into multiple per-bucket
--- sources and the bucketed read path is exercised.
+-- sources and the bucketed read path is exercised. This tiny file is far below the
+-- default `input_format_parquet_min_bytes_to_split`, so every query below sets that
+-- and `input_format_parquet_bytes_per_split_bucket` to 0 to opt out of the size-based
+-- split gate and keep exercising the bucketed path regardless of file size.
 
 INSERT INTO FUNCTION file('04230.parquet') SELECT * FROM numbers(3200)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
 
 SELECT count() FROM file('04230.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
 SELECT count() FROM file('04230.parquet') WHERE number % 7 = 0
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
 SELECT count() FROM file('04230.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
 SELECT count() FROM file('04230.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 1, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 1, optimize_count_from_files = 1, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
 
 -- The queries above cover the cache-read side. The cache-write side needs its own
 -- guard: an unfiltered bucketed *data* read (not `need_only_count`, no filter) would
@@ -38,6 +45,8 @@ INSERT INTO FUNCTION file('04230_write.parquet') SELECT * FROM numbers(3200)
     SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 50;
 
 SELECT sum(number) FROM file('04230_write.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 0, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 0, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
 SELECT count() FROM file('04230_write.parquet')
-    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
+    SETTINGS parallelize_output_from_storages = 1, max_threads = 8, optimize_count_from_files = 1, use_cache_for_count_from_files = 1,
+        input_format_parquet_min_bytes_to_split = 0, input_format_parquet_bytes_per_split_bucket = 0;
