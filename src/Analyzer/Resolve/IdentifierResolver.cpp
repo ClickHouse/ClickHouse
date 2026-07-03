@@ -1079,9 +1079,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         /// Used by qualified matcher resolution (`T.*`, `T.COLUMNS(...)`), which disables the
         /// database-catalog fallback, so per-part case-insensitive matching has to happen here too
         const bool tbl_standard_mode = table_expression_data.standard_mode;
-        auto eq = [tbl_standard_mode, &identifier_lookup](const std::string & a, const std::string & b, size_t part)
+        /// A double-quoted definition (e.g. `WITH "MyCte" AS ...`) pins the name to exact
+        /// matching, mirroring the expression-resolution paths below.
+        const bool table_name_pinned = table_expression_data.table_name_is_double_quoted;
+        auto eq = [tbl_standard_mode, table_name_pinned, &identifier_lookup](const std::string & a, const std::string & b, size_t part)
         {
-            const bool case_insensitive = identifier_lookup.isPartCaseInsensitive(part, tbl_standard_mode);
+            const bool case_insensitive = !table_name_pinned && identifier_lookup.isPartCaseInsensitive(part, tbl_standard_mode);
             return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
         };
 

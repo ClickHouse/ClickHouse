@@ -75,3 +75,8 @@ String
 --- INTERPOLATE folded target over projection alias ---
 1	2
 2	7
+--- Quoted CTE name stays exact for qualified matcher ---
+1
+1
+--- Quoted projection alias survives AST round-trip ---
+SELECT 1 AS "MyAlias"

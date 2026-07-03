@@ -393,6 +393,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_order_by_all == rhs_typed.is_order_by_all &&
         is_limit_by_all == rhs_typed.is_limit_by_all &&
         projection_columns == rhs_typed.projection_columns &&
+        projection_columns_double_quoted == rhs_typed.projection_columns_double_quoted &&
         projection_aliases_to_override == rhs_typed.projection_aliases_to_override &&
         projection_aliases_to_override_is_double_quoted == rhs_typed.projection_aliases_to_override_is_double_quoted &&
         settings_changes == rhs_typed.settings_changes;
@@ -442,6 +443,13 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
                 && projection_aliases_to_override_is_double_quoted[i];
             state.update(quoted);
         }
+    }
+
+    if (!projection_columns_double_quoted.empty())
+    {
+        state.update(projection_columns_double_quoted.size());
+        for (const bool quoted : projection_columns_double_quoted)
+            state.update(quoted);
     }
 
     state.update(is_materialized);
@@ -575,6 +583,8 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
                 /// keeps the column alias case-sensitive instead of folding it to unquoted.
                 if (i < projection_aliases_to_override_is_double_quoted.size())
                     ast_with_alias->alias_is_double_quoted = projection_aliases_to_override_is_double_quoted[i];
+                else if (i < projection_columns_double_quoted.size())
+                    ast_with_alias->alias_is_double_quoted = projection_columns_double_quoted[i];
             }
         }
     }

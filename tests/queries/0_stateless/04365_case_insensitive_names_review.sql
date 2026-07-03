@@ -218,3 +218,13 @@ DROP TABLE t_alias_pin;
 
 SELECT '--- INTERPOLATE folded target over projection alias ---';
 SELECT 1 AS x, 2 AS s FROM system.one ORDER BY x ASC WITH FILL FROM 1 TO 3 INTERPOLATE (S AS s + 5);
+
+SELECT '--- Quoted CTE name stays exact for qualified matcher ---';
+-- The table-expression shortcut must honor the definition-side quote pin like the expression paths.
+WITH "MyCte" AS (SELECT 1 AS x) SELECT mycte.* FROM "MyCte"; -- { serverError UNKNOWN_IDENTIFIER }
+WITH "MyCte" AS (SELECT 1 AS x) SELECT MyCte.* FROM "MyCte";
+WITH MyCte AS (SELECT 1 AS x) SELECT mycte.* FROM MyCte;
+
+SELECT '--- Quoted projection alias survives AST round-trip ---';
+-- Query-tree -> AST conversion must re-emit the double quoting so the pin survives reparse.
+SELECT explain FROM viewExplain('EXPLAIN QUERY TREE', 'run_passes = 1, dump_ast = 1', (SELECT 1 AS "MyAlias")) WHERE explain LIKE '%AS "MyAlias"%';
