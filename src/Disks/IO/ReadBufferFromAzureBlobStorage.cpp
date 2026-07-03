@@ -100,7 +100,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(std::memory_order_relaxed), read_until_position - 1);
     }
 
     if (!initialized)
@@ -291,7 +291,7 @@ void ReadBufferFromAzureBlobStorage::initialize(size_t attempt)
             }
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
-            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset.load(std::memory_order_relaxed), i + 1, max_single_download_retries, e.Message);
 
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;
@@ -411,7 +411,7 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             }
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromAzureRequestsErrors);
-            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset, i + 1, max_single_download_retries, e.Message);
+            LOG_DEBUG(log, "Exception caught during Azure Download for file {} at offset {} at attempt {}/{}: {}", path, offset.load(std::memory_order_relaxed), i + 1, max_single_download_retries, e.Message);
 
             if (i + 1 == max_single_download_retries || !isRetryableAzureException(e))
                 throw;

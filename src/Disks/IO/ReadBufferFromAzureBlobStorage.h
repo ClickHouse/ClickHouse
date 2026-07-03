@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include "config.h"
 
@@ -42,7 +43,7 @@ public:
 
     bool nextImpl() override;
 
-    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+    size_t getFileOffsetOfBufferEnd() const override { return offset.load(std::memory_order_relaxed); }
 
     String getFileName() const override { return path; }
 
@@ -85,7 +86,11 @@ private:
 
     off_t read_until_position = 0;
 
-    off_t offset = 0;
+    /// atomic is required for CachedOnDiskReadBufferFromFile, which can access
+    /// this variable via getFileOffsetOfBufferEnd() from a thread that logs the
+    /// read info (getInfoForLog) while another thread reads through this shared
+    /// reader. Same reason ReadBufferFromS3/ReadBufferFromWebServer use atomic.
+    std::atomic<off_t> offset = 0;
     size_t total_size{};
     bool initialized = false;
     char * data_ptr;
