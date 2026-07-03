@@ -1,0 +1,6 @@
+--- count after DELETE ---
+3
+--- rows after OPTIMIZE ---
+1	a
+3	c
+5	e
