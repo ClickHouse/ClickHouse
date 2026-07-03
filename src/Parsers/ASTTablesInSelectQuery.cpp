@@ -187,7 +187,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
     switch (locality)
     {
         case JoinLocality::Unspecified:
+            break;
         case JoinLocality::Local:
+            ostr << "LOCAL ";
             break;
         case JoinLocality::Global:
             ostr << "GLOBAL ";
