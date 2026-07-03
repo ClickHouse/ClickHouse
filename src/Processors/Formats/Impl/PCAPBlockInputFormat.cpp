@@ -32,6 +32,9 @@
 #include <tins/udp.h>
 #include <tins/dot1q.h>
 #include <tins/utils/pdu_utils.h>
+#include <tins/detail/pdu_helpers.h>
+
+#include <pcap/pcap.h>
 
 #include <array>
 
@@ -300,44 +303,55 @@ Chunk PCAPBlockInputFormat::read()
     auto col_payload = ColumnString::create();
     auto col_raw = ColumnString::create();
 
+    pcap_t * handle = sniffer->get_pcap_handle();
+    const int dlt = sniffer->link_type();
+
     size_t num_rows = 0;
     size_t bytes_read = 0;
 
     while (num_rows < max_rows_per_chunk)
     {
-        Tins::PtrPacket packet = sniffer->next_packet();
-        Tins::PDU * pdu = packet.pdu();
-        if (pdu == nullptr)
+        /// Read the raw packet with its original pcap header (caplen, len, ts).
+        pcap_pkthdr * pkthdr = nullptr;
+        const u_char * data = nullptr;
+        int res = pcap_next_ex(handle, &pkthdr, &data);
+        if (res == -2 || res == 0) /// -2: end of savefile, 0: timeout (not applicable offline).
             break;
+        if (res < 0)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                "Failed to read packet from PCAP: {}", pcap_geterr(handle));
 
-        /// Ensure the PDU is freed after we are done with it.
-        std::unique_ptr<Tins::PDU> pdu_owner(pdu);
+        const UInt32 caplen = pkthdr->caplen;
+        const UInt32 wire_len = pkthdr->len;
+
+        /// Dissect the raw bytes into a PDU chain (rawpdu_on_no_match=true keeps
+        /// undissected tails as a RAW pdu).
+        std::unique_ptr<Tins::PDU> pdu_owner(
+            Tins::Internals::pdu_from_dlt_flag(dlt, data, caplen, /*rawpdu_on_no_match=*/ true));
+        Tins::PDU * pdu = pdu_owner.get();
+        if (pdu == nullptr)
+            continue;
 
         ++num_rows;
         ++packet_number;
 
-        Tins::PDU::serialization_type frame;
-        if (need[COL_RAW] || need[COL_PAYLOAD] || need[COL_CAPTURE_LENGTH]
-            || need[COL_ORIGINAL_LENGTH] || need[COL_PAYLOAD_LENGTH])
-            frame = pdu->serialize();
-
-        bytes_read += frame.size();
+        bytes_read += caplen;
 
         if (need[COL_NUMBER])
             col_number->insertValue(packet_number);
 
         if (need[COL_TIMESTAMP])
         {
-            const auto & ts = packet.timestamp();
-            Int64 nanos = static_cast<Int64>(ts.seconds()) * 1'000'000'000
-                + static_cast<Int64>(ts.microseconds()) * 1'000;
+            /// FileSniffer opens with microsecond precision, so tv_usec is microseconds.
+            Int64 nanos = static_cast<Int64>(pkthdr->ts.tv_sec) * 1'000'000'000
+                + static_cast<Int64>(pkthdr->ts.tv_usec) * 1'000;
             col_timestamp->insertValue(nanos);
         }
 
         if (need[COL_CAPTURE_LENGTH])
-            col_capture_length->insertValue(static_cast<UInt32>(frame.size()));
+            col_capture_length->insertValue(caplen);
         if (need[COL_ORIGINAL_LENGTH])
-            col_original_length->insertValue(static_cast<UInt32>(frame.size()));
+            col_original_length->insertValue(wire_len);
 
         if (need[COL_LINK_TYPE])
         {
@@ -497,7 +511,7 @@ Chunk PCAPBlockInputFormat::read()
         }
 
         if (need[COL_RAW])
-            col_raw->insertData(reinterpret_cast<const char *>(frame.data()), frame.size());
+            col_raw->insertData(reinterpret_cast<const char *>(data), caplen);
     }
 
     approx_bytes_read_for_chunk = bytes_read;
