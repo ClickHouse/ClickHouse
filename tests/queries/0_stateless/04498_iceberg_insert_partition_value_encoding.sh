@@ -42,3 +42,14 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
 ${CLICKHOUSE_CLIENT} --query "SELECT t, v FROM ${TABLE} ORDER BY t FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE} FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
+rm -rf "${TABLE_PATH}"
+
+echo "--- Bucket partition (Avro int from Field::UInt64) ---"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE} (id Int64, v String)
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
+    PARTITION BY icebergBucket(4, id)
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')"
+${CLICKHOUSE_CLIENT} --query "SELECT id, v FROM ${TABLE} ORDER BY id FORMAT TSV"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"

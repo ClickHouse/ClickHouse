@@ -7,3 +7,8 @@ y
 2024-01-01 00:00:00.123456	a
 2024-06-15 12:30:00.654321	b
 2
+--- Bucket partition (Avro int from Field::UInt64) ---
+1	a
+2	b
+3	c
+4	d
