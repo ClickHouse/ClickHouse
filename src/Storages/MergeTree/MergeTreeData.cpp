@@ -1209,6 +1209,7 @@ void MergeTreeData::checkMetadataProperties(
         old_metadata,
         /*attach=*/false,
         /*allow_empty_sorting_key=*/false,
+        allow_reverse_key,
         allow_nullable_key,
         local_context);
 }
