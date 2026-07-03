@@ -3018,34 +3018,31 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
         Transaction dest_transaction(*dest_table_storage, txn.get());
-        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+        Transaction src_transaction(*this, txn.get());
+
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
+            auto src_data_parts_lock = lockParts();
+
+            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
             {
                 block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
                 dest_table_storage->renameTempPartAndReplaceUnlocked(part, dest_transaction, dest_data_parts_lock, /*rename_in_transaction=*/true);
             }
-        }
-
-        Transaction src_transaction(*this, txn.get());
-        {
-            auto src_data_parts_lock = lockParts();
 
             for (auto & part : new_empty_covering_src_parts)
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
+
+            dest_transaction.renameParts();
+            dest_transaction.commit(dest_data_parts_lock);
+
+            src_transaction.renameParts();
+            src_transaction.commit(src_data_parts_lock);
         }
-
-        dest_transaction.renameParts();
-        dest_transaction.commit();
-
-        src_transaction.renameParts();
-        src_transaction.commit();
-
-        clearOldPartsFromFilesystem();
 
         /// Note: same elapsed time and profile events for all parts is used
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
@@ -3055,6 +3052,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         PartLog::addNewParts(getContext(), PartLog::createPartLogEntries(dst_parts, watch.elapsed()), ExecutionStatus::fromCurrentException("", true));
         throw;
     }
+
+    clearOldPartsFromFilesystem();
 }
 
 ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
