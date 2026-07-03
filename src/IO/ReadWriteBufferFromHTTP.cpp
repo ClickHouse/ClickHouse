@@ -26,6 +26,8 @@ bool isRetriableError(const Poco::Net::HTTPResponse::HTTPStatus http_status) noe
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_UNAUTHORIZED,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+        // 409 Conflict is non-retriable: e.g. REST catalog namespace-already-exists;
+        // retrying would only add latency with no chance of success.
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
