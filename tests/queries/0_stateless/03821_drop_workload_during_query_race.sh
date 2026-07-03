@@ -101,11 +101,19 @@ function thread_drop_create()
     done
 }
 
-# Create resource and workload (no concurrent thread limit to avoid throttling)
-$CLICKHOUSE_CLIENT -nm -q "
+# Create resource and workload (no concurrent thread limit to avoid throttling).
+# Bound the setup DDL too, and fail fast if it is wedged: an unbounded call here could
+# block on the same scheduler state until the outer test cap SIGKILLs the shell (skipping
+# the EXIT trap) after a global singleton was already created, reintroducing the leak.
+setup_rc=0
+bounded $CLICKHOUSE_CLIENT -nm -q "
     CREATE OR REPLACE RESOURCE $RESOURCE_NAME (WORKER THREAD, MASTER THREAD);
     CREATE OR REPLACE WORKLOAD $WORKLOAD_NAME;
-"
+" || setup_rc=$?
+if is_wedged "$setup_rc"; then
+    echo "FAIL: setup DDL was wedged for at least ${CALL_TIMEOUT}s (scheduler race), killed by timeout" >&2
+    exit 1
+fi
 
 TIMEOUT=1
 
