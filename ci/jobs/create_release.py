@@ -365,11 +365,17 @@ class ReleaseInfo:
         )
         if not res:
             print(f"WARNING: Tag [{self.release_tag}] already exists locally - ignore")
+        # Retry: on a repo this size GitHub's push-time "does this ref touch
+        # .github/workflows" check can time out and fail closed with a spurious
+        # "remote rejected ... `workflows` scope may be required". We never push
+        # workflow changes (the tag points at an existing commit), so retrying
+        # gives the check another chance to complete.
         Shell.check(
             f"{GIT_PREFIX} push origin {self.release_tag}:{self.release_tag}",
             dry_run=dry_run,
             strict=True,
             verbose=True,
+            retries=3,
         )
 
     @staticmethod
@@ -407,6 +413,7 @@ class ReleaseInfo:
                     dry_run=dry_run,
                     strict=True,
                     verbose=True,
+                    retries=3,  # transient workflow-scope timeout (see push_release_tag)
                 )
 
         print("Create and push backport tags for new release branch")
@@ -459,7 +466,11 @@ class ReleaseInfo:
                     cmd_commit_version_upd, strict=True, dry_run=dry_run, verbose=True
                 )
                 Shell.check(
-                    cmd_push_branch, strict=True, dry_run=dry_run, verbose=True
+                    cmd_push_branch,
+                    strict=True,
+                    dry_run=dry_run,
+                    verbose=True,
+                    retries=3,  # transient workflow-scope timeout (see push_release_tag)
                 )
             if dry_run:
                 Shell.check(
@@ -506,6 +517,7 @@ class ReleaseInfo:
                         strict=True,
                         dry_run=dry_run,
                         verbose=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
                     )
                     existing_bump_pr = (
                         "" if dry_run
