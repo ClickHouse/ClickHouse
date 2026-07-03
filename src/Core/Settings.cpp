@@ -5088,6 +5088,8 @@ Possible values:
 
 - 1 — Round to nearest (ties to even).
 - 0 — Truncate toward zero.
+
+The setting applies to explicit float-to-`Decimal` conversions: `CAST` / `toDecimal*`, `accurateCast*`, `toDateTime64` / `toTime64`, `JSONExtract`, and Protobuf / `Values` input. Some implicit internal coercions built through the generic cast helper — for example matching a `Float` value against a `Decimal` set in an `IN` expression — always use rounding regardless of this setting.
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.

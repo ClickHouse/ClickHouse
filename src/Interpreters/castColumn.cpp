@@ -33,7 +33,12 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
         return createInternalCast(from, to, cast_type, {}, context);
     };
 
-    FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
+    /// The cache is keyed only by (cast_type, from, to). A cast built with a `context` also depends
+    /// on that context's settings (e.g. `cast_float_to_decimal_uses_rounding`), so caching it would
+    /// let a cast built under one setting be reused under another. Only cache context-free casts.
+    FunctionBasePtr func_cast = (cache && !context)
+        ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func))
+        : get_cast_func();
 
     if (cast_type == CastType::accurateOrNull)
         return func_cast->execute(arguments, makeNullable(type), arg.column->size(), /* dry_run = */ false);
