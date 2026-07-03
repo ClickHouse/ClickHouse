@@ -13,14 +13,44 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKLOAD_NAME="wl_03821"
 RESOURCE_NAME="rs_03821"
 
-# Non-empty if any client call is killed by its per-call timeout below (exit 124),
+# Non-empty if any client call is killed by its per-call timeout below,
 # i.e. the drop/create race actually wedged a query or DDL. Checked after `wait`.
 WEDGE_FLAG="${CLICKHOUSE_TMP}/03821_wedged_${CLICKHOUSE_TEST_UNIQUE_NAME}.flag"
 
+# Per-call hard bound: send TERM at CALL_TIMEOUT, then KILL if still alive after KILL_GRACE.
+# Plain `timeout` is only a soft TERM and waits for the child; a client stuck in the exact
+# bad state this test defends against could ignore TERM and block until the outer test cap,
+# which skips the EXIT trap and leaks the global root workload / thread resource.
+CALL_TIMEOUT=30
+KILL_GRACE=5
+
+# Run a client call under the hard bound. Returns the call's exit code; 124 (killed by TERM)
+# or 137 (had to KILL after the grace) both mean the call was wedged.
+function bounded()
+{
+    timeout --signal=TERM --kill-after="$KILL_GRACE" "$CALL_TIMEOUT" "$@"
+}
+
+# A client killed by timeout can leave its query still running server-side
+# (see wait_for_queries_to_finish in shell_config.sh). This test has a unique
+# database, so kill every query still running in it (except this KILL itself)
+# so the cleanup DDL below does not block behind a lingering scheduler query.
+function kill_lingering_queries()
+{
+    bounded $CLICKHOUSE_CLIENT -q "
+        KILL QUERY WHERE current_database = currentDatabase()
+            AND query NOT ILIKE '%KILL QUERY%'
+        SYNC
+    " 2>/dev/null ||:
+}
+
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
-    $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS $RESOURCE_NAME" 2>/dev/null ||:
+    # Kill lingering server-side work first, then drop under a hard bound so cleanup
+    # itself cannot hang past the outer test cap and reintroduce the leak.
+    kill_lingering_queries
+    bounded $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null ||:
+    bounded $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS $RESOURCE_NAME" 2>/dev/null ||:
     rm -f "$WEDGE_FLAG"
 }
 
@@ -30,9 +60,11 @@ cleanup
 # Also clean up on TERM: clickhouse-test sends SIGTERM before SIGKILL on timeout.
 trap cleanup EXIT TERM
 
-# Bound every client call so a wedged query/DDL cannot block `wait` until the test cap,
-# where SIGKILL skips the EXIT trap and leaks the global root workload and thread resource.
-CALL_TIMEOUT=30
+# 124 (killed by TERM) or 137 (killed by KILL after grace): the call was wedged.
+function is_wedged()
+{
+    [ "$1" = 124 ] || [ "$1" = 137 ]
+}
 
 function thread_query()
 {
@@ -42,10 +74,10 @@ function thread_query()
         # Run a short query that uses CPU scheduling
         # Use smaller numbers so queries finish quickly
         # Ignore expected errors when workload is dropped during query
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
+        bounded $CLICKHOUSE_CLIENT --format Null -q "SELECT sum(number) FROM numbers(100000) SETTINGS workload = '$WORKLOAD_NAME'" 2>&1 \
             | { grep -v -e "RESOURCE_ACCESS_DENIED" -e "INVALID_SCHEDULER_NODE" -e "There is no resource" -e "^$" || true; }
-        # PIPESTATUS[0] is timeout(1)'s exit: 124 means it killed a wedged query.
-        [ "${PIPESTATUS[0]}" = 124 ] && echo wedged > "$WEDGE_FLAG"
+        # PIPESTATUS[0] is the bounded call's exit; a hard-bound kill means a wedged query.
+        is_wedged "${PIPESTATUS[0]}" && echo wedged > "$WEDGE_FLAG"
     done
 }
 
@@ -56,13 +88,13 @@ function thread_drop_create()
     do
         # Drop and recreate the workload while queries may be running
         # This creates the race condition when queries are releasing their leases
-        # Tolerate expected race errors, but record a per-call timeout (124 = wedged DDL).
+        # Tolerate expected race errors, but record a hard-bound kill (wedged DDL).
         local rc=0
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
-        [ "$rc" = 124 ] && echo wedged > "$WEDGE_FLAG"
+        bounded $CLICKHOUSE_CLIENT -q "DROP WORKLOAD IF EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
+        is_wedged "$rc" && echo wedged > "$WEDGE_FLAG"
         rc=0
-        timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
-        [ "$rc" = 124 ] && echo wedged > "$WEDGE_FLAG"
+        bounded $CLICKHOUSE_CLIENT -q "CREATE WORKLOAD IF NOT EXISTS $WORKLOAD_NAME" 2>/dev/null || rc=$?
+        is_wedged "$rc" && echo wedged > "$WEDGE_FLAG"
     done
 }
 
@@ -88,9 +120,9 @@ wait
 # If any client call hit its per-call timeout, the race actually wedged a query or DDL.
 # Fail loudly instead of masking the very hang this test is meant to surface.
 if [ -e "$WEDGE_FLAG" ]; then
-    echo "FAIL: a query or DDL was wedged for ${CALL_TIMEOUT}s (scheduler race), killed by timeout" >&2
+    echo "FAIL: a query or DDL was wedged for at least ${CALL_TIMEOUT}s (scheduler race), killed by timeout" >&2
     exit 1
 fi
 
 # Server should still be alive
-timeout "$CALL_TIMEOUT" $CLICKHOUSE_CLIENT -q "SELECT 1"
+bounded $CLICKHOUSE_CLIENT -q "SELECT 1"
