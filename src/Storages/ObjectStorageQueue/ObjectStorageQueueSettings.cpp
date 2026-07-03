@@ -22,6 +22,7 @@ namespace ErrorCodes
 
 #define OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(ObjectStorageQueueMode, mode, ObjectStorageQueueMode::ORDERED, \
+      "With exclusive mode, no tracking is done; assumes only one node will ever access this S3-compatible storage." \
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \

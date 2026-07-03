@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -62,6 +63,7 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
+    extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
 }
 
@@ -163,7 +165,7 @@ namespace
     {
         if (!is_attach && !queue_settings[ObjectStorageQueueSetting::mode].changed)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered) is not specified, but is required.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting `mode` (Unordered/Ordered/Exclusive) is not specified, but is required.");
         }
         /// In case !is_attach, we leave Ordered mode as default for compatibility.
 
@@ -1074,6 +1076,15 @@ void StorageObjectStorageQueue::commit(
     const std::string & exception_message,
     int error_code) const
 {
+    // Nothing is changed in zookeeper.
+    const auto mode = getTableMetadata().getMode();
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        commitExclusive(insert_succeeded, inserted_rows, sources,
+                        transaction_start_time, exception_message, error_code);
+        return;
+    }
+
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
 
     Coordination::Requests requests;
@@ -1198,6 +1209,106 @@ void StorageObjectStorageQueue::commit(
         collectRemotePaths(successful_objects));
 }
 
+void StorageObjectStorageQueue::commitExclusive(
+    bool insert_succeeded,
+    size_t inserted_rows,
+    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+    time_t transaction_start_time,
+    const std::string & exception_message,
+    int error_code) const
+{
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
+
+    Coordination::Requests requests;
+    StoredObjects successful_objects;
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
+    auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
+    for (auto & source : sources)
+        source->prepareCommitRequests(
+            requests, insert_succeeded, successful_objects,
+            last_processed_file_per_partition, created_nodes, exception_message, error_code);
+
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    {
+        std::vector<String> failed_to_delete_paths;
+        String delete_exception_message;
+        try
+        {
+            object_storage->removeObjectsIfExist(successful_objects);
+        }
+        catch (...)
+        {
+            delete_exception_message = getCurrentExceptionMessage(true);
+        }
+
+        for (const auto & object : successful_objects)
+        {
+            try
+            {
+                if (object_storage->exists(object))
+                    failed_to_delete_paths.push_back(object.remote_path);
+            }
+            catch (...)
+            {
+                if (delete_exception_message.empty())
+                    delete_exception_message = getCurrentExceptionMessage(true);
+                failed_to_delete_paths.push_back(object.remote_path);
+            }
+        }
+
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size() - failed_to_delete_paths.size());
+
+        if (!failed_to_delete_paths.empty())
+        {
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+            const auto commit_id = generateCommitID();
+            const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            for (auto & source : sources)
+                source->finalizeExclusiveCommitAfterDelete(
+                    failed_to_delete_paths,
+                    commit_id,
+                    commit_time,
+                    transaction_start_time,
+                    delete_exception_message.empty() ? "Some objects still exist after delete" : delete_exception_message);
+
+            for (const auto & object : successful_objects)
+            {
+                if (std::ranges::find(failed_to_delete_paths, object.remote_path) == failed_to_delete_paths.end())
+                    files_metadata->releaseExclusiveProcessing(object.remote_path);
+            }
+
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Some objects still exist after delete: {}",
+                failed_to_delete_paths);
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
+
+    const auto commit_id = generateCommitID();
+    const auto commit_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+
+    for (auto & source : sources)
+    {
+        source->finalizeCommit(
+            insert_succeeded, commit_id, commit_time, transaction_start_time, exception_message);
+    }
+
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    {
+        for (const auto & object : successful_objects)
+            files_metadata->releaseExclusiveProcessing(object.remote_path);
+    }
+
+    LOG_DEBUG(log,
+        "Successfully committed exclusively for {} sources with commit id {} "
+        "(inserted rows: {}, successful files: {})",
+        sources.size(), commit_id, inserted_rows, successful_objects.size());
+}
+
 UInt64 StorageObjectStorageQueue::generateCommitID()
 {
     pcg64_fast rng(randomSeed());
@@ -1295,7 +1406,7 @@ bool StorageObjectStorageQueue::isSettingChangeable(const std::string & name, Ob
 {
     checkNormalizedSetting(name);
 
-    if (mode == ObjectStorageQueueMode::UNORDERED)
+    if (mode == ObjectStorageQueueMode::UNORDERED || mode == ObjectStorageQueueMode::EXCLUSIVE)
         return changeable_settings_unordered_mode.contains(name);
     else
         return changeable_settings_ordered_mode.contains(name);

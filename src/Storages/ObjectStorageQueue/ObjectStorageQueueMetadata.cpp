@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
@@ -264,7 +265,28 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log);
+        case ObjectStorageQueueMode::EXCLUSIVE:
+            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
+                path,
+                file_status,
+                table_metadata.loading_retries,
+                *metadata_ref_count,
+                *this,
+                zookeeper_name,
+                log);
     }
+}
+
+bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusiveProcessingPathsMutex);
+    return exclusiveProcessingPaths.insert(getMetadataCacheKey(path)).second;
+}
+
+void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusiveProcessingPathsMutex);
+    exclusiveProcessingPaths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -528,6 +550,10 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         LOG_TRACE(log, "Local buckets num: {}", buckets_num);
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
+    }
+    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
     }
     else
     {

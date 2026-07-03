@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -459,6 +460,8 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     const auto & zookeeper_name = metadata->getZooKeeperName();
     if (mode == ObjectStorageQueueMode::UNORDERED)
         ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
+    else if (mode == ObjectStorageQueueMode::EXCLUSIVE)
+        ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), zookeeper_name, log);
     else
         ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
             paths,
@@ -1365,7 +1368,8 @@ void ObjectStorageQueueSource::prepareCommitRequests(
         processed_files.size(),
         insert_succeeded ? "Processed" : "Failed");
 
-    const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
+    const auto table_mode = files_metadata->getTableMetadata().getMode();
+    const bool is_ordered_mode = table_mode == ObjectStorageQueueMode::ORDERED;
     const bool use_buckets_for_processing = file_iterator->useBucketsForProcessing();
     const bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     std::map<size_t, size_t> last_processed_file_idx_per_bucket;
@@ -1611,6 +1615,61 @@ void ObjectStorageQueueSource::finalizeCommit(
         std::rethrow_exception(finalize_exception);
 }
 
+void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
+    const std::vector<String> & /*failed_paths*/,
+    UInt64 commit_id,
+    time_t commit_time,
+    time_t transaction_start_time_,
+    const std::string & exception_message)
+{
+    if (processed_files.empty())
+        return;
+
+    std::exception_ptr finalize_exception;
+    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
+    {
+        try
+        {
+            bool processed = false;
+            switch (file_state)
+            {
+                case FileState::Processed:
+                {
+                    processed = true;
+                    file_metadata->finalizeProcessed();
+                    break;
+                }
+                case FileState::Cancelled: [[fallthrough]];
+                case FileState::Processing:
+                {
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_message);
+                    break;
+                }
+                case FileState::ErrorOnRead:
+                {
+                    chassert(!exception_during_read.empty());
+                    file_metadata->finalizeFailed(exception_during_read);
+                    break;
+                }
+            }
+
+            appendLogElement(file_metadata, processed, commit_id, commit_time, transaction_start_time_);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            if (!finalize_exception)
+                finalize_exception = std::current_exception();
+        }
+    }
+    if (finalize_exception)
+        std::rethrow_exception(finalize_exception);
+}
+
+void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message, int error_code)
 {
     /// This method is only used for SELECT query, not for streaming to materialized views.

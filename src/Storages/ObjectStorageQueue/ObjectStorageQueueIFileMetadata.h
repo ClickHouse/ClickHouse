@@ -174,7 +174,7 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    void prepareResetProcessingRequests(Coordination::Requests & requests);
+    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
@@ -219,7 +219,7 @@ protected:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
-    void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
+    virtual void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
     const std::string zookeeper_name;

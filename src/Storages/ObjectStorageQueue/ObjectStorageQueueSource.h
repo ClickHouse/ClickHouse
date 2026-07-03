@@ -223,6 +223,13 @@ public:
         time_t transaction_start_time_,
         const std::string & exception_message = {});
 
+    void finalizeExclusiveCommitAfterDelete(
+        const std::vector<String> & failed_paths,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_,
+        const std::string & exception_message);
+
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
