@@ -106,6 +106,10 @@ public:
         return empty;
     }
 
+    /// Check the TABLE ENGINE grant for opt-in capability engines, mirroring CREATE TABLE.
+    /// No-op unless table_engines_require_grant is enabled and requiresTableEngineGrant() is set.
+    void checkEngineAccess(ContextPtr context) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -123,6 +127,13 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+
+    /// Whether SELECT/DESCRIBE over this table function must check the TABLE ENGINE grant of
+    /// its storage engine, mirroring CREATE TABLE ... ENGINE=. Only for engines that expose a
+    /// server-side capability with no other access gate: Executable/ExecutablePool run a
+    /// user-provided script under the server's OS user. Wrapper/proxy engines (Merge, Loop,
+    /// Dictionary, View, Distributed) are gated by their delegated data access and must not opt in.
+    virtual bool requiresTableEngineGrant() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
