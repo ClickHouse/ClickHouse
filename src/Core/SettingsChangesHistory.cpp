@@ -61,13 +61,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
+            {"query_plan_hash_join_subset_keys_auto", false, false, "New setting to enable cardinality-based automatic demotion of JOIN equality keys. Off by default; enable per-query for opt-in experimentation."},
+            {"query_plan_hash_join_subset_keys_min_rows", 1000000, 1000000, "New setting: minimum right-side row count for `query_plan_hash_join_subset_keys_auto` to apply."},
+            {"query_plan_hash_join_subset_keys_min_kept_selectivity", 0.01, 0.01, "New setting: target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
         {
-            {"query_plan_hash_join_subset_keys_auto", false, false, "New setting to enable cardinality-based automatic demotion of JOIN equality keys. Off by default; enable per-query for opt-in experimentation."},
-            {"query_plan_hash_join_subset_keys_min_rows", 1000000, 1000000, "New setting: minimum right-side row count for `query_plan_hash_join_subset_keys_auto` to apply."},
-            {"query_plan_hash_join_subset_keys_min_kept_selectivity", 0.01, 0.01, "New setting: target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`."},
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
