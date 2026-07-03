@@ -2470,6 +2470,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(column_name);
 
         String apply_column_name_prefix;
+        /// Short-based accumulator for `APPLY (expr, 'prefix')`: the prefix must attach to the
+        /// short column name (`f_a`), not the qualified projection name (`f_t1.a`).
+        String apply_prefixed_projection_name = column_name;
 
         for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
         {
@@ -2580,13 +2583,32 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
 
-                /// `APPLY (expr, 'prefix')` names the result `prefix` + the accumulated column name
-                /// before this transformer (chained prefixes accumulate: `q_` + `p_` + `a`).
                 if (execute_apply_transformer && !apply_column_name_prefix.empty())
-                    result_projection_names.back() = apply_column_name_prefix + result_projection_names.back();
+                {
+                    /// `APPLY (expr, 'prefix')` names the result `prefix` + the short column name
+                    /// before this transformer, mirroring the legacy path (which prefixes
+                    /// ASTIdentifier::shortName(), not a qualified name). Chained prefixes
+                    /// accumulate: `q_` + `p_` + `a`.
+                    apply_prefixed_projection_name = apply_column_name_prefix + apply_prefixed_projection_name;
+                    result_projection_names.back() = apply_prefixed_projection_name;
+                }
                 else
+                {
                     result_projection_names.back() = std::move(node_projection_names[0]);
-                node_to_projection_name.emplace(node, result_projection_names.back());
+                    apply_prefixed_projection_name = result_projection_names.back();
+                }
+                /// Overwrite, not emplace: an identity lambda leaves `node` pointing at the
+                /// original matched node, which is already in the map, so a chained transformer
+                /// must observe the updated name (`APPLY (identity, 'p_') APPLY toString`).
+                node_to_projection_name.insert_or_assign(node, result_projection_names.back());
+                /// An identity lambda also leaves the reused node cached in resolved_expressions
+                /// with its pre-prefix name; resolveExpressionNode reads that cache before
+                /// node_to_projection_name, so refresh it too when the entry already exists.
+                if (execute_apply_transformer)
+                {
+                    if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
+                        resolved_it->second = {result_projection_names.back()};
+                }
                 node_projection_names.clear();
             }
         }

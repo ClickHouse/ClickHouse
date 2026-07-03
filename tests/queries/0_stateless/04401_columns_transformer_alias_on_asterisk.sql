@@ -22,6 +22,12 @@ SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'p_') APPLY (x -> x + 1, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * REPLACE (a + 1 AS a) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+-- The prefix uses the short column name, not a qualified one, even in a scope that
+-- requires qualification (alias `a` collides with `x.a`, so `x.*` qualifies to `x.a`).
+SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
+-- Chained APPLY where the first transformer is an identity: the prefix must reach the
+-- second transformer (`toString(p_a)`, not `toString(a)`), for both function and lambda forms.
+SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 
 -- New (default) analyzer: the APPLY name prefix must be applied consistently with the
 -- old analyzer (it used to be silently dropped). https://github.com/ClickHouse/ClickHouse/pull/109223
@@ -31,5 +37,14 @@ SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'p_') APPLY (x -> x + 1, 'q_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * REPLACE (a + 1 AS a) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
+-- The prefix uses the short column name (`f_a`), not the qualified projection name
+-- (`f_x.a`) that qualifyColumnNodesWithProjectionNames stores in a qualifying scope.
+SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
+-- Chained APPLY with an identity first transformer: the prefix must be observed by the
+-- second transformer, whether the identity is a function or an identity lambda (`x -> x`).
+-- An identity lambda reuses the original matched node, so the accumulated name must
+-- overwrite (not just emplace) both node_to_projection_name and the resolved cache.
+SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> x, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 -- The prefix survives an EXPLAIN QUERY TREE round-trip (toAST reconstructs it).
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a)) WHERE explain ILIKE '%f_a%';
