@@ -42,6 +42,39 @@ class Git:
             verbose=False,
         )
 
+    @staticmethod
+    def push(
+        repo: str,
+        refspec: str,
+        force: bool = False,
+        dry_run: bool = False,
+        strict: bool = False,
+        retries: int = 1,
+    ) -> bool:
+        """Push `refspec` to `repo` over HTTPS authenticated as the GitHub App.
+
+        Mints the App token inline and clears the inherited http extraheader
+        per-command so the tokenized URL — not the checkout's default
+        GITHUB_TOKEN — is what authenticates (only an App/PAT push re-triggers
+        downstream workflows). The token expands at runtime, so its literal
+        `${token}` stays out of the f-string and the URL is assembled by
+        concatenation; `repo`/`refspec` are passed shell-quoted. Kept out of the
+        logs (verbose=False). Retry helps past GitHub's push-time workflow-file
+        check timing out on a large repo.
+        """
+        repo_url = (
+            "https://x-access-token:${token}@github.com/" + shlex.quote(repo) + ".git"
+        )
+        force_flag = "--force " if force else ""
+        push_cmd = (
+            'token="$(gh auth token)" && '
+            "git -c http.https://github.com/.extraheader= push "
+            f"{force_flag}{repo_url} {shlex.quote(refspec)}"
+        )
+        return Shell.check(
+            push_cmd, dry_run=dry_run, strict=strict, verbose=False, retries=retries
+        )
+
     def __init__(self):
         self.latest_tag = Shell.get_output("git describe --tags --abbrev=0") or ""
         self.new_tag = ""
