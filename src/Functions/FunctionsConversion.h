@@ -64,6 +64,7 @@
 #include <Functions/TransformTime64.h>
 #include <Functions/castTypeToEither.h>
 #include <Functions/toFixedString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromVector.h>
@@ -862,6 +863,42 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 void throwIfQueryCancelled(const QueryStatusPtr & query_status);
 
 
+/// WriteBuffer that forwards everything to an underlying buffer, checking for query cancellation on every
+/// flush. A single row can hold one huge composite value (Array/Map/JSON/Dynamic, ...) whose serializeText()
+/// runs the container serializer's own inner loops without ever returning control here, so a per-row check
+/// cannot interrupt it. Every byte the (arbitrarily nested) serializer emits passes through this buffer, so a
+/// fixed-size working buffer gives a bounded, value-size-independent cancellation cadence (~one check per
+/// buffer fill) without touching any serialization code. checkTimeLimit() is a cheap atomic load + elapsed
+/// compare, so the extra copy is negligible next to serializing a complex value.
+class CancellationCheckingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+{
+public:
+    CancellationCheckingWriteBuffer(WriteBuffer & out_, const QueryStatusPtr & query_status_)
+        : BufferWithOwnMemory<WriteBuffer>(DBMS_DEFAULT_BUFFER_SIZE), out(out_), query_status(query_status_)
+    {
+    }
+
+    ~CancellationCheckingWriteBuffer() override
+    {
+        if (!finalized && !canceled)
+            cancel();
+    }
+
+private:
+    void nextImpl() override
+    {
+        /// Only reached with offset() > 0 (WriteBuffer::next() guards the empty case).
+        throwIfQueryCancelled(query_status);
+        out.write(working_buffer.begin(), offset());
+    }
+
+    void finalizeImpl() override { next(); }
+
+    WriteBuffer & out;
+    const QueryStatusPtr query_status;
+};
+
+
 /// Generic conversion of any type to String or FixedString via serialization to text.
 template <typename StringColumnType>
 struct ConvertImplGenericToString
@@ -887,19 +924,27 @@ struct ConvertImplGenericToString
 
             auto & write_buffer = write_helper.getWriteBuffer();
 
+            /// The query's time and cancellation limits are only checked between pipeline blocks, so a big single
+            /// block would keep serializing after KILL QUERY or max_execution_time and trip the hung check. Two
+            /// complementary checks cover both shapes:
+            ///  - the per-row throwIfQueryCancelled below handles "many expensive rows in one block";
+            ///  - one row can hold a single huge composite value (Array/Map/JSON/Dynamic, ...) whose serializeText()
+            ///    never returns control here mid-value, so cancel_buffer checks on every ~buffer-sized flush of the
+            ///    bytes it emits (see CancellationCheckingWriteBuffer). It also flushes each row's bytes down to
+            ///    write_buffer before finishRow() reads its count.
+            CancellationCheckingWriteBuffer cancel_buffer(write_buffer, query_status);
+
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
-                /// A single row can hold a large composite value (Dynamic, Array, JSON, ...) that is expensive to
-                /// serialize; the query's time and cancellation limits are otherwise only checked between pipeline
-                /// blocks, so a big single block would keep serializing after KILL QUERY or max_execution_time and
-                /// trip the hung check. Cheap per-row check that throws once the query is cancelled or times out.
                 throwIfQueryCancelled(query_status);
 
-                serialization->serializeText(col_from, row, write_buffer, format_settings);
+                serialization->serializeText(col_from, row, cancel_buffer, format_settings);
+                cancel_buffer.next();
                 write_helper.finishRow();
             }
 
+            cancel_buffer.finalize();
             write_helper.finalize();
         }
 

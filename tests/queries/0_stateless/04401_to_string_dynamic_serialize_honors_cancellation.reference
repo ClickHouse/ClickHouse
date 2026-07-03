@@ -2,3 +2,7 @@ TIMEOUT_EXCEEDED
 ok
 break exit: 0
 ok
+TIMEOUT_EXCEEDED
+ok
+TIMEOUT_EXCEEDED
+ok
