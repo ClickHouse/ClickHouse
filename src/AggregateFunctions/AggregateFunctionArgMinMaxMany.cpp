@@ -302,7 +302,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMaxMany(
     if (param_type != Field::Types::Int64 && param_type != Field::Types::UInt64)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be a positive integer", name);
 
-    UInt64 max_elems;
+    UInt64 max_elems = 0;
     if (param_type == Field::Types::UInt64)
     {
         max_elems = param.safeGet<UInt64>();
