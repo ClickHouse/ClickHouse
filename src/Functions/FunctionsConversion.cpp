@@ -56,10 +56,10 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 void throwIfQueryCancelled(const QueryStatusPtr & query_status)
 {
     /// checkTimeLimit() honors KILL QUERY and max_execution_time in both timeout overflow modes; it returns
-    /// false (instead of throwing) for `break`, which we turn into a hard stop since a half-serialized value
+    /// false (instead of throwing) for `break`, which we turn into a hard stop since a half-converted value
     /// is not a useful partial result. Mirrors FunctionBaseXXConversion.
     if (query_status && !query_status->checkTimeLimit())
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while serializing a value to String");
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while converting a value");
 }
 
 }
@@ -1386,11 +1386,20 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             FormatSettings format_settings = settings.format_settings;
             auto serialization = arguments[0].type->getDefaultSerialization();
             format_settings.json.quote_64bit_integers = false;
+
+            /// Same cancellation contract as ConvertImplGenericToString (this loop has the identical shape: a single
+            /// block, or one row holding a huge Tuple/Map/Object value, would otherwise serialize uninterruptibly
+            /// after KILL QUERY or max_execution_time). The per-row check covers many rows; cancel_buffer checks on
+            /// each buffer-sized flush so one huge value is interruptible mid-serialization too.
+            CancellationCheckingWriteBuffer cancel_buffer(write_buffer, settings.query_status);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
+                throwIfQueryCancelled(settings.query_status);
+                serialization->serializeTextJSON(*arguments[0].column, i, cancel_buffer, format_settings);
+                cancel_buffer.next();
                 write_helper.finishRow();
             }
+            cancel_buffer.finalize();
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};

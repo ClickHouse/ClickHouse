@@ -859,7 +859,9 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 
 /// Throws QUERY_WAS_CANCELLED / TIMEOUT_EXCEEDED if the query has been cancelled or has exceeded
 /// max_execution_time (in either timeout_overflow_mode); a no-op otherwise (and when query_status is
-/// null). Defined in the .cpp so the full QueryStatus definition stays out of this header.
+/// null). Called per row from the generic to-String / from-String conversion loops, which run
+/// uninterrupted for a whole block otherwise. Defined in the .cpp so the full QueryStatus definition
+/// stays out of this header.
 void throwIfQueryCancelled(const QueryStatusPtr & query_status);
 
 
@@ -2857,6 +2859,11 @@ struct ConvertImplGenericFromString
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// A big single block is only checked for time/cancellation limits between pipeline blocks, so this
+            /// per-row parse loop (e.g. the parse-back half of CAST(Tuple/Map/Object AS JSON), which dominates its
+            /// cost) would otherwise ignore KILL QUERY and max_execution_time for the whole block.
+            throwIfQueryCancelled(settings.query_status);
+
             if (null_map && (*null_map)[i])
             {
                 column_to.insertDefault();
