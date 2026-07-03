@@ -3718,10 +3718,18 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
 
     /// For example, `ORDER BY a` and `WHERE a = 1`.
     if (node.isFunction())
+    {
         extractAtomsFromFunction(node, info, out);
-    /// For example, `ORDER BY a` and `WHERE 0 AND a = 1`, where this leaf is the constant `0`.
+    }
     else
+    {
+        /// For example, `ORDER BY a` and `WHERE 0 AND a = 1`, where this leaf is the constant `0`.
         extractAtomsFromConstant(node, out);
+
+        /// For example, `ORDER BY flag` and `WHERE flag`, where this leaf is the bare column `flag`.
+        if (out.empty())
+            extractBareKeyColumnAtom(node, info, out);
+    }
 }
 
 void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
@@ -4386,6 +4394,48 @@ void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN
         out.emplace_back(const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
     else if (const_value.getType() == Field::Types::Float64)
         out.emplace_back(const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+}
+
+void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
+{
+    /// A bare numeric key column used directly as a boolean condition, for example `WHERE id` or
+    /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
+    /// constants are handled by `extractAtomsFromFunction` and `extractAtomsFromConstant`), so this
+    /// matches exactly the boolean-predicate positions that `RPNBuilder::traverseTree` descends to
+    /// through `and` / `or` / `not` / `indexHint`. Treat the column as `key != 0`, so that
+    /// primary-key and skip-index analysis can prune on it. The negated form `WHERE NOT key` is
+    /// covered for free: the surrounding `not` inverts this atom into `key == 0`. `LowCardinality`
+    /// is handled through the nested type. See #89222.
+    size_t key_column_num = size_t(-1);
+    std::optional<size_t> argument_num_of_space_filling_curve;
+    DataTypePtr key_column_type;
+    MonotonicFunctionsChain chain;
+
+    if (!tryMatchKeyColumnThroughMonotonicChain(
+            node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
+        return;
+
+    auto key_type_not_low_cardinality = removeLowCardinality(key_column_type);
+
+    /// Skip a `Nullable` (or `LowCardinality(Nullable)`) key. Primary-key analysis maps a NULL
+    /// key value to `+Inf` (for `NULLS LAST` ordering), so a granule that holds only NULL looks
+    /// definitely outside `[0, 0]` and the `key != 0` atom would report it as an exact, definite
+    /// match. But `WHERE nullable_key` is NULL for those rows and filters them out. Ordinary
+    /// pruning only ever over-reads, so it stays correct, but the exact-count / implicit-projection
+    /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
+    /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
+    /// reverts to reading and filtering those rows, which is correct.
+    if (key_type_not_low_cardinality->isNullable()
+        || !(isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+        return;
+
+    RPNElement element;
+    element.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+    element.range = Range(Field(UInt64(0)));
+    element.key_columns.push_back(key_column_num);
+    element.monotonic_functions_chain = std::move(chain);
+    element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+    out.emplace_back(std::move(element));
 }
 
 

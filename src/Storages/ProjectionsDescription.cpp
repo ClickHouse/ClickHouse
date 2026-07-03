@@ -504,7 +504,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
     result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
 
-    NamesAndTypesList metadata_columns;
+    ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
@@ -521,11 +521,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         }
         else
         {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+            ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
+            /// Carry over the parent column's DEFAULT so a column missing from a projection part written
+            /// before the column was added reads the table default, not the column type's default.
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            metadata_columns.add(std::move(column_description));
         }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(std::move(metadata_columns));
     metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings

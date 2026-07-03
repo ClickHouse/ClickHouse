@@ -483,6 +483,9 @@ private:
     void extractAtomsFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractAtomsFromFunction(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN & out);
+    /// A bare numeric key column used directly as a boolean condition (`WHERE flag`)
+    /// produces the single atom `flag != 0`.
+    void extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out);
     void extractBinaryComparisonAtoms(
         const RPNBuilderTreeNode & node,
