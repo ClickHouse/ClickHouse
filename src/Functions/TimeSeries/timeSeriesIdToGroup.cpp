@@ -40,12 +40,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// FixedString is accepted only when its size is 16; the runtime
-    /// `checkArgumentTypeForID` still enforces that, so we accept any FixedString
-    /// at the signature level and let the helper reject mismatched widths.
+    /// The declarative signature below is documentation-only — the exact accepted shapes
+    /// aren't expressible in the DSL yet: it advertises any `FixedString` (the helper
+    /// `checkArgumentTypeForID` accepts only `FixedString(16)`) and omits the
+    /// helper-accepted `LowCardinality` wrappers (`LowCardinality(UUID)` /
+    /// `LowCardinality(FixedString(16))`). The `ColumnsWithTypeAndName` override below is
+    /// authoritative (it runs the helper). Route the types-only path to it too, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` fallback never applies the approximate
+    /// signature string as a validator.
     String getSignatureString() const override
     {
         return "(UInt64 | UInt128 | UUID | FixedString) -> UInt64";
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
