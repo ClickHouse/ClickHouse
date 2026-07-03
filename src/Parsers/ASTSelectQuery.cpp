@@ -70,9 +70,15 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         if (recursive_with)
             ostr << " RECURSIVE";
 
-        s.one_line
-            ? with()->format(ostr, s, state, frame)
-            : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        if (s.one_line)
+            with()->format(ostr, s, state, frame);
+        else
+        {
+            /// Put every CTE on its own indented line, even a single one, for consistent formatting.
+            FormatStateStacked with_frame = frame;
+            with_frame.expression_list_always_start_on_new_line = true;
+            with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, with_frame);
+        }
         ostr << s.nl_or_ws;
     }
 

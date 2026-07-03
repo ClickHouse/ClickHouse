@@ -45,6 +45,8 @@ In these documentation file all mandatory positional arguments are referred as `
 * `current_disk_with_path (current, current_disk, current_path)`
   Print current state in format:
     `Disk: "current_disk" Path: "current path on current disk"`
+* `du [--human-readable] [<path>]`
+  Print the total size in bytes for the file or directory at `path` on a current disk. For a directory the size of all files it contains is summed up recursively. If `path` is not specified, the current directory is used. With `--human-readable` (`-h`) the size is printed in a human-readable format (e.g. `1.23 GiB`).
 * `help [<command>]`
   Print help message about command `command`. If `command` is not specified print information about all commands.
 * `move (mv) <path-from> <path-to>`.
@@ -67,6 +69,8 @@ In these documentation file all mandatory positional arguments are referred as `
   Switch to disk `disk` on path `path` (if `path` is not specified default value is a previous path on disk `disk`).
 * `write (w) [--path-from path] <path-to>`.
   Write a file from `path` (`stdin` if `path` is not supplied, input must finish by Ctrl+D) to `path-to`.
+* `wc <path> [--bytes] [--lines] [--words]`
+  Count bytes, lines and words in the file at `path` on the current disk (like Unix `wc`). With no flag all three counts are printed in the order of lines, words, then bytes. Use `--bytes` (`-c`), `--lines` (`-l`), `--words` (`-w`) to select specific counts.
 * `sed <expression> <path>`
   Apply the `sed` `expression` to the file at `path` on the current disk, in place. Requires `sed` to be installed on the host. Only a single `sed` expression with no options is supported (e.g. `'s/foo/bar/g'`, `'/foo/d'`), not multiple expressions (`-e ... -e ...`) or options combined with an address (e.g. `-n` with `4,10p`).
 * `read-checksums <path>`

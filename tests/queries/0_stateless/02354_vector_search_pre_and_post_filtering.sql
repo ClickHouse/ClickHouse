@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
-
 -- Tests pre vs. post-filtering for vector search.
+SET explain_query_plan_default = 'legacy';
 
 SET use_query_condition_cache = 0;
 SET enable_analyzer = 1;

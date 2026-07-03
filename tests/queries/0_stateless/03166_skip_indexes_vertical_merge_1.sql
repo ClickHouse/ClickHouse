@@ -1,4 +1,4 @@
-SET use_query_condition_cache = 0;
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_ind_merge_1;
 
 SET enable_analyzer = 1;
