@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
@@ -405,6 +406,25 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     is_empty = false;
     analyzer = std::make_unique<TextIndexAnalyzer>(condition_text);
+
+    /// Push the row ranges still readable after the analysis of the primary key and prior skip indexes into the analyzer.
+    if (state.readable_ranges)
+    {
+        const auto & index_granularity = *state.part.index_granularity;
+        std::vector<RowsRange> readable_row_ranges;
+        readable_row_ranges.reserve(state.readable_ranges->size());
+
+        for (const auto & range : *state.readable_ranges)
+        {
+            size_t row_begin = index_granularity.getMarkStartingRow(range.begin);
+            size_t row_end = index_granularity.getMarkStartingRow(range.end);
+
+            if (row_begin < row_end)
+                readable_row_ranges.emplace_back(row_begin, row_end - 1);
+        }
+
+        analyzer->setReadableRows(std::move(readable_row_ranges));
+    }
 
     auto text_index_header = loadHeader(*index_stream, state);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
@@ -1698,8 +1718,10 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
-        const size_t row_start = column_offsets[i - 1];
-        for (size_t element_idx = row_start; element_idx < column_offsets[i]; ++element_idx)
+        /// Dense position counter: dropped (empty/null) tokens leave no gap, so positions
+        /// reflect the surviving token sequence only.
+        UInt32 token_position = 0;
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             if (data_is_nullable && column_data.isNullAt(element_idx))
                 continue;
@@ -1711,7 +1733,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             if constexpr (tokenize)
                 granule_builder.addDocument(ref);
             else
-                granule_builder.addToken(ref, static_cast<UInt32>(element_idx - row_start));
+                granule_builder.addToken(ref, token_position++);
         }
         granule_builder.incrementCurrentRow();
     }
@@ -2003,13 +2025,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// Create the postprocessor for validation.
     /// This validates the token transformation expression (always String -> String).
     MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
-
-    /// A postprocessor may drop or rewrite tokens, which would desynchronize the recorded
-    /// positions from the actual token sequence and break positional phrase search.
-    if (positions && postprocessor.hasActions())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index arguments '{}' and '{}' cannot be used together",
-            ARGUMENT_POSITIONS, ARGUMENT_POSTPROCESSOR);
 }
 
 }

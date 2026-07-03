@@ -200,6 +200,8 @@ public:
         PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
         int direction, int nan_direction_hint) const override;
 
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
+
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 

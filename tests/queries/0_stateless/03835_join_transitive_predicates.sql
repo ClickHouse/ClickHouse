@@ -5,6 +5,7 @@
 -- so that direct joins between transitively-connected tables are possible.
 -- After optimization, `cleanupJoinPredicates` removes redundant predicates
 -- and synthesizes missing ones for transitive-only joins.
+SET explain_query_plan_default = 'legacy';
 
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
