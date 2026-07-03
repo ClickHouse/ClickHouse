@@ -556,7 +556,14 @@ struct ToTimeTransformSigned
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return static_cast<ToType>(from);
+        /// Honour the overflow setting for narrow signed sources too: the previous raw store ignored it,
+        /// so an out-of-range Int32 stayed verbatim while the 64-bit path clamped or threw. The
+        /// numeric_limits guards keep the range comparison out for Int8/Int16, whose values always fit.
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if constexpr (std::numeric_limits<FromType>::max() > MAX_TIME_TIMESTAMP)
+                if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+        return static_cast<ToType>(saturateToRange(from, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
     }
 };
 

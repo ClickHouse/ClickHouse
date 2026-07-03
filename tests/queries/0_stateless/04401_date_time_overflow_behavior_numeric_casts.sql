@@ -23,6 +23,10 @@ SELECT CAST(999999999999::Int64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RAN
 SELECT CAST(999999999999.0::Float64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(999999999999::Int64, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(999999999999::UInt64, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- Narrow signed sources (Int8 / Int16 / Int32) went through a separate transform that stored the raw
+-- value and ignored the setting, so an out-of-range Int32 stayed verbatim while the 64-bit path threw.
+SELECT CAST(4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- throw: float extremes (huge / Inf / NaN) must raise a clean error, not narrow to garbage';
 -- Formatting the rejected value with static_cast<Int64>(from) was undefined behavior for these
@@ -69,6 +73,10 @@ SELECT CAST(9223372036854775813::UInt64, 'DateTime');
 SELECT CAST(18446744073709551615::UInt64, 'Date');
 SELECT CAST(18446744073709551615::UInt64, 'Date32');
 SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Date32');
+-- Narrow signed Int32 -> Time must clamp to the max/min stored integer, not keep the raw out-of-range
+-- value. Assert on toInt32 (the printed text 999:59:59 hides the stored 4000000).
+SELECT toInt32(CAST(4000000::Int32, 'Time'));
+SELECT toInt32(CAST(-4000000::Int32, 'Time'));
 SELECT CAST(1e300::Float64, 'Time');
 SELECT CAST(1e300::Float64, 'DateTime');
 SELECT CAST(3e38::Float32, 'DateTime');
@@ -94,6 +102,9 @@ SELECT CAST(999999999999::Int64, 'Date32');
 SELECT '-- ignore: sources above INT64_MAX / float extremes must also clamp, not wrap negative';
 SELECT CAST(18446744073709551615::UInt64, 'Time');
 SELECT CAST(9223372036854775813::UInt64, 'DateTime');
+SELECT '-- ignore: narrow signed Int32 -> Time must clamp too, not store the raw out-of-range value';
+SELECT toInt32(CAST(4000000::Int32, 'Time'));
+SELECT toInt32(CAST(-4000000::Int32, 'Time'));
 SELECT '-- ignore: NaN -> Date must clamp to the minimum, not fall through to a narrowing cast';
 SELECT CAST(nan::Float64, 'Date');
 SELECT CAST(nan::Float64, 'Date32');

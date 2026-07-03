@@ -20,6 +20,8 @@
 2106-02-07
 2299-12-31
 2299-12-31
+3599999
+-3599999
 999:59:59
 2106-02-07 06:28:15
 2106-02-07 06:28:15
@@ -39,6 +41,9 @@
 -- ignore: sources above INT64_MAX / float extremes must also clamp, not wrap negative
 999:59:59
 2106-02-07 06:28:15
+-- ignore: narrow signed Int32 -> Time must clamp too, not store the raw out-of-range value
+3599999
+-3599999
 -- ignore: NaN -> Date must clamp to the minimum, not fall through to a narrowing cast
 1970-01-01
 1900-01-01
