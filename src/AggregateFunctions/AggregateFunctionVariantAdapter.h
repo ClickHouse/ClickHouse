@@ -36,7 +36,7 @@ private:
     /// Argument types expected by the nested function: each Variant argument is replaced by Nullable(supertype).
     DataTypes nested_argument_types;
     /// Which argument positions are Variant and thus need conversion before being passed to the nested function.
-    std::vector<UInt8> is_variant_argument;
+    std::vector<UInt8> is_variant_argument; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t num_arguments;
 
     /// Cache of the internal cast functions (Variant -> Nullable(supertype)) reused across blocks.
@@ -55,7 +55,7 @@ private:
     struct ConvertedColumns
     {
         Columns holder;
-        std::vector<const IColumn *> columns;
+        std::vector<const IColumn *> columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         const IColumn ** data() { return columns.data(); }
     };
@@ -116,7 +116,7 @@ public:
     {
         /// Rare, non-batched path: convert the single row to the nested argument types and delegate.
         Columns holder;
-        std::vector<const IColumn *> nested_columns(num_arguments);
+        std::vector<const IColumn *> nested_columns(num_arguments); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (size_t i = 0; i < num_arguments; ++i)
         {
             ColumnPtr one_row = columns[i]->cut(row_num, 1);
