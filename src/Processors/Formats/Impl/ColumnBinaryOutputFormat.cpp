@@ -84,7 +84,13 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     }
     else
     {
+        // Unlike tmp_buf (std::vector::resize value-initializes to 0), the
+        // WriteBuffer's internal buffer is not zeroed. Alignment padding gaps
+        // between COL_COMPLEX/COL_VARIANT sub-blocks are intentionally never
+        // written by writeColData, so they must be zeroed here to avoid
+        // leaking uninitialized memory into the output stream.
         buf = reinterpret_cast<uint8_t *>(out.position());
+        std::memset(buf, 0, cursor);
     }
 
     // Write header and descriptor table.
