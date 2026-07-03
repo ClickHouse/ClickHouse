@@ -52,7 +52,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         return;
 
     uint32_t num_rows = static_cast<uint32_t>(chunk.getNumRows());
-    uint32_t num_cols = static_cast<uint32_t>(std::min(chunk.getNumColumns(), header_->columns()));
+    uint32_t num_cols = static_cast<uint32_t>(std::min<size_t>(chunk.getNumColumns(), header_->columns()));
 
     // Layout pass: build descriptors (compute offsets and total size).
     uint64_t cursor = ColumnarV1::COLUMNAR_HEADER_BYTES + num_cols * ColumnarV1::COLUMNAR_DESC_BYTES;
