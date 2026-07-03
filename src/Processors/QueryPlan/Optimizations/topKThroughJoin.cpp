@@ -64,8 +64,18 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
 /// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
 /// so we conservatively assume delayed blocks are possible when the configured settings
 /// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
-/// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
-/// wrap the chosen hash join in `SpillingHashJoin`).
+/// automatic spilling is configured via `max_bytes_*_before_external_join` AND a
+/// hash-family algorithm that the spilling wrapper actually applies to is enabled.
+///
+/// The spill settings only wrap the chosen join in `SpillingHashJoin`, and that wrapping
+/// happens only in the `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE` / `DEFAULT` (and
+/// `AUTO`) branches of `chooseJoinAlgorithm` (`ExpressionAnalyzer.cpp`, `PlannerJoins.cpp`).
+/// `DIRECT` (`DirectKeyValueJoin`), `PARTIAL_MERGE` (`MergeJoin`), and `FULL_SORTING_MERGE`
+/// (`FullSortingMergeJoin`) never enter that branch, so a nonzero spill setting leaves them
+/// with no delayed blocks. Gating the spill check on an enabled spillable algorithm keeps
+/// `join_algorithm = 'direct'` (and `partial_merge` / `full_sorting_merge`) eligible for the
+/// deferral even under the default `max_bytes_ratio_before_external_join = 0.5`, rather than
+/// forcing the explicit `Sort + Limit` pushdown when the physical join cannot spill.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -76,11 +86,29 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
         const auto & js = logical->getJoinSettings();
-        if (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0)
-            return true;
-        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
+
+        /// `AUTO` builds a `JoinSwitcher` and `GRACE_HASH` a `GraceHashJoin`, both of which can
+        /// have delayed blocks regardless of the spill settings.
+        const bool always_delayed = std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
+        });
+        if (always_delayed)
+            return true;
+
+        /// A nonzero spill setting only matters when an algorithm that the `SpillingHashJoin`
+        /// wrapper is applied to is enabled: `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE`
+        /// / `DEFAULT`. `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped, so
+        /// they cannot produce delayed blocks even with spilling configured.
+        const bool spilling_configured
+            = js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0;
+        if (!spilling_configured)
+            return false;
+
+        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
+        {
+            return a == JoinAlgorithm::HASH || a == JoinAlgorithm::PARALLEL_HASH
+                || a == JoinAlgorithm::PREFER_PARTIAL_MERGE || a == JoinAlgorithm::DEFAULT;
         });
     }
     /// Unknown step kind - be conservative.

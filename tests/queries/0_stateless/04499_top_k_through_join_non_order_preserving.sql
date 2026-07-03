@@ -305,7 +305,55 @@ ORDER BY tl_04499.pk LIMIT 10
 SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
+-- The pass-1 deferral must be algorithm-aware about spilling. A nonzero max_bytes_*_before_external_join
+-- (the default max_bytes_ratio_before_external_join = 0.5) only wraps hash-family algorithms
+-- (hash / parallel_hash / prefer_partial_merge / default) in SpillingHashJoin. join_algorithm = 'direct'
+-- builds a DirectKeyValueJoin, which never spills and preserves the left order, so it must still defer to
+-- the read-in-order-through-join second pass. Before joinMayHaveDelayedBlocks keyed on the enabled
+-- algorithm, any nonzero spill setting flagged direct as may-delay and forced the explicit Sort + Limit
+-- pushdown even though the physical join cannot produce delayed blocks.
+--
+-- Spilling is deliberately NOT pinned off here (the default 0.5 ratio is the case under test). The right
+-- side is a Join engine so the direct key-value path applies. First probe: NO explicit pushed Limit on the
+-- left (count = 0), i.e. the deferral fired. Second probe: the left MergeTree read streams InOrder (> 0).
+DROP TABLE IF EXISTS trd_04499;
+CREATE TABLE trd_04499 (j UInt64, v UInt64) ENGINE = Join(ANY, LEFT, j)
+    AS SELECT number, number FROM numbers(100000);
+
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, trd_04499.v
+    FROM tl_04499 LEFT ANY JOIN trd_04499 ON tl_04499.j = trd_04499.j
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'direct', enable_analyzer = 1,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, trd_04499.v
+    FROM tl_04499 LEFT ANY JOIN trd_04499 ON tl_04499.j = trd_04499.j
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'direct', enable_analyzer = 1,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0
+) WHERE explain ILIKE '%Read type: InOrder%'
+SETTINGS enable_analyzer = 1;
+
+-- Correctness of the recovered read-in-order-through-join plan: the top-10 pk are exactly 0..9.
+SELECT tl_04499.pk
+FROM tl_04499 LEFT ANY JOIN trd_04499 ON tl_04499.j = trd_04499.j
+ORDER BY tl_04499.pk LIMIT 10
+SETTINGS join_algorithm = 'direct', enable_analyzer = 1, query_plan_join_swap_table = 0;
+
 DROP TABLE tl_04499;
 DROP TABLE tr_04499;
 DROP TABLE tl8_04499;
 DROP TABLE tr8_04499;
+DROP TABLE trd_04499;
