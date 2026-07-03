@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 
@@ -11,9 +11,8 @@ namespace DB
 {
 
 class NamedCollection;
-struct StorageID;
 
-class StorageFuzzJSON final : public StorageWithCommonVirtualColumns
+class StorageFuzzJSON final : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -53,10 +52,6 @@ public:
 
     std::string getName() const override { return "FuzzJSON"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -68,7 +63,7 @@ public:
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
 
-    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id = nullptr);
+    static StorageFuzzJSON::Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
 
 private:
     const Configuration config;

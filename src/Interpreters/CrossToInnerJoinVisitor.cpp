@@ -148,7 +148,7 @@ ASTPtr makeOnExpression(const std::vector<ASTPtr> & expressions)
     for (const auto & ast : expressions)
         arguments.emplace_back(ast->clone());
 
-    return makeASTOperator("and", std::move(arguments));
+    return makeASTFunction("and", std::move(arguments));
 }
 
 std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
@@ -204,17 +204,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
 bool CrossToInnerJoinMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    if (node->as<ASTSubquery>())
-        return false;
-
-    /// Do not descend into table expressions — they may contain
-    /// table functions like view(SELECT ... JOIN ...) whose inner
-    /// ASTSelectQuery has a different set of tables and must not be
-    /// processed by this visitor.
-    if (node->as<ASTTableExpression>())
-        return false;
-
-    return true;
+    return !node->as<ASTSubquery>();
 }
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)

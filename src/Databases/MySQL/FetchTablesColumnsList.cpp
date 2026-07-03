@@ -12,6 +12,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
 #include <memory>

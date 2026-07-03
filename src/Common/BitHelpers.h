@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -17,21 +18,28 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
     // if MSB is set, return n, to avoid return zero
     if (unlikely(n >= 0x8000000000000000ULL))
         return n;
-    else if (n <= 1)
-        return n;
 
-    return size_t(1) << (64 - __builtin_clzl(n - 1));
+    --n;
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+    n |= n >> 32;
+    ++n;
+
+    return n;
 }
 
 
 template <typename T>
 inline uint32_t getLeadingZeroBitsUnsafe(T x)
 {
-    chassert(x != 0);
+    assert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
-        return __builtin_clz(x); // NOLINT(readability-redundant-casting)
+        return __builtin_clz(x);
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
@@ -39,7 +47,7 @@ inline uint32_t getLeadingZeroBitsUnsafe(T x)
     }
     else
     {
-        return __builtin_clzll(x); // NOLINT(readability-redundant-casting)
+        return __builtin_clzll(x);
     }
 }
 
@@ -67,7 +75,7 @@ inline uint32_t bitScanReverse(T x)
 template <typename T>
 inline size_t getTrailingZeroBitsUnsafe(T x)
 {
-    chassert(x != 0);
+    assert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
@@ -75,11 +83,11 @@ inline size_t getTrailingZeroBitsUnsafe(T x)
     }
     else if constexpr (sizeof(T) <= sizeof(unsigned long int)) /// NOLINT
     {
-        return __builtin_ctzl(x); // NOLINT(readability-redundant-casting) clang-tidy cross-references this with arrow's bit_util.h
+        return __builtin_ctzl(x);
     }
     else
     {
-        return __builtin_ctzll(x); // NOLINT(readability-redundant-casting)
+        return __builtin_ctzll(x);
     }
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
@@ -14,7 +14,7 @@ class Chunk;
 
 class NamedCollection;
 
-class StorageFuzzQuery final : public StorageWithCommonVirtualColumns
+class StorageFuzzQuery final : public IStorage
 {
 public:
     struct Configuration : public StatelessTableEngineConfiguration
@@ -28,10 +28,6 @@ public:
         const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_);
 
     std::string getName() const override { return "FuzzQuery"; }
-
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
 
     Pipe read(
         const Names & column_names,
@@ -49,7 +45,7 @@ private:
 };
 
 
-class FuzzQuerySource final : public ISource
+class FuzzQuerySource : public ISource
 {
 public:
     FuzzQuerySource(
@@ -68,9 +64,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (isCancelled())
-            return {};
-
         Columns columns;
         columns.reserve(block_header->columns());
         for (const auto & col : *block_header)
@@ -79,22 +72,7 @@ protected:
             columns.emplace_back(createColumn());
         }
 
-        /// `createColumn` may exit early on cancellation and emit fewer rows than
-        /// `block_size`; with multiple columns each call observes cancellation
-        /// independently and may produce different counts. Take the smallest size
-        /// and truncate the rest so the resulting `Chunk` has consistent row counts.
-        size_t actual_rows = block_size;
-        for (const auto & column : columns)
-            actual_rows = std::min(actual_rows, column->size());
-
-        if (actual_rows == 0)
-            return {};
-
-        for (auto & column : columns)
-            if (column->size() > actual_rows)
-                column = column->cut(0, actual_rows);
-
-        return {std::move(columns), actual_rows};
+        return {std::move(columns), block_size};
     }
 
 private:

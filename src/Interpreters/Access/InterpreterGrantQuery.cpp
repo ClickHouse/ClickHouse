@@ -13,7 +13,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -390,9 +389,22 @@ namespace
         std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
-        auto current_user_grantable_rights = current_user_access->getAccessRights()->getGrantableRights();
+        AccessRightsElements current_user_grantable_elements;
+        auto available_grant_elements = current_user_access->getAccessRights()->getElements();
+        AccessRights current_user_rights;
+        for (auto & element : available_grant_elements)
+        {
+            if (!element.grant_option && !element.is_partial_revoke)
+                continue;
+
+            if (element.is_partial_revoke)
+                current_user_rights.revoke(element);
+            else
+                current_user_rights.grant(element);
+        }
+
         rights.grant(elements_to_grant);
-        rights.makeIntersection(current_user_grantable_rights);
+        rights.makeIntersection(current_user_rights);
     }
 
     /// Updates grants of a specified user or role.
@@ -426,18 +438,6 @@ BlockIO InterpreterGrantQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
-
-    /// Validate TABLE ENGINE parameter names if explicitly specified
-    for (const auto & element : query.access_rights_elements)
-    {
-        if (element.isGlobalWithParameter()
-            && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
-            && !element.anyParameter())
-        {
-            /// Will throw UNKNOWN_STORAGE if engine is unknown
-            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
-        }
-    }
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
@@ -512,7 +512,6 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
-void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

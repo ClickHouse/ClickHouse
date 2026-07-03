@@ -3,7 +3,5 @@
 members = [
     "skim",
     "prql",
-    "polyglot",
-    "wasmtime",
 ]
 resolver = "2"

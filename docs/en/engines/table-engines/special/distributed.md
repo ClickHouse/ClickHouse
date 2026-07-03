@@ -6,9 +6,10 @@ description: 'Tables with Distributed engine do not store any data of their own,
 sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
-title: 'Distributed table engine'
-doc_type: 'reference'
+title: 'Distributed Table Engine'
 ---
+
+# Distributed table engine
 
 :::warning Distributed engine in Cloud
 To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions. 
@@ -58,8 +59,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 |--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `fsync_after_insert`                       | Do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.                                                             | `false`       |
 | `fsync_directories`                        | Do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).                        | `false`       |
-| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
-| `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing table or database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
+| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard.   | `false`       |
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |
@@ -234,4 +234,4 @@ Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
 - [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
-- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
+- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardnum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardcount) functions

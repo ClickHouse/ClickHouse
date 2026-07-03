@@ -18,14 +18,10 @@ struct OutputBlockColumns
 OutputBlockColumns prepareOutputBlockColumns(
     const Aggregator::Params & params,
     const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions,
-    const DataTypes & key_types,
-    const DataTypes & aggregate_state_types,
+    const Block & res_header,
     Arenas & aggregates_pools,
     bool final,
     size_t rows);
 
-Chunk finalizeChunk(
-    const Aggregator::Params & params,
-    OutputBlockColumns && out_cols,
-    bool final);
+Block finalizeBlock(const Aggregator::Params & params, const Block & res_header, OutputBlockColumns && out_cols, bool final, size_t rows);
 }

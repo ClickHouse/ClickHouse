@@ -18,14 +18,14 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-class FunctionWKB final : public IFunction
+class FunctionWkb : public IFunction
 {
 public:
     static inline const char * name = "wkb";
 
-    explicit FunctionWKB() = default;
+    explicit FunctionWkb() = default;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWKB>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWkb>(); }
 
     String getName() const override { return name; }
 
@@ -36,6 +36,14 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeString>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /*
+    * Functions like recursiveRemoveLowCardinality don't pay enough attention to custom types and just erase
+    * the information about it during type conversions.
+    * While it is a big problem the quick solution would be just to disable default low cardinality implementation
+    * because it doesn't make a lot of sense for geo types.
+    */
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -72,9 +80,9 @@ public:
 
 }
 
-REGISTER_FUNCTION(WKB)
+REGISTER_FUNCTION(Wkb)
 {
-    factory.registerFunction<FunctionWKB>(FunctionDocumentation{
+    factory.registerFunction<FunctionWkb>(FunctionDocumentation{
         .description = R"(
     Parses a Well-Known Binary (WKB) representation of a Point geometry and returns it in the internal ClickHouse format.
     )",
@@ -94,8 +102,6 @@ REGISTER_FUNCTION(WKB)
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo,
     });
-
-    factory.registerAlias("WKB", "wkb");
 }
 
 }

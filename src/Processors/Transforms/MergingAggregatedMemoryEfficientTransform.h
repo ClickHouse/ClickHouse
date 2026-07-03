@@ -1,16 +1,14 @@
 #pragma once
 
 #include <Core/SortDescription.h>
+#include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Common/HashTable/HashSet.h>
 
-#include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -43,7 +41,6 @@ namespace DB
   * That is, if a < b, then the bucket_num = a block goes before bucket_num = b.
   * This is needed for a memory-efficient merge
   * - so that you do not need to read the blocks up front, but go all the way up by bucket_num.
-  * Note, that sometimes we slightly violate this convention for performance reasons, see the comment around `input_out_of_order_buckets` below.
   *
   * In this case, not all bucket_num from the range of 0..255 can be present.
   * The overflow block can be presented in any order relative to other blocks (but it can be only one).
@@ -63,14 +60,17 @@ namespace DB
 /// Has several inputs and single output.
 /// Read from inputs chunks with partially aggregated data, group them by bucket number
 ///  and write data from single bucket as single chunk.
-class GroupingAggregatedTransform final : public IProcessor
+class GroupingAggregatedTransform : public IProcessor
 {
 public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
+    /// Special setting: in case if single source can return several chunks with same bucket.
+    void allowSeveralChunksForSingleBucketPerSource() { expect_several_chunks_for_single_bucket_per_source = true; }
+
 protected:
-    Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &) override;
+    Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
     void work() override;
 
 private:
@@ -78,11 +78,6 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-
-    /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
-    std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
-    std::unordered_map<Int32, size_t> out_of_order_buckets; /// Mapping bucket_id -> number of inputs delayed that bucket.
-
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;
     Chunks single_level_chunks;
@@ -93,8 +88,10 @@ private:
     bool all_inputs_finished = false;
     bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
-    std::unordered_map<const InputPort *, uint64_t> input_port_to_index;
     HashSet<uint64_t> wait_input_ports_numbers;
+
+    /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
+    bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
@@ -109,13 +106,11 @@ private:
 };
 
 /// Merge aggregated data from single bucket.
-class MergingAggregatedBucketTransform final : public ISimpleTransform
+class MergingAggregatedBucketTransform : public ISimpleTransform
 {
 public:
     explicit MergingAggregatedBucketTransform(
-        AggregatingTransformParamsPtr params,
-        const SortDescription & required_sort_description_ = {},
-        RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_ = nullptr);
+        AggregatingTransformParamsPtr params, const SortDescription & required_sort_description_ = {});
     String getName() const override { return "MergingAggregatedBucketTransform"; }
 
 protected:
@@ -124,13 +119,12 @@ protected:
 private:
     AggregatingTransformParamsPtr params;
     const SortDescription required_sort_description;
-    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 };
 
 /// Has several inputs and single output.
 /// Read from inputs merged bucket with aggregated data, sort them by bucket number and write to output.
 /// Presumption: inputs return chunks with increasing bucket number, there is at most one chunk per bucket.
-class SortingAggregatedTransform final : public IProcessor
+class SortingAggregatedTransform : public IProcessor
 {
 public:
     SortingAggregatedTransform(size_t num_inputs, AggregatingTransformParamsPtr params);
@@ -163,7 +157,7 @@ class Pipe;
 void addMergingAggregatedMemoryEfficientTransform(
     Pipe & pipe,
     AggregatingTransformParamsPtr params,
-    size_t num_merging_processors,
-    bool should_produce_results_in_order_of_bucket_number);
+    size_t num_merging_processors);
+
 }
 
