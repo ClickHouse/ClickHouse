@@ -102,6 +102,14 @@ class ClickHouseProc:
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
+        # Concrete reason set by create_minio_log_tables() on failure, so the
+        # caller can persist the real detail (e.g. the clickminio restart status)
+        # into the step Result.info / CIDB instead of a generic note.
+        self.minio_setup_error = None
+        # Same idea for prepare_stateful_data(): the failing sub-command + its
+        # ClickHouse error tail, so the re-prepare ERROR row carries the real
+        # reason instead of the generic "failed to re-prepare stateful data".
+        self.stateful_setup_error = None
         self.debug_artifacts = []
         self.extra_tests_results = []
         self.logs = []
@@ -318,7 +326,8 @@ class ClickHouseProc:
         else:
             print("ClickHouse server NOT ready")
 
-        self._flush_system_logs()
+        # wait_ready() flushes system logs on its success path (pre-creating the
+        # system log tables once the server is listening).
         self.save_system_metadata_files_from_remote_database_disk()
         return res
 
@@ -534,34 +543,42 @@ profiles:
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
 
-        self._flush_system_logs()
+        # System logs are flushed in wait_ready() once the server is listening,
+        # not here: start()'s callers run wait_ready() afterwards, so a flush here
+        # races the TCP listener and fails with Code 210 (Connection refused).
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
 
     def create_minio_log_tables(self):
-        # create tables for minio log webhooks
-        res = Shell.check(
-            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
-            verbose=True,
-        )
-        res = res and Shell.check(
-            'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
-            verbose=True,
-        )
-
-        res = res and Shell.check(
-            '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            verbose=True,
-            strict=True,
-        )
-        res = res and Shell.check(
-            '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            verbose=True,
-            strict=True,
-        )
-        if not res:
-            return False
+        self.minio_setup_error = None
+        # Minio log setup is non-fatal (caller continues when this returns
+        # False). Every step MUST stay non-strict: a strict=True step would
+        # raise before we can record the reason and signal failure. Record the
+        # concrete failing sub-step so it reaches CIDB test_context_raw.
+        setup_steps = [
+            (
+                "create system.minio_audit_logs table",
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            ),
+            (
+                "create system.minio_server_logs table",
+                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple()"',
+            ),
+            (
+                "set clickminio logger_webhook config",
+                '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            ),
+            (
+                "set clickminio audit_webhook config",
+                '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
+            ),
+        ]
+        for what, command in setup_steps:
+            if not Shell.check(command, verbose=True):
+                self.minio_setup_error = f"failed to {what}"
+                print(f"ERROR: Failed to {what}")
+                return False
 
         return self._restart_minio_to_apply_config()
 
@@ -604,14 +621,17 @@ profiles:
         startup can take a while on a loaded sanitizer host. Each attempt kills,
         restarts, and waits for readiness; a dead or too-slow instance is simply
         killed and started again on the next iteration.
+
+        Returns None on success, or a concrete failure reason so the caller can
+        carry it into minio_setup_error (CIDB test_context_raw).
         """
         minio_bin = self._minio_binary()
         if not minio_bin:
-            print(
-                "ERROR: cannot find the minio binary (looked for /minio and "
-                f"{temp_dir}/minio); cannot restart MinIO"
+            reason = (
+                f"cannot find the minio binary (looked for /minio and {temp_dir}/minio)"
             )
-            return False
+            print(f"ERROR: {reason}; cannot restart MinIO")
+            return reason
         # Start MinIO with the same root credentials `setup_minio.sh` used.
         # Otherwise it comes up with different root credentials and the
         # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
@@ -632,13 +652,17 @@ profiles:
                 verbose=True,
             )
             if self._wait_minio_ready(ready_timeout_s):
-                return True
+                return None
             print(
                 f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
                 f"(attempt {attempt}/{attempts})"
             )
-        print("ERROR: Failed to restart MinIO after multiple attempts")
-        return False
+        reason = (
+            f"manual MinIO restart did not become ready within {ready_timeout_s}s "
+            f"after {attempts} attempts"
+        )
+        print(f"ERROR: {reason}")
+        return reason
 
     def _restart_minio_to_apply_config(self):
         # Restart minio so it picks up the webhook config set above. The clean
@@ -650,6 +674,9 @@ profiles:
         # loaded CI hosts (the clean restart routinely exceeds the timeout there;
         # see the bugfix-validation env-setup flake in PR #108821).
         restart_timeout = 60
+        # The clean-restart outcome that pushed us onto the manual fallback, so
+        # the terminal reason names why the reliable path was even attempted.
+        clean_restart_reason = "clean clickminio restart did not report a ready service"
         try:
             print(f"Restarting clickminio (timeout {restart_timeout}s)")
             proc = subprocess.Popen(
@@ -681,14 +708,31 @@ profiles:
             # bucket is servable yet, so confirm readiness before trusting it.
             if "success" in status and self._wait_minio_ready(30):
                 return True
-            print(
-                f"WARNING: clickminio restart did not report a ready service, status: [{status}]"
+            clean_restart_reason = (
+                f"clean clickminio restart did not report a ready service, status: [{status}]"
             )
+            print(f"WARNING: {clean_restart_reason}")
         except (subprocess.TimeoutExpired, OSError):
-            print(f"WARNING: minio restart timed out after {restart_timeout}s")
+            clean_restart_reason = (
+                f"clean clickminio restart timed out after {restart_timeout}s"
+            )
+            print(f"WARNING: {clean_restart_reason}")
 
         print("Falling back to a manual MinIO restart")
-        return self._force_restart_minio()
+        manual_restart_reason = self._force_restart_minio()
+        if manual_restart_reason is None:
+            return True
+        # Non-fatal, but record the reason so the caller can persist it into the
+        # setup Result (CIDB test_context_raw) instead of leaving minio failures
+        # in the opaque "Cannot start clickhouse-server" bucket. Carry both the
+        # clean-restart status and the manual-restart failure, otherwise the real
+        # reason stays print-only and collapses to a generic CIDB bucket.
+        self.minio_setup_error = (
+            f"failed to restart clickminio ({clean_restart_reason}; "
+            f"manual restart: {manual_restart_reason})"
+        )
+        print(f"ERROR: Failed to restart clickminio: {self.minio_setup_error}")
+        return False
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
@@ -747,7 +791,16 @@ profiles:
             )
             return False
         if self.is_db_replicated and replica_num == 0:
-            return self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)
+            if not (self.wait_ready(replica_num=1) and self.wait_ready(replica_num=2)):
+                return False
+        if replica_num == 0:
+            # _flush_system_logs() fans out to every running replica; the
+            # replica_num == 0 guard only stops the recursive wait_ready(1/2)
+            # calls above from re-running that fan-out (replicas 1 and 2 are
+            # already confirmed ready there). Flushing pre-creates the system log
+            # tables so tests don't hit "table does not exist". Kept here, not in
+            # start(), to avoid the Code 210 race against the TCP listener.
+            self._flush_system_logs()
         return True
 
     def _flush_system_logs(self):
@@ -768,12 +821,19 @@ profiles:
         return True
 
     def prepare_stateful_data(self, with_s3_storage, is_db_replicated):
+        self.stateful_setup_error = None
         if is_db_replicated:
             print("Skip stateful data preparation for db replicated")
             return True
         command = """
 set -e
 set -o pipefail
+# Record which sub-command failed (set -e then exits). $BASH_COMMAND is the
+# failing command itself, so the captured reason names the exact query instead
+# of just a line number; combined with the ClickHouse client error already on
+# stderr this is captured below so the bugfix-validation re-prepare path can
+# report the real reason.
+trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
 
@@ -817,7 +877,26 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 """
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
-        return Shell.check(command)
+        # Run via Shell.run (bash, like Shell.check) but keep a log file so that
+        # on failure we can surface the failing sub-command + its ClickHouse
+        # error tail to the caller. Same success semantics as before
+        # (returncode == 0). This is what makes the intermittent msan re-prepare
+        # failure diagnosable in CIDB instead of a generic boolean.
+        log_file = f"{temp_dir}/prepare_stateful_data.log"
+        rc = Shell.run(command, log_file=log_file, verbose=True)
+        if rc != 0:
+            tail = ""
+            try:
+                with open(log_file, errors="ignore") as f:
+                    tail = "".join(f.readlines()[-15:]).strip()
+            except OSError:
+                pass
+            self.stateful_setup_error = (
+                f"stateful data prep failed (exit {rc})"
+                + (f": {tail}" if tail else "")
+            )
+            print(f"ERROR: {self.stateful_setup_error}")
+        return rc == 0
 
     def insert_system_zookeeper_config(self):
         for _ in range(10):
