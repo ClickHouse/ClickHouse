@@ -3,10 +3,11 @@
 # We build the "null" capture backend (pcap-null.c): no live capture, no remote
 # capture, no optional backends. This is all that the PCAP input format needs.
 #
-# The BPF filter grammar/scanner (grammar.c / scanner.c) would normally be
-# generated at build time by bison and flex. To avoid adding those tools to the
-# build toolchain, the generated files are checked in under generated/. They
-# must still link even though the PCAP format never calls pcap_compile().
+# BPF filter compilation (pcap_compile) is intentionally not built. The read
+# path (savefile.c / sf-pcap.c / sf-pcapng.c) never calls it, so we drop
+# gencode.c together with the BPF grammar/scanner. This also avoids shipping the
+# GPL-licensed bison output (grammar.c) in the tree. A minimal pcap_compile stub
+# (compile-stub.c) is linked so any residual reference resolves cleanly.
 #
 # This target is only enabled when the PCAP input format (libtins) is enabled;
 # the option lives in libtins-cmake and libpcap is added before it.
@@ -17,7 +18,6 @@ if (NOT ENABLE_PCAP)
 endif()
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpcap")
-set(GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
 
 set(SRCS
     "${LIBRARY_DIR}/bpf_dump.c"
@@ -25,7 +25,6 @@ set(SRCS
     "${LIBRARY_DIR}/bpf_image.c"
     "${LIBRARY_DIR}/etherent.c"
     "${LIBRARY_DIR}/fmtutils.c"
-    "${LIBRARY_DIR}/gencode.c"
     "${LIBRARY_DIR}/nametoaddr.c"
     "${LIBRARY_DIR}/optimize.c"
     "${LIBRARY_DIR}/pcap-common.c"
@@ -38,18 +37,16 @@ set(SRCS
     # glibc < 2.38 lacks strlcat/strlcpy; the bundled fallbacks are always safe.
     "${LIBRARY_DIR}/missing/strlcat.c"
     "${LIBRARY_DIR}/missing/strlcpy.c"
-    # Pre-generated BPF grammar/scanner (bison/flex output).
-    "${GENERATED_DIR}/grammar.c"
-    "${GENERATED_DIR}/scanner.c"
+    # Minimal pcap_compile stub in place of the removed BPF grammar/scanner.
+    "${CMAKE_CURRENT_SOURCE_DIR}/compile-stub.c"
 )
 
 add_library(_pcap ${SRCS})
 add_library(ch_contrib::pcap ALIAS _pcap)
 
-# config.h lives in linux/; generated grammar.h / scanner.h live in generated/.
+# config.h lives in linux/.
 target_include_directories(_pcap PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/linux"
-    "${GENERATED_DIR}"
     "${LIBRARY_DIR}"
 )
 
