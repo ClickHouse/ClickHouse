@@ -50,7 +50,6 @@ class LakeFormat(Enum):
     Unkown = 0
     Iceberg = 1
     DeltaLake = 2
-    Paimon = 3
 
     @staticmethod
     def lakeformat_from_str(loc: str):
@@ -58,8 +57,6 @@ class LakeFormat(Enum):
             return LakeFormat.Iceberg
         if loc.lower().startswith("delta"):
             return LakeFormat.DeltaLake
-        if loc.lower() == "paimon":
-            return LakeFormat.Paimon
         return LakeFormat.Unkown
 
 
@@ -133,7 +130,6 @@ class SparkTable:
         self.file_format = _file_format
         self.storage = _storage
         self.catalog = _catalog
-        self.check_constraints: dict[str, str] = {}
 
     def get_namespace_path(self) -> str:
         return f"test.{self.table_name}"

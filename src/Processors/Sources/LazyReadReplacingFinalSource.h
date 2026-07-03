@@ -15,7 +15,7 @@ struct RangesInDataParts;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class LazyReadReplacingFinalSource final : public IProcessor
+class LazyReadReplacingFinalSource : public IProcessor
 {
 public:
     LazyReadReplacingFinalSource(
@@ -27,7 +27,7 @@ public:
     String getName() const override { return "LazyReadReplacingFinalSource"; }
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
 
     /// Build the aggregation plan (sorting key expr + tiebreaker + argMax + rename + is_deleted filter)
     /// on top of a ReadFromMergeTree step. Used both for execution and EXPLAIN.

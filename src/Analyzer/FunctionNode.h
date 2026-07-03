@@ -190,7 +190,7 @@ public:
                 function_name);
         auto type = function->getResultType();
         if (wrap_with_nullable)
-          return makeNullableOrLowCardinalityNullableSafe(type);
+          return makeNullableSafe(type);
         return type;
     }
 

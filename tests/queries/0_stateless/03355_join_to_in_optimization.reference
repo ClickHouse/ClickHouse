@@ -9,7 +9,7 @@ Positions: 1
     Header: __table1.id Int32
     Filter column: in(__table1.id, set column) (removed)
     Actions: INPUT : 0 -> id Int32 : 0
-             COLUMN Const(Set) -> set column Set : 1
+             COLUMN Set -> set column Set : 1
              ALIAS id : 0 -> __table1.id Int32 : 2
              FUNCTION in(id :: 0, set column :: 1) -> in(__table1.id, set column) UInt8 : 3
     Positions: 3 2
