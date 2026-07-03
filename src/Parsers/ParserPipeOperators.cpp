@@ -4,6 +4,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -354,10 +355,29 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
             projected.insert(expr->getColumnNameWithoutAlias());
         }
 
+        // A positional grouping argument is an integer literal (see `replaceForPositionalArguments`).
+        // When `enable_positional_arguments` is on it already refers to an existing projection
+        // column, and when it is off it is a constant grouping key; in neither case does the
+        // equivalent regular SELECT add it to the projection. Prepending it would both introduce a
+        // spurious leading column and shift the positions that later positional arguments resolve
+        // against, so `AGGREGATE number % 2 AS k, count() AS c GROUP BY 1` must keep the projection
+        // as `number % 2 AS k, count() AS c` (matching `SELECT ... GROUP BY 1`).
+        auto is_positional_argument = [](const ASTPtr & expr)
+        {
+            const auto * literal = expr->as<ASTLiteral>();
+            if (!literal)
+                return false;
+            const auto type = literal->value.getType();
+            return type == Field::Types::UInt64 || type == Field::Types::Int64;
+        };
+
         // new vector created in order to preserve order SELECT <group_cols>, <agg_expr>
         ASTs prepended_grouping_cols;
         auto prepend_if_absent = [&](const ASTPtr & expr)
         {
+            if (is_positional_argument(expr))
+                return;
+
             if (projected.contains(expr->getAliasOrColumnName()) || projected.contains(expr->getColumnNameWithoutAlias()))
                 return;
 
