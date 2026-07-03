@@ -2115,19 +2115,13 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
         MutableColumns row_store_columns;
         if (columns_info.hasRowStore())
         {
-            row_store_columns = columns_info.row_store->buildEmptyColumns();
-            std::vector<IColumn *> column_ptrs;
-            column_ptrs.reserve(row_store_columns.size());
-            for (auto & col : row_store_columns)
-                column_ptrs.push_back(col.get());
-
             if (selector.isContinuousRange())
             {
                 auto [start, end] = selector.getRange();
-                columns_info.row_store->scatterRows(column_ptrs, start, end - start);
+                row_store_columns = columns_info.row_store->scatterRows(start, end - start);
             }
             else
-                columns_info.row_store->scatterRows(column_ptrs, selector.getIndexes().getData());
+                row_store_columns = columns_info.row_store->scatterRows(selector.getIndexes().getData());
         }
 
         Columns columnar_columns;

@@ -64,6 +64,75 @@ void gatherNullableField(char * dst, const char * null_src, const char * data_sr
     }
 }
 
+void doGatherRows(const RowDataStore::RowLayout & layout, size_t row_length, const Columns & columns, size_t start, size_t length, char * dst)
+{
+    for (size_t i = 0; i < layout.size(); ++i)
+    {
+        const auto & field_layout = layout[i];
+        if (field_layout.is_nullable)
+        {
+            const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
+            const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
+            const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
+            const size_t value_size = field_layout.size - 1;
+
+            switch (value_size)
+            {
+#define M(N) \
+                case N: \
+                    gatherNullableField<N>(dst, null_src, data_src, row_length, field_layout.offset, length); \
+                    break;
+                APPLY_FOR_FIELD_SIZES(M)
+#undef M
+                default:
+                    gatherNullableField(dst, null_src, data_src, row_length, field_layout.offset, value_size, length);
+            }
+        }
+        else
+        {
+            const char * src = columns[i]->getDataAt(start).data();
+            const size_t field_size = field_layout.size;
+
+            switch (field_size)
+            {
+#define M(N) \
+                case N: \
+                    gatherField<N>(dst, src, row_length, field_layout.offset, length); \
+                    break;
+                APPLY_FOR_FIELD_SIZES(M)
+#undef M
+                default:
+                    gatherField(dst, src, row_length, field_layout.offset, field_size, length);
+            }
+        }
+    }
+}
+
+#undef APPLY_FOR_FIELD_SIZES
+
+MutableColumns doScatterRows(const RowDataStore::RowLayout & layout, std::optional<size_t> batch_size_opt, const PaddedPODArray<const char *> & row_store_ptrs)
+{
+    MutableColumns columns(layout.size());
+    for (size_t i = 0; i < layout.size(); ++i)
+        columns[i] = layout[i].sample_column->cloneEmpty();
+
+    const size_t count = row_store_ptrs.size();
+    if (count == 0)
+        return columns;
+
+    for (size_t i = 0; i < layout.size(); ++i)
+        columns[i]->reserve(count);
+
+    const size_t batch_size = batch_size_opt.value_or(count);
+    for (size_t batch_start = 0; batch_start < count; batch_start += batch_size)
+    {
+        const size_t remaining_batch_size = std::min(batch_size, count - batch_start);
+        for (size_t i = 0; i < layout.size(); ++i)
+            columns[i]->fillFromRowStorePtrs(row_store_ptrs, layout[i].offset, layout[i].size, batch_start, remaining_batch_size);
+    }
+    return columns;
+}
+
 }
 
 RowDataStore::RowLayout RowDataStore::computeLayout(const Columns & columns)
@@ -116,52 +185,6 @@ std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
     return row_store;
 }
 
-void RowDataStore::doGatherRows(const Columns & columns, size_t start, size_t length, char * dst)
-{
-    for (size_t i = 0; i < layout.size(); ++i)
-    {
-        const auto & field_layout = layout[i];
-        if (field_layout.is_nullable)
-        {
-            const auto * nullable_column = assert_cast<const ColumnNullable *>(columns[i].get());
-            const char * null_src = nullable_column->getNullMapColumn().getDataAt(start).data();
-            const char * data_src = nullable_column->getNestedColumn().getDataAt(start).data();
-            const size_t value_size = field_layout.size - 1;
-
-            switch (value_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherNullableField<N>(dst, null_src, data_src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    gatherNullableField(dst, null_src, data_src, row_length, field_layout.offset, value_size, length);
-            }
-        }
-        else
-        {
-            const char * src = columns[i]->getDataAt(start).data();
-            const size_t field_size = field_layout.size;
-
-            switch (field_size)
-            {
-#define M(N) \
-                case N: \
-                    gatherField<N>(dst, src, row_length, field_layout.offset, length); \
-                    break;
-                APPLY_FOR_FIELD_SIZES(M)
-#undef M
-                default:
-                    gatherField(dst, src, row_length, field_layout.offset, field_size, length);
-            }
-        }
-    }
-}
-
-#undef APPLY_FOR_FIELD_SIZES
-
 void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t length)
 {
     if (columns.size() != layout.size())
@@ -182,84 +205,26 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     for (size_t batch_start = 0; batch_start < length; batch_start += batch_size)
     {
         const size_t remaining_batch_size = std::min(batch_size, length - batch_start);
-        doGatherRows(columns, start + batch_start, remaining_batch_size, dst + batch_start * row_length);
+        doGatherRows(layout, row_length, columns, start + batch_start, remaining_batch_size, dst + batch_start * row_length);
     }
 }
 
-void RowDataStore::scatterRows(std::vector<IColumn *> & columns, size_t start, size_t length) const
+MutableColumns RowDataStore::scatterRows(size_t start, size_t length) const
 {
-    if (columns.size() != layout.size())
-        throw Exception(
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Number of destination columns ({}) does not match the number of columns in the layout ({}).",
-            columns.size(),
-            layout.size());
-
-    const char * base = getRowAt(start);
-    for (size_t i = 0; i < layout.size(); ++i)
-    {
-        const auto & field_layout = layout[i];
-        if (field_layout.is_nullable)
-        {
-            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
-            auto & null_map = nullable_column->getNullMapData();
-            IColumn & nested_column = nullable_column->getNestedColumn();
-            const size_t value_size = field_layout.size - 1;
-
-            for (size_t row = 0; row < length; ++row)
-            {
-                const char * row_data = base + row * row_length + field_layout.offset;
-                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
-                nested_column.insertData(row_data + 1, value_size);
-            }
-        }
-        else
-        {
-            for (size_t row = 0; row < length; ++row)
-                columns[i]->insertData(base + row * row_length + field_layout.offset, field_layout.size);
-        }
-    }
+    PaddedPODArray<const char *> row_store_ptrs;
+    row_store_ptrs.reserve(length);
+    for (size_t row = 0; row < length; ++row)
+        row_store_ptrs.push_back(getRowAt(start + row));
+    return doScatterRows(layout, getBatchSize(), row_store_ptrs);
 }
 
-void RowDataStore::scatterRows(std::vector<IColumn *> & columns, const PaddedPODArray<UInt64> & row_nums) const
+MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums) const
 {
-    if (columns.size() != layout.size())
-        throw Exception(
-            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Number of destination columns ({}) does not match the number of columns in the layout ({}).",
-            columns.size(),
-            layout.size());
-
-    size_t length = row_nums.size();
-    if (length == 0)
-        return;
-
-    for (size_t i = 0; i < layout.size(); ++i)
-    {
-        const auto & field_layout = layout[i];
-        if (field_layout.is_nullable)
-        {
-            auto * nullable_column = assert_cast<ColumnNullable *>(columns[i]);
-            auto & null_map = nullable_column->getNullMapData();
-            IColumn & nested_column = nullable_column->getNestedColumn();
-            const size_t value_size = field_layout.size - 1;
-
-            null_map.reserve(null_map.size() + length);
-            nested_column.reserve(nested_column.size() + length);
-            for (size_t j = 0; j < length; ++j)
-            {
-                const char * row_data = getRowAt(row_nums[j]) + field_layout.offset;
-                null_map.push_back(*reinterpret_cast<const UInt8 *>(row_data));
-                nested_column.insertData(row_data + 1, value_size);
-            }
-        }
-        else
-        {
-            columns[i]->reserve(columns[i]->size() + length);
-            for (size_t j = 0; j < length; ++j)
-                columns[i]->insertData(getRowAt(row_nums[j]) + field_layout.offset, field_layout.size);
-        }
-    }
+    PaddedPODArray<const char *> row_store_ptrs;
+    row_store_ptrs.reserve(row_nums.size());
+    for (auto row : row_nums)
+        row_store_ptrs.push_back(getRowAt(row));
+    return doScatterRows(layout, getBatchSize(), row_store_ptrs);
 }
 
 RowDataStore::FieldLayout RowDataStore::getFieldLayout(size_t input_col_index) const
@@ -277,14 +242,6 @@ std::optional<size_t> RowDataStore::getBatchSize() const
 
     const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
     return std::max<size_t>(1, batch_bytes / row_length);
-}
-
-MutableColumns RowDataStore::buildEmptyColumns() const
-{
-    MutableColumns columns(layout.size());
-    for (size_t i = 0; i < layout.size(); ++i)
-        columns[i] = layout[i].sample_column->cloneEmpty();
-    return columns;
 }
 
 bool isRowStorageUseful(const ColumnPtr & column)
