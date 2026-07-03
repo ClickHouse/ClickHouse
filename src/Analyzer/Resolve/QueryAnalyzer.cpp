@@ -896,6 +896,8 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
     }
 }
 
+static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns);
+
 void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
@@ -915,15 +917,65 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
 
     auto table_expression_node_type = table_expression_node->getNodeType();
 
-    if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        table_expression_node_type == QueryTreeNodeType::QUERY ||
-        table_expression_node_type == QueryTreeNodeType::UNION)
-        throw Exception(ErrorCodes::ALIAS_REQUIRED,
-                        "JOIN {} no alias for subquery or table function {}. "
-                        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
-                        join_node->formatASTForErrorMessage(),
-                        table_expression_node->formatASTForErrorMessage(),
-                        scope.scope_node->formatASTForErrorMessage());
+    if (table_expression_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
+        table_expression_node_type != QueryTreeNodeType::QUERY &&
+        table_expression_node_type != QueryTreeNodeType::UNION)
+        return;
+
+    /** An alias is only strictly required when the unaliased subquery or table function exposes a column whose
+      * name also occurs in another table expression of the same join: only then is an unqualified reference
+      * ambiguous with no way to qualify it. When there is no such collision every column can be referenced
+      * unambiguously by its name, so the missing alias is harmless and we allow it.
+      */
+    NameSet table_expression_columns;
+    NameSet sibling_columns;
+    bool columns_are_known = getColumnsFromTableExpression(table_expression_node, table_expression_columns);
+
+    QueryTreeNodes sibling_table_expressions;
+    if (const auto * join = join_node->as<JoinNode>())
+    {
+        sibling_table_expressions.push_back(join->getLeftTableExpression());
+        sibling_table_expressions.push_back(join->getRightTableExpression());
+    }
+    else if (const auto * cross_join = join_node->as<CrossJoinNode>())
+    {
+        for (const auto & sibling : cross_join->getTableExpressions())
+            sibling_table_expressions.push_back(sibling);
+    }
+
+    for (const auto & sibling : sibling_table_expressions)
+    {
+        if (sibling.get() == table_expression_node.get())
+            continue;
+        columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns);
+    }
+
+    /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.
+    if (columns_are_known)
+    {
+        bool has_name_collision = false;
+        for (const auto & column_name : table_expression_columns)
+        {
+            /// Sub-columns (e.g. `x.size0`) are addressed with a dot and cannot collide with a bare identifier.
+            if (column_name.find('.') != std::string::npos)
+                continue;
+            if (sibling_columns.contains(column_name))
+            {
+                has_name_collision = true;
+                break;
+            }
+        }
+
+        if (!has_name_collision)
+            return;
+    }
+
+    throw Exception(ErrorCodes::ALIAS_REQUIRED,
+                    "JOIN {} no alias for subquery or table function {}. "
+                    "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+                    join_node->formatASTForErrorMessage(),
+                    table_expression_node->formatASTForErrorMessage(),
+                    scope.scope_node->formatASTForErrorMessage());
 }
 
 std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
@@ -5016,10 +5068,12 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     auto & expressions = cross_join_node_typed.getTableExpressions();
 
     for (auto & expr : expressions)
-    {
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
+
+    /// Validate only after every table expression is resolved, so that sibling columns are known
+    /// when deciding whether a missing alias introduces an ambiguity.
+    for (auto & expr : expressions)
         validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
-    }
 }
 
 static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
@@ -5183,9 +5237,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     auto & join_node_typed = join_node->as<JoinNode &>();
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
-
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
+
+    /// Validate only after both table expressions are resolved, so that sibling columns are known
+    /// when deciding whether a missing alias introduces an ambiguity.
+    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
     validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpression()))
