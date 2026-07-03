@@ -24,6 +24,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool external_table_strict_query;
+    extern const SettingsBool external_storage_push_down_limit;
 }
 
 namespace ErrorCodes
@@ -342,9 +343,10 @@ String transformQueryForExternalDatabaseImpl(
     std::optional<size_t> limit)
 {
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
+    bool push_down_limit = context->getSettingsRef()[Setting::external_storage_push_down_limit];
 
     auto select = make_intrusive<ASTSelectQuery>();
-    /// To copy the LIMIT expression of the SELECT query we need to keep track of how many expressions are fully copied for the external DB.
+    /// To push down the LIMIT expression of the SELECT query we need to keep track of how many expressions are fully copied for the external DB.
     size_t whole_copied_expr_count = 0;
     const auto query_children_expr_count = clone_query->children.size();
 
@@ -370,7 +372,7 @@ String transformQueryForExternalDatabaseImpl(
     /// Since WHERE subexpressions are removed "in-place" (keeping pointers to externally-known subexpressions),
     /// we can check if the original WHERE is fully copied by comparing the ASTs' dumps.
     std::string dumped_original_where;
-    if (original_where)
+    if (push_down_limit && original_where)
         dumped_original_where = original_where->dumpTree();
 
     bool where_has_known_columns = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
@@ -385,7 +387,7 @@ String transformQueryForExternalDatabaseImpl(
 
         if (isCompatible(original_where))
         {
-            if (original_where->dumpTree() == dumped_original_where)
+            if (push_down_limit && original_where->dumpTree() == dumped_original_where)
                 ++whole_copied_expr_count;
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -442,7 +444,7 @@ String transformQueryForExternalDatabaseImpl(
 
     auto limit_len_expr = clone_query->as<ASTSelectQuery &>().limitLength();
     /// "Whitelist" strategy to push down the LIMIT clause iff all expressions (which are applied before it) are completely copied.
-    if (limit_len_expr && whole_copied_expr_count + 1 == query_children_expr_count)
+    if (push_down_limit && limit_len_expr && whole_copied_expr_count + 1 == query_children_expr_count)
     {
         if (auto * limit_len_lit = limit_len_expr->as<ASTLiteral>(); limit_len_lit && limit_len_lit->value.getType() == Field::Types::UInt64)
         {

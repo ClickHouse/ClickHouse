@@ -13,9 +13,16 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 
+#include <Core/Settings.h>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool external_storage_push_down_limit;
+}
 
 namespace ErrorCodes
 {
@@ -67,7 +74,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
 
     const auto & join_tree = query_node->getJoinTree();
     bool allow_where = true;
-    bool allow_limit = true;
+    bool allow_limit = context->getSettingsRef()[Setting::external_storage_push_down_limit];
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         allow_limit = false;
@@ -85,13 +92,13 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     {
         if (query_node->hasPrewhere())
         {
-            if (hasUnknownColumn(query_node->getPrewhere(), replacement_table_expression))
+            if (allow_limit && hasUnknownColumn(query_node->getPrewhere(), replacement_table_expression))
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
         }
         if (query_node->hasWhere())
         {
-            if (hasUnknownColumn(query_node->getWhere(), replacement_table_expression))
+            if (allow_limit && hasUnknownColumn(query_node->getWhere(), replacement_table_expression))
                 allow_limit = false;
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
         }

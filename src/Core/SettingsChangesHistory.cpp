@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
             {"optimize_aggregation_in_order_limit", false, true, "New setting to push the `LIMIT` into aggregation-in-order for early termination when the `ORDER BY` is a prefix of the `GROUP BY` sort description."},
+            {"external_storage_push_down_limit", false, true, "New setting to push the query's `LIMIT` down into the query sent to an external database when it is safe. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no push-down)."},
             {"explain_query_plan_default", "legacy", "pretty", "From 26.7, `EXPLAIN PLAN` defaults to `actions=1, compact=1, pretty=1`. Set this to `legacy` to restore the pre-26.7 output."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},

@@ -462,4 +462,11 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT column FROM test.table "
         "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) LIMIT 10",
         R"(SELECT "column", "apply_id" FROM "test"."table")");
+
+    /// `external_storage_push_down_limit = false` disables pushing the LIMIT down (previous behavior).
+    state.context->setSetting("external_storage_push_down_limit", false);
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+    state.context->setSetting("external_storage_push_down_limit", true);
 }

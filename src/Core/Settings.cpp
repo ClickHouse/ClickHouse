@@ -6050,6 +6050,17 @@ Connect timeout in seconds. Now supported only for MySQL
     DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
+    DECLARE(Bool, external_storage_push_down_limit, true, R"(
+Allow to push the query's `LIMIT` clause down into the query sent to an external database (such as MySQL, PostgreSQL, SQLite or via ODBC/JDBC).
+
+The `LIMIT` is pushed down only when it is guaranteed to be safe, i.e. when every expression that logically applies before it is copied to the external query without changes:
+
+- there is no `JOIN` (otherwise rows could be dropped on intersection, so pre-limiting is unwanted);
+- the `WHERE` clause is fully compatible and copied into the rewritten query (otherwise filtering after the remote `LIMIT` would drop some rows);
+- there is no other subexpression (like `OFFSET`, `LIMIT BY`, etc.) that may break the remote pre-limiting logic due to data reordering and filtration.
+
+This reduces the amount of data read from and sent by the external database. Disable this setting to restore the previous behavior in case of compatibility issues.
+)", 0)  \
     \
     DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
 Allow to execute correlated subqueries.
