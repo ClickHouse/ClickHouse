@@ -337,7 +337,30 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
+        /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// `/replicas` exists but is empty -- i.e. the first replica is
+        /// not fully created yet or the last replica was just dropped)
+        /// are all expected during concurrent database lifecycle
+        /// operations. The caller treats nullptr as "no cluster info
+        /// available for this database, skip it". Logging those at
+        /// `error` is misleading and noisy: the test runner forwards
+        /// server logs at `warning` and above to the client stderr,
+        /// which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Log
+        /// them at `information` so administrators still see the message
+        /// in normal server logs but it does not propagate to clients.
+        /// Anything else is unexpected (malformed Keeper payloads, logic
+        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// `error` level so operators notice it.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster;
 }
@@ -361,7 +384,18 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// See the note in `tryGetCluster` above: downgrade the expected
+        /// coordination/connection failures and the "no active replicas"
+        /// state (all reachable through `getClusterImpl`) to
+        /// `information`, leave anything else at the default `error`
+        /// level so unexpected problems are visible.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster_all_groups;
 }
@@ -543,15 +577,22 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
                 UInt64 recovery_time = 0;
+                bool unsynced_after_recovery = false;
                 {
+                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+                    /// access to it must hold the lock. Read both members here.
                     std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    if (ddl_worker)
+                    {
+                        if (replica.is_local)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+                    }
                 }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                    .unsynced_after_recovery = unsynced_after_recovery,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
@@ -564,7 +605,19 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
+        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
+        /// replica state columns for this database", and the Keeper state
+        /// of a Replicated database can be in flux during normal lifecycle
+        /// operations. Log expected coordination/connection failures at
+        /// `information` so they do not leak into the client stderr at the
+        /// default `send_logs_level = warning`, but keep anything
+        /// unexpected at the default `error` level.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
         return {};
     }
 }
