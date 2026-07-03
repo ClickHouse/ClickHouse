@@ -1561,6 +1561,225 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
   * Example: Try to lookup identifier as expression, if it is not found, lookup as function.
   * Example: Try to lookup identifier as expression, if it is not found, lookup as table.
   */
+
+/** `standard`-mode fallback: exact resolution in this scope failed, so try to respell the
+  * identifier's unquoted parts to the canonical spelling of a case-insensitive match from this
+  * scope's namespaces and retry the exact resolution with the respelled identifier.
+  *
+  * The fallback is a candidate GENERATOR, not a resolver: it only consults the primary name
+  * pools (expression arguments, aliases, join-tree columns and qualifiers, CTE names) with a
+  * linear case-folded scan, honouring definition-side double-quote pins. The retried lookup
+  * goes through the untouched exact machinery, which remains the single arbiter of resolution.
+  * Namespaces are consulted in the same order as the exact pass, and within the first namespace
+  * that produces candidates, more than one distinct respelling is an ambiguity error.
+  */
+IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(const IdentifierLookup & identifier_lookup,
+    IdentifierResolveScope & scope,
+    IdentifierResolveContext identifier_resolve_context)
+{
+    const auto & identifier = identifier_lookup.identifier;
+    const size_t parts_size = identifier.getPartsSize();
+    if (parts_size == 0)
+        return {};
+
+    const auto & front_part = identifier.front();
+    const auto & full_name = identifier.getFullName();
+    const bool front_may_fold = !identifier_lookup.isPartDoubleQuoted(0);
+    const bool full_name_may_fold = !identifier_lookup.anyPartDoubleQuoted();
+
+    /// Distinct canonical respellings of the full identifier produced by one namespace.
+    std::vector<String> candidates;
+    auto add_candidate = [&](String respelled_full_name)
+    {
+        if (std::find(candidates.begin(), candidates.end(), respelled_full_name) == candidates.end())
+            candidates.push_back(std::move(respelled_full_name));
+    };
+    auto respell_front = [&](const String & canonical_front)
+    {
+        std::vector<std::string> respelled_parts;
+        respelled_parts.reserve(parts_size);
+        respelled_parts.push_back(canonical_front);
+        for (size_t p = 1; p < parts_size; ++p)
+            respelled_parts.push_back(identifier[p]);
+        return Identifier(std::move(respelled_parts)).getFullName();
+    };
+
+    auto throw_if_ambiguous = [&](const char * namespace_description)
+    {
+        if (candidates.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' is ambiguous: matches multiple {} with different cases: '{}' and '{}'. In scope {}",
+                full_name, namespace_description, candidates[0], candidates[1],
+                scope.scope_node->formatASTForErrorMessage());
+    };
+
+    auto retry = [&](const String & respelled_full_name) -> IdentifierResolveResult
+    {
+        IdentifierLookup respelled_lookup{Identifier(respelled_full_name), identifier_lookup.lookup_context};
+        /// Keep the reference-side quote flags when the part structure is unchanged: the local
+        /// type-suffix folds (tuple elements, subcolumns) still consult them on the retry.
+        if (respelled_lookup.identifier.getPartsSize() == parts_size)
+            respelled_lookup.is_part_double_quoted = identifier_lookup.is_part_double_quoted;
+        auto retry_context = identifier_resolve_context;
+        retry_context.allow_case_fold_fallback = false;
+        return tryResolveIdentifier(respelled_lookup, scope, retry_context);
+    };
+
+    /// 1. Expression arguments (lambda parameters, INTERPOLATE targets, recursive-CTE self-names).
+    if (front_may_fold)
+    {
+        for (const auto & [argument_name, _] : scope.expression_argument_name_to_node)
+        {
+            if (scope.case_sensitive_expression_args.contains(argument_name))
+                continue;
+            if (argument_name != front_part && identifierPartsEqual(argument_name, front_part, /*case_insensitive=*/ true))
+                add_candidate(respell_front(argument_name));
+        }
+        throw_if_ambiguous("arguments");
+        if (!candidates.empty())
+            return retry(candidates.front());
+    }
+
+    /// 2. Aliases. Whole-name match for single-part lookups, front-part match for compound ones.
+    if (identifier_resolve_context.allow_to_check_aliases)
+    {
+        auto & alias_map = scope.aliases.getAliasMap(identifier_lookup.lookup_context);
+        for (const auto & [alias_name, alias_node] : alias_map)
+        {
+            if (alias_node && alias_node->isAliasDoubleQuoted())
+                continue;
+            if (parts_size == 1)
+            {
+                if (full_name_may_fold && alias_name != full_name && identifierPartsEqual(alias_name, full_name, true))
+                    add_candidate(alias_name);
+            }
+            else if (front_may_fold && alias_name != front_part && identifierPartsEqual(alias_name, front_part, true))
+            {
+                add_candidate(respell_front(alias_name));
+            }
+        }
+        throw_if_ambiguous("aliases");
+        if (!candidates.empty())
+            return retry(candidates.front());
+    }
+
+    /// 3. Join-tree columns, subcolumns and qualifiers.
+    if (identifier_resolve_context.allow_to_check_join_tree)
+    {
+        for (const auto & [table_expression_node, table_expression_data] : scope.table_expression_node_to_data)
+        {
+            /// Unqualified: the whole identifier (or its front part) is a column / subcolumn name.
+            if (full_name_may_fold)
+            {
+                for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+                {
+                    if (table_expression_data.case_sensitive_column_names.contains(column_name))
+                        continue;
+                    if (column_name != full_name && identifierPartsEqual(column_name, full_name, true))
+                        add_candidate(column_name);
+                }
+                for (const auto & subcolumn_name : table_expression_data.subcolumn_names)
+                    if (subcolumn_name != full_name && identifierPartsEqual(subcolumn_name, full_name, true))
+                        add_candidate(subcolumn_name);
+            }
+            if (parts_size > 1 && front_may_fold)
+            {
+                /// Compound expression base: `tup.elem` where `tup` is a column; the suffix is
+                /// resolved by the (kept) local type-suffix machinery on the retry.
+                for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+                {
+                    if (table_expression_data.case_sensitive_column_names.contains(column_name))
+                        continue;
+                    if (column_name != front_part && identifierPartsEqual(column_name, front_part, true))
+                        add_candidate(respell_front(column_name));
+                }
+            }
+
+            /// Qualified: part 0 is a table alias / table name / materialized-CTE name; the
+            /// remainder is a column or subcolumn of that table expression.
+            if (parts_size > 1)
+            {
+                std::vector<String> canonical_qualifiers;
+                const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
+                if (!table_alias.empty() && !table_expression_node->isAliasDoubleQuoted()
+                    && front_may_fold && identifierPartsEqual(table_alias, front_part, true))
+                    canonical_qualifiers.push_back(table_alias);
+                const auto & data_table_name = table_expression_data.table_name;
+                if (!data_table_name.empty() && !table_expression_data.table_name_is_double_quoted
+                    && front_may_fold && identifierPartsEqual(data_table_name, front_part, true))
+                    canonical_qualifiers.push_back(data_table_name);
+
+                Identifier remainder = identifier;
+                remainder.popFirst();
+                const auto remainder_full_name = remainder.getFullName();
+                bool remainder_may_fold = true;
+                for (size_t p = 1; p < parts_size && remainder_may_fold; ++p)
+                    remainder_may_fold = !identifier_lookup.isPartDoubleQuoted(p);
+
+                for (const auto & canonical_qualifier : canonical_qualifiers)
+                {
+                    auto add_qualified = [&](const String & canonical_remainder)
+                    {
+                        add_candidate(canonical_qualifier + "." + canonical_remainder);
+                    };
+                    /// Remainder already exact (only the qualifier needed respelling).
+                    bool remainder_exists_exactly = table_expression_data.subcolumn_names.contains(remainder_full_name);
+                    for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+                    {
+                        if (remainder_exists_exactly)
+                            break;
+                        remainder_exists_exactly = column_name == remainder_full_name
+                            || (parts_size > 2 && column_name == remainder.front());
+                    }
+                    if (remainder_exists_exactly || canonical_qualifier != front_part)
+                        add_qualified(remainder_full_name);
+
+                    if (remainder_may_fold)
+                    {
+                        for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+                        {
+                            if (table_expression_data.case_sensitive_column_names.contains(column_name))
+                                continue;
+                            if (column_name != remainder_full_name && identifierPartsEqual(column_name, remainder_full_name, true))
+                                add_qualified(column_name);
+                        }
+                        for (const auto & subcolumn_name : table_expression_data.subcolumn_names)
+                            if (subcolumn_name != remainder_full_name && identifierPartsEqual(subcolumn_name, remainder_full_name, true))
+                                add_qualified(subcolumn_name);
+                    }
+                }
+            }
+        }
+        throw_if_ambiguous("columns");
+        if (!candidates.empty())
+            return retry(candidates.front());
+    }
+
+    /// 4. CTE names (table lookups only).
+    if (identifier_lookup.isTableExpressionLookup() && identifier_resolve_context.allow_to_check_cte && full_name_may_fold)
+    {
+        for (const auto & [cte_name, cte_node] : scope.cte_name_to_query_node)
+        {
+            bool cte_name_pinned = false;
+            if (const auto * cte_query = cte_node->as<QueryNode>())
+                cte_name_pinned = cte_query->isCTENameDoubleQuoted();
+            else if (const auto * cte_union = cte_node->as<UnionNode>())
+                cte_name_pinned = cte_union->isCTENameDoubleQuoted();
+            else if (const auto * cte_table = cte_node->as<TableNode>())
+                cte_name_pinned = cte_table->isMaterializedCTE() && cte_table->getMaterializedCTE()->name_is_double_quoted;
+            if (cte_name_pinned)
+                continue;
+            if (cte_name != full_name && identifierPartsEqual(cte_name, full_name, true))
+                add_candidate(cte_name);
+        }
+        throw_if_ambiguous("CTEs");
+        if (!candidates.empty())
+            return retry(candidates.front());
+    }
+
+    return {};
+}
+
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
@@ -1657,6 +1876,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_cte && identifier_lookup.isTableExpressionLookup())
     {
         resolve_result = tryResolveIdentifierFromCTE(identifier_lookup, scope);
+    }
+
+    /// `standard` mode: exact resolution in this scope failed — try to respell the identifier
+    /// to a unique case-insensitive match from this scope's namespaces and retry. Running the
+    /// fallback per scope level (before ascending) preserves shadowing: an inner-scope folded
+    /// match is preferred over an outer-scope one.
+    if (!resolve_result.resolved_identifier
+        && identifier_resolve_context.allow_case_fold_fallback
+        && scope.isStandardMode()
+        && !already_in_resolve_process)
+    {
+        resolve_result = tryResolveIdentifierByCaseFoldRespell(identifier_lookup, scope, identifier_resolve_context);
     }
 
     /// Try to resolve identifier from parent scopes

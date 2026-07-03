@@ -212,6 +212,10 @@ private:
 
     IdentifierResolveResult tryResolveIdentifierInParentScopes(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope, IdentifierResolveContext identifier_resolve_context);
 
+    IdentifierResolveResult tryResolveIdentifierByCaseFoldRespell(const IdentifierLookup & identifier_lookup,
+        IdentifierResolveScope & scope,
+        IdentifierResolveContext identifier_resolve_context);
+
     IdentifierResolveResult tryResolveIdentifier(const IdentifierLookup & identifier_lookup,
         IdentifierResolveScope & scope,
         IdentifierResolveContext identifier_resolve_context = {});

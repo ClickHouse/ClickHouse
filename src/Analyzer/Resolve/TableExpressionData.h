@@ -305,14 +305,19 @@ struct AnalysisTableExpressionData
     /// `case_sensitive_column_names` lists column names that must stay case-sensitive — they are
     /// skipped from the lowercase index. Used for projection-override aliases that were defined
     /// as double-quoted (e.g. `FROM (...) AS t("MyCol")`).
-    void enableStandardMode(const std::unordered_set<std::string> & case_sensitive_column_names = {})
+    /// Projection-column names pinned case-sensitive (double-quoted aliases / overrides).
+    /// Consulted by the case-fold respell fallback; populated by `enableStandardMode`.
+    std::unordered_set<std::string> case_sensitive_column_names;
+
+    void enableStandardMode(const std::unordered_set<std::string> & case_sensitive_column_names_ = {})
     {
         standard_mode = true;
+        case_sensitive_column_names = case_sensitive_column_names_;
         lowercase_column_name_to_original_names.clear();
 
         for (const auto & [column_name, _] : column_names_and_types)
         {
-            if (case_sensitive_column_names.contains(column_name))
+            if (case_sensitive_column_names_.contains(column_name))
                 continue;
             String lower_name = Poco::toLower(column_name);
             lowercase_column_name_to_original_names[lower_name].push_back(column_name);
@@ -324,7 +329,7 @@ struct AnalysisTableExpressionData
         lowercase_column_identifier_first_parts.clear();
         for (const auto & first_part : column_identifier_first_parts)
         {
-            if (case_sensitive_column_names.contains(first_part))
+            if (case_sensitive_column_names_.contains(first_part))
                 continue;
             lowercase_column_identifier_first_parts.insert(Poco::toLower(first_part));
         }

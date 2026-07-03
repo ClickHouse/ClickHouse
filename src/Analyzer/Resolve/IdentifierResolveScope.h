@@ -148,6 +148,10 @@ struct IdentifierResolveScope
     /// Lowercase name -> list of original names, used by `findExpressionArgument(name, /*case_insensitive=*/true)`
     std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_arg_to_names;
 
+    /// Expression arguments registered from a double-quoted definition (`"X"` lambda parameter,
+    /// quoted INTERPOLATE target). Pinned case-sensitive: the case-fold respell must skip them.
+    std::unordered_set<std::string> case_sensitive_expression_args;
+
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.

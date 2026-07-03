@@ -287,6 +287,11 @@ struct IdentifierResolveContext
     /// Disable resolve of niladic functions without parentheses. Example: SELECT now; instead of SELECT now();
     bool allow_to_resolve_niladic_functions = true;
 
+    /// Allow the `standard`-mode case-fold fallback: after an exact within-scope resolution
+    /// fails, respell the identifier to a unique case-insensitive match from this scope's
+    /// namespaces and retry. Disabled on the retry itself to prevent recursion.
+    bool allow_case_fold_fallback = true;
+
     /// Initial scope where identifier resolution started.
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
@@ -308,6 +313,7 @@ struct IdentifierResolveContext
             && allow_to_check_database_catalog
             && allow_to_resolve_subquery_during_identifier_resolution
             && allow_to_resolve_niladic_functions
+            && allow_case_fold_fallback
             && scope_to_resolve_alias_expression == nullptr;
     }
 

@@ -144,6 +144,8 @@ void IdentifierResolveScope::addExpressionArgument(const std::string & name, Que
     /// Keep them out of the lowercase index so an unquoted lookup cannot match them.
     if (!is_double_quoted)
         lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
+    else
+        case_sensitive_expression_args.insert(name);
 }
 
 IdentifierResolveScope::CTERegisterResult
