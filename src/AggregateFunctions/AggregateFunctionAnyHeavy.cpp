@@ -129,7 +129,7 @@ public:
         data(place).addManyDefaults(*columns[0], length, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         data(place).add(data(rhs), arena);
     }
