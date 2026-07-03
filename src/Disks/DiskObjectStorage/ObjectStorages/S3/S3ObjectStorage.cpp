@@ -258,9 +258,14 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /* offset */0,
         /* read_until_position */0,
         restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        /// `bytes_size` may be `StoredObject::UnknownSize` for an object whose size is not known
+        /// (for example an HTTP source that omits `Content-Length`). It is a sentinel, not a real
+        /// size, so it must map to `std::nullopt` (read to EOF) just like the legacy `0` value —
+        /// otherwise `ReadBufferFromS3` treats it as a real size and issues ranged reads forever.
+        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
-        std::move(blob_storage_log));
+        std::move(blob_storage_log),
+        object.etag);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

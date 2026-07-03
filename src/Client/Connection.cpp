@@ -76,6 +76,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
+    extern const char unexpected_packet_in_table_status_response[];
 }
 
 namespace ErrorCodes
@@ -820,6 +821,14 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
     });
 
+    /// Simulate a connection that was returned to the pool out of sync by a previous query, so that
+    /// reading the table status here sees a stale packet instead of the expected response.
+    fiu_do_on(FailPoints::unexpected_packet_in_table_status_response, {
+        throw NetException(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+            "Injected unexpected packet while reading table status from {}:{}", host, port);
+    });
+
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
@@ -1129,6 +1138,18 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    out->finishChunk();
+    out->next();
+}
+
+void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    /// Skip if the remote replica doesn't speak the new protocol.
+    if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return;
+
+    writeVarUInt(Protocol::Client::MergeTreeAllRangesAnnouncementResponse, *out);
     response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
@@ -1648,12 +1669,19 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto request = ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    /// `server_*` here is the FOLLOWER as seen from the initiator (we are the client of that
+    /// connection). Stash it on the request so the coordinator can recognise old followers and
+    /// degrade gracefully (instead of throwing on an unknown stream).
+    request.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return announcement;
 }
 
 
@@ -1668,7 +1696,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+                       getDescription(), expected, Protocol::Server::toString(packet_type));
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
