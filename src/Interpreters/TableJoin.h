@@ -174,6 +174,9 @@ private:
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
 
+    /// Decision by the planner whether to enable row store tranformation or not.
+    bool enable_row_store = true;
+
     ASTs key_asts_left;
     ASTs key_asts_right;
 
@@ -336,6 +339,8 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
     size_t minColumnsForHashJoinRowStore() const { return min_columns_for_hash_join_row_store; }
+    void setRowStoreEnabled(bool value) { enable_row_store = value; }
+    bool isRowStoreEnabled() const { return enable_row_store; }
 
     const std::vector<std::pair<String, String>> & getSharedRuntimeFilterDescriptors() const
     {

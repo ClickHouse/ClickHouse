@@ -46,6 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},
             {"allow_experimental_delta_lake_writes", false, false, "Delta Lake writes were moved to Beta."},
             {"min_columns_for_hash_join_row_store", 0, 3, "Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation."},
+            {"min_rows_ratio_for_hash_join_row_store", 1.0, 1.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

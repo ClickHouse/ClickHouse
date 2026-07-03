@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
+    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
@@ -1170,6 +1171,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader & right_table_expression_header,
     const JoinAlgorithmParams & params)
 {
+    const double row_store_ratio = params.min_rows_ratio_for_hash_join_row_store;
+    const bool enable_row_store = row_store_ratio == 0.0 || (params.rhs_size_estimation && params.result_rows_estimation
+            && static_cast<double>(*params.result_rows_estimation) >= static_cast<double>(*params.rhs_size_estimation) * params.min_rows_ratio_for_hash_join_row_store);
+    table_join->setRowStoreEnabled(enable_row_store);
+
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -1241,7 +1247,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         return std::make_shared<HashJoin>(
             table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*is_concurrent_hash_join_=*/false, /*enable_row_store_=*/true, stats_collecting_params);
+            /*is_concurrent_hash_join_=*/false, stats_collecting_params);
     }
 
     if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
@@ -1306,7 +1312,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header, stats_collecting_params);
         return std::make_shared<HashJoin>(
             table_join, right_table_expression_header, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*is_concurrent_hash_join_=*/false, /*enable_row_store_=*/true, stats_collecting_params);
+            /*is_concurrent_hash_join_=*/false, stats_collecting_params);
     }
 
     return nullptr;
@@ -1322,6 +1328,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
     hash_table_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
+    min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
@@ -1351,6 +1358,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
+    min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;

@@ -34,7 +34,7 @@ SpillingHashJoin::SpillingHashJoin(
 {
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
-        /*is_concurrent_hash_join_=*/false,  /*enable_row_store_=*/true, stats_collecting_params_);
+        /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
 }
 
 SpillingHashJoin::SpillingHashJoin(

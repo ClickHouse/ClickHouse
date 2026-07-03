@@ -115,6 +115,7 @@ namespace DB
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, "Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 1.0, "Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.", 0) \
 
 
 // clang-format on

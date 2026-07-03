@@ -1436,6 +1436,9 @@ void JoinStepLogical::buildPhysicalJoin(
         if (join_step->right_rows_estimation)
             join_step->join_algorithm_params->rhs_size_estimation = join_step->right_rows_estimation;
 
+        if (join_step->result_rows_estimation)
+            join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
+
         if (hash_table_key_hash)
         {
             StatsCollectingParams params{

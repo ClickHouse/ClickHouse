@@ -208,7 +208,6 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     bool is_concurrent_hash_join_,
-    bool enable_row_store_,
     const StatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
@@ -294,7 +293,7 @@ HashJoin::HashJoin(
     initRightBlockStructure(data->sample_block);
     data->sample_block = prepareRightBlock(data->sample_block);
 
-    if (!enable_row_store_ || !isRowStoreSupported() || data->sample_block.columns() == 0)
+    if (!table_join->isRowStoreEnabled() || !isRowStoreSupported() || data->sample_block.columns() == 0)
         data->row_store_state = RowStoreState::Disabled;
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);

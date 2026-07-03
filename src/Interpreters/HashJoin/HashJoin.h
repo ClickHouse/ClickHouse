@@ -116,7 +116,6 @@ public:
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
         bool is_concurrent_hash_join_ = false,
-        bool enable_row_store_ = true,
         const StatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;

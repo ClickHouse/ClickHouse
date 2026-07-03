@@ -7997,6 +7997,9 @@ Control the minimum number of payload columns from the left side required for en
     DECLARE(UInt64, min_columns_for_hash_join_row_store, 3, R"(
 Minimum number of payload columns to trigger transforming hash join payload to row-major. 0 disables the row-major transformation.
 )", 0) \
+    DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 1.0, R"(
+Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
