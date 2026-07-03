@@ -95,6 +95,29 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Fixed constants of the cost model, kept in one place. They describe the relative costs of
+/// the algorithms as implemented, so adjusting them is a code change, reviewed through its
+/// effect on the plan tests. Only the four `CostConfig` weights, which depend on the cluster
+/// rather than on the code, can be tuned at query time.
+
+/// Expressions and filters touch a row but do much less work per row than producing,
+/// aggregating or exchanging it.
+static constexpr Float64 expression_cost_per_row = 0.1;
+
+/// Building a hash table entry costs about twice a probe (allocation + insert).
+/// Used for both the parallel build work and the serial build phase.
+static constexpr Float64 hash_table_build_factor = 2.0;
+
+/// Source steps the model knows nothing about. Only ever compared against other unknowns,
+/// so the value just has to be non-zero and identical across alternatives.
+static constexpr Float64 unknown_leaf_cost = 100500;
+
+/// A gather (N->1) or scatter (1->N) funnels every row through a single stream endpoint.
+static constexpr Float64 funnel_sequential_cost_per_row = 1.0;
+
+/// N-way merge of sorted streams advances one cursor at a time.
+static constexpr Float64 merge_sequential_cost_per_row = 1.0;
+
 static GroupPtr getInputGroupWithStats(Memo & memo, const GroupExpressionPtr & expression, size_t input_index)
 {
     auto input_group = memo.getGroup(expression->inputs[input_index].group_id);
@@ -170,12 +193,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     else if (typeid_cast<const FilterStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.work = 0.1 * input_group->statistics->estimated_row_count / parallelism;
+        total_cost.cost.work = expression_cost_per_row * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (typeid_cast<const ExpressionStep *>(expression_plan_step))
     {
         auto input_group = getInputGroupWithStats(memo, expression, 0);
-        total_cost.cost.work = 0.1 * input_group->statistics->estimated_row_count / parallelism;
+        total_cost.cost.work = expression_cost_per_row * input_group->statistics->estimated_row_count / parallelism;
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(expression_plan_step))
     {
@@ -225,7 +248,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
         if (dynamic_cast<const GatherExchangeStep *>(expression_plan_step)
             || dynamic_cast<const ScatterExchangeStep *>(expression_plan_step))
-            total_cost.cost.sequential += rows;
+            total_cost.cost.sequential += funnel_sequential_cost_per_row * rows;
     }
     else if (const auto * sorting_step = typeid_cast<const SortingStep *>(expression_plan_step))
     {
@@ -240,15 +263,14 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             : rows;
         total_cost.cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / parallelism;
         /// N-way merge is single-threaded and sees only the rows the sort emits.
-        total_cost.cost.sequential += group->statistics->estimated_row_count / parallelism;
+        total_cost.cost.sequential += merge_sequential_cost_per_row * group->statistics->estimated_row_count / parallelism;
     }
     else
     {
         if (expression->inputs.empty())
-        {
-            /// Some default non-zero cost
-            total_cost.cost.work = 100500;
-        }
+            total_cost.cost.work = unknown_leaf_cost;
+        /// Non-leaf steps without a specific model (e.g. `LimitStep`, `BuildRuntimeFilterStep`) get zero
+        /// local cost: they are cheap per row and identical across the alternatives being compared.
     }
 
     total_cost.subtree_cost = total_cost.cost;
@@ -289,9 +311,9 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
 
     ExpressionCost join_cost;
 
-    /// Hash join: left probe + right build (2x) + output.
+    /// Hash join: left probe + right build + output.
     join_cost.cost.work = (left_statistics.estimated_row_count
-                           + 2.0 * right_statistics.estimated_row_count
+                           + hash_table_build_factor * right_statistics.estimated_row_count
                            + this_step_statistics.estimated_row_count) / parallelism;
 
     /// Hash table materialization: memory allocation + cache pressure.
@@ -301,13 +323,13 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
     {
         /// Full right table per node. Network modeled by BroadcastExchange.
         join_cost.cost.work += ht_bytes;
-        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0;
+        join_cost.cost.sequential += hash_table_build_factor * right_statistics.estimated_row_count;
     }
     else
     {
         /// 1/N of right table per node. Network modeled by ShuffleExchange.
         join_cost.cost.work += ht_bytes / parallelism;
-        join_cost.cost.sequential += right_statistics.estimated_row_count * 2.0 / parallelism;
+        join_cost.cost.sequential += hash_table_build_factor * right_statistics.estimated_row_count / parallelism;
     }
 
     return join_cost;

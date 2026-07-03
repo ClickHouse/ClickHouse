@@ -18,11 +18,16 @@ namespace DB
 ///   replicated data  (`is_replicated = true`):  each node processes all -- no division
 ///
 /// Three dimensions:
-///   - `work`: rows or bytes processed, divided by parallelism (merges old cpu + io)
+///   - `work`: rows or bytes processed, divided by parallelism (merges old cpu + io).
+///     NOTE: the unit is currently operator-dependent — scans and materialization terms are
+///     byte-denominated while probe/sort terms count rows — so `work_weight` compares
+///     mixed units. Unit normalization is planned; until then treat cross-operator
+///     `work` ratios as approximate.
 ///   - `network`: bytes transferred over the network between nodes
 ///   - `sequential`: single-threaded phases (hash table builds, merge cursors) that
 ///     cannot be parallelized within a node.  Its weight relative to `work_weight`
-///     approximates the number of parallel threads per node.
+///     approximates the number of parallel threads per node (only loosely, given the
+///     mixed `work` units above).
 ///
 /// Broadcast vs shuffle differentiation:
 ///   - sequential: broadcast = `right_rows * 2` (full HT), shuffle = `right_rows * 2 / N`
