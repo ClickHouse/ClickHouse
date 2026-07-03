@@ -31,6 +31,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
 
+    /// Like server constants, the built FunctionBase captures context->isDistributed() (via FunctionConstantBase),
+    /// so it must not be shared across scopes by the analyzer function cache.
+    bool isServerConstant() const override { return true; }
+
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
 };
@@ -44,6 +48,8 @@ class FunctionTransactionLatestSnapshot final : public FunctionConstantBase<Func
     }
 public:
     static constexpr auto name = "transactionLatestSnapshot";
+    /// Reads the per-server TransactionLog and captures context->isDistributed(); differs across servers.
+    bool isServerConstant() const override { return true; }
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
     explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(getLatestSnapshot(context), context->isDistributed()) {}
 };
@@ -57,6 +63,8 @@ class FunctionTransactionOldestSnapshot final : public FunctionConstantBase<Func
     }
 public:
     static constexpr auto name = "transactionOldestSnapshot";
+    /// Reads the per-server TransactionLog and captures context->isDistributed(); differs across servers.
+    bool isServerConstant() const override { return true; }
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
     explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(getOldestSnapshot(context), context->isDistributed()) {}
 };

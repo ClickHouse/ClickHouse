@@ -1597,17 +1597,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         /// `getTreeHash` walks the whole argument subtree, dominating analysis of deeply nested expressions.
         /// So the hash and the cache are computed only for non-deterministic functions.
         ///
-        /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
-        /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        /// Functions that are not constant within the scope of a query (`getSetting`, `getSettingOrDefault`,
+        /// `rowNumberInAllBlocks`, ...) must NOT be shared: the cache is global across scopes, and e.g.
+        /// `SETTINGS` can change `getSetting`'s result for every scope. `isDeterministicInScopeOfQuery`
+        /// captures exactly this: `randConstant` is constant within a query (safe to share), while these are
+        /// not. Relying on the property instead of a name list also covers `getSettingOrDefault`, which shares
+        /// the same implementation as `getSetting`.
         ///
-        /// Server-constant functions (`hostName`, `serverUUID`, `tcpPort`, ...) must NOT be shared either:
-        /// their `FunctionBase` captures `context->isDistributed()` at construction (via `FunctionConstantBase`),
-        /// which gates `isSuitableForConstantFolding`. Reusing the `FunctionBase` built in one scope for a
-        /// different scope (e.g. an inner sub-SELECT over `clusterAllReplicas` versus the outer query) lets
-        /// the wrong `is_distributed` decide whether to fold the call, producing a header mismatch between
-        /// the local plan and the distributed shards.
+        /// Server-constant functions (`hostName`, `serverUUID`, `tcpPort`, the transaction functions, ...) must
+        /// NOT be shared either: their `FunctionBase` captures `context->isDistributed()` at construction (via
+        /// `FunctionConstantBase`), which gates `isSuitableForConstantFolding`. Reusing the `FunctionBase` built
+        /// in one scope for a different scope (e.g. an inner sub-SELECT over `clusterAllReplicas` versus the outer
+        /// query) lets the wrong `is_distributed` decide whether to fold the call, producing a header mismatch
+        /// between the local plan and the distributed shards.
         if (function && !function->isDeterministic()
-            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks"
+            && function->isDeterministicInScopeOfQuery()
             && !function->isServerConstant())
         {
             auto hash = function_node_ptr->getTreeHash();
