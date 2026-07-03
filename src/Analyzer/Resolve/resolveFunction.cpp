@@ -396,10 +396,26 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
 
     if (only_analyze)
     {
-        /// Do not evaluate the scalar subquery in only_analyze mode (EXPLAIN).
-        /// Keep the rewritten subquery to preserve semantics.
-        node = std::move(new_unique_argument);
-        return {"unique"};
+        /// Do not execute the scalar subquery in only_analyze mode (EXPLAIN, `CREATE VIEW`
+        /// validation, distributed shard headers). Produce a typed `UInt8` `ConstantNode`
+        /// whose source expression is the rewritten subquery, exactly as the executed path
+        /// below does. Only the result type and structure matter here; the value is a
+        /// placeholder, as it is for any scalar subquery in only_analyze mode.
+        ///
+        /// Leaving a raw non-correlated `QueryNode` in expression position would make later
+        /// `only_analyze` consumers that build projection actions from the analyzed tree
+        /// (for example `InterpreterSelectQueryAnalyzer::getSampleBlock`) reach it through
+        /// `PlannerActionsVisitor::visitQuery`, which rejects non-correlated query nodes with
+        /// "Only correlated QueryNode can be used as an action query tree node". As a result a
+        /// dry-run path such as `CREATE VIEW v AS SELECT UNIQUE(SELECT number FROM numbers(3))`
+        /// would fail even though the same `SELECT` executes normally.
+        auto placeholder_column = ColumnUInt8::create();
+        placeholder_column->getData().push_back(static_cast<UInt8>(0));
+        ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
+        auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
+        auto placeholder_projection_name = placeholder_const_node->getValueStringRepresentation();
+        node = std::move(placeholder_const_node);
+        return {std::move(placeholder_projection_name)};
     }
 
     evaluateScalarSubqueryIfNeeded(new_unique_argument, scope, false);
