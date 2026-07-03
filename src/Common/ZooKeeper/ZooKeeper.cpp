@@ -117,7 +117,7 @@ static void check(Coordination::Error code, const std::string & path)
         throw KeeperException::fromPath(code, path);
 }
 
-static UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
+UInt64 getSecondsUntilReconnect(const ZooKeeperArgs & args)
 {
     std::uniform_int_distribution<UInt32> fallback_session_lifetime_distribution
         {
@@ -1384,7 +1384,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1408,7 +1408,6 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
-    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
@@ -2135,30 +2134,34 @@ Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
+    // Keeper server that support MultiRead also support FilteredList
+    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
     request->path = path;
+    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
-
-    if (list_request_type != Coordination::ListRequestType::ALL)
-        request->list_request_type = list_request_type;
-
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    if (!with_stat && !with_data)
+    // Use the derived request class when stats or data are requested
+    if (with_stat || with_data)
+    {
+        auto request = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataRequest>();
+        request->path = path;
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+        request->watch_callback = watch;
+        request->has_watch = static_cast<bool>(watch);
+        return request;
+    }
+    else
+    {
+        // Fall back to base request if no extra data needed
         return makeListRequest(path, list_request_type, watch);
-
-    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
-    request->path = path;
-    request->list_request_type = list_request_type;
-    request->with_stat = with_stat;
-    request->with_data = with_data;
-    request->watch_callback = watch;
-    request->has_watch = static_cast<bool>(watch);
-    return request;
+    }
 }
 
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch)
@@ -2231,7 +2234,7 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
 String getSequentialNodeName(const String & prefix, UInt64 number)
 {
     /// NOTE Sequential counter in ZooKeeper is Int32.
-    chassert(number < std::numeric_limits<Int32>::max());
+    assert(number < std::numeric_limits<Int32>::max());
     constexpr size_t seq_node_digits = 10;
     String num_str = std::to_string(number);
     String name = prefix + String(seq_node_digits - num_str.size(), '0') + num_str;

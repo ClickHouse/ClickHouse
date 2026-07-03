@@ -7,6 +7,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
+#include <Common/WeakHash.h>
 #include <Common/iota.h>
 
 #include <algorithm>
@@ -205,7 +206,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
         size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
-        chassert(offset_start <= offset_end);
+        assert(offset_start <= offset_end);
 
         if (offset_start != offset_end)
         {
@@ -480,7 +481,7 @@ ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnSparse::create(values->cloneEmpty());
 
@@ -660,7 +661,7 @@ void ColumnSparse::getPermutationImpl(IColumn::PermutationSortDirection directio
         }
     }
 
-    chassert(row == limit);
+    assert(row == limit);
 }
 
 void ColumnSparse::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -774,21 +775,22 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnSparse::getWeakHash32() const
 {
-    const size_t values_size = values->size();
+    WeakHash32 values_hash = values->getWeakHash32();
+    WeakHash32 hash(size());
 
-    PaddedPODArray<UInt32> values_hash(values_size);
-    if (values_size)
-        values->computeHashInto(0, values_size, values_hash.data(), true);
+    auto & hash_data = hash.getData();
+    auto & values_hash_data = values_hash.getData();
 
-    auto offset_it = getIterator(row_begin);
-    for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
+    auto offset_it = begin();
+    for (size_t i = 0; i < _size; ++i, ++offset_it)
     {
-        const UInt32 value = values_hash[offset_it.getValueIndex()];
-        UInt32 & out = hash_out[i - row_begin];
-        out = initial ? value : combineWeakHash32(value, out);
+        size_t value_index = offset_it.getValueIndex();
+        hash_data[i] = values_hash_data[value_index];
     }
+
+    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -917,7 +919,7 @@ IColumn::Offsets & ColumnSparse::getOffsetsData()
 
 size_t ColumnSparse::getValueIndex(size_t n) const
 {
-    chassert(n < _size);
+    assert(n < _size);
 
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::lower_bound(offsets_data.begin(), offsets_data.end(), n);

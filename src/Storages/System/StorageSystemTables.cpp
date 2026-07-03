@@ -1,8 +1,6 @@
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
-#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -29,7 +27,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -240,14 +237,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
-        {"target_database", std::make_shared<DataTypeString>(),
-            "For a materialized view, the database of the destination table the view writes to "
-            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
-        },
-        {"target_table", std::make_shared<DataTypeString>(),
-            "For a materialized view, the name of the destination table the view writes to "
-            "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
-        },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
@@ -268,7 +257,7 @@ VirtualColumnsDescription StorageSystemTables::createVirtuals()
     return desc;
 }
 
-class TablesBlockSource final : public ISource
+class TablesBlockSource : public ISource
 {
 public:
     TablesBlockSource(
@@ -307,7 +296,7 @@ protected:
     {
         if (table)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
             {
                 columns[res_index++]->insertDefault();
@@ -608,7 +597,7 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(static_cast<UInt64>(database->getObjectMetadataModificationTime(table_name)));
 
-                StorageMetadataHandle metadata_snapshot;
+                StorageMetadataPtr metadata_snapshot;
                 if (table)
                     metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
 
@@ -931,26 +920,6 @@ protected:
                     src_index += 4;
                 }
 
-                if (columns_mask[src_index] || columns_mask[src_index + 1])
-                {
-                    String target_database;
-                    String target_table;
-                    if (auto * mv = table ? dynamic_cast<StorageMaterializedView *>(table.get()) : nullptr)
-                    {
-                        const auto target_id = mv->getTargetTableId();
-                        target_database = target_id.database_name;
-                        target_table = target_id.table_name;
-                    }
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(target_database);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(target_table);
-                }
-                else
-                {
-                    src_index += 2;
-                }
-
                 if (columns_mask[src_index++])
                 {
                     if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
@@ -1052,6 +1021,3 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }

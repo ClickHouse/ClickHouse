@@ -1,7 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
 #include <Common/Exception.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -18,13 +17,12 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
 }
 
 /**
  * arrayFold( acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial)
  */
-class FunctionArrayFold final : public IFunction
+class FunctionArrayFold : public IFunction
 {
 public:
     static constexpr auto name = "arrayFold";
@@ -155,13 +153,6 @@ public:
 
         const auto & offsets = first_array_col_concrete->getOffsets(); /// the internal offsets column of the first array argument (other array arguments have the same offsets)
 
-        /// A malformed array whose data column size disagrees with its offsets would desync the
-        /// selector loop below and blow up max_array_size (observed as a multi-GB ~uncancellable hang).
-        if (offsets[num_rows - 1] != static_cast<ColumnArray::Offset>(num_elements_in_array_col))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Malformed array argument of function {}: nested data column has {} elements but offsets describe {}",
-                getName(), num_elements_in_array_col, offsets[num_rows - 1]);
-
         /// Find the first row which contains a non-empty array
         ssize_t first_row_with_non_empty_array = 0;
         if (num_elements_in_array_col)
@@ -190,13 +181,6 @@ public:
             }
         }
 
-        /// max_array_size cannot exceed the total number of array elements; if it does, the selector
-        /// computation above is corrupt - bail out before scatter() allocates that many slices.
-        if (max_array_size > static_cast<size_t>(num_elements_in_array_col))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Function {}: computed max_array_size {} exceeds total array elements {}",
-                getName(), max_array_size, num_elements_in_array_col);
-
         /// Based on the selector, scatter elements of the arrays on all rows into vertical slices
         /// Example:
         ///   row0: ['elem1']
@@ -205,7 +189,7 @@ public:
         ///   --> create two slices based on selector [0, 0, 1, 0]
         ///       - slice0: 'elem1', 'elem2', 'elem4''
         ///       - slice1: 'elem3'
-        VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
+        std::vector<VectorWithMemoryTracking<MutableColumnPtr>> vertical_slices; /// contains for every array argument, a vertical slice for the 0th array element, a vertical slice for the 1st array element, ...
         vertical_slices.resize(num_array_cols);
         if (max_array_size > 0)
             for (size_t i = 0; i < num_array_cols; ++i)

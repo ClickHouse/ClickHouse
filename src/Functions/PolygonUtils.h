@@ -9,7 +9,6 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -168,9 +167,10 @@ public:
     /// ─ Default value is 16, which is a good compromise for most cases.
     static constexpr std::size_t max_elements_per_rtree_node = 16;
 
-    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon, UInt16 grid_size_ = 8)
+    explicit PointInMultiPolygonRTree(const MultiPolygon & multi_polygon_, UInt16 grid_size_ = 8)
+        : multi_polygon(multi_polygon_)
     {
-        build(multi_polygon, grid_size_);
+        build(grid_size_);
     }
 
     /// O(log N + K) where K = polygons that contain the point.
@@ -201,7 +201,8 @@ public:
     }
 
 private:
-    VectorWithMemoryTracking<PointInPolygonImpl> polygon_impls;
+    MultiPolygon multi_polygon;
+    std::vector<PointInPolygonImpl> polygon_impls;
 
     /// Boost.Geometry split policy choices
     ///   linear     — quick to build, queries slowest
@@ -214,14 +215,11 @@ private:
     /// Only becomes true if all polygons have empty bounding box.
     bool has_empty_bound = false;
 
-    /// The input multipolygon is consumed only to build the per-polygon impls and the R-tree; it is
-    /// intentionally not retained (contains() needs only the impls and the tree), which avoids keeping
-    /// a second full copy of every vertex alongside the per-polygon copies in polygon_impls.
-    void build(const MultiPolygon & multi_polygon, UInt16 grid_size)
+    void build(UInt16 grid_size)
     {
         polygon_impls.reserve(multi_polygon.size());
 
-        VectorWithMemoryTracking<PolyBox> boxes; // bulk-build container
+        std::vector<PolyBox> boxes; // bulk-build container
         boxes.reserve(multi_polygon.size());
 
         std::size_t idx = 0;
@@ -314,15 +312,15 @@ private:
         static const int max_stored_half_planes = 2;
 
         HalfPlane half_planes[max_stored_half_planes];
-        size_t index_of_inner_polygon{};
+        size_t index_of_inner_polygon;
         CellType type;
     };
 
     const UInt16 grid_size;
 
     Polygon polygon;
-    VectorWithMemoryTracking<Cell> cells;
-    VectorWithMemoryTracking<MultiPolygon> polygons;
+    std::vector<Cell> cells;
+    std::vector<MultiPolygon> polygons;
 
     CoordinateType cell_width;
     CoordinateType cell_height;
@@ -355,7 +353,7 @@ private:
     inline void addCell(size_t index, const Box & box, const Polygon & first, const Polygon & second);
 
     /// Returns a list of half-planes were formed from intersection edges without box edges.
-    inline VectorWithMemoryTracking<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
+    inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
 
     /// Check that polygon.outer() is convex.
     inline bool isConvex(const Polygon & polygon);
@@ -521,12 +519,12 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
 }
 
 template <typename CoordinateType>
-VectorWithMemoryTracking<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
+std::vector<typename PointInPolygonWithGrid<CoordinateType>::HalfPlane>
 PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType>::Box & box,
         const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
 {
-    VectorWithMemoryTracking<HalfPlane> half_planes;
+    std::vector<HalfPlane> half_planes;
     const auto & outer = intersection.outer();
 
     for (auto i : collections::range(0, outer.size() - 1))

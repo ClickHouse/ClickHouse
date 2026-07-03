@@ -174,7 +174,7 @@ private:
 };
 
 /// Sends TableCheckTask to workers
-class TableCheckSource final : public ISource
+class TableCheckSource : public ISource
 {
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
@@ -290,7 +290,7 @@ private:
 };
 
 /// Receives TableCheckTask and returns CheckResult converted to sinle-row chunk
-class TableCheckWorkerProcessor final : public ISimpleTransform
+class TableCheckWorkerProcessor : public ISimpleTransform
 {
 public:
     TableCheckWorkerProcessor(bool with_table_name_, LoggerPtr log_)
@@ -339,7 +339,7 @@ private:
 
 /// Accumulates all results and returns single value
 /// Used when settings.check_query_single_value_result is true
-class TableCheckResultEmitter final : public IAccumulatingTransform
+class TableCheckResultEmitter : public IAccumulatingTransform
 {
 public:
     explicit TableCheckResultEmitter(SharedHeader input_header)
@@ -474,7 +474,7 @@ BlockIO InterpreterCheckQuery::execute()
         }
     }
 
-    OutputPort * resize_outport = nullptr;
+    OutputPort * resize_outport;
     {
         chassert(!processors->empty() && !processors->back()->getOutputs().empty());
         auto header = processors->back()->getOutputs().front().getSharedHeader();
@@ -488,7 +488,7 @@ BlockIO InterpreterCheckQuery::execute()
             connect(*worker_ports[i], *resize_inport_it);
         processors->emplace_back(resize_processor);
 
-        chassert(resize_processor->getOutputs().size() == 1);
+        assert(resize_processor->getOutputs().size() == 1);
         resize_outport = &resize_processor->getOutputs().front();
     }
 
@@ -513,7 +513,6 @@ BlockIO InterpreterCheckQuery::execute()
     return res;
 }
 
-void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterCheckQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

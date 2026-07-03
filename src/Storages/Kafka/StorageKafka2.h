@@ -11,6 +11,7 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 #include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ThreadStatus.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <atomic>
@@ -29,14 +30,11 @@ class Configuration;
 namespace DB
 {
 
-namespace AWSMSKIAMAuth { struct OAuthBearerTokenRefreshContext; }
-
 struct KafkaSettings;
 class Kafka2Source;
 class ReadFromStorageKafka2;
 template <typename TStorageKafka>
 struct KafkaInterceptors;
-class ThreadStatus;
 
 /// Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
 /// or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -118,16 +116,6 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
-    /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
-    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>
-    ensureOAuthContext(std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> candidate)
-    {
-        std::lock_guard lock(oauth_context_mutex);
-        if (!oauth_context)
-            oauth_context = std::move(candidate);
-        return oauth_context;
-    }
-
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(consumers_mutex), consumers}; }
 
 private:
@@ -169,8 +157,6 @@ private:
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
     size_t num_created_consumers = 0; /// number of actually created consumers.
-    mutable std::mutex oauth_context_mutex;
-    std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext> oauth_context TSA_GUARDED_BY(oauth_context_mutex);
 
     std::mutex consumers_mutex;
     std::condition_variable cv;

@@ -2,14 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import (
-    convert_read_request_to_protobuf,
-    convert_time_series_to_protobuf,
-    execute_query_via_http_api,
-    get_response_to_remote_read,
-    receive_protobuf_from_remote_read,
-    send_protobuf_to_remote_write,
-)
+from .prometheus_test_utils import *
 import re
 import requests
 import time
@@ -113,11 +106,11 @@ def test_handle_normal_scrape():
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
+    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
     assert re.match(pattern, result)
     chresult = execute_query_in_clickhouse(query, evaluation_time)
     print(f"chresult={chresult}")
-    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
+    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
     assert re.match(chpattern, chresult)
 
 

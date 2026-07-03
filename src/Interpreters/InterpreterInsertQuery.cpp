@@ -499,7 +499,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             });
     }
 
-    VectorWithMemoryTracking<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
 
     pipeline.resize(insert_dependencies->getSinkStreamSize());
 
@@ -591,12 +591,13 @@ static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool pr
 
         auto context_for_trivial_select = Context::createCopy(select_context);
         context_for_trivial_select->setSettings(new_settings);
+        context_for_trivial_select->setInsertionTable(select_context->getInsertionTable(), select_context->getInsertionTableColumnNames());
 
         select_context = context_for_trivial_select;
     }
 }
 
-static bool queryHasOrderByAll(const ASTPtr & select)
+bool queryHasOrderByAll(const ASTPtr & select)
 {
     if (auto * select_query = select->as<ASTSelectQuery>())
     {
@@ -831,10 +832,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    // Pipeline ceiling: simple upper bound on parallelism. Actual slot grants are
-    // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
-    // does not translate into reserved-but-unused slots.
-    pipeline.setNumThreads(max_threads);
+    /// When materialized views are attached, their inner SELECT queries benefit
+    /// from full parallelism, so we use max_threads. Without MVs the insert
+    /// pipeline is 1-wide and requesting max_threads would only waste
+    /// ConcurrencyControl slots and spawn unnecessary threads (see #102947).
+    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
@@ -952,9 +954,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             }
         }
     }
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-    auto extension = src_storage_cluster->getTaskIteratorExtension(
-        predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
+     auto extension = src_storage_cluster->getTaskIteratorExtension(
+        predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr(local_context, false));
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -1014,13 +1015,6 @@ BlockIO InterpreterInsertQuery::execute()
 
         if (!is_external_storage)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
-    }
-
-    if (context->getMessageQueueDisableInsertion()
-        && table->isMessageQueue()
-        && no_destination)
-    {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Message queue insertion is disabled");
     }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
@@ -1112,11 +1106,10 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, const ASTInsertQuery & insert_query, const StoragePtr & table)
 {
-    const auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
     std::optional<Names> insert_columns;
     if (insert_query.columns)
     {
-        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, metadata_snapshot, insert_query.columns);
+        const auto columns_ast = processColumnTransformers(context_->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(context_, false), insert_query.columns);
         Names names;
         names.reserve(columns_ast->children.size());
         for (const auto & identifier : columns_ast->children)
@@ -1128,10 +1121,9 @@ void InterpreterInsertQuery::setInsertContextValues(ContextMutablePtr context_, 
         insert_columns = std::move(names);
     }
 
-    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(metadata_snapshot->columns));
+    context_->setInsertionTable(insert_query.table_id, insert_columns, std::make_shared<ColumnsDescription>(table->getInMemoryMetadataPtr(context_, false)->columns));
 }
 
-void registerInterpreterInsertQuery(InterpreterFactory & factory);
 void registerInterpreterInsertQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

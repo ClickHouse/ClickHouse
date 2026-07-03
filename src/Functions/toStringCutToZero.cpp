@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionToStringCutToZero final : public IFunction
+class FunctionToStringCutToZero : public IFunction
 {
 public:
     static constexpr auto name = "toStringCutToZero";

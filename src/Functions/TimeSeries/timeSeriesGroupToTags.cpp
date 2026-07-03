@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesGroupToTags(group) returns Array(Tuple(String, String))
 /// containing the names and values of tags associated with a specified group.
-class FunctionTimeSeriesGroupToTags final : public IFunction
+class FunctionTimeSeriesGroupToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesGroupToTags";
