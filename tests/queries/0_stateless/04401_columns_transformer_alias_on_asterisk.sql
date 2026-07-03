@@ -46,6 +46,11 @@ SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FOR
 -- function-form identity chain gives `toString(identity(a))`.
 SELECT * APPLY (toString, 'f_') APPLY upper FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- A named `untuple` chained after an earlier transformer prefixes the accumulated display
+-- name of the node feeding untuple, not the original column name: `q_identity(a).N` after a
+-- function-form identity, `q_p_a.N` after a prefixed identity.
+SELECT * APPLY identity APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * APPLY (identity, 'p_') APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
 
 -- New (default) analyzer: the APPLY name prefix must be applied consistently with the
 -- old analyzer (it used to be silently dropped). https://github.com/ClickHouse/ClickHouse/pull/109223
@@ -90,6 +95,11 @@ SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FOR
 -- argument name for a freshly created node.
 SELECT * APPLY (toString, 'f_') APPLY upper FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (identity, 'p_') APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- A named `untuple` chained after an earlier transformer must prefix the accumulated display
+-- name feeding untuple (`q_identity(a).N`, `q_p_a.N`), matching the old analyzer, not the
+-- original short column name (`q_a.N`).
+SELECT * APPLY identity APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * APPLY (identity, 'p_') APPLY (untuple, 'q_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
 -- An identity lambda (`x -> x`) instead resolves back to the original matched node, which
 -- has no old-analyzer equivalent; the accumulated prefix is carried onto the reused node so
 -- a chained transformer observes it (`toString(p_a)`). This overwrites (not just emplaces)

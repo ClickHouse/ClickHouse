@@ -2643,8 +2643,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     {
                         for (size_t i = 0; i < node_list_nodes_size; ++i)
                         {
-                            String element_projection_name
-                                = apply_column_name_prefix + column_name + '.' + getTupleElementName(node_list_nodes[i]);
+                            /// Base each element on the accumulated display name feeding untuple,
+                            /// not the original short column_name: a direct untuple keeps `f_a.1`,
+                            /// but a chained one follows the prior transformer (`q_p_a.1`,
+                            /// `q_identity(a).1`), matching the legacy path.
+                            String element_projection_name = apply_column_name_prefix + apply_prefixed_projection_name
+                                + '.' + getTupleElementName(node_list_nodes[i]);
 
                             /// The first element reuses the name slot already pushed for this
                             /// matched column; the rest add new sibling slots.

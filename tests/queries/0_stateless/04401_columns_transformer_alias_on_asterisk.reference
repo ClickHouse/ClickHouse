@@ -22,6 +22,10 @@ upper(toString(a))
 1
 toString(identity(a))
 1
+q_identity(a).1	q_identity(a).2
+1	2
+q_p_a.1	q_p_a.2
+1	2
 f_a
 (1)
 f_a.1	f_a.2
@@ -46,6 +50,10 @@ upper(toString(a))
 1
 toString(identity(a))
 1
+q_identity(a).1	q_identity(a).2
+1	2
+q_p_a.1	q_p_a.2
+1	2
 toString(p_a)
 1
 1
