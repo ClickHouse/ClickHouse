@@ -1485,6 +1485,19 @@ KeyCondition::KeyCondition(
 
     rpn = std::move(builder).extractRPN();
 
+    /// The multi-atom group structure must be well-formed: a group is opened by an unmarked
+    /// element, so the first RPN element never continues a group, and the marked elements
+    /// are only the atoms of a group and the ANDs combining them — never OR, NOT or
+    /// FUNCTION_UNKNOWN.
+    chassert(rpn.empty() || !rpn.front().continues_multi_atom_group);
+    chassert(std::none_of(rpn.begin(), rpn.end(), [](const RPNElement & element)
+    {
+        return element.continues_multi_atom_group
+            && (element.function == RPNElement::FUNCTION_OR
+                || element.function == RPNElement::FUNCTION_NOT
+                || element.function == RPNElement::FUNCTION_UNKNOWN);
+    }));
+
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 
     if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
@@ -2510,19 +2523,28 @@ static bool tryPrepareSetColumnsForIndex(
 
 namespace
 {
-String getExprNameOrEmptyForSetWrapping(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names)
+/// Returns the name of the key subexpression through which the wrapped-set candidates of
+/// `extractSetAtomsForKeyArgument` can be built (the predicate expression itself, possibly
+/// under the `moduloLegacy` spelling), or an empty string when that pass cannot produce
+/// anything.
+String exprNameForWrappedSetAtoms(
+    const RPNBuilderTreeNode & key_arg,
+    const NameSet & key_subexpr_names,
+    size_t args_count,
+    bool allow_constant_transformation)
 {
-    String expr_name = node.getColumnName();
+    if (args_count != 1 || !allow_constant_transformation)
+        return {};
 
-    if (!key_subexpr_names.contains(expr_name))
-    {
-        expr_name = node.getColumnNameWithModuloLegacy();
+    String expr_name = key_arg.getColumnName();
+    if (key_subexpr_names.contains(expr_name))
+        return expr_name;
 
-        if (!key_subexpr_names.contains(expr_name))
-            return {};
-    }
+    expr_name = key_arg.getColumnNameWithModuloLegacy();
+    if (key_subexpr_names.contains(expr_name))
+        return expr_name;
 
-    return expr_name;
+    return {};
 }
 }
 
@@ -2626,46 +2648,44 @@ void KeyCondition::extractSetAtomsForKeyArgument(
     /// If the predicate expression is a single value (not a tuple), also add set-wrapping
     /// atoms for all key columns that are deterministic functions of that value (by
     /// transforming the set elements).
-    if (analysis.args_count == 1 && allow_constant_transformation)
+    const String expr_name
+        = exprNameForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation);
+    if (!expr_name.empty())
     {
-        const String expr_name = getExprNameOrEmptyForSetWrapping(key_arg, info.key_subexpr_names);
-        if (!expr_name.empty())
+        auto candidates = collectKeyWrappingDags(expr_name, info);
+
+        for (auto & candidate : candidates)
         {
-            auto candidates = collectKeyWrappingDags(expr_name, info);
+            if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
+                continue;
 
-            for (auto & candidate : candidates)
-            {
-                if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
-                    continue;
+            MergeTreeSetIndex::KeyTuplePositionMapping mapping;
+            mapping.tuple_index = 0;
+            mapping.key_index = candidate.key_column_num;
 
-                MergeTreeSetIndex::KeyTuplePositionMapping mapping;
-                mapping.tuple_index = 0;
-                mapping.key_index = candidate.key_column_num;
+            std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
+            candidate_indexes_mapping.emplace_back(std::move(mapping));
 
-                std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
-                candidate_indexes_mapping.emplace_back(std::move(mapping));
+            std::vector<std::optional<DeterministicKeyTransformDag>> candidate_dags;
+            candidate_dags.emplace_back(std::move(candidate.dag));
 
-                std::vector<std::optional<DeterministicKeyTransformDag>> candidate_dags;
-                candidate_dags.emplace_back(std::move(candidate.dag));
+            DataTypes candidate_data_types;
+            candidate_data_types.emplace_back(candidate.key_column_type);
 
-                DataTypes candidate_data_types;
-                candidate_data_types.emplace_back(candidate.key_column_type);
+            auto candidate_atom = try_build_atom(
+                std::move(candidate_indexes_mapping), candidate_dags, candidate_data_types, /*args_count*/ 1);
+            if (!candidate_atom)
+                continue;
 
-                auto candidate_atom = try_build_atom(
-                    std::move(candidate_indexes_mapping), candidate_dags, candidate_data_types, /*args_count*/ 1);
-                if (!candidate_atom)
-                    continue;
+            /// Wrapped-set atoms are always relaxed: the transformed set only describes
+            /// a superset of the matching values.
+            candidate_atom->relaxed = true;
 
-                /// Wrapped-set atoms are always relaxed: the transformed set only describes
-                /// a superset of the matching values.
-                candidate_atom->relaxed = true;
+            for (size_t column_idx : candidate_atom->key_columns)
+                if (column_idx < has_atom_for_key_column.size())
+                    has_atom_for_key_column[column_idx] = true;
 
-                for (size_t column_idx : candidate_atom->key_columns)
-                    if (column_idx < has_atom_for_key_column.size())
-                        has_atom_for_key_column[column_idx] = true;
-
-                out.emplace_back(std::move(*candidate_atom));
-            }
+            out.emplace_back(std::move(*candidate_atom));
         }
     }
 }
@@ -2685,13 +2705,11 @@ void KeyCondition::tryPrepareSetAtomsForIn(
 
     auto analysis = analyzePredicateExpressionForSetIndex(left_arg, info);
 
-    /// If no direct key mapping was found AND no extra candidates are possible
-    /// (the left arg is not a key subexpression), return early to avoid building the set
-    /// unnecessarily
+    /// If no direct key mapping was found AND the wrapped-candidates pass of
+    /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early to
+    /// avoid building the set unnecessarily.
     if (analysis.indexes_mapping.empty()
-        && !(
-            analysis.args_count == 1 && allow_constant_transformation
-            && !getExprNameOrEmptyForSetWrapping(left_arg, info.key_subexpr_names).empty()))
+        && exprNameForWrappedSetAtoms(left_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
         return;
 
     const RPNBuilderTreeNode & right_arg = func.getArgumentAt(1);
