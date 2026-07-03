@@ -21,8 +21,10 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <expected>
+#include <mutex>
 #include <optional>
 #include <list>
+#include <vector>
 
 
 namespace DB
@@ -57,6 +59,8 @@ class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 struct StreamLocalLimits;
 class EnabledQuota;
@@ -738,10 +742,14 @@ public:
     /// Re initialize disks in case the underlying storage policy changed
     virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
-    /// Prepare new disks before reloaded storage policies are applied. Exceptions abort storage policy reload.
-    virtual void prepareNewDisksOnConfigChange(
+    /// Resolve new disks before reloaded storage policies are applied.
+    virtual std::vector<DiskPtr> getNewDisksOnConfigChangeWithLock(
         const StoragePolicySelectorPtr & /*old_storage_policy_selector*/,
-        const StoragePolicySelectorPtr & /*new_storage_policy_selector*/) const {}
+        const StoragePolicySelectorPtr & /*new_storage_policy_selector*/,
+        const std::lock_guard<std::mutex> & /*storage_policies_lock*/) const { return {}; }
+
+    /// Prepare new disk before reloaded storage policies are applied. Exceptions abort storage policy reload.
+    virtual void prepareNewDiskOnConfigChange(const DiskPtr & /*new_disk*/) const {}
 
     /// A helper to implement read()
     static void readFromPipe(

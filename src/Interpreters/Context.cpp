@@ -6685,6 +6685,8 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     Strings disks_to_reinit;
     StoragePolicySelectorPtr old_storage_policy_selector;
     StoragePolicySelectorPtr new_storage_policy_selector;
+    std::vector<StoragePtr> tables_for_new_disks;
+    std::vector<std::pair<StoragePtr, std::vector<DiskPtr>>> new_disks_by_table;
 
     {
         std::lock_guard lock(shared->storage_policies_mutex);
@@ -6715,8 +6717,21 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     {
         try
         {
+            tables_for_new_disks = DatabaseCatalog::instance().getTablesForNewDisksOnConfigChange();
+            {
+                std::lock_guard lock(shared->storage_policies_mutex);
+                for (const auto & table : tables_for_new_disks)
+                {
+                    auto new_disks = table->getNewDisksOnConfigChangeWithLock(old_storage_policy_selector, new_storage_policy_selector, lock);
+                    if (!new_disks.empty())
+                        new_disks_by_table.emplace_back(table, std::move(new_disks));
+                }
+            }
+
             /// Tables must prepare new disks before new policies are visible, otherwise they can own stale files.
-            DatabaseCatalog::instance().prepareNewDisksOnConfigChange(old_storage_policy_selector, new_storage_policy_selector);
+            for (const auto & [table, new_disks] : new_disks_by_table)
+                for (const auto & disk : new_disks)
+                    table->prepareNewDiskOnConfigChange(disk);
         }
         catch (Exception & e)
         {
