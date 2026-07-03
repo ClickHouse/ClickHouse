@@ -34,8 +34,10 @@ SELECT t.data FROM t_values_dynamic;
 -- A differently named source field would silently drop the value into a default. It must throw,
 -- consistently with INSERT ... SELECT, instead of being permissively cast with a null context.
 -- The inline VALUES data is parsed in the client (see ClientBase::sendDataFrom), so the guard is
--- applied there and the error is reported as a client error; INSERT ... SELECT is converted on the
--- server and reports a server error. Both must reject the conversion.
-INSERT INTO t_values_dynamic VALUES (tuple('val')(42)); -- { clientError CANNOT_CONVERT_TYPE }
+-- normally applied there and the error is reported as a client error; INSERT ... SELECT is converted
+-- on the server and reports a server error. With async_insert the client sends the block unconverted
+-- and the server-side guard rejects it during WaitForAsyncInsert, so a server error is reported
+-- instead. Either way the conversion must be rejected.
+INSERT INTO t_values_dynamic VALUES (tuple('val')(42)); -- { clientError CANNOT_CONVERT_TYPE, serverError CANNOT_CONVERT_TYPE }
 INSERT INTO t_values_dynamic SELECT tuple('val')(42); -- { serverError CANNOT_CONVERT_TYPE }
 DROP TABLE t_values_dynamic;
