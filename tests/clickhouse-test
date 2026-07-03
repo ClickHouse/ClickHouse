@@ -1596,7 +1596,6 @@ class SettingsRandomizer:
     }
 
     stress_test_only_settings = {
-        "query_plan_optimize_join_order_randomize",
         "analyzer_compatibility_prefer_alias_over_subcolumn",
     }
 
