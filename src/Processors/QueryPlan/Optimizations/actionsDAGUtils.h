@@ -46,7 +46,15 @@ struct MatchedTrees
     using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
 };
 
-MatchedTrees::Matches matchTrees(const ActionsDAG::NodeRawConstPtrs & inner_dag, const ActionsDAG & outer_dag, bool check_monotonicity = true);
+/// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
+/// (`ColumnSet` wrapping a `FutureSetFromTuple`) by content hash. Zero disables content-hash
+/// comparison for such sets entirely — two sets are never considered equal. A non-zero value
+/// is the row-count limit above which both sets are treated as non-matching without hashing.
+MatchedTrees::Matches matchTrees(
+    const ActionsDAG::NodeRawConstPtrs & inner_dag,
+    const ActionsDAG & outer_dag,
+    bool check_monotonicity = true,
+    size_t max_size_for_sets_from_tuple_to_compare = 0);
 
 /// Update SortDescription (inplace) by applying ActionsDAG.
 ///

@@ -1,0 +1,35 @@
+<test>
+    <!--
+        Query analysis of a chain of arithmetic aliases where each alias references all of the
+        previous ones (A2 = A1 + A1, A3 = (A2 + A1) + A1, ... A16 = (...) + A1). Inlining the
+        aliases expands the expression super-linearly, producing a large tree of `plus` calls.
+
+        This stresses analysis of an expression with very many (deterministic) function nodes.
+        Source: https://github.com/ClickHouse/ClickHouse/pull/88043#issuecomment-4574799259
+    -->
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+    </settings>
+
+    <query><![CDATA[
+SELECT
+    A1 + A1 AS A2,
+    (A2 + A1) + A1 AS A3,
+    ((A3 + A2) + A1) + A1 AS A4,
+    (((A4 + A3) + A2) + A1) + A1 AS A5,
+    ((((A5 + A4) + A3) + A2) + A1) + A1 AS A6,
+    (((((A6 + A5) + A4) + A3) + A2) + A1) + A1 AS A7,
+    ((((((A7 + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A8,
+    (((((((A8 + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A9,
+    ((((((((A9 + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A10,
+    (((((((((A10 + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A11,
+    ((((((((((A11 + A10) + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A12,
+    (((((((((((A12 + A11) + A10) + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A13,
+    ((((((((((((A13 + A12) + A11) + A10) + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A14,
+    (((((((((((((A14 + A13) + A12) + A11) + A10) + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A15,
+    ((((((((((((((A15 + A14) + A13) + A12) + A11) + A10) + A9) + A8) + A7) + A6) + A5) + A4) + A3) + A2) + A1) + A1 AS A16
+FROM VALUES('A1 UInt8', 1)
+FORMAT Null
+    ]]></query>
+
+</test>

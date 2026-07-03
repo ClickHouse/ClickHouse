@@ -203,12 +203,12 @@ void replaceWithSumCount(QueryTreeNodePtr & node, const FunctionNodePtr & sum_co
 
     if (function_name == "sum")
     {
-        assert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
+        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(0)));
         node = createTupleElementFunction(context, sum_count_node, 1);
     }
     else if (function_name == "count")
     {
-        assert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
+        chassert(node->getResultType()->equals(*sum_count_result_type->getElement(1)));
         node = createTupleElementFunction(context, sum_count_node, 2);
     }
     else if (function_name == "avg")
@@ -263,7 +263,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
-            assert(node);
+            chassert(node);
             replaceWithSumCount(*node, sum_count_node, context);
         }
     }

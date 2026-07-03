@@ -56,7 +56,7 @@ size_t convertUTF8ToUTF16LE(std::string_view utf8, uint8_t * out)
 
     while (i < n)
     {
-        uint32_t cp;
+        uint32_t cp = 0;
         uint8_t b = data[i];
 
         if (b < 0x80)

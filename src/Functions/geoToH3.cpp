@@ -147,7 +147,7 @@ public:
             coord.lng = degsToRads(lon);
             coord.lat = degsToRads(lat);
 
-            H3Index hindex;
+            H3Index hindex = 0;
             H3Error err = latLngToCell(&coord, res, &hindex);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect coordinates latitude: {}, longitude: {}, error: {}", coord.lat, coord.lng, err);

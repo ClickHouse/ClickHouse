@@ -1,7 +1,10 @@
 #include <Interpreters/ITokenizer.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
 #if defined(__SSE2__)
@@ -339,8 +342,8 @@ bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t
         sparse_grams_iterator.set(data, data + length);
     }
 
-    Pos next_begin;
-    Pos next_end;
+    Pos next_begin = nullptr;
+    Pos next_end = nullptr;
     if (!sparse_grams_iterator.get(next_begin, next_end))
     {
         previous_data = nullptr;
@@ -367,8 +370,8 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
 
     while (true)
     {
-        Pos next_begin;
-        Pos next_end;
+        Pos next_begin = nullptr;
+        Pos next_end = nullptr;
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
@@ -465,6 +468,54 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
             bloom_filter.add(token_start, token_length);
             return false;
         });
+}
+
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
+{
+    chassert(from + rows <= input.size());
+
+    auto tokens_data = ColumnString::create();
+    auto tokens_offsets = ColumnArray::ColumnOffsets::create();
+    tokens_offsets->reserve(rows);
+
+    auto tokenize = [&](std::string_view doc)
+    {
+        forEachToken(tokenizer, doc.data(), doc.size(),
+            [&](const char * token_start, size_t token_length)
+            {
+                tokens_data->insertData(token_start, token_length);
+                return false;
+            });
+    };
+
+    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
+    {
+        const IColumn & data = col_array->getData();
+        const IColumn::Offsets & src_offsets = col_array->getOffsets();
+        const bool data_is_nullable = data.isNullable();
+
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
+            {
+                if (data_is_nullable && data.isNullAt(j))
+                    continue;
+                tokenize(data.getDataAt(j));
+            }
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+    else
+    {
+        for (size_t i = from; i < from + rows; ++i)
+        {
+            if (!input.isNullAt(i))
+                tokenize(input.getDataAt(i));
+            tokens_offsets->getData().push_back(tokens_data->size());
+        }
+    }
+
+    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
 }
 
 bool AsciiCJKTokenizer::nextInString(
@@ -576,7 +627,7 @@ bool AsciiCJKTokenizer::nextInString(
 bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
-    size_t token_start;
+    size_t token_start = 0;
     std::optional<size_t> last_glob_pos;
     bool escaped = false; /// Whether current char is an escaped char
     while (pos < length)

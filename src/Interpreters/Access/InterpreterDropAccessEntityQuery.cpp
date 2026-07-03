@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int HAVE_DEPENDENT_OBJECTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -24,6 +25,13 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
+    /// Masking policies are available only in ClickHouse Cloud. Reject `DROP MASKING POLICY` outright in
+    /// open-source builds (including the `IF EXISTS` and `ON CLUSTER` forms), consistently with `CREATE`,
+    /// `ALTER` and `SHOW CREATE MASKING POLICY`, instead of silently no-op'ing (`IF EXISTS`) or reporting
+    /// a confusing `UNKNOWN_MASKING_POLICY` error from the always-empty open-source access storage.
+    if (query.type == AccessEntityType::MASKING_POLICY)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
 
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
@@ -125,6 +133,7 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
 }
 
+void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

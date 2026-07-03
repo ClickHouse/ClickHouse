@@ -215,6 +215,7 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeIndex>(

@@ -165,46 +165,52 @@ def extract_protobuf_from_remote_read_response(response):
 
 
 # Executes an instant query using Prometheus HTTP API.
+# `params` is a dict {"param_name": "param_value", ...} of additional URL query parameters.
 def execute_query_via_http_api(
-    host, port, path, query, timestamp=None, expect_error=False
+    host, port, path, query, timestamp=None, params=None, expect_error=False
 ):
-    response = get_response_to_http_api_query(host, port, path, query, timestamp)
+    response = get_response_to_http_api_query(host, port, path, query, timestamp, params)
     if expect_error:
         return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
 # Executes a range query using Prometheus HTTP API.
+# `params` is a dict {"param_name": "param_value", ...} of additional URL query parameters.
 def execute_range_query_via_http_api(
-    host, port, path, query, start_timestamp, end_timestamp, step, expect_error=False
+    host, port, path, query, start_timestamp, end_timestamp, step, params=None, expect_error=False
 ):
     response = get_response_to_http_api_range_query(
-        host, port, path, query, start_timestamp, end_timestamp, step
+        host, port, path, query, start_timestamp, end_timestamp, step, params
     )
     if expect_error:
         return extract_error_from_http_api_response(response)
     return extract_data_from_http_api_response(response)
 
 
-def get_response_to_http_api_query(host, port, path, query, timestamp=None):
+def get_response_to_http_api_query(host, port, path, query, timestamp=None, params=None):
     escaped_query = urllib.parse.quote_plus(query, safe="")
     url = f"http://{host}:{port}/{path.strip('/')}?query={escaped_query}"
     if timestamp is not None:
         url += f"&time={timestamp}"
+    for name, value in (params or {}).items():
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
 def get_response_to_http_api_range_query(
-    host, port, path, query, start_timestamp, end_timestamp, step
+    host, port, path, query, start_timestamp, end_timestamp, step, params=None
 ):
     escaped_query = urllib.parse.quote_plus(query, safe="")
     url = f"http://{host}:{port}/{path.strip('/')}?query={escaped_query}&start={start_timestamp}&end={end_timestamp}&step={step}"
+    for name, value in (params or {}).items():
+        url += f"&{urllib.parse.quote_plus(str(name), safe='')}={urllib.parse.quote_plus(str(value), safe='')}"
     return get_response_to_http_api(url)
 
 
-def get_response_to_http_api(url):
+def get_response_to_http_api(url, headers=None):
     print(f"Requesting {url}")
-    response = requests.get(url)
+    response = requests.get(url, headers=headers or {})
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
     )

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -338,12 +339,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            const auto & source_parts = new_part->getSourcePartsSet();
-            if (!source_parts.empty())
+            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
+            if (new_part->info.isPatch())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    source_parts.writeBinary(buffer);
+                    new_part->getSourcePartsSet().writeBinary(buffer);
                 });
             }
         }
@@ -415,10 +417,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
+    if (!new_part->storage.storesMetadataVersionInPartAttributes())
     {
-        writeIntText(new_part->getMetadataVersion(), buffer);
-    });
+        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
+        {
+            writeIntText(new_part->getMetadataVersion(), buffer);
+        });
+    }
 
     if (default_codec != nullptr)
     {

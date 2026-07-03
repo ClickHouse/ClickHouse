@@ -108,6 +108,8 @@ MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 {
     OpenTelemetry::SpanHolder span("MergeTreeMarksLoader::loadMarks");
 
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarks");
+
     std::lock_guard lock(load_mutex);
 
     if (marks)
@@ -140,6 +142,14 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     auto data_part_storage = data_part_reader->getDataPartStorage();
 
+    /// A part with zero granules has nothing to load: return early without opening the file.
+    if (marks_count == 0)
+    {
+        auto res = std::make_shared<MarksInCompressedFile>(PODArray<MarkInCompressedFile>{});
+        ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
+        return res;
+    }
+
     size_t file_size = data_part_storage->getFileSize(mrk_path);
     size_t mark_size = index_granularity_info.getMarkSizeInBytes(num_columns_in_mark);
     size_t expected_uncompressed_size = mark_size * marks_count;
@@ -149,7 +159,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     PODArray<MarkInCompressedFile> plain_marks(marks_count * num_columns_in_mark); // temporary
     auto full_mark_path = std::string(fs::path(data_part_storage->getFullPath()) / mrk_path);
 
-    if (file_size == 0 && marks_count != 0)
+    if (file_size == 0)
     {
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
@@ -198,7 +208,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                     "Cannot read all marks from file {}, marks expected {} (bytes size {}), marks read {} (bytes size {})",
                     full_mark_path, marks_count, expected_uncompressed_size, i, reader->count());
 
-            size_t granularity;
+            size_t granularity = 0;
             reader->readStrict(
                 reinterpret_cast<char *>(plain_marks.data() + i * num_columns_in_mark), num_columns_in_mark * sizeof(MarkInCompressedFile));
             readBinaryLittleEndian(granularity, *reader);

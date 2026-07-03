@@ -67,6 +67,25 @@ def check_duplicate_includes(file_path):
     return ""
 
 
+def _embedded_doc_lines(lines):
+    """Return the set of 0-based indices of lines covered by R"DOCS_MD( ... )DOCS_MD"
+    raw-string literals (verbatim Markdown documentation embedded into source files)."""
+    exempt = set()
+    in_raw = False
+    for i, line in enumerate(lines):
+        if not in_raw:
+            idx = line.find('R"DOCS_MD(')
+            if idx != -1:
+                exempt.add(i)
+                if ')DOCS_MD"' not in line[idx + len('R"DOCS_MD('):]:
+                    in_raw = True
+        else:
+            exempt.add(i)
+            if ')DOCS_MD"' in line:
+                in_raw = False
+    return exempt
+
+
 def check_whitespaces(files) -> str:
     """
     Returns True if all files pass (no ugly double spaces after comma
@@ -98,9 +117,18 @@ def check_whitespaces(files) -> str:
             violations.append(f"{file}: could not read file: {e}")
             continue
 
+        # Skip the verbatim Markdown documentation embedded as R"DOCS_MD( ... )DOCS_MD"
+        # raw-string literals in the format source files: it contains aligned Markdown
+        # tables that legitimately have double spaces.
+        embedded_doc = _embedded_doc_lines(lines)
+
         # Need previous and next line for alignment checks, so skip first/last
         for i in range(1, len(lines) - 1):
             line = lines[i]
+
+            # Skip lines inside embedded documentation raw strings
+            if i in embedded_doc:
+                continue
 
             # Skip exception lines entirely
             if any(p.search(line) for p in EXCEPTIONS):
@@ -256,6 +284,19 @@ def check_mypy():
 def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-pylint"
+    )
+    if err:
+        out += err
+    return out
+
+
+def check_ruff():
+    # Configuration lives under [tool.ruff] in pyproject.toml.
+    # --quiet suppresses the "All checks passed!" success message so the result
+    # framework (which treats a truthy return value as failure) sees an empty
+    # string on success.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "ruff check --output-format=concise --quiet"
     )
     if err:
         out += err
@@ -471,6 +512,60 @@ def check_file_names(files):
     return ""
 
 
+def check_compose_images(files) -> str:
+    """Ensure every image referenced in docker compose files is served from Docker Hub.
+
+    CI runners pull Docker Hub images through the dockerhub-proxy cache (see
+    tests/ci/terraform/dockerhub-proxy.md). Images hosted on other registries
+    (ghcr.io, mcr.microsoft.com, quay.io, ...) bypass that proxy and are pulled
+    directly, exposing CI to those registries' anonymous rate limits. Mirror such
+    images into the clickhouse/ Docker Hub namespace (see
+    tests/integration/compose/mirror-images.sh) and reference the mirror instead.
+    """
+    image_re = re.compile(r"^\s*image:\s*(.+?)\s*$")
+    # ${VAR:-default} -> default; used to resolve compose variable interpolation.
+    var_default_re = re.compile(r"\$\{[^}:]+:-([^}]*)\}")
+    hub_aliases = {"docker.io", "registry-1.docker.io", "index.docker.io"}
+
+    violations = []
+    for file in files:
+        try:
+            with open(file, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.readlines()
+        except OSError as e:
+            violations.append(f"{file}: could not read file: {e}")
+            continue
+
+        for i, line in enumerate(lines):
+            m = image_re.match(line)
+            if not m:
+                continue
+
+            # Strip trailing inline comment and surrounding quotes.
+            value = re.sub(r"\s+#.*$", "", m.group(1)).strip().strip("'\"")
+            # Resolve ${VAR:-default} interpolations to their default value.
+            ref = var_default_re.sub(r"\1", value)
+            # A bare ${VAR} without default leaves the registry undeterminable; skip.
+            if "${" in ref:
+                continue
+
+            # Docker's rule: the first path component is a registry host only when
+            # it contains a '.' or ':' or equals 'localhost'. Otherwise it is a
+            # Docker Hub namespace/official image.
+            first = ref.split("/", 1)[0] if "/" in ref else ""
+            is_registry_host = first and (
+                "." in first or ":" in first or first == "localhost"
+            )
+            if is_registry_host and first not in hub_aliases:
+                violations.append(
+                    f"{file}:{i + 1}: image '{ref}' is not from Docker Hub "
+                    f"(registry '{first}'). Mirror it into the clickhouse/ namespace "
+                    f"via tests/integration/compose/mirror-images.sh and reference the mirror."
+                )
+
+    return "\n".join(violations)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     parser.add_argument("--test", help="Sub check name", default="")
@@ -508,6 +603,12 @@ if __name__ == "__main__":
         include_paths=["./tests/queries"],
         exclude_paths=[],
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
+    )
+
+    compose_files = Utils.traverse_paths(
+        include_paths=["./tests/integration/compose"],
+        exclude_paths=[],
+        file_suffixes=[".yml", ".yaml"],
     )
 
     testname = "whitespace_check"
@@ -582,6 +683,15 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
+    testname = "compose_images_from_dockerhub"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_compose_images,
+                files=compose_files,
+            )
+        )
     testname = "cpp"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -598,6 +708,15 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
+    testname = "ruff"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_ruff,
+            )
+        )
+
     # testname = "mypy"
     # if testpattern.lower() in testname.lower():
     #     results.append(

@@ -61,11 +61,13 @@ public:
 private:
     struct Condition
     {
-        explicit Condition(RPNBuilderTreeNode node_)
-            : node(std::move(node_))
+        explicit Condition(std::vector<RPNBuilderTreeNode> nodes_)
+            : nodes(std::move(nodes_))
         {}
 
-        RPNBuilderTreeNode node;
+        /// One or more conjuncts that share the same required column set and are
+        /// treated as a single unit for PREWHERE reordering and selectivity estimation.
+        std::vector<RPNBuilderTreeNode> nodes;
 
         UInt64 columns_size = 0;
         NameSet table_columns;
@@ -77,7 +79,7 @@ private:
         bool good = false;
 
         /// the lower the better
-        Float64 estimated_row_count = 0;
+        UInt64 estimated_row_count = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
@@ -87,10 +89,17 @@ private:
         /// For debugging purposes
         String toString() const
         {
+            String names;
+            for (const auto & n : nodes)
+            {
+                if (!names.empty())
+                    names += " AND ";
+                names += n.getColumnName();
+            }
             return fmt::format(
                 "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
                 "columns_size: {}, table_columns.size: {})",
-                node.getColumnName(),
+                names,
                 viable,
                 good,
                 min_position_in_primary_key,

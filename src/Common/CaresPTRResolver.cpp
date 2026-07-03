@@ -47,7 +47,7 @@ static void callback(void * arg, int status, int, struct hostent * host)
 static void socket_state_change_callback(void * data, ares_socket_t socket_fd, int readable, int writable)
 {
     dnsstate_t * state = static_cast<dnsstate_t *>(data);
-    size_t idx;
+    size_t idx = 0;
 
     /* Find match */
     for (idx = 0; idx < state->poll_nfds; idx++)
@@ -119,7 +119,7 @@ struct AresChannelRAII
     {
         memset(&dns_state, 0, sizeof(dns_state));
 
-        ares_options options;
+        ares_options options{};
         memset(&options, 0, sizeof(options));
 
         options.sock_state_cb = socket_state_change_callback;
@@ -147,8 +147,8 @@ struct AresChannelRAII
         return dns_state;
     }
 
-    ares_channel channel;
-    dnsstate_t dns_state;
+    ares_channel channel{};
+    dnsstate_t dns_state{};
 };
 
 CaresPTRResolver::CaresPTRResolver(CaresPTRResolver::provider_token)
@@ -205,7 +205,7 @@ std::unordered_set<std::string> CaresPTRResolver::resolve_v6(const std::string &
 
 void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel)
 {
-    in_addr addr;
+    in_addr addr{};
 
     inet_pton(AF_INET, ip.c_str(), &addr);
 
@@ -214,7 +214,7 @@ void CaresPTRResolver::resolve(const std::string & ip, std::unordered_set<std::s
 
 void CaresPTRResolver::resolve_v6(const std::string & ip, std::unordered_set<std::string> & response, ares_channel channel)
 {
-    in6_addr addr;
+    in6_addr addr{};
     inet_pton(AF_INET6, ip.c_str(), &addr);
 
     ares_gethostbyaddr(channel, reinterpret_cast<const void *>(&addr), sizeof(addr), AF_INET6, callback, &response);
@@ -262,7 +262,7 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
 
 int64_t CaresPTRResolver::calculate_timeout(ares_channel channel)
 {
-    timeval tv;
+    timeval tv{};
     if (auto * tvp = ares_timeout(channel, nullptr, &tv))
     {
         auto timeout = tvp->tv_sec * 1000 + tvp->tv_usec / 1000;

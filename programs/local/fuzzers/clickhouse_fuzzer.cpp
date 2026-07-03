@@ -1,6 +1,7 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 #include <base/defines.h>
+#include <base/sanitizer_options.h>
 
 #include <Client/ClientBase.h>
 #include <Common/EnvironmentChecks.h>
@@ -22,45 +23,6 @@
 
 #include <new>
 #include <string_view>
-
-#ifdef SANITIZER
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-extern "C" {
-#ifdef ADDRESS_SANITIZER
-const char * __asan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1";
-}
-const char * __lsan_default_options()
-{
-    return "max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef MEMORY_SANITIZER
-const char * __msan_default_options()
-{
-    return "abort_on_error=1 poison_in_dtor=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef THREAD_SANITIZER
-const char * __tsan_default_options()
-{
-    return "halt_on_error=1 abort_on_error=1 history_size=7 second_deadlock_stack=1 max_allocation_size_mb=32768";
-}
-#endif
-
-#ifdef UNDEFINED_BEHAVIOR_SANITIZER
-const char * __ubsan_default_options()
-{
-    return "print_stacktrace=1 max_allocation_size_mb=32768";
-}
-#endif
-}
-#pragma clang diagnostic pop
-#endif
 
 int mainEntryClickHouseLocal(int argc, char ** argv);
 
@@ -105,7 +67,7 @@ __attribute__((constructor(0))) void init_je_malloc_message()
 /// OpenSSL early initialization.
 /// See also EnvironmentChecks.cpp for other static initializers.
 /// Must be ran after EnvironmentChecks.cpp, as OpenSSL uses SSE4.1 and POPCNT.
-__attribute__((constructor(202))) void init_ssl()
+static __attribute__((constructor(202))) void init_ssl()
 {
     DB::OpenSSLInitializer::instance();
 }
@@ -117,7 +79,7 @@ __attribute__((constructor(202))) void init_ssl()
 /// class C { C() { assert(inside_main); } };
 bool inside_main = false;
 
-int clickhouseMain(int argc_, char ** argv_)
+static int clickhouseMain(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
@@ -146,7 +108,7 @@ int clickhouseMain(int argc_, char ** argv_)
     return exit_code;
 }
 
-bool isMerge(int argc, const char * const * argv)
+static bool isMerge(int argc, const char * const * argv)
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -178,14 +140,17 @@ struct sigaction original_sigalrm_action{};
 String clickhouse{"clickhouse"};
 std::vector<char *> clickhouse_args{clickhouse.data()};
 
+extern "C" int LLVMFuzzerInitialize(const int *argc, char ***argv);
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
+
 /// Signal-safe stderr print helper.
-void signalSafeWrite(const char * msg)
+static void signalSafeWrite(const char * msg)
 {
     (void)write(STDERR_FILENO, msg, __builtin_strlen(msg));
 }
 
 /// Flag set by the SIGUSR1 handler on the runner thread after printing its stack.
-std::atomic<bool> runner_stack_printed{false};
+static std::atomic<bool> runner_stack_printed{false};
 
 /// Monotonic-clock seconds at the start of the current `LLVMFuzzerTestOneInput`
 /// call. libfuzzer arms `setitimer(ITIMER_REAL)` with an interval of
@@ -208,7 +173,7 @@ std::atomic<int64_t> unit_timeout_sec{1200};
 std::atomic<bool> dump_started{false};
 
 /// SIGUSR1 handler installed on the runner thread — prints its own stack trace.
-void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
+static void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context*/)
 {
     signalSafeWrite("[fuzzer] SIGUSR1 handler entered on runner thread\n");
     signalSafeWrite("\n=== Runner thread stack trace (where the query is stuck) ===\n");
@@ -217,7 +182,7 @@ void runnerStackTraceHandler(int /*sig*/, siginfo_t * /*info*/, void * /*context
     runner_stack_printed.store(true, std::memory_order_release);
 }
 
-inline void signal_safe_sleep_ms(int ms)
+static inline void signal_safe_sleep_ms(int ms)
 {
      (void)poll(nullptr, 0, ms);
 }
@@ -236,7 +201,7 @@ inline void signal_safe_sleep_ms(int ms)
 /// own timeout condition (`elapsed >= UnitTimeoutSec`). We also forward to
 /// libfuzzer's handler *without* permanently restoring it, so the wrapper
 /// continues to intercept later periodic alarms.
-void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
+static void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
 {
     struct timespec ts;
     (void)clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -290,6 +255,12 @@ void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     /// Forward to libfuzzer's original SIGALRM handler. If this is a real
     /// timeout it will print the main-thread stack and `_Exit`; otherwise it
     /// returns and the wrapper stays installed for the next periodic alarm.
+    ///
+    /// `glibc` defines `sa_sigaction`/`sa_handler` as recursive macros expanding
+    /// to `__sigaction_handler.sa_sigaction`/`__sigaction_handler.sa_handler`,
+    /// which trips `-Wdisabled-macro-expansion` on aarch64.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     if (original_sigalrm_action.sa_flags & SA_SIGINFO)
     {
         if (original_sigalrm_action.sa_sigaction)
@@ -300,6 +271,7 @@ void fuzzerSigalrmHandler(int sig, siginfo_t * info, void * ctx)
     {
         original_sigalrm_action.sa_handler(sig);
     }
+#pragma clang diagnostic pop
 }
 
 extern "C"
@@ -379,7 +351,13 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
     if (!handler_installed)
     {
         struct sigaction sa = {};
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_sigaction = fuzzerSigalrmHandler;
+#pragma clang diagnostic pop
         sa.sa_flags = SA_SIGINFO;
         sigaction(SIGALRM, &sa, &original_sigalrm_action);
         handler_installed = true;
@@ -423,7 +401,13 @@ void DB::ClientBase::runLibFuzzer()
     /// Install SIGUSR1 handler on the runner thread for stack trace dumping.
     {
         struct sigaction sa = {};
+        /// `glibc` defines `sa_sigaction` as a recursive macro
+        /// `#define sa_sigaction __sigaction_handler.sa_sigaction`,
+        /// which trips `-Wdisabled-macro-expansion`.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sa.sa_sigaction = runnerStackTraceHandler;
+#pragma clang diagnostic pop
         sa.sa_flags = SA_SIGINFO;
         (void)sigaction(SIGUSR1, &sa, nullptr);
     }

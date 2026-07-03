@@ -10,7 +10,7 @@ namespace DB
 struct StreamNameAndMark
 {
     String stream_name;
-    MarkInCompressedFile mark;
+    MarkInCompressedFile mark{};
 };
 
 using StreamsWithMarks = std::vector<StreamNameAndMark>;

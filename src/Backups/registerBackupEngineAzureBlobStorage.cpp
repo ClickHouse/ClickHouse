@@ -51,6 +51,8 @@ namespace
 }
 #endif
 
+void registerBackupEngineAzureBlobStorage(BackupFactory &);
+
 void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 {
     auto creator_fn = []([[maybe_unused]] BackupFactory::CreateParams params) -> std::unique_ptr<IBackup>

@@ -27,10 +27,10 @@ public:
     struct NotProcessed
     {
         Block block;
-        size_t left_position;
-        size_t left_key_tail;
-        size_t right_position;
-        size_t right_block;
+        size_t left_position{};
+        size_t left_key_tail{};
+        size_t right_position{};
+        size_t right_block{};
 
         bool empty() const { return block.empty(); }
     };

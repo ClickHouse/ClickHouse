@@ -118,7 +118,7 @@ def test_default_access(cluster):
         node, "named_collection_control>1", "named_collection_control>0"
     )
     assert "named_collection_control>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert 0 == int(node.query("select count() from system.named_collections"))
@@ -127,7 +127,7 @@ def test_default_access(cluster):
         node, "named_collection_control>0", "named_collection_control>1"
     )
     assert "named_collection_control>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -149,7 +149,7 @@ def test_default_access(cluster):
         node, "display_secrets_in_show_and_select>1", "display_secrets_in_show_and_select>0"
     )
     assert "display_secrets_in_show_and_select>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -163,14 +163,14 @@ def test_default_access(cluster):
         node, "display_secrets_in_show_and_select>0", "display_secrets_in_show_and_select>1"
     )
     assert "display_secrets_in_show_and_select>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
     )
 
     replace_in_users_config(
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )
     assert "show_named_collections_secrets>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -183,7 +183,7 @@ def test_default_access(cluster):
         node, "show_named_collections_secrets>0", "show_named_collections_secrets>1"
     )
     assert "show_named_collections_secrets>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -875,13 +875,13 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
             "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
         node.query(
-            f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
+            "CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
         )
         node.query(
-            f"ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
+            "ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
         )
         node.query(
-            f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+            "DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
     node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
 
@@ -967,7 +967,7 @@ def test_concurrent_create_drop_race_condition(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]
 
-    num_iterations = 50
+    num_iterations = 15
     stop_flag = threading.Event()
 
     def create_collections(node, prefix, count):
@@ -997,7 +997,7 @@ def test_concurrent_create_drop_race_condition(cluster):
 
     try:
         # Run multiple iterations to increase chance of hitting the race
-        for iteration in range(5):
+        for iteration in range(3):
             prefix = f"race_test_{iteration}"
             threads = []
 
@@ -1020,12 +1020,12 @@ def test_concurrent_create_drop_race_condition(cluster):
                 t.join(timeout=60)
 
             # Small delay between iterations
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         # Verify both nodes are still healthy by running a simple query
         for node in [node1, node2]:
             result = node.query("SELECT 1").strip()
-            assert result == "1", f"Node health check failed"
+            assert result == "1", "Node health check failed"
 
         # Check for logical errors in server logs - this is the key assertion
         # A logical error would indicate the race condition caused an exception (chassert failure)

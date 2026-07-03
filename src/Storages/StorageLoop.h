@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 #include <Storages/IStorage.h>
 #include <Parsers/IAST_fwd.h>
 

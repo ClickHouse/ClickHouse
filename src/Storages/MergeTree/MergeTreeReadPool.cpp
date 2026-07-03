@@ -73,7 +73,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    size_t part_idx;
+    size_t part_idx = 0;
     MarkRanges ranges_to_get_from_part;
 
     {
@@ -118,7 +118,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(size_t task_idx, MergeTreeReadTa
         auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
         const auto min_marks_per_task = per_part_infos[part_idx]->min_marks_per_task;
 
-        size_t need_marks;
+        size_t need_marks = 0;
         if (is_part_on_remote_disk[part_idx] && !pool_settings.use_const_size_tasks_for_remote_reading)
             need_marks = marks_in_part;
         else /// Get whole part to read if it is small enough.

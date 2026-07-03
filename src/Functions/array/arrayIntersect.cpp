@@ -580,7 +580,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             const auto & arg = arrays.args[arg_num];
             current_has_nullable = false;
 
-            size_t off;
+            size_t off = 0;
             // const array has only one row
             if (arg.is_const)
                 off = (*arg.offsets)[0];
@@ -630,9 +630,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
         // We have NULL in output only once if it should be there
         bool null_added = false;
-        bool use_null_map;
+        bool use_null_map = false;
         const auto & arg = arrays.args[0];
-        size_t off;
+        size_t off = 0;
         // const array has only one row
         if (arg.is_const)
             off = (*arg.offsets)[0];

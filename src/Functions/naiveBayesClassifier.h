@@ -10,6 +10,7 @@
 #include <vector>
 #include <IO/ReadBufferFromFile.h>
 #include <base/StringViewHash.h>
+#include <base/defines.h>
 #include <fmt/ranges.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -19,6 +20,17 @@
 
 namespace DB
 {
+
+/// Out-of-line wrapper around `std::log`. At `-march=x86-64-v3` with LTO clang inlines the libc
+/// `log` polynomial (9× `vfmadd` + supporting math) into the per-row classify hot loop, expanding
+/// the function by ~10% and pushing the inner `class_totals` HashMap iteration to a less
+/// favourable code layout (~2× more samples on the hot bucket-skipping loop).  Keeping the log
+/// call out-of-line preserves the master codegen pattern and avoids the regression.
+NO_INLINE inline double logNoInline(double x) noexcept
+{
+    return std::log(x);
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -244,7 +256,7 @@ public:
             DB::readBinary(count, in); // read the 4-byte count
 
             ArenaKeyHolder key_holder{std::string_view(ngram.data(), ngram_length), pool};
-            NGramIndexMap::LookupResult it;
+            NGramIndexMap::LookupResult it = nullptr;
             bool inserted = false;
 
             ngram_to_class_count_index.emplace(key_holder, it, inserted);
@@ -360,7 +372,7 @@ public:
                             count = static_cast<double>(it->getMapped());
                     }
                     const double probability = (count + alpha) / (class_total + alpha * static_cast<double>(vocabulary_size));
-                    class_log_probabilities[class_id] += std::log(probability);
+                    class_log_probabilities[class_id] += logNoInline(probability);
                 }
             }
         }

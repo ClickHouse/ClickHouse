@@ -1,0 +1,88 @@
+-- { echo }
+
+-- Nullable target: source NULL -> element NULL. Dynamic/Variant source must match the non-Dynamic reference.
+SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+(NULL)	Nullable(Tuple(Nullable(Float32)))
+SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Nullable(Float32))'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+(NULL)	Nullable(Tuple(Nullable(Float32)))
+SELECT accurateCastOrNull(CAST(tuple(CAST(NULL, 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Nullable(Float32))') AS r, toTypeName(r);
+(NULL)	Nullable(Tuple(Nullable(Float32)))
+-- Nullable target: successful conversion -> element value.
+SELECT accurateCastOrNull(CAST(tuple(42), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))');
+(42)
+-- Nullable target: parse failure -> whole Tuple NULL (not an element NULL).
+SELECT accurateCastOrNull(CAST(tuple('abc'), 'Tuple(Dynamic)'), 'Tuple(Nullable(Float32))');
+\N
+SELECT accurateCastOrNull(CAST(tuple(CAST('abc', 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Nullable(Float32))');
+\N
+-- Nullable target: overflow failure -> whole Tuple NULL.
+SELECT accurateCastOrNull(CAST(tuple(300::Int64), 'Tuple(Dynamic)'), 'Tuple(Nullable(UInt8))');
+\N
+-- Nullable target, per-row single block: source NULL, success and parse failure together, Dynamic source.
+SELECT id, accurateCastOrNull(t, 'Tuple(Nullable(Float32))') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Dynamic)',
+  (1, tuple(NULL)), (2, tuple(42::Int64)), (3, tuple('bad'::String)), (4, tuple('7'::String))))
+ORDER BY id;
+1	(NULL)
+2	(42)
+3	\N
+4	(7)
+-- Nullable target, per-row single block: source NULL, success, parse failure together, Variant source.
+SELECT id, accurateCastOrNull(t, 'Tuple(Nullable(Float32))') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Variant(UInt8, String))',
+  (1, tuple(CAST(NULL, 'Variant(UInt8, String)'))), (2, tuple(CAST(5, 'Variant(UInt8, String)'))), (3, tuple(CAST('bad', 'Variant(UInt8, String)')))))
+ORDER BY id;
+1	(NULL)
+2	(5)
+3	\N
+-- Non-Nullable target: source NULL -> whole Tuple NULL (cannot keep an element NULL). Must match the
+-- non-Dynamic reference. The all-NULL block exercises the plain-default-column path.
+SELECT accurateCastOrNull(CAST(tuple(NULL), 'Tuple(Dynamic)'), 'Tuple(Float32)') AS r, toTypeName(r);
+\N	Nullable(Tuple(Float32))
+SELECT accurateCastOrNull(tuple(CAST(NULL, 'Nullable(Float32)')), 'Tuple(Float32)') AS r, toTypeName(r);
+\N	Nullable(Tuple(Float32))
+SELECT accurateCastOrNull(CAST(tuple(CAST(NULL, 'Variant(Float32, String)')), 'Tuple(Variant(Float32, String))'), 'Tuple(Float32)') AS r, toTypeName(r);
+\N	Nullable(Tuple(Float32))
+-- Non-Nullable target: successful conversion -> element value.
+SELECT accurateCastOrNull(CAST(tuple(42::Int64), 'Tuple(Dynamic)'), 'Tuple(Float32)');
+(42)
+-- Non-Nullable target, per-row single block: source NULL coexisting with a convertible row. The source
+-- NULL row must be whole-Tuple NULL while the convertible row keeps its value.
+SELECT id, accurateCastOrNull(t, 'Tuple(Float32)') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Dynamic)', (1, tuple(NULL)), (2, tuple(42::Int64))))
+ORDER BY id;
+1	\N
+2	(42)
+SELECT id, accurateCastOrNull(t, 'Tuple(UInt8)') AS r
+FROM (SELECT * FROM values('id UInt32, t Tuple(Variant(UInt8, String))',
+  (1, tuple(CAST(NULL, 'Variant(UInt8, String)'))), (2, tuple(CAST(5, 'Variant(UInt8, String)')))))
+ORDER BY id;
+1	\N
+2	(5)
+-- Non-Nullable target, multi-element: a source NULL in a non-Nullable Dynamic element nulls the whole Tuple.
+SELECT accurateCastOrNull(CAST((NULL, 9), 'Tuple(Dynamic, Int32)'), 'Tuple(Float32, Int32)') AS r, toTypeName(r);
+\N	Nullable(Tuple(Float32, Int32))
+-- A Variant/Dynamic element whose per-variant conversions to the SAME target type disagree on
+-- nullability (e.g. UInt16 -> Float32 never fails so it stays plain, while DateTime -> Float32 can
+-- fail so it becomes Nullable) must assemble cleanly. The converted columns are unified to Nullable
+-- before assembly so the result column type matches every column inserted from.
+SET allow_suspicious_variant_types = 1;
+-- Pin the timezone so the DateTime -> Float32 epoch value below is deterministic under randomization.
+SET session_timezone = 'UTC';
+SELECT accurateCastOrNull(CAST(tuple(CAST('42', 'Variant(DateTime, UInt16, UInt32)')), 'Tuple(Dynamic)'), 'Tuple(Float32)');
+(42)
+SELECT accurateCastOrNull(CAST(tuple(CAST('42', 'Variant(DateTime, UInt16)')), 'Tuple(Dynamic)'), 'Tuple(UInt8)');
+(42)
+SELECT accurateCastOrNull(tuple(CAST('42', 'Variant(DateTime, UInt16)')), 'Tuple(Float32)');
+(42)
+-- per-row, both the numeric variant (row 1) and the temporal variant (row 2) populated in one block,
+-- so the assembly inserts from both the plain and the Nullable converted column (Dynamic source).
+SELECT id, accurateCastOrNull(t, 'Tuple(Float32)') AS r
+FROM (SELECT 1 AS id, tuple(CAST(CAST('42', 'Variant(DateTime, UInt16)'), 'Dynamic')) AS t
+      UNION ALL SELECT 2 AS id, tuple(CAST(CAST('2020-01-01 00:00:00', 'Variant(DateTime, UInt16)'), 'Dynamic')) AS t)
+ORDER BY id;
+1	(42)
+2	(1577836800)
+-- Variant source (not via Dynamic) exercises the same heterogeneous-nullability assembly.
+SELECT accurateCastOrNull(tuple(CAST('2020-01-01 00:00:00', 'Variant(DateTime, UInt16)')), 'Tuple(Float32)');
+(1577836800)

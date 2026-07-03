@@ -7,6 +7,7 @@ using Interval = HighlightImpl::Interval;
 
 namespace DB
 {
+bool operator==(const HighlightImpl::Interval & a, const HighlightImpl::Interval & b);
 bool operator==(const HighlightImpl::Interval & a, const HighlightImpl::Interval & b)
 {
     return a.begin == b.begin && a.end == b.end;
