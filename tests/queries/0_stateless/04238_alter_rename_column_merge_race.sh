@@ -21,12 +21,21 @@ set -e
 # because the merged part physically holds the new name while the read maps new->old). Same idiom as
 # 03830_vertical_merge_inject_column_after_drop.
 
+# The final SELECT is only meaningful after the pending RENAME COLUMN mutation has materialized:
+# reading the renamed column while its mutation is still pending returns NULL regardless of the
+# fix. If the mutation does not finish within the budget (for example on a very busy worker),
+# report it as a timeout (print the still-pending rows and return 1) so it surfaces as such
+# instead of falling through to the pre-materialization NULL, which would look like a false
+# data-loss regression.
 wait_mutation() {
     local table="$1"
-    for _ in $(seq 1 100); do
+    for _ in $(seq 1 200); do
         [ "$(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database = currentDatabase() AND table = '${table}'")" = "1" ] && return 0
         sleep 0.3
     done
+    echo "TIMEOUT: RENAME COLUMN mutation on ${table} did not finish; still-pending mutations:"
+    ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, parts_to_do, is_done, latest_fail_reason FROM system.mutations WHERE database = currentDatabase() AND table = '${table}' AND is_done = 0 FORMAT Vertical"
+    return 1
 }
 
 # Phase 1: a column WITH a default (String DEFAULT ''). This is the facet #104822 fixed:
