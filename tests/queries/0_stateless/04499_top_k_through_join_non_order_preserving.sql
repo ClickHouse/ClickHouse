@@ -12,14 +12,21 @@
 -- take precedence over the CI settings randomizer): read-in-order enabled so the deferral path
 -- is live; spilling off so joinMayHaveDelayedBlocks is false; join side pinned so the deferral
 -- is otherwise satisfiable and preservesLeftBlockOrder() is the only remaining gate.
+--
+-- The join is one-to-one (each left key matches exactly one right row), so the correctness probes
+-- return the exact top-10 pk 0..9. That makes the pushed limit's value and side observable: a
+-- pushdown that keeps too few rows (for example a wrong `Limit 1`) or attaches the limit to the
+-- wrong side changes the returned rows, instead of hiding behind a fan-out of equal pk. The
+-- EXPLAIN probes assert the pushed `Limit` step is present; the correctness probes below pin its
+-- value and side.
 
 DROP TABLE IF EXISTS tl_04499;
 DROP TABLE IF EXISTS tr_04499;
 
 CREATE TABLE tl_04499 (pk UInt64, j UInt64) ENGINE = MergeTree ORDER BY pk
-    AS SELECT number, number % 100 FROM numbers(100000);
+    AS SELECT number, number FROM numbers(100000);
 CREATE TABLE tr_04499 (j UInt64, v UInt64) ENGINE = MergeTree ORDER BY j
-    AS SELECT number % 100, number FROM numbers(1000);
+    AS SELECT number, number FROM numbers(100000);
 
 -- topKThroughJoin grafts a `Limit` step onto the preserved (left) side. The `%Limit` (plain
 -- step header, excluding the `Limit (preliminary LIMIT)` header) is present only when the
@@ -126,7 +133,10 @@ SELECT count() FROM (
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
--- Results must stay correct: top-10 pk are 0..9 (every left row matches at least one right row).
+-- Correctness pins the pushed limit's value and side. Because the join is one-to-one, the top-10
+-- pk are exactly 0..9: a pushdown that keeps only the first row (a wrong `Limit 1`) would return a
+-- single 0, and a limit pushed onto the right side would drop or reorder left rows. This is the
+-- one-to-one form the earlier fan-out data could not prove: ten equal pk = 0 hid a wrong limit.
 SELECT tl_04499.pk
 FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
 ORDER BY tl_04499.pk LIMIT 10
