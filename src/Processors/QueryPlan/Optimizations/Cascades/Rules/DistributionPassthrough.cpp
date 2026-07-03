@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Core/SortDescription.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -130,6 +131,22 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         std::vector<GroupExpressionPtr> result;
+
+        /// Per-block and non-deterministic functions (`rowNumberInAllBlocks`, `blockNumber`,
+        /// `nowInBlock`, `rand`, ...) produce different values when the stream is split across
+        /// nodes or recomputed per replica, so such a step runs on a single node only.
+        /// The rule-based planner applies the same rule when moving gathers across steps.
+        if (const ActionsDAG * step_dag = tryGetActionsDAG(expression->getQueryPlanStep());
+            step_dag && QueryPlanOptimizations::dagContainsNonDeterministicFunction(*step_dag))
+        {
+            DistributionDescription single_node;    /// node_count=1, not replicated (default)
+            if (auto implementation_expression = createAtDistribution(expression, required_properties, single_node))
+            {
+                memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+                result.push_back(implementation_expression);
+            }
+            return result;
+        }
 
         /// Implementation at the parent's required distribution.
         if (auto implementation_expression = createAtDistribution(expression, required_properties, required_properties.distribution))

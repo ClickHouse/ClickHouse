@@ -84,6 +84,8 @@ std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::N
     /// A SortingStep with a limit is a top-N (row-reducing) operator, so it is kept as an
     /// operator instead; the limit is owned by that operator, never by the sorting property.
     const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
+    if (sorting_step)
+        memo.setSortSettings(sorting_step->getSettings());
     if (sorting_step && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() == 0)
     {
         chassert(node.children.size() == 1);

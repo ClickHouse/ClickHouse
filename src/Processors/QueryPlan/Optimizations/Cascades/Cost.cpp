@@ -227,16 +227,20 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
             || dynamic_cast<const ScatterExchangeStep *>(expression_plan_step))
             total_cost.cost.sequential += rows;
     }
-    else if (typeid_cast<const SortingStep *>(expression_plan_step))
+    else if (const auto * sorting_step = typeid_cast<const SortingStep *>(expression_plan_step))
     {
         Float64 rows = group->statistics->estimated_row_count;
-        /// A partial top-N sort scans all of its input rows (keeping only the top L per node), so cost
-        /// its work on the input cardinality rather than the trimmed output L.
-        if (dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()))
+        /// A bounded (top-N) sort scans all of its input rows, keeping only the best L; the group
+        /// stats are already trimmed to L, so read the input cardinality from the input group.
+        if (sorting_step->getLimit() > 0)
             rows = getInputGroupWithStats(memo, expression, 0)->statistics->estimated_row_count;
-        total_cost.cost.work += rows * std::max(1.0, std::log2(rows)) / parallelism;
-        /// N-way merge is single-threaded.
-        total_cost.cost.sequential += rows / parallelism;
+        /// A top-N keeps a heap of at most L rows (n * log L); a full sort is n * log n.
+        const Float64 sorted_rows = sorting_step->getLimit() > 0
+            ? std::min(rows, Float64(sorting_step->getLimit()))
+            : rows;
+        total_cost.cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / parallelism;
+        /// N-way merge is single-threaded and sees only the rows the sort emits.
+        total_cost.cost.sequential += group->statistics->estimated_row_count / parallelism;
     }
     else
     {

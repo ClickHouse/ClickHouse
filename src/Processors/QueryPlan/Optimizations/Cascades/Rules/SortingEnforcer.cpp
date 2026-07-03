@@ -41,8 +41,16 @@ bool SortingEnforcer::checkPattern(GroupExpressionPtr expression, const Expressi
 std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const SortDescription & sort_desc = required_properties.sorting;
-    SortingStep::Settings sort_settings(65000);
-    sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;   /// TODO: construct from settings
+    /// Use the sort settings captured from the query's own SortingStep so the enforcer-built
+    /// sort keeps the query's size limits and spill thresholds.
+    SortingStep::Settings sort_settings = [&]
+    {
+        if (const auto & captured_settings = memo.getSortSettings())
+            return *captured_settings;
+        SortingStep::Settings fallback_settings(65000);
+        fallback_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+        return fallback_settings;
+    }();
     const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
 
     /// Create a full SortingStep expression whose input requires the same distribution

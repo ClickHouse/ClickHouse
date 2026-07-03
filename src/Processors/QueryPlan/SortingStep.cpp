@@ -691,7 +691,9 @@ void SortingStep::serialize(Serialization & ctx) const
 
     /// Do not serialize type here; Later we can use different names if needed.\
 
-    /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
+    /// The limit matters for a distributed partial top-N: the sort runs on a worker below a
+    /// sorted gather, and losing the limit would turn it into an unbounded full sort there.
+    writeVarUInt(limit, ctx.out);
 
     serializeSortDescription(result_description, ctx.out);
 
@@ -709,6 +711,9 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
+    UInt64 limit = 0;
+    readVarUInt(limit, ctx.in);
+
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
@@ -719,11 +724,14 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
     return std::make_unique<SortingStep>(
-        ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+        ctx.input_headers.front(), std::move(result_description), limit, std::move(sort_settings));
 }
 
 QueryPlanStepPtr SortingStep::clone() const
 {
+    /// Reconstructing another type as Full would silently drop its ordered-input contract.
+    if (type != Type::Full)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of SortingStep is implemented only for Full sorting");
     if (!partition_by_description.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone of partitioned sorting is not implemented for SortingStep");
 

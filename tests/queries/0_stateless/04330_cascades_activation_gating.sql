@@ -26,11 +26,23 @@ SELECT '-- 3. With both settings on, WITH TOTALS is rejected (fail-close)';
 SELECT k, sum(x) FROM t_gating GROUP BY k WITH TOTALS ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A LOCAL JOIN must use only co-located data; a distributed Cascades plan cannot
+-- guarantee that, so it is rejected.
+SELECT '-- 4. LOCAL JOIN is rejected (fail-close)';
+DROP TABLE IF EXISTS t_gating_dim;
+CREATE TABLE t_gating_dim (k UInt64) ENGINE = MergeTree() ORDER BY k;
+INSERT INTO t_gating_dim SELECT number % 5 FROM numbers(10);
+SELECT count() FROM t_gating AS a LOCAL INNER JOIN t_gating_dim AS b ON a.k = b.k
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM t_gating AS a LOCAL INNER JOIN t_gating_dim AS b ON a.k = b.k
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 0;
+DROP TABLE t_gating_dim;
+
 -- `force_aggregation_in_order` makes an in-order aggregation. It passes the Cascades
 -- pre-check (the step sorts its own input, so exchanges below it are safe), but the plan
 -- serializer cannot ship an in-order aggregation to workers, so the query is rejected
 -- cleanly instead of returning wrong groups.
-SELECT '-- 4. force_aggregation_in_order is rejected (in-order aggregation is not serializable)';
+SELECT '-- 5. force_aggregation_in_order is rejected (in-order aggregation is not serializable)';
 SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     force_aggregation_in_order = 1, distributed_plan_execute_locally = 1; -- { serverError SUPPORT_IS_DISABLED }

@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -169,10 +170,34 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
     }
 }
 
-/// Rejects plans the Cascades optimizer cannot distribute correctly. An in-order aggregation
-/// without explicit input sorting assumes its input arrives ordered by the group keys, which
-/// exchanges do not guarantee; such steps are only created by a pass that is skipped when Cascades
-/// is active, so this check is defensive.
+/// Throws if the Cascades optimizer cannot distribute this step correctly.
+static void checkStepSupportedByCascades(const IQueryPlanStep & step)
+{
+    /// A LOCAL JOIN must use only co-located data, but Cascades would implement it as a
+    /// gathered, broadcast or shuffle join over non-co-located data (the rule-based planner
+    /// refuses to distribute such joins too).
+    if (const auto * join_step = typeid_cast<const JoinStepLogical *>(&step);
+        join_step && join_step->getJoinOperator().locality == JoinLocality::Local)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer does not support LOCAL JOIN");
+
+    /// Defensive: the pass that creates such steps is skipped when Cascades is active.
+    /// An in-order aggregation without explicit input sorting assumes its input arrives
+    /// ordered by the group keys, which exchanges do not guarantee.
+    if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(&step);
+        aggregating_step && aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
+
+    /// Defensive, same as above. A non-Full sorting step (FinishSorting, MergingSorted)
+    /// requires ordered input, which Cascades does not model, and no rule implements it.
+    if (const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
+        sorting_step && sorting_step->getType() != SortingStep::Type::Full)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer supports only full sorting steps");
+}
+
+/// Rejects plans with steps the Cascades optimizer cannot distribute correctly.
 void checkCascadesSupported(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
@@ -181,10 +206,7 @@ void checkCascadesSupported(const QueryPlan::Node & root)
         const auto * node = stack.back();
         stack.pop_back();
 
-        if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(node->step.get());
-            aggregating_step && aggregating_step->inOrder() && !aggregating_step->explicitSortingRequired())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan with enable_cascades_optimizer does not support in-order aggregation");
+        checkStepSupportedByCascades(*node->step);
 
         for (const auto * child : node->children)
             stack.push_back(child);
