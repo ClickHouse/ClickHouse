@@ -13,8 +13,11 @@ namespace DB
 /// separate columns (except typed paths, they are not returned and
 /// should be processed separately).
 std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & object_column);
-/// Flatten paths from shared data and split them into buckets.
-std::vector<std::vector<std::pair<String, ColumnPtr>>> flattenAndBucketSharedDataPaths(const IColumn & shared_data_column, size_t start, size_t end, const DataTypePtr & dynamic_type, size_t num_buckets);
+/// Flatten paths from shared data for a single bucket only.
+/// Only materializes ColumnDynamic columns for paths belonging to target_bucket.
+std::vector<std::pair<String, ColumnPtr>> flattenSharedDataPathsForBucket(
+    const IColumn & shared_data_column, size_t start, size_t end,
+    const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
 void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows);

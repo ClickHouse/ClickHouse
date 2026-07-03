@@ -241,12 +241,22 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
-        /// First we need to flatten all paths stored in the shared data and separate them into buckets.
-        auto flattened_paths_buckets = flattenAndBucketSharedDataPaths(column, offset, end, dynamic_type, buckets);
-        /// Second, write paths in each bucket separately.
+        /// Per-bucket path names for the copy section.
+        /// We save them separately because each bucket's flattened columns
+        /// are freed after serialization to reduce peak memory.
+        std::vector<std::vector<String>> bucket_path_names(buckets);
+
+        /// Process each bucket separately to limit peak memory —
+        /// only one bucket's ColumnDynamic columns are alive at a time.
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
-            const auto & flattened_paths = flattened_paths_buckets[bucket];
+            auto flattened_paths = flattenSharedDataPathsForBucket(
+                column, offset, end, dynamic_type, bucket, buckets);
+
+            /// Save path names for the copy section.
+            for (const auto & [path, _] : flattened_paths)
+                bucket_path_names[bucket].push_back(path);
+
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
 
@@ -479,10 +489,13 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         /// of paths in the total list of paths that we serialized for buckets.
         std::unordered_map<std::string_view, size_t> path_to_index;
         size_t index = 0;
-        for (const auto & [path, _] : flattened_paths_buckets | std::views::join)
+        for (const auto & paths : bucket_path_names)
         {
-            path_to_index[path] = index;
-            ++index;
+            for (const auto & path : paths)
+            {
+                path_to_index[path] = index;
+                ++index;
+            }
         }
 
         auto [indexes_column, indexes_type] = createPathsIndexes(path_to_index, shared_data_tuple_column.getColumn(0), nested_offset, nested_end);
