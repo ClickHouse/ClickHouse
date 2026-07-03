@@ -24,7 +24,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
-    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
@@ -47,17 +46,18 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
 
-    /// Capture the coordinator's split-time metadata (see `etag` in the header). Only for the bucket-split
-    /// path with ETag validation on; every other path leaves it empty (worker fetches its own), as before.
-    if (object->file_bucket_info && context->getSettingsRef()[Setting::s3_validate_etag_on_read])
+    /// Propagate whatever object metadata the coordinator already has (see `etag` in the header) so the
+    /// worker can skip its own metadata HEAD. It is available for free from the coordinator's listing
+    /// (S3 `ListObjectsV2` carries the ETag/size) and, on the bucket-split path, is refreshed to the
+    /// generation the coordinator read to compute bucket boundaries. Only a non-empty ETag is useful for
+    /// pinning; when the coordinator has none (e.g. explicit keys with skipped metadata, non-S3 without an
+    /// ETag) we leave it empty and the worker fetches its own metadata, as before.
+    if (auto object_metadata = object->getObjectMetadata())
     {
-        if (auto object_metadata = object->getObjectMetadata())
-        {
-            etag = object_metadata->etag;
-            size_bytes = object_metadata->size_bytes;
-            is_size_known = object_metadata->is_size_known;
-            last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
-        }
+        etag = object_metadata->etag;
+        size_bytes = object_metadata->size_bytes;
+        is_size_known = object_metadata->is_size_known;
+        last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
     }
 }
 
@@ -101,6 +101,9 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object_metadata.is_size_known = is_size_known;
         object_metadata.last_modified = Poco::Timestamp(static_cast<Poco::Timestamp::TimeVal>(last_modified_epoch_us));
         object->setObjectMetadata(object_metadata);
+        /// Mark it as coordinator-propagated (carries no tags) so the worker's read path reuses it -
+        /// skipping its own HEAD - yet still fetches tags when `_tags` is requested.
+        object->metadata_propagated_from_coordinator = true;
     }
 
     return object;

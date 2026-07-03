@@ -77,3 +77,25 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
     WHERE initial_query_id IN (SELECT query_id FROM initial_query_ids) AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
 "
+
+# Non-bucket (default FILE granularity) s3Cluster: the coordinator's listing already carries the ETag/size,
+# and it is now propagated too, so the worker reuses it and issues zero HEADs here as well (before this
+# change the worker re-HEAD made this >= 1).
+qid_nobucket="04417_nobucket_headcount_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} --query_id "$qid_nobucket" -q "
+    SELECT count() FROM s3Cluster('test_cluster_one_shard_three_replicas_localhost', '$parq', $auth, 'Parquet', 'n UInt64')
+    SETTINGS s3_validate_etag_on_read = 1, enable_filesystem_cache = 0, use_cache_for_count_from_files = 0, s3_ignore_file_doesnt_exist = 0
+" > /dev/null
+
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+
+${CLICKHOUSE_CLIENT} -q "
+    WITH initial_query_ids AS
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase() AND query_id = '$qid_nobucket' AND is_initial_query = 1 AND type = 'QueryFinish' AND event_date >= today() - 1
+    )
+    SELECT sum(ProfileEvents['S3HeadObject'])
+    FROM system.query_log
+    WHERE initial_query_id IN (SELECT query_id FROM initial_query_ids) AND is_initial_query = 0 AND type = 'QueryFinish' AND event_date >= today() - 1
+"

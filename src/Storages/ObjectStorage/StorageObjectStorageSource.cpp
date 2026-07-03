@@ -806,16 +806,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            /// Only a bucket-split worker task carries the coordinator's propagated split-time metadata
-            /// (marked by `file_bucket_info`, see `ClusterFunctionReadTaskResponse`); limit the special
-            /// handling below to that case so ordinary listing/key-iteration reads keep their existing
-            /// no-extra-fetch behavior.
-            const bool is_propagated_split_metadata = object_info->file_bucket_info && propagated_metadata.has_value();
+            /// Metadata propagated by the s3Cluster coordinator (see `ClusterFunctionReadTaskResponse`)
+            /// lets the worker skip its own metadata HEAD. It is distinguished from ordinary single-node
+            /// listing metadata by `metadata_propagated_from_coordinator` (single-node listing already
+            /// includes tags when requested, so it must keep its no-extra-fetch behavior below).
+            const bool is_propagated_metadata
+                = object_info->metadata_propagated_from_coordinator && propagated_metadata.has_value();
 
-            if (is_propagated_split_metadata)
+            if (is_propagated_metadata)
             {
-                /// Honor the propagated metadata - pinning this ranged read to the coordinator's
-                /// generation via `If-Match` - only where it actually helps and is safe:
+                /// Reuse the propagated metadata - and, when `s3_validate_etag_on_read` is enabled, pin
+                /// this read to the coordinator's generation via `If-Match` - only where it helps and is
+                /// safe:
                 ///   - only S3 enforces `StoredObject::etag` on the GET (other backends ignore it);
                 ///   - only when `_tags` was not requested (the propagated metadata carries no tags);
                 ///   - not in ignore-missing mode (`s3_ignore_file_doesnt_exist`), which must probe the
@@ -859,8 +861,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 else
                     object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
             }
-            /// Otherwise `propagated_metadata` is present but this is not a bucket-split task (ordinary
-            /// listing / key-iteration metadata): keep it as-is, no extra fetch.
+            /// Otherwise `propagated_metadata` is present from the worker's own listing / key iteration
+            /// (single-node): keep it as-is, no extra fetch.
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0

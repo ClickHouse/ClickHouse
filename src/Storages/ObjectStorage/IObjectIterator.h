@@ -53,6 +53,13 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
+    /// Set on the worker when `metadata` was propagated by the s3Cluster coordinator (via
+    /// `ClusterFunctionReadTaskResponse`) rather than obtained from the worker's own listing. It marks
+    /// metadata that carries no object tags, so the read path must still fetch tags when `_tags` is
+    /// requested, and lets the worker skip its own metadata HEAD otherwise. Never set for single-node
+    /// reads (whose listing metadata already includes tags when requested).
+    bool metadata_propagated_from_coordinator = false;
+
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
 };
