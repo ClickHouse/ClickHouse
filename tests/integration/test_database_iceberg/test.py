@@ -1588,3 +1588,102 @@ def test_namespace_prefix_grants(started_cluster):
         ), f"any-table grant is not namespace-scoped: {grants}"
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_namespace_prefix_create_view(started_cluster):
+    """
+    CREATE VIEW under USE db.namespace must store the SELECT with the
+    namespace-qualified table name.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_view_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "view_src_table"
+    view = f"default.v_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(4)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP VIEW IF EXISTS {view}")
+    try:
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; CREATE VIEW {view} AS SELECT * FROM {table_name}"
+        )
+        show_create = node.query(f"SHOW CREATE TABLE {view}")
+        assert (
+            f"`{namespace}.{table_name}`" in show_create
+        ), f"view definition is not namespace-qualified: {show_create}"
+
+        count = int(node.query(f"SELECT count() FROM {view}"))
+        assert count == 4, f"expected 4 rows through the view, got {count}"
+    finally:
+        node.query(f"DROP VIEW IF EXISTS {view}")
+
+
+def test_namespace_prefix_distributed_join(started_cluster):
+    """
+    A bare table name in the JOIN section of a query shipped to remote servers
+    must keep the namespace prefix (remote servers have no session prefix).
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_dist_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "dist_join_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # 127.0.0.2 forces the query through the remote path on the same server.
+    count = int(
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"SELECT count() FROM remote('127.0.0.2', system.one) AS o CROSS JOIN {table_name} AS r"
+        )
+    )
+    assert count == 3, f"expected 3 rows via distributed JOIN, got {count}"
+
+
+def test_namespace_prefix_row_policies(started_cluster):
+    """
+    CREATE/SHOW/DROP ROW POLICY on a bare table name under USE db.namespace must
+    target the namespace-qualified table, like SELECT does.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_policy_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "policy_test_table"
+    policy = f"pol_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    use = f"USE {CATALOG_NAME}.{namespace}; "
+    node.query(use + f"CREATE ROW POLICY {policy} ON {table_name} USING 1 TO ALL")
+    try:
+        show_create = node.query(
+            use + f"SHOW CREATE ROW POLICY {policy} ON {table_name}"
+        )
+        assert (
+            f"`{namespace}.{table_name}`" in show_create
+        ), f"policy target is not namespace-qualified: {show_create}"
+
+        policies = node.query(use + f"SHOW ROW POLICIES ON {table_name}")
+        assert policy in policies, f"policy not listed for the namespaced table: {policies}"
+    finally:
+        node.query(use + f"DROP ROW POLICY IF EXISTS {policy} ON {table_name}")
+    remaining = node.query(f"SHOW ROW POLICIES ON {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert policy not in remaining, f"policy not dropped: {remaining}"
