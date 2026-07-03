@@ -856,8 +856,9 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 
 ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 
-/// Throws QUERY_WAS_CANCELLED / TIMEOUT_EXCEEDED if the query has been cancelled; a no-op otherwise (and when
-/// query_status is null). Defined in the .cpp so the full QueryStatus definition stays out of this header.
+/// Throws QUERY_WAS_CANCELLED / TIMEOUT_EXCEEDED if the query has been cancelled or has exceeded
+/// max_execution_time (in either timeout_overflow_mode); a no-op otherwise (and when query_status is
+/// null). Defined in the .cpp so the full QueryStatus definition stays out of this header.
 void throwIfQueryCancelled(const QueryStatusPtr & query_status);
 
 
@@ -892,7 +893,7 @@ struct ConvertImplGenericToString
                 /// A single row can hold a large composite value (Dynamic, Array, JSON, ...) that is expensive to
                 /// serialize; the query's time and cancellation limits are otherwise only checked between pipeline
                 /// blocks, so a big single block would keep serializing after KILL QUERY or max_execution_time and
-                /// trip the hung check. This is a cheap atomic check that throws once the query has been cancelled.
+                /// trip the hung check. Cheap per-row check that throws once the query is cancelled or times out.
                 throwIfQueryCancelled(query_status);
 
                 serialization->serializeText(col_from, row, write_buffer, format_settings);

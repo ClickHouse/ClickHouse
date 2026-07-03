@@ -1,1 +1,4 @@
-cancelled promptly
+TIMEOUT_EXCEEDED
+ok
+break exit: 0
+ok

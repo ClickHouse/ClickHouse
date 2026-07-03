@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
 }
 
@@ -54,8 +55,11 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
 
 void throwIfQueryCancelled(const QueryStatusPtr & query_status)
 {
-    if (query_status)
-        query_status->throwIfKilled();
+    /// checkTimeLimit() honors KILL QUERY and max_execution_time in both timeout overflow modes; it returns
+    /// false (instead of throwing) for `break`, which we turn into a hard stop since a half-serialized value
+    /// is not a useful partial result. Mirrors FunctionBaseXXConversion.
+    if (query_status && !query_status->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while serializing a value to String");
 }
 
 }
