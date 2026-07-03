@@ -8,6 +8,7 @@
 #include <Common/QueryScope.h>
 #include <future>
 #include <memory>
+#include <vector>
 #include <Common/ThreadStatus.h>
 
 
@@ -211,11 +212,13 @@ private:
 
     bool is_interactive = false;
 
-    /// When `allow_experimental_detach_queries` is used in interactive mode, the query runs on
-    /// `GlobalThreadPool` and this future tracks its completion. Waited on at the start of the
-    /// next `sendQuery` (rethrowing any post-start exception) and in the destructor (logging
-    /// any exception, since there is no client to surface it to at shutdown).
-    std::shared_ptr<std::future<void>> detached_query_completion;
+    /// When `allow_experimental_detach_queries` is used in interactive mode, each detached query
+    /// runs on `GlobalThreadPool` and its completion future is kept here. Several detached queries
+    /// can be in flight at once, so this is a list rather than a single handle. Finished entries
+    /// are reaped at the start of the next `sendQuery` (rethrowing the first post-start exception);
+    /// any still-running entries are waited on in the destructor (logging any exception, since there
+    /// is no client to surface it to at shutdown) so that data is persisted before the process exits.
+    std::vector<std::shared_ptr<std::future<void>>> detached_query_completions;
 };
 
 }

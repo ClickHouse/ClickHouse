@@ -104,13 +104,15 @@ LocalConnection::LocalConnection(
 
 LocalConnection::~LocalConnection()
 {
-    /// Wait for any detached query to complete so data is persisted before process exit.
-    /// Discard any post-start exception — there is no client to surface it to at this point.
-    if (detached_query_completion && detached_query_completion->valid())
+    /// Wait for every still-running detached query to complete so data is persisted before process
+    /// exit. Discard any post-start exception — there is no client to surface it to at this point.
+    for (auto & completion : detached_query_completions)
     {
+        if (!completion || !completion->valid())
+            continue;
         try
         {
-            detached_query_completion->get();
+            completion->get();
         }
         catch (...)
         {
@@ -244,17 +246,33 @@ void LocalConnection::sendQuery(
 
     next_packet_type.reset();
 
-    /// If a previous detached query has already finished, observe its result now: clear the handle
-    /// and rethrow any stored post-start exception so the user sees the failure on this interaction.
-    /// If it is still running, leave it in the background — blocking here would serialize every
-    /// follow-up command behind the detached query and defeat the point of detaching. The
+    /// If any previously detached query has already finished, observe its result now: drop its
+    /// handle and rethrow the first stored post-start exception so the user sees the failure on
+    /// this interaction. Queries that are still running are left in the background — blocking here
+    /// would serialize every follow-up command behind them and defeat the point of detaching. The
     /// destructor waits for any still-running detached query before the process exits.
-    if (detached_query_completion && detached_query_completion->valid()
-        && detached_query_completion->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
     {
-        /// Take ownership so the handle is cleared even if `get()` rethrows.
-        auto completion = std::move(detached_query_completion);
-        completion->get();
+        std::exception_ptr first_exception;
+        std::erase_if(
+            detached_query_completions,
+            [&](const std::shared_ptr<std::future<void>> & completion)
+            {
+                if (!completion || !completion->valid()
+                    || completion->wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                    return false;
+                try
+                {
+                    completion->get();
+                }
+                catch (...)
+                {
+                    if (!first_exception)
+                        first_exception = std::current_exception();
+                }
+                return true;
+            });
+        if (first_exception)
+            std::rethrow_exception(first_exception);
     }
 
     /// Detach path (interactive mode only): when `allow_experimental_detach_queries` is on and
@@ -310,7 +328,7 @@ void LocalConnection::sendQuery(
                     detach_attempted = true;
                     auto handle = detachQuery(state->query, async_context);
                     detach_query_id = std::move(handle.query_id);
-                    detached_query_completion = std::move(handle.completion);
+                    detached_query_completions.push_back(std::move(handle.completion));
                     detach_started = true;
                 }
             }
