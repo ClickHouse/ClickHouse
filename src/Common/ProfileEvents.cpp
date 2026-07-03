@@ -371,6 +371,7 @@
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.", ValueType::Number) \
     M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only", ValueType::Number) \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.", ValueType::Number) \
+    M(DistributedShardsSkipped, "Number of shards silently skipped in a query to a Distributed table (or the remote/cluster table functions) when `skip_unavailable_shards` is enabled, either because the shard was unavailable or because it raised an exception covered by `skip_unavailable_shards_mode`.", ValueType::Number) \
     \
     M(Shards, "The number of shards involved in a query, summed across all distributed tables and table functions. A single host is counted multiple times if it appears in multiple tables. The number counts the total expected number of shards, which includes skipped shards with the `skip_unavailable_shards` setting.", ValueType::Number) \
     \
