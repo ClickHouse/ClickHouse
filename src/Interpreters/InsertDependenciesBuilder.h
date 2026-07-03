@@ -140,6 +140,7 @@ private:
     void collectAllDependencies();
 
     Chain createPreSink(StorageIDMaybeEmpty view_id) const;
+    Chain createPresortChain() const;
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
     Chain createSink(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;

@@ -4047,6 +4047,17 @@ If it is set to true, then a user is allowed to executed DDL queries.
     DECLARE(Bool, parallel_view_processing, false, R"(
 Enables pushing to attached views concurrently instead of sequentially.
 )", 0) \
+    DECLARE(Bool, presort_inserts_with_materialized_views, false, R"(
+Sort inserted blocks by the destination table's sorting key before they reach the sink, when the destination is a `MergeTree` table with dependent materialized views.
+
+The destination sink then detects the data as already sorted and skips its own sorting step, and — more importantly — dependent materialized views receive the rows in sorted order, so the sinks of their target tables can also skip sorting when their sorting key is a prefix of the destination table's sorting key and the view query preserves the row order (e.g. only filters or projects columns). This removes a redundant sort of the rows matched by a materialized view, which can dominate the cost of pushing to views.
+
+Has no effect when the destination table has no dependent materialized views, has no sorting key, or when some element of the sorting key is an expression rather than a plain column. It is also disabled automatically when any materialized view in the dependency tree targets an engine whose result depends on the positional order of rows with equal sorting key: `CollapsingMergeTree`, `CoalescingMergeTree`, `GraphiteMergeTree`, or `ReplacingMergeTree` without a version column. The destination table itself always receives identical parts, because its sink sorts the rows by the same key with a stable sort anyway.
+
+Note that with this setting enabled the queries of dependent materialized views observe the rows of each block in sorting-key order instead of the original insertion order, which matters if a view query uses order-dependent constructs such as `LIMIT` without `ORDER BY`, window functions without `ORDER BY`, or aggregate functions like `any`, `groupArray`, and `argMax` with equal ties. Enabling or disabling the setting between retries of the same insert also changes the deduplication tokens derived from block contents in dependent views.
+
+Blocks that carry more than one deduplication token (for example, merged asynchronous inserts) are passed through unsorted, because the tokens map to ranges of row offsets and reordering the rows would break deduplication.
+)", 0) \
     DECLARE(Bool, enable_unaligned_array_join, false, R"(
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
 )", 0) \

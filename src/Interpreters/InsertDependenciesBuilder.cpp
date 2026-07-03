@@ -24,6 +24,8 @@
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/sortBlock.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
 #include <Interpreters/Context.h>
@@ -123,6 +125,7 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsBool presort_inserts_with_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -967,6 +970,128 @@ Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTran
 }
 
 
+/// Sorts every chunk by the destination table's sorting key before the sink.
+/// The sink then detects the block as already sorted and skips its own sorting step, and dependent
+/// materialized views receive the rows in sorted order, so their target tables' sinks can also skip
+/// sorting when their sorting key is compatible with the source one and the view query preserves
+/// the row order. Without this, every materialized view target re-sorts the matched rows from
+/// scratch, which can dominate the cost of pushing to views.
+class PresortBeforeSinkTransform final : public ExceptionKeepingTransform
+{
+public:
+    PresortBeforeSinkTransform(SharedHeader header_, SortDescription description_)
+        : ExceptionKeepingTransform(header_, header_)
+        , description(std::move(description_))
+    {
+    }
+
+    String getName() const override { return "PresortBeforeSinkTransform"; }
+
+protected:
+    void onConsume(Chunk chunk) override
+    {
+        /// A block that carries more than one deduplication token maps the tokens to ranges of row
+        /// offsets (e.g. merged asynchronous inserts). Reordering the rows would break that mapping,
+        /// and self-deduplication in the sink could then drop wrong rows, so pass such blocks through.
+        if (chunk.getChunkInfos().has<DeduplicationInfo>()
+            && chunk.getChunkInfos().getSafe<DeduplicationInfo>()->getCount() > 1)
+        {
+            cur_chunk = std::move(chunk);
+            return;
+        }
+
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        if (!isAlreadySorted(block, description))
+        {
+            /// Stable sort, because the sink sorts with a stable permutation as well: the relative
+            /// order of rows with equal keys is significant e.g. for Replacing/CollapsingMergeTree.
+            sortBlock(block, description, /*limit=*/0, IColumn::PermutationSortStability::Stable);
+            chunk.setColumns(block.getColumns(), block.rows());
+        }
+        cur_chunk = std::move(chunk);
+    }
+
+    GenerateResult onGenerate() override
+    {
+        GenerateResult res;
+        res.chunk = std::move(cur_chunk);
+        return res;
+    }
+
+private:
+    SortDescription description;
+    Chunk cur_chunk;
+};
+
+
+Chain InsertDependenciesBuilder::createPresortChain() const
+{
+    if (!init_context->getSettingsRef()[Setting::presort_inserts_with_materialized_views])
+        return {};
+
+    /// Sorting upstream only pays off when the rows are pushed to dependent views afterwards;
+    /// otherwise the sink's own sorting is exactly as good.
+    if (dependent_views.at(root_view).empty())
+        return {};
+
+    const auto & inner_table_id = inner_tables.at(root_view);
+    if (!dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
+        return {};
+
+    const auto & inner_metadata = metadata_snapshots.at(inner_table_id);
+    if (!inner_metadata->hasSortingKey())
+        return {};
+
+    /// The presort changes the order in which the dependent views observe the rows of a block.
+    /// Engines that resolve rows with equal sorting key positionally ("the last row wins") would
+    /// silently keep different rows, so skip the presort when any view in the dependency tree
+    /// targets such an engine. The destination table itself is not affected: its sink sorts the
+    /// block by the same key with a stable permutation, producing an identical part either way.
+    for (const auto & [view_id, view_inner_table_id] : inner_tables)
+    {
+        if (view_id == root_view)
+            continue;
+
+        const auto * target_merge_tree = dynamic_cast<const MergeTreeData *>(storages.at(view_inner_table_id).get());
+        if (!target_merge_tree)
+            continue;
+
+        const auto & merging_params = target_merge_tree->merging_params;
+        bool order_sensitive = merging_params.mode == MergeTreeData::MergingParams::Collapsing
+            || merging_params.mode == MergeTreeData::MergingParams::Coalescing
+            || merging_params.mode == MergeTreeData::MergingParams::Graphite
+            || (merging_params.mode == MergeTreeData::MergingParams::Replacing && merging_params.version_column.empty());
+
+        if (order_sensitive)
+            return {};
+    }
+
+    const auto & header = output_headers.at(root_view);
+
+    Names sort_columns = inner_metadata->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = inner_metadata->getSortingKeyReverseFlags();
+    SortDescription description;
+    description.reserve(sort_columns.size());
+    for (size_t i = 0; i < sort_columns.size(); ++i)
+    {
+        /// Sorting key elements that are expressions are not present in the inserted block, the sink
+        /// computes them itself. Sorting upstream is possible only when every sorting key element
+        /// is a plain column of the block.
+        if (!header->has(sort_columns[i]))
+            return {};
+
+        if (!reverse_flags.empty() && reverse_flags[i])
+            description.emplace_back(sort_columns[i], -1, 1);
+        else
+            description.emplace_back(sort_columns[i], 1, 1);
+    }
+
+    Chain chain;
+    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description)));
+    return chain;
+}
+
+
 Chain InsertDependenciesBuilder::createChainWithDependencies() const
 {
     Chain result;
@@ -974,6 +1099,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     if (!skip_destination_table)
     {
         result = Chain::concat(std::move(result), createPreSink(root_view));
+        result = Chain::concat(std::move(result), createPresortChain());
         result = Chain::concat(std::move(result), createSink(root_view));
     }
 
