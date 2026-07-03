@@ -1,0 +1,2 @@
+query error with network error code is delivered, connection preserved
+no graceful termination on broken client socket
