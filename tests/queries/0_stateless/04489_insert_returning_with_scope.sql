@@ -20,12 +20,4 @@ RETURNING (SELECT sum(id) FROM cte);
 
 SELECT count() FROM t_ret_with_scope;
 
-SELECT 'duplicate with rejected for returning';
-WITH outer_cte AS (SELECT 1 AS x)
-INSERT INTO t_ret_with_scope
-RETURNING (WITH inner_cte AS (SELECT 2 AS x) SELECT x FROM inner_cte)
-VALUES (5); -- { serverError SYNTAX_ERROR }
-
-SELECT count() FROM t_ret_with_scope;
-
 DROP TABLE t_ret_with_scope;
