@@ -719,8 +719,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
-            identifier_full_name, subcolumn_base_case_insensitive,
-            [&] { return scope.scope_node->formatASTForErrorMessage(); }, subcolumn_suffix_case_insensitive))
+            identifier_full_name,
+            {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
+            [&] { return scope.scope_node->formatASTForErrorMessage(); }))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
@@ -769,19 +770,8 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     /// double-quoted part anywhere along the identifier pins it to case-sensitive — otherwise a
     /// `"data".Name` lookup with unquoted `Name` would still fold to `Data.Name` here, ahead of a
     /// later table that exposes the exact spelling.
-    bool full_name_case_insensitive = standard_mode;
-    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
-    {
-        if (identifier_lookup.isPartDoubleQuoted(p))
-            full_name_case_insensitive = false;
-    }
+    bool full_name_case_insensitive = standard_mode && !identifier_lookup.anyPartDoubleQuoted();
 
-    auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
-    {
-        if (case_insensitive)
-            return Poco::icompare(a, b) == 0;
-        return a == b;
-    };
 
     /// A double-quoted CTE definition (`WITH "MyCte" AS ...`) pins the table-expression name to
     /// its canonical case; an unquoted reference must not fold onto it. Mirrors the resolve side.
@@ -797,11 +787,11 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && strings_equal(path_start, table_name, table_name_case_insensitive_0))
+        if (parts_size == 1 && identifierPartsEqual(path_start, table_name, table_name_case_insensitive_0))
             return true;
         if (parts_size == 2
-            && strings_equal(path_start, database_name, part_case_insensitive(0))
-            && strings_equal(identifier[1], table_name, table_name_case_insensitive_1))
+            && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
+            && identifierPartsEqual(identifier[1], table_name, table_name_case_insensitive_1))
             return true;
         return false;
     }
@@ -817,16 +807,16 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
     const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name, table_name_case_insensitive_0))
-        || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias(), alias_case_insensitive)))
+    if ((!table_name.empty() && identifierPartsEqual(path_start, table_name, table_name_case_insensitive_0))
+        || (table_expression_node->hasAlias() && identifierPartsEqual(path_start, table_expression_node->getAlias(), alias_case_insensitive)))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
     if (!database_name.empty()
-        && strings_equal(path_start, database_name, part_case_insensitive(0))
-        && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
+        && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
+        && identifierPartsEqual(identifier[1], table_name, part_case_insensitive(1)))
         return true;
 
     return false;
@@ -956,8 +946,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
-                identifier_full_name, subcolumn_base_case_insensitive,
-                [&] { return scope.scope_node->formatASTForErrorMessage(); }, subcolumn_suffix_case_insensitive))
+                identifier_full_name,
+                {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
+                [&] { return scope.scope_node->formatASTForErrorMessage(); }))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted
@@ -1108,18 +1099,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     /// Full-name folded lookups require every part to be unquoted — a single double-quoted part
     /// anywhere along the identifier pins the gate to case-sensitive so a later table with the
     /// exact spelling is not pre-empted by a folded match here.
-    bool full_name_case_insensitive = standard_mode;
-    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
-    {
-        if (identifier_lookup.isPartDoubleQuoted(p))
-            full_name_case_insensitive = false;
-    }
+    bool full_name_case_insensitive = standard_mode && !identifier_lookup.anyPartDoubleQuoted();
 
-    /// Local equality helper that honours per-part / alias quote-style for case sensitivity
-    auto names_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
-    {
-        return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
-    };
 
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
       * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
@@ -1132,10 +1113,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     {
         const auto & table_name_compat = table_expression_data.table_name;
         const bool prefix_matches_table_name = !table_name_compat.empty()
-            && names_equal(path_start, table_name_compat, part_case_insensitive(0));
+            && identifierPartsEqual(path_start, table_name_compat, part_case_insensitive(0));
         const bool prefix_matches_alias = table_expression_node->hasAlias()
-            && names_equal(path_start, table_expression_node->getAlias(),
-                part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted());
+            && identifierPartsEqual(path_start, table_expression_node->getAlias(), part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted());
         if (prefix_matches_table_name || prefix_matches_alias)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
@@ -1178,12 +1158,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
 
-    auto strings_equal = [](const std::string & a, const std::string & b, bool case_insensitive)
-    {
-        if (case_insensitive)
-            return Poco::icompare(a, b) == 0;
-        return a == b;
-    };
 
     /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
     const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
@@ -1194,8 +1168,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const bool table_name_case_insensitive
         = part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted;
 
-    if ((!table_name.empty() && strings_equal(path_start, table_name, table_name_case_insensitive))
-        || (!table_alias.empty() && strings_equal(path_start, table_alias, alias_case_insensitive)))
+    if ((!table_name.empty() && identifierPartsEqual(path_start, table_name, table_name_case_insensitive))
+        || (!table_alias.empty() && identifierPartsEqual(path_start, table_alias, alias_case_insensitive)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -1207,7 +1181,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             /// A double-quoted CTE definition (`WITH "MyCte" AS MATERIALIZED ...`) pins the CTE
             /// name to its canonical case; an unquoted qualifier `mycte.x` must not bind to it.
             const bool cte_case_insensitive = part_case_insensitive(0) && !cte.name_is_double_quoted;
-            if (strings_equal(path_start, cte.cte_name, cte_case_insensitive))
+            if (identifierPartsEqual(path_start, cte.cte_name, cte_case_insensitive))
                 return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
         }
     }
@@ -1217,8 +1191,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
 
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty()
-        && strings_equal(path_start, database_name, part_case_insensitive(0))
-        && strings_equal(identifier[1], table_name, part_case_insensitive(1)))
+        && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
+        && identifierPartsEqual(identifier[1], table_name, part_case_insensitive(1)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1421,10 +1395,6 @@ static bool qualifierBindsToJoinSubtree(
     if (!join_tree_node || qualifier.empty())
         return false;
 
-    auto names_equal = [case_insensitive](const std::string & a, const std::string & b)
-    {
-        return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
-    };
 
     if (join_tree_node->hasAlias())
     {
@@ -1463,7 +1433,7 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && names_equal(it->second.table_name, qualifier);
+    return !it->second.table_name.empty() && identifierPartsEqual(it->second.table_name, qualifier, case_insensitive);
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,

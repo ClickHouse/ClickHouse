@@ -4,6 +4,7 @@
 #include <string>
 
 #include <fmt/format.h>
+#include <Poco/String.h>
 
 namespace DB
 {
@@ -298,6 +299,16 @@ inline std::ostream & operator<<(std::ostream & stream, const IdentifierView & i
 {
     stream << identifier_view.getFullName();
     return stream;
+}
+
+/// Compare two identifier parts (or full names), folding case when `case_insensitive`.
+/// The single shared primitive for `standard`-mode name comparison — call sites gate
+/// `case_insensitive` on the mode and the relevant double-quote pin.
+inline bool identifierPartsEqual(std::string_view lhs, std::string_view rhs, bool case_insensitive)
+{
+    if (!case_insensitive)
+        return lhs == rhs;
+    return Poco::icompare(std::string(lhs), std::string(rhs)) == 0;
 }
 
 }

@@ -159,8 +159,7 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
         for (size_t p = 0; p < matcher_parts.size(); ++p)
         {
             const bool part_quoted = p < matcher_quotes.size() && matcher_quotes[p] == IdentifierQuoteStyle::DoubleQuote;
-            const bool match = part_quoted ? matcher_parts[p] == column_parts[p]
-                                           : Poco::icompare(matcher_parts[p], column_parts[p]) == 0;
+            const bool match = identifierPartsEqual(matcher_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted);
             if (!match)
             {
                 all_parts_match = false;

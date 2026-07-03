@@ -152,9 +152,7 @@ Names joinAllParts(const std::vector<std::vector<String>> & targets)
 /// Compare two name parts, folding case unless the target part was double-quoted.
 bool partsEqualWithQuote(std::string_view target_part, std::string_view column_part, bool target_part_quoted)
 {
-    if (target_part_quoted)
-        return target_part == column_part;
-    return Poco::icompare(std::string(target_part), std::string(column_part)) == 0;
+    return identifierPartsEqual(target_part, column_part, /*case_insensitive=*/ !target_part_quoted);
 }
 
 /// Quote-aware, per-part comparison of a structured transformer target against a column name.

@@ -5,6 +5,9 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
+#include <algorithm>
+
 #include <base/defines.h>
 
 namespace DB
@@ -74,6 +77,27 @@ struct IdentifierLookup
         if (index < is_part_double_quoted.size())
             return is_part_double_quoted[index];
         return false;
+    }
+
+    bool anyPartDoubleQuoted() const
+    {
+        return std::find(is_part_double_quoted.begin(), is_part_double_quoted.end(), true) != is_part_double_quoted.end();
+    }
+
+    /// Fill the per-part quote flags from parser-side quote styles. The canonical form for
+    /// an all-unquoted identifier is an EMPTY vector — building an explicit all-false vector
+    /// would create resolve-cache keys that never match the empty-vector keys produced
+    /// everywhere else (operator== and the hash compare the raw vector).
+    void setQuoteFlagsFrom(const std::vector<IdentifierQuoteStyle> & styles)
+    {
+        is_part_double_quoted.clear();
+        const bool any_double_quoted
+            = std::find(styles.begin(), styles.end(), IdentifierQuoteStyle::DoubleQuote) != styles.end();
+        if (!any_double_quoted)
+            return;
+        is_part_double_quoted.reserve(styles.size());
+        for (auto style : styles)
+            is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
     }
 
     /// used for expression lookups (table.column), the last part is the column name that

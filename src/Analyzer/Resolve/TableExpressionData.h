@@ -204,13 +204,22 @@ struct AnalysisTableExpressionData
         DataTypePtr subcolumn_type;
     };
 
+    /// Which components of a `base.suffix` subcolumn identifier may fold case-insensitively in
+    /// `standard` mode. Grouped so the two flags cannot be transposed at call sites.
+    struct SubcolumnMatchFlags
+    {
+        bool fold_base = false;
+        bool fold_suffix = false;
+    };
+
     template <typename ScopeDescriptionProvider>
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(
         std::string_view full_identifier_name,
-        bool use_case_insensitive,
-        ScopeDescriptionProvider && get_scope_description,
-        bool suffix_case_insensitive) const
+        SubcolumnMatchFlags match_flags,
+        ScopeDescriptionProvider && get_scope_description) const
     {
+        const bool use_case_insensitive = match_flags.fold_base;
+        const bool suffix_case_insensitive = match_flags.fold_suffix;
         ensureColumnMembershipSetsArePopulated();
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
@@ -284,7 +293,10 @@ struct AnalysisTableExpressionData
         /// Convenience overload: callers that don't know the per-part quoting fold the suffix
         /// case-insensitively iff the base did. Callers that need separate base/suffix flags
         /// (e.g. for `data."name"`) must use the four-argument form.
-        return tryGetSubcolumnInfo(full_identifier_name, use_case_insensitive, [] { return String{}; }, use_case_insensitive);
+        return tryGetSubcolumnInfo(
+            full_identifier_name,
+            SubcolumnMatchFlags{.fold_base = use_case_insensitive, .fold_suffix = use_case_insensitive},
+            [] { return String{}; });
     }
 
     /// Build lowercase-to-original mappings for case-insensitive identifier resolution from the

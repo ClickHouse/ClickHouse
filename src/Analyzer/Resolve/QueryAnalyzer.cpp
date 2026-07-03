@@ -1271,10 +1271,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
         /// Quote styles must come from the alias *expression*, not the reference that triggered the lookup
-        const auto & alias_quote_styles = alias_identifier_node.getQuoteStyles();
-        alias_identifier_lookup.is_part_double_quoted.reserve(alias_quote_styles.size());
-        for (auto style : alias_quote_styles)
-            alias_identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+        alias_identifier_lookup.setQuoteFlagsFrom(alias_identifier_node.getQuoteStyles());
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 
         scope_to_resolve_alias_expression->popExpressionNode();
@@ -1927,14 +1924,13 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
             auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
             /// Carry the matcher qualifier's quote flags into the synthetic lookup: `"T".*` must
             /// re-resolve `"T".col` case-sensitively, not bind to an unquoted sibling alias `t`.
-            /// The appended column part wasn't user-typed, so it carries no quote.
             if (!qualifier_quote_styles.empty())
             {
                 chassert(qualifier_quote_styles.size() == matched_qualified_identifier.getPartsSize());
-                explicit_lookup.is_part_double_quoted.reserve(qualifier_quote_styles.size() + 1);
-                for (auto style : qualifier_quote_styles)
-                    explicit_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
-                explicit_lookup.is_part_double_quoted.push_back(false);
+                explicit_lookup.setQuoteFlagsFrom(qualifier_quote_styles);
+                /// The appended column part wasn't user-typed, so it carries no quote.
+                if (!explicit_lookup.is_part_double_quoted.empty())
+                    explicit_lookup.is_part_double_quoted.push_back(false);
             }
             IdentifierResolveContext explicit_resolve_settings;
             explicit_resolve_settings.allow_to_check_cte = false;
@@ -2275,11 +2271,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             /// in standard mode (otherwise the unqualified COLUMNS path would look up via
             /// `IdentifierLookup` with no quote info, behaving like an unquoted reference).
             if (i < identifiers_quote_styles.size())
-            {
-                identifier_lookup.is_part_double_quoted.reserve(identifiers_quote_styles[i].size());
-                for (auto style : identifiers_quote_styles[i])
-                    identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
-            }
+                identifier_lookup.setQuoteFlagsFrom(identifiers_quote_styles[i]);
 
             auto resolve_result = tryResolveIdentifier(identifier_lookup, scope);
             if (!resolve_result.isResolved())
@@ -3352,10 +3344,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
               * - for expression lookups (columns), last part determines case-sensitivity
               * - for table lookups, each part (database, table) uses its own quoting
               */
-            const auto & quote_styles = identifier_node.getQuoteStyles();
-            identifier_lookup.is_part_double_quoted.reserve(quote_styles.size());
-            for (auto style : quote_styles)
-                identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+            identifier_lookup.setQuoteFlagsFrom(identifier_node.getQuoteStyles());
 
             auto resolve_identifier_expression_result = tryResolveIdentifier(identifier_lookup, scope, { .allow_to_resolve_niladic_functions =  allow_niladic_functions });
 
@@ -4336,10 +4325,7 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                     table_identifier_lookup.original_ast_node = current_join_tree_node->getOriginalAST();
 
                 /// Populate per-part quote styles for case-sensitivity checks
-                size_t parts_size = from_table_identifier.getIdentifier().getPartsSize();
-                table_identifier_lookup.is_part_double_quoted.resize(parts_size);
-                for (size_t i = 0; i < parts_size; ++i)
-                    table_identifier_lookup.is_part_double_quoted[i] = from_table_identifier.isPartDoubleQuoted(i);
+                table_identifier_lookup.setQuoteFlagsFrom(from_table_identifier.getQuoteStyles());
 
                 auto from_table_identifier_alias = from_table_identifier.getAlias();
 
@@ -4498,6 +4484,64 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 }
 
 /// Initialize table expression data for table expression node
+namespace
+{
+
+/// For `FROM (SELECT ... UNION ALL ...) AS t("MyCol")`, QueryTreeBuilder applies the projection
+/// override to the first inner QueryNode of the UnionNode rather than the UnionNode itself.
+/// Drill in to find that carrier node.
+const QueryNode * findProjectionOverrideCarrier(const QueryNode * query_node, const UnionNode * union_node)
+{
+    if (query_node || !union_node)
+        return query_node;
+
+    const QueryTreeNodePtr * current = union_node->getQueries().getNodes().empty()
+        ? nullptr : &union_node->getQueries().getNodes().front();
+    while (current && *current)
+    {
+        if (const auto * inner_query = (*current)->as<QueryNode>())
+            return inner_query;
+        if (const auto * inner_union = (*current)->as<UnionNode>())
+        {
+            const auto & inner_queries = inner_union->getQueries().getNodes();
+            current = inner_queries.empty() ? nullptr : &inner_queries.front();
+        }
+        else
+        {
+            break;
+        }
+    }
+    return nullptr;
+}
+
+/// Names of the subquery's projection columns that must stay case-sensitive in `standard` mode:
+/// double-quoted projection-override aliases (`AS t("MyCol")`) and ordinary double-quoted
+/// projection aliases (`SELECT 1 AS "MyAlias"`; flags captured in resolveQuery before it
+/// stripped projection aliases).
+std::unordered_set<std::string> collectCaseSensitiveProjectionNames(const QueryNode * query_node, const UnionNode * union_node)
+{
+    std::unordered_set<std::string> case_sensitive_columns;
+    const QueryNode * carrier = findProjectionOverrideCarrier(query_node, union_node);
+    if (!carrier)
+        return case_sensitive_columns;
+
+    const auto & override_aliases = carrier->getProjectionAliasesToOverride();
+    const auto & override_is_quoted = carrier->getProjectionAliasesToOverrideIsDoubleQuoted();
+    for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
+        if (override_is_quoted[i])
+            case_sensitive_columns.insert(override_aliases[i]);
+
+    const auto & projection_quoted_flags = carrier->getProjectionColumnsDoubleQuoted();
+    const auto & projection_columns = carrier->getProjectionColumns();
+    for (size_t i = 0; i < projection_quoted_flags.size() && i < projection_columns.size(); ++i)
+        if (projection_quoted_flags[i])
+            case_sensitive_columns.insert(projection_columns[i].name);
+
+    return case_sensitive_columns;
+}
+
+}
+
 void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
@@ -4593,57 +4637,11 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     /// `ensureColumnMembershipSetsArePopulated()`; they're only consulted when a
     /// query references columns from this table (skipped for `SELECT count() FROM t`).
 
-    /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled.
-    /// Quoted projection-override aliases (`AS t("MyCol")`) stay case-sensitive — collect them
-    /// so `enableStandardMode` keeps them out of the lowercase index.
+    /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled. Double-quoted
+    /// projection aliases and projection-override aliases stay case-sensitive — collect them so
+    /// `enableStandardMode` keeps them out of the lowercase index.
     if (scope.isStandardMode())
-    {
-        std::unordered_set<std::string> case_sensitive_columns;
-        /// For `FROM (SELECT … UNION ALL …) AS t("MyCol")`, QueryTreeBuilder applies the override
-        /// to the first inner QueryNode of the UnionNode rather than the UnionNode itself.
-        /// Drill in to find that inner node when collecting quote info.
-        const QueryNode * override_carrier = query_node;
-        if (!override_carrier && union_node)
-        {
-            const QueryTreeNodePtr * current = union_node->getQueries().getNodes().empty()
-                ? nullptr : &union_node->getQueries().getNodes().front();
-            while (current && *current)
-            {
-                if (const auto * inner_query = (*current)->as<QueryNode>())
-                {
-                    override_carrier = inner_query;
-                    break;
-                }
-                if (const auto * inner_union = (*current)->as<UnionNode>())
-                {
-                    const auto & inner_queries = inner_union->getQueries().getNodes();
-                    current = inner_queries.empty() ? nullptr : &inner_queries.front();
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-        if (override_carrier)
-        {
-            const auto & override_aliases = override_carrier->getProjectionAliasesToOverride();
-            const auto & override_is_quoted = override_carrier->getProjectionAliasesToOverrideIsDoubleQuoted();
-            for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
-                if (override_is_quoted[i])
-                    case_sensitive_columns.insert(override_aliases[i]);
-
-            /// Ordinary double-quoted projection aliases (`SELECT 1 AS "MyAlias"` in a subquery)
-            /// are pinned case-sensitive too: an unquoted outer reference must not fold onto them.
-            /// The flags were captured in resolveQuery before it stripped projection aliases.
-            const auto & projection_quoted_flags = override_carrier->getProjectionColumnsDoubleQuoted();
-            const auto & carrier_projection_columns = override_carrier->getProjectionColumns();
-            for (size_t i = 0; i < projection_quoted_flags.size() && i < carrier_projection_columns.size(); ++i)
-                if (projection_quoted_flags[i])
-                    case_sensitive_columns.insert(carrier_projection_columns[i].name);
-        }
-        table_expression_data.enableStandardMode(case_sensitive_columns);
-    }
+        table_expression_data.enableStandardMode(collectCaseSensitiveProjectionNames(query_node, union_node));
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {
@@ -4864,10 +4862,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             IdentifierLookup table_function_arg_lookup{unresolved_identifier, IdentifierLookupContext::EXPRESSION};
             /// Carry per-part double-quote info so a quoted argument like `format("format", 'x UInt8', '1')`
             /// stays case-sensitive in `standard` mode and cannot bind to an unquoted alias of the same text.
-            const auto & arg_quote_styles = identifier_node->getQuoteStyles();
-            table_function_arg_lookup.is_part_double_quoted.reserve(arg_quote_styles.size());
-            for (auto style : arg_quote_styles)
-                table_function_arg_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+            table_function_arg_lookup.setQuoteFlagsFrom(identifier_node->getQuoteStyles());
             auto identifier_resolve_result = tryResolveIdentifier(table_function_arg_lookup, scope, { .allow_to_resolve_niladic_functions = false });
             auto resolved_identifier = std::move(identifier_resolve_result.resolved_identifier);
 
@@ -5746,10 +5741,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 IdentifierLookup identifier_lookup{identifier_node->getIdentifier(), IdentifierLookupContext::EXPRESSION};
                 /// Preserve per-part double-quoting from `USING ("Key")` so case-sensitivity matches `standard` mode.
-                const auto & using_quote_styles = identifier_node->getQuoteStyles();
-                identifier_lookup.is_part_double_quoted.reserve(using_quote_styles.size());
-                for (auto style : using_quote_styles)
-                    identifier_lookup.is_part_double_quoted.push_back(style == IdentifierQuoteStyle::DoubleQuote);
+                identifier_lookup.setQuoteFlagsFrom(identifier_node->getQuoteStyles());
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
             }
 
@@ -5826,8 +5818,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                    && identifier_node->getQuoteStyles().back() == IdentifierQuoteStyle::DoubleQuote);
             /// `right_name` may split into several parts (a dotted alias like `USING (a AS `x.y`)`),
             /// so keep the quote vector aligned with the actual part count — quote bit on the last part.
-            identifier_lookup.is_part_double_quoted.assign(identifier_lookup.identifier.getPartsSize(), false);
-            identifier_lookup.is_part_double_quoted.back() = right_part_double_quoted;
+            if (right_part_double_quoted)
+            {
+                identifier_lookup.is_part_double_quoted.assign(identifier_lookup.identifier.getPartsSize(), false);
+                identifier_lookup.is_part_double_quoted.back() = true;
+            }
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,

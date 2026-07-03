@@ -12,6 +12,16 @@ namespace DB
 class ASTIdentifier;
 class ASTTableIdentifier;
 
+/// How an identifier part was quoted in the source text. Only DoubleQuote is semantically
+/// meaningful (case-sensitivity in `case_insensitive_names = 'standard'` mode); Backtick behaves
+/// like unquoted and is not preserved by the formatter round-trip.
+enum class IdentifierQuoteStyle : uint8_t
+{
+    None = 0,
+    DoubleQuote,
+    Backtick,
+};
+
 /// ASTIdentifier Helpers: hide casts and semantic.
 
 void setIdentifierSpecial(ASTPtr & ast);

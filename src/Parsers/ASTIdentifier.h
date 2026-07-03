@@ -19,13 +19,6 @@ class ASTTableIdentifier;
 /// FIXME: rewrite code about params - they should be substituted at the parsing stage,
 ///        or parsed as a separate AST entity.
 
-enum class IdentifierQuoteStyle : uint8_t
-{
-    None = 0,
-    DoubleQuote,
-    Backtick,
-};
-
 /// Generic identifier. ASTTableIdentifier - for table identifier.
 class ASTIdentifier : public ASTWithAlias
 {
