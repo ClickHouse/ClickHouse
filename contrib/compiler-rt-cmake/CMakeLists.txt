@@ -706,11 +706,26 @@ endif()
 # In a static binary there is no dlsym() for the sanitizer runtime to find the
 # real libc functions behind its interceptors. The runtimes above are compiled
 # with SANITIZER_STATIC_LIBC_INTERCEPTION: REAL(func) binds to __real_<func> at
-# link time. Here a copy of the musl archive is produced with the intercepted
-# functions renamed to __real_<func>; the intercepted names are extracted from
-# the runtime's __interceptor_trampoline_* symbols. References inside musl are
-# renamed too, so libc-internal calls bypass the interceptors - the same
-# binding behaviour as dynamic musl, where libc-internal calls are
+# link time, and (since there is no dynamic loader to patch call sites) the
+# runtime also defines the bare intercepted name (e.g. `close`) itself, so that
+# any reference to it - from application code or from musl internals - resolves
+# to the interceptor at static link time. Here a copy of the musl archive is
+# produced with the same names renamed to __real_<func>, so musl's own
+# definitions stop competing with the runtime's and are only reachable through
+# REAL(func). The renamed names are the union of two signals extracted from the
+# runtime: its weak undefined __real_<func> references (every REAL(func) use)
+# and its own strongly-defined bare names that also exist in musl. Most
+# functions are covered by both (a normal INTERCEPTOR defines the bare name and
+# uses REAL()), but a few are covered by only one side: TSan's
+# setjmp/sigsetjmp on aarch64 are strongly defined without ever going through
+# REAL() (an internal ASSIGN_REAL(setjmp, _setjmp) reuses another symbol's real
+# pointer), while their _setjmp/__sigsetjmp counterparts are the reverse - used
+# via REAL() in InitializeLongjmpXorKey through a bare DECLARE_REAL with no
+# matching strong definition of their own. Missing either signal either leaves
+# REAL(func) null or leaves musl's copy of the bare name in the archive to
+# collide with the runtime's own definition at link time. References inside
+# musl are renamed too, so libc-internal calls bypass the interceptors - the
+# same binding behaviour as dynamic musl, where libc-internal calls are
 # non-interposable. The linked libc is switched to the renamed archive in
 # cmake/linux/default_libs.cmake (MUSL_LIBC_TARGET).
 if (USE_MUSL AND _interceptor_runtime)
@@ -724,9 +739,11 @@ if (USE_MUSL AND _interceptor_runtime)
     add_custom_command(
         OUTPUT "${_musl_intercepted}" "${_musl_real_refs}"
         COMMAND sh -c "set -e;\
-            nm='${CMAKE_NM} --defined-only';\
-            $nm $<TARGET_FILE:${_interceptor_runtime}> | grep -o '__interceptor_trampoline_[a-zA-Z0-9_]*' | sed -e 's/__interceptor_trampoline_//' | sort -u > intercepted.txt;\
-            $nm $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
+            nm='${CMAKE_NM}';\
+            $nm $<TARGET_FILE:${_interceptor_runtime}> | awk '$1 == \"w\" && $2 ~ /^__real_/ {print $2}' | sed -e 's/^__real_//' > real_refs.txt;\
+            $nm --defined-only $<TARGET_FILE:${_interceptor_runtime}> | awk '$2 == \"T\" {print $3}' > strong_defs.txt;\
+            cat real_refs.txt strong_defs.txt | sort -u > intercepted.txt;\
+            $nm --defined-only $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
             comm -12 intercepted.txt musl_defined.txt > names.txt;\
             sed -e 's/.*/& __real_&/' names.txt > ${_musl_renames};\
             { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; } > musl_real_refs.s;\
