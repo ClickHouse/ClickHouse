@@ -3,7 +3,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -21,13 +20,8 @@ public:
 
     void visit(ASTSelectWithUnionQuery & union_select_query, ASTPtr &);
 
-    static bool needChild(const ASTPtr & node, const ASTPtr & child)
+    static bool needChild(const ASTPtr & node, const ASTPtr &)
     {
-        /// Do not descend into the JOIN condition (ON/USING). A subquery there is unrelated
-        /// to the joined table, so rewriteSubquery's positional inner/outer column mapping
-        /// would be invalid (and could read out of bounds).
-        if (child && child->as<ASTTableJoin>())
-            return false;
         return !(node && node->as<TypeToVisit>());
     }
 

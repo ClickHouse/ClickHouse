@@ -11,7 +11,7 @@ namespace DB
 
 class Block;
 
-class TTLTransform final : public IAccumulatingTransform
+class TTLTransform : public IAccumulatingTransform
 {
 public:
     TTLTransform(
