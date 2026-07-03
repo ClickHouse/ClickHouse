@@ -112,7 +112,7 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
-    WeakHash32 getWeakHash32() const override;
+    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
 
     void updateHashFast(SipHash & hash) const override;
 
@@ -199,6 +199,8 @@ public:
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
         PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
         int direction, int nan_direction_hint) const override;
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;

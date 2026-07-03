@@ -15,6 +15,8 @@ SELECT count() FROM test_consumers WHERE ts > toDateTime('2026-04-01 00:00:00', 
 15
 -- PREWHERE over the multi-expression key.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_consumers PREWHERE ts > toDateTime('2026-04-01 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 16
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in [20544, +Inf)), and((toYYYYMM(ts) in [202604, +Inf)), (ts in [1775001601, +Inf))))

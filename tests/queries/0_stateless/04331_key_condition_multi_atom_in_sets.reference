@@ -13,6 +13,8 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_in_main SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
 -- Literal IN list.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 6
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -23,6 +25,8 @@ SELECT count() FROM test_in_main WHERE ts IN (toDateTime('2026-03-31 06:00:00', 
 2
 -- Subquery set.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 1-element set), and((toYYYYMM(ts) in 1-element set), (ts in 1-element set)))
@@ -33,6 +37,8 @@ SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:0
 1
 -- Set elements collapsing to one value after the toDate transform.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-03-31 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 3
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -43,6 +49,8 @@ SELECT count() FROM test_in_main WHERE ts IN (toDateTime('2026-03-31 06:00:00', 
 2
 -- globalIn behaves like IN on a local table.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts GLOBAL IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 6
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -53,6 +61,8 @@ SELECT count() FROM test_in_main WHERE ts GLOBAL IN (toDateTime('2026-03-31 06:0
 2
 -- has(const_array, key).
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE has([toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC')], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 6
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -63,6 +73,8 @@ SELECT count() FROM test_in_main WHERE has([toDateTime('2026-03-31 06:00:00', 'U
 2
 -- Empty sets on the multi-expression key.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 0 | Granules: 0
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 0-element set), and((toYYYYMM(ts) in 0-element set), (ts in 0-element set)))
@@ -74,17 +86,21 @@ SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:0
 SELECT count() FROM test_in_main WHERE ts IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 0
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts NOT IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
 SELECT count() FROM test_in_main WHERE ts NOT IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0);
 24
 SELECT count() FROM test_in_main WHERE ts NOT IN (SELECT toDateTime('2026-03-31 06:00:00', 'UTC') WHERE 0) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 24
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE has([], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
 SELECT count() FROM test_in_main WHERE has([], ts);
 0
 SELECT count() FROM test_in_main WHERE has([], ts) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 0
 -- NOT IN on the multi-expression key.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_main WHERE ts NOT IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 24
 PrimaryKey
 Keys:
 Condition: (ts notIn 2-element set)
@@ -101,6 +117,8 @@ ORDER BY (toDate(ts), toYYYYMM(ts))
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_in_wrapped SELECT toDateTime('2026-03-30 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_wrapped WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 10
 PrimaryKey
 Keys:
 Condition: and((toYYYYMM(ts) in 2-element set), (toDate(ts) in 2-element set))
@@ -117,6 +135,8 @@ ORDER BY x
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_in_uint8 SELECT number FROM numbers(10);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_uint8 WHERE x IN (1, 10000000000)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: (x in 1-element set)
@@ -134,6 +154,8 @@ SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_num
 INSERT INTO test_in_nullable VALUES (1), (2), (NULL);
 SET transform_null_in = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_nullable WHERE x IN (1, NULL)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 3
 PrimaryKey
 Keys:
 Condition: (x in 2-element set)
@@ -151,6 +173,8 @@ ORDER BY tup
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_in_packed VALUES ((1, 2)), ((3, 4)), ((5, 6));
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_packed WHERE tup IN ((1, 2), (3, 4))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: (tup in 2-element set)
@@ -165,6 +189,8 @@ ORDER BY (a, b)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_in_lhs_tuple SELECT intDiv(number, 4), number % 4, number % 4 FROM numbers(16);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_lhs_tuple WHERE (a, b) IN ((1, 2), (3, 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 4
 PrimaryKey
 Keys:
 Condition: ((a, b) in 2-element set)
@@ -175,6 +201,8 @@ SELECT count() FROM test_in_lhs_tuple WHERE (a, b) IN ((1, 2), (3, 0)) SETTINGS 
 2
 -- LHS tuple where only the first element is a key column (the second is plain data).
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_in_lhs_tuple WHERE (a, c) IN ((1, 2), (3, 0))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 10
 PrimaryKey
 Keys:
 Condition: (a in 2-element set)

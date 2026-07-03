@@ -5,7 +5,7 @@ import os
 import pytest
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 
@@ -149,7 +149,7 @@ def test_no_sign_named_collections(started_cluster):
     bucket = started_cluster.minio_bucket
 
     instance.query(
-        f"insert into function s3(s3_json_no_sign) select * from numbers(100) settings s3_truncate_on_insert=1"
+        "insert into function s3(s3_json_no_sign) select * from numbers(100) settings s3_truncate_on_insert=1"
     )
 
     with pytest.raises(helpers.client.QueryRuntimeException) as ei:
@@ -160,7 +160,7 @@ def test_no_sign_named_collections(started_cluster):
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
 
-    assert "100" == instance.query(f"select count() from s3(s3_json_no_sign)").strip()
+    assert "100" == instance.query("select count() from s3(s3_json_no_sign)").strip()
 
 
 def test_no_sign_config(started_cluster):

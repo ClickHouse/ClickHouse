@@ -16,6 +16,8 @@ SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 
 6
 -- Point predicate on ts prunes partitions via both partition subexpressions.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE ts = toDateTime('2026-03-31 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 4
 Min-Max
 Keys:
 Condition: (ts in [1774936800, 1774936800])
@@ -36,6 +38,8 @@ SELECT count() FROM test_part_prune WHERE ts = toDateTime('2026-03-31 06:00:00',
 1
 -- Range predicate on ts.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE ts >= toDateTime('2026-04-02 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 3 | Granules: 12
 Min-Max
 Keys:
 Condition: (ts in [1775088000, +Inf))
@@ -56,6 +60,8 @@ SELECT count() FROM test_part_prune WHERE ts >= toDateTime('2026-04-02 00:00:00'
 12
 -- IN over ts.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 2 | Granules: 8
 Min-Max
 Keys:
 Condition: (ts in 2-element set)
@@ -76,6 +82,8 @@ SELECT count() FROM test_part_prune WHERE ts IN (toDateTime('2026-03-31 06:00:00
 2
 -- Direct predicate on a partition subexpression.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 4
 Min-Max
 Keys:
 Condition: (toDate(ts) in [20543, 20543])
@@ -96,6 +104,8 @@ SELECT count() FROM test_part_prune WHERE toDate(ts) = toDate('2026-03-31') SETT
 4
 -- Negated predicates must not drop partitions containing other matching rows.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE ts != toDateTime('2026-03-31 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 6 | Granules: 24
 Min-Max
 Keys:
 Condition: (ts not in [1774936800, 1774936800])
@@ -115,6 +125,8 @@ SELECT count() FROM test_part_prune WHERE ts != toDateTime('2026-03-31 06:00:00'
 SELECT count() FROM test_part_prune WHERE ts != toDateTime('2026-03-31 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 23
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_prune WHERE ts NOT IN (toDateTime('2026-03-31 06:00:00', 'UTC'), toDateTime('2026-04-02 12:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 6 | Granules: 24
 Min-Max
 Keys:
 Condition: (ts notIn 2-element set)
@@ -140,6 +152,8 @@ ORDER BY k
 SETTINGS index_granularity = 1;
 INSERT INTO test_part_modulo SELECT number FROM numbers(30);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_modulo WHERE k % 10 = 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 3
 Min-Max
 Condition: true
 Parts: 10/10
@@ -158,6 +172,8 @@ SELECT count() FROM test_part_modulo WHERE k % 10 = 3;
 SELECT count() FROM test_part_modulo WHERE k % 10 = 3 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 3
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_part_modulo WHERE k = 13) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+│  Keys:
+Parts: 1 | Granules: 2
 Min-Max
 Keys:
 Condition: (k in [13, 13])

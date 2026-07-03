@@ -483,8 +483,22 @@ bool FractionalLimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_
     const size_t num_sort_columns = current_chunk_sort_columns.size();
     const auto & ties_last_row_sort_columns = ties_last_row.getColumns();
     for (size_t i = 0; i < num_sort_columns; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *ties_last_row_sort_columns[i], 1))
+    {
+        const auto & column = *current_chunk_sort_columns[i];
+        const auto & ties_last_row_column = *ties_last_row_sort_columns[i];
+
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation (for example '1' and '01' under numeric collation) would
+        /// be treated as distinct and wrongly dropped from the result.
+        int res = 0;
+        if (limit_with_ties_sort_description[i].collator && column.isCollationSupported())
+            res = column.compareAtWithCollation(current_chunk_row_num, 0, ties_last_row_column, 1, *limit_with_ties_sort_description[i].collator);
+        else
+            res = column.compareAt(current_chunk_row_num, 0, ties_last_row_column, 1);
+
+        if (res != 0)
             return false;
+    }
     return true;
 }
 

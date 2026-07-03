@@ -125,8 +125,11 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tn_p
 SELECT count() FROM test_tn_parse WHERE s = '2026-01-03' SETTINGS force_primary_key = 1;
 SELECT count() FROM test_tn_parse WHERE s = '2026-01-03' SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
+-- Order comparisons must not use the parsed key: date parsing does not preserve the
+-- string order (for example, '2026-01-2' > '2026-01-10' as strings), so only equality
+-- goes through the deterministic transform, and `s >= const` builds no atom.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tn_parse WHERE s >= '2026-01-03') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-SELECT count() FROM test_tn_parse WHERE s >= '2026-01-03' SETTINGS force_primary_key = 1;
+SELECT count() FROM test_tn_parse WHERE s >= '2026-01-03' SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM test_tn_parse WHERE s >= '2026-01-03' SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
 -- Unparsable constants must not produce atoms or exceptions.

@@ -1,0 +1,6 @@
+1. temporary-table-named dependency, settled status and empty exception:
+MissingDependencies	1
+2. same view after detach/attach (attach-from-metadata path), settled status and empty exception:
+MissingDependencies	1
+3. server alive:
+1

@@ -243,7 +243,7 @@ public:
             add(place, columns, *idx, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
         {
@@ -588,6 +588,9 @@ SELECT argMax(a, (b,a)) FROM test;
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
          documentation_argMax, properties});
+
+    factory.registerAlias("min_by", "argMin", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("max_by", "argMax", AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.

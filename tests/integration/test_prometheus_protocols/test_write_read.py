@@ -2,7 +2,14 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_read_request_to_protobuf,
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    get_response_to_remote_read,
+    receive_protobuf_from_remote_read,
+    send_protobuf_to_remote_write,
+)
 import re
 import requests
 import time

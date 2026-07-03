@@ -2,16 +2,54 @@
 #include <IO/LocalSourceReader.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/setThreadName.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Interpreters/Context.h>
+
 #include <gtest/gtest.h>
 #include <fstream>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
+
+namespace ProfileEvents
+{
+    extern const Event ReaderExecutorSourceRequests;
+    extern const Event ReaderExecutorBytesFromSource;
+    extern const Event ReaderExecutorRequestedBytes;
+    extern const Event ReaderExecutorModeledCostMicroseconds;
+    extern const Event ReaderExecutorCacheGetRequests;
+    extern const Event ReaderExecutorCachePopulateRequests;
+    extern const Event ReaderExecutorIncompleteConnections;
+}
 
 using namespace DB;
 
 namespace
 {
+
+/// RAII helper: creates a ThreadGroup with its own ProfileEvents counters, attaches the
+/// current thread to it, detaches in the destructor -- so a test reads the executor's
+/// ProfileEvents in isolation, without interference from other tests.
+struct TestThreadGroup
+{
+    /// Create a ThreadStatus only if none exists (the debug build attaches a
+    /// MainThreadStatus; ASan/release may not), else ThreadStatus's ctor asserts.
+    std::optional<DB::ThreadStatus> thread_status_holder{
+        current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
+    DB::ThreadGroupPtr thread_group = DB::ThreadGroup::createForQuery(getContext().context);
+    DB::ThreadGroupSwitcher switcher{thread_group, ThreadName::UNKNOWN};
+
+    ProfileEvents::Count get(ProfileEvents::Event event) const
+    {
+        return thread_group->performance_counters[event].load(std::memory_order_relaxed);
+    }
+};
 
 /// Byte value at logical offset `i` within a file: deterministic pattern.
 unsigned char patternByte(size_t i)
@@ -48,16 +86,21 @@ protected:
         return obj;
     }
 
-    /// Drain the executor and return all bytes it serves.
+    /// Drain the executor and return all bytes it serves, streaming each window's chain.
     static std::vector<char> drain(ReaderExecutor & ex)
     {
         std::vector<char> out;
         while (true)
         {
-            auto chunk = ex.readNextChunk();
-            if (chunk.size == 0)
+            ChainedBuffers w = ex.readNextWindow();
+            if (w.atEnd())
                 break;
-            out.insert(out.end(), chunk.data, chunk.data + chunk.size);
+            while (!w.atEnd())
+            {
+                auto span = w.peek();
+                out.insert(out.end(), span.data, span.data + span.size);
+                w.advance(span.size);
+            }
         }
         return out;
     }
@@ -78,25 +121,25 @@ TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
     EXPECT_EQ(ex.getPosition(), 1024u);
 }
 
-TEST_F(ReaderExecutorTest, ChunkNeverExceedsBlockSize)
+TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 {
     StoredObjects objects{makeFile("a.bin", 1000)};
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/100);
 
     size_t total = 0;
-    size_t chunks = 0;
+    size_t windows = 0;
     while (true)
     {
-        auto chunk = ex.readNextChunk();
-        if (chunk.size == 0)
+        ChainedBuffers w = ex.readNextWindow();
+        if (w.atEnd())
             break;
-        EXPECT_LE(chunk.size, 100u);
-        EXPECT_EQ(chunk.logical_offset, total);
-        total += chunk.size;
-        ++chunks;
+        EXPECT_LE(w.totalBytes(), 100u);
+        EXPECT_EQ(w.peek().logical_offset, total);
+        total += w.totalBytes();
+        ++windows;
     }
     EXPECT_EQ(total, 1000u);
-    EXPECT_EQ(chunks, 10u);
+    EXPECT_EQ(windows, 10u);
 }
 
 TEST_F(ReaderExecutorTest, SeekThenRead)
@@ -107,17 +150,19 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ex.seek(500);
     EXPECT_EQ(ex.getPosition(), 500u);
 
-    auto chunk = ex.readNextChunk();
-    ASSERT_GT(chunk.size, 0u);
-    EXPECT_EQ(chunk.logical_offset, 500u);
-    EXPECT_EQ(static_cast<unsigned char>(chunk.data[0]), patternByte(500));
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_FALSE(w.atEnd());
+    auto span = w.peek();
+    EXPECT_EQ(span.logical_offset, 500u);
+    EXPECT_EQ(static_cast<unsigned char>(span.data[0]), patternByte(500));
 
     /// Seek backward and re-read.
     ex.seek(10);
-    auto chunk2 = ex.readNextChunk();
-    ASSERT_GT(chunk2.size, 0u);
-    EXPECT_EQ(chunk2.logical_offset, 10u);
-    EXPECT_EQ(static_cast<unsigned char>(chunk2.data[0]), patternByte(10));
+    ChainedBuffers w2 = ex.readNextWindow();
+    ASSERT_FALSE(w2.atEnd());
+    auto span2 = w2.peek();
+    EXPECT_EQ(span2.logical_offset, 10u);
+    EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
@@ -127,15 +172,15 @@ TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
 
     EXPECT_EQ(ex.totalSize(), 500u);
 
-    /// A chunk must never straddle the object boundary at 300.
+    /// A window must never straddle the object boundary at 300.
     while (true)
     {
         size_t pos = ex.getPosition();
-        auto chunk = ex.readNextChunk();
-        if (chunk.size == 0)
+        ChainedBuffers w = ex.readNextWindow();
+        if (w.atEnd())
             break;
         if (pos < 300)
-            EXPECT_LE(chunk.logical_offset + chunk.size, 300u) << "chunk from " << pos << " crossed boundary";
+            EXPECT_LE(w.peek().logical_offset + w.totalBytes(), 300u) << "window from " << pos << " crossed boundary";
     }
     EXPECT_EQ(ex.getPosition(), 500u);
 }
@@ -160,8 +205,7 @@ TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256);
 
     EXPECT_EQ(ex.totalSize(), 0u);
-    auto chunk = ex.readNextChunk();
-    EXPECT_EQ(chunk.size, 0u);
+    EXPECT_TRUE(ex.readNextWindow().atEnd());
 }
 
 TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
@@ -174,7 +218,7 @@ TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
     missing.bytes_size = StoredObject::UnknownSize;
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {missing}, /*block_size=*/256);
 
-    EXPECT_ANY_THROW(ex.readNextChunk());
+    EXPECT_ANY_THROW(ex.readNextWindow());
 }
 
 TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
@@ -185,7 +229,76 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     obj.bytes_size = 1000;  // pretend the object is larger than the file on disk
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, /*block_size=*/256);
 
-    EXPECT_ANY_THROW(ex.readNextChunk());
+    EXPECT_ANY_THROW(ex.readNextWindow());
+}
+
+/// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup
+/// (starts at zero) -- the same path that feeds `system.events`.
+TEST_F(ReaderExecutorTest, ProfileEventsCountSourceReadsAndBytes)
+{
+    TestThreadGroup tg;
+
+    /// 1 MiB file read in 256 KiB blocks -> 4 source reads, all bytes served.
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+    drain(ex);
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), size);
+    /// The cache / connection KPI inputs are not implemented in this slice.
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
+}
+
+TEST_F(ReaderExecutorTest, ModeledCostMatchesFormula)
+{
+    TestThreadGroup tg;
+
+    /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0).
+    constexpr size_t size = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", size)};
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, /*block_size=*/256 * 1024);
+    drain(ex);
+
+    const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
+    EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
+    EXPECT_EQ(requested, size);
+
+    /// The KPI: modeled ms per requested MiB.
+    const double ms_per_mib = (static_cast<double>(cost) / 1000.0)
+        / (static_cast<double>(requested) / (1024.0 * 1024.0));
+    EXPECT_DOUBLE_EQ(ms_per_mib, 140.0);
+}
+
+TEST_F(ReaderExecutorTest, ModeledCostScalesWithSourceRequests)
+{
+    TestThreadGroup tg;
+
+    /// Smaller blocks over the same data -> more source requests -> higher modeled cost,
+    /// so the KPI (cost per requested MiB) rises even though the bytes are unchanged.
+    constexpr size_t size = 1024 * 1024;
+    {
+        StoredObjects big_block{makeFile("a.bin", size)};
+        ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, /*block_size=*/1024 * 1024);
+        drain(coarse);
+    }
+    const auto cost_after_coarse = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requests_after_coarse = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
+    {
+        StoredObjects small_block{makeFile("b.bin", size)};
+        ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, /*block_size=*/64 * 1024);
+        drain(fine);
+    }
+    const auto cost_after_fine = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
+    const auto requests_after_fine = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
+
+    EXPECT_EQ(requests_after_coarse, 1u);
+    EXPECT_EQ(requests_after_fine - requests_after_coarse, 16u);
+    EXPECT_GT(cost_after_fine - cost_after_coarse, cost_after_coarse);
 }
 
 }

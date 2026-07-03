@@ -270,7 +270,7 @@ def test_mysql_client_secure(started_cluster):
     )
 
     assert node_secure.contains_in_log(
-        f"<Error> MySQLHandler: DB::Exception: SSL connection required."
+        "<Error> MySQLHandler: DB::Exception: SSL connection required."
     ) 
 
 
@@ -557,9 +557,7 @@ def test_mysql_federated(started_cluster):
             mysql
             -e "CREATE TABLE mysql_federated.test(`col` int UNSIGNED) ENGINE=FEDERATED CONNECTION='clickhouse';"
             -e "SELECT * FROM mysql_federated.test ORDER BY col;"
-        """.format(
-                host=started_cluster.get_instance_ip("node"), port=server_port
-            ),
+            """,
             demux=True,
         )
 
@@ -578,9 +576,7 @@ def test_mysql_federated(started_cluster):
             mysql
             -e "INSERT INTO mysql_federated.test VALUES (0), (1), (5);"
             -e "SELECT * FROM mysql_federated.test ORDER BY col;"
-        """.format(
-                host=started_cluster.get_instance_ip("node"), port=server_port
-            ),
+            """,
             demux=True,
         )
 

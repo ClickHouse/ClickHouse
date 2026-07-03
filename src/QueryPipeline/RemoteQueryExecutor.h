@@ -130,10 +130,6 @@ public:
 
     int sendQueryAsync();
 
-    /// Query is resent to a replica, the query itself can be modified.
-    bool resent_query { false };
-    bool recreate_read_context { false };
-
     struct ReadResult
     {
         enum class Type : uint8_t
@@ -309,21 +305,14 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
-    /** Got duplicated uuids from replica
-      */
-    bool got_duplicated_part_uuids = false;
-
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;
 #endif
-
-    /// Parts uuids, collected from remote replicas
-    UUIDs duplicated_part_uuids;
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = nullptr;
+    LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
@@ -341,18 +330,10 @@ private:
     /// Send all temporary tables to remote servers
     void sendExternalTables();
 
-    /// Set part uuids to a query context, collected from remote replicas.
-    /// Return true if duplicates found.
-    bool setPartUUIDs(const UUIDs & uuids);
-
     void processReadTaskRequest();
 
     void processMergeTreeReadTaskRequest(ParallelReadRequest request);
     void processMergeTreeInitialReadAnnouncement(InitialAllRangesAnnouncement announcement);
-
-    /// Cancel query and restart it with info about duplicate UUIDs
-    /// only for `allow_experimental_query_deduplication`.
-    ReadResult restartQueryWithoutDuplicatedUUIDs();
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked();

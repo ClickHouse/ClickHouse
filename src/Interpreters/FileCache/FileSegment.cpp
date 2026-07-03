@@ -782,10 +782,10 @@ void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background
     if (!file_segment)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
 
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
-
     if (file_segment->isCompleted())
         return;
+
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
     auto locked_key = file_segment->lockKeyMetadata(false);
     if (!locked_key)

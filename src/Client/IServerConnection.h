@@ -37,7 +37,6 @@ struct Packet
     String columns_description;
     Progress progress;
     ProfileInfo profile_info;
-    std::vector<UUID> part_uuids;
 
     /// The part of parallel replicas protocol
     std::optional<InitialAllRangesAnnouncement> announcement;

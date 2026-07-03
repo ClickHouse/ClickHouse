@@ -13,11 +13,6 @@ from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
 
-# Coverage data lives in the public ClickHouse CIDB, accessible from any CI environment.
-# Use this URL for all coverage queries so that private-repo CI (which may not have
-# access to an internal CIDB) can still query test coverage data.
-_PUBLIC_CIDB_URL = "https://play.clickhouse.com"
-
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
 # widespread failures (e.g. build broken, environment issue) where every test failed,
@@ -55,12 +50,27 @@ class Targeting:
 
     def __init__(self, info: Info):
         self.info = info
+        self._cidb = None
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
         else:
             self.job_type = None
+
+    def _ci_db(self):
+        # Queries run as the privileged CI user. The public `play` user is
+        # rate/row/time-limited and must be used only for links handed to humans
+        # (see CIDB.get_link_to_test_case_statistics).
+        if self._cidb is None:
+            url, user, passwd = (
+                self.info.get_secret(Settings.SECRET_CI_DB_URL)
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_USER))
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
+                .get_value()
+            )
+            self._cidb = CIDB(url=url, user=user, passwd=passwd)
+        return self._cidb
 
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
@@ -143,16 +153,13 @@ class Targeting:
         return sorted(result)
 
     def get_previously_failed_tests(self):
-        from ci.praktika.cidb import CIDB
-        from ci.praktika.settings import Settings
-
         assert self.job_type, "Unsupported job type"
         assert (
             self.info.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
-        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        cidb = self._ci_db()
         if self.job_type == self.INTEGRATION_JOB_TYPE:
             test_name_pattern = "^test_"
         elif self.job_type == self.STATELESS_JOB_TYPE:
@@ -410,7 +417,7 @@ class Targeting:
         HAVING region_test_count <= {BROAD_REGION_HARD_CAP}
         """
 
-        cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+        cidb = self._ci_db()
         t_query = time.monotonic()
         raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
@@ -1023,9 +1030,7 @@ class Targeting:
         # broader callee coverage and higher overlap with domain-related tests.
         FILE_SEED_RC = 30   # narrower than MAX_TESTS_PER_LINE; avoids pulling in broad seeds
         if sparse_files:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            _cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            _cidb = self._ci_db()
             # sparse_files are already stored-paths (./src/...)
             sparse_conds = " OR ".join(
                 f"file = '{self._escape_sql_string(f)}'"
@@ -1168,9 +1173,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
@@ -1363,9 +1366,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=_PUBLIC_CIDB_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             print(
@@ -1408,7 +1409,6 @@ class Targeting:
         using KEYWORD_FALLBACK_WIDTH so they always rank below any direct or
         sibling hit.
         """
-        import glob as _glob
 
         if not changed_src_files:
             return []
@@ -2069,7 +2069,6 @@ if __name__ == "__main__":
     # get_changed_lines_from_diff and get_most_relevant_tests read from the file
     # rather than fetching the diff.
     if args.diff_file:
-        import types
         diff_text = Path(args.diff_file).read_text()
         targeting._diff_text = diff_text
 

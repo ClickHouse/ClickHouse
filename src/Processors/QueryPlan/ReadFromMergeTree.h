@@ -73,6 +73,12 @@ struct TopKFilterInfo
     int direction; /// 1 = ASC, -1 = DESC
     bool where_clause;
     TopKThresholdTrackerPtr threshold_tracker;
+
+    /// Deterministic hash over the parameters that describe the TopK filter at planning time:
+    /// `(column_name, type_name, limit_n, direction, num_sort_columns)`. Used as part of the
+    /// query condition cache key so that QCC entries written under a TopK plan are partitioned
+    /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
+    UInt64 condition_hash = 0;
 };
 
 struct LazyMaterializingRows;
@@ -404,6 +410,7 @@ public:
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
+    const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
