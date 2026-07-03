@@ -92,6 +92,7 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
+        || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -113,6 +114,7 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
+                case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -255,7 +257,7 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
             entries.reserve(close_requests.size());
             for (const auto & r : close_requests)
-                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
             temp_stream->append(std::move(entries));
 
@@ -765,7 +767,8 @@ void KeeperRequestDispatcher::dispatchThread()
                     Session * session = nullptr;
                     auto op = request.request->getOpNum();
                     if (op != Coordination::OpNum::Close &&
-                        op != Coordination::OpNum::SessionID)
+                        op != Coordination::OpNum::SessionID &&
+                        request.session_id >= 0)
                     {
                         auto it = sessions.find(request.session_id);
                         if (it == sessions.end() || it->second.dead.load())
@@ -888,7 +891,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
-                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
+                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
 
                 /// Add information about the batch to the queue of in-flight requests.
 
