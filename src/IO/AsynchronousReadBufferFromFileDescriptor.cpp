@@ -1,7 +1,6 @@
 #include <ctime>
 #include <optional>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -98,7 +97,7 @@ void AsynchronousReadBufferFromFileDescriptor::appendToPrefetchLog(FilesystemPre
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    chassert(!internal_buffer.empty());
+    assert(!internal_buffer.empty());
 
     IAsynchronousReader::Result result;
     if (prefetch_future.valid())
@@ -204,10 +203,10 @@ AsynchronousReadBufferFromFileDescriptor::~AsynchronousReadBufferFromFileDescrip
 /// If 'offset' is small enough to stay in buffer after seek, then true seek in file does not happen.
 off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
-    size_t new_pos = 0;
+    size_t new_pos;
     if (whence == SEEK_SET)
     {
-        chassert(offset >= 0);
+        assert(offset >= 0);
         new_pos = offset;
     }
     else if (whence == SEEK_CUR)
@@ -234,8 +233,8 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
 
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            chassert(pos >= working_buffer.begin());
-            chassert(pos <= working_buffer.end());
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
 
             return new_pos;
         }
@@ -258,7 +257,7 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         break;
     }
 
-    chassert(!prefetch_future.valid());
+    assert(!prefetch_future.valid());
 
     /// Position is out of the buffer, we need to do real seek.
     off_t seek_pos = required_alignment > 1
@@ -295,10 +294,6 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
     bytes_to_ignore = 0;
-
-    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
-    /// Reset so the next read cycle can proceed normally after rewind.
-    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

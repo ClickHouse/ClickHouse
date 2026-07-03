@@ -200,15 +200,7 @@ void PostgreSQLSource<T>::onCancel() noexcept
     /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
     if (!started.load() && tx && tx->conn().is_open())
     {
-        try
-        {
-            tx->conn().cancel_query();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
+        tx->conn().cancel_query();
         if (connection_holder)
             connection_holder->setBroken();
     }
