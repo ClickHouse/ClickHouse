@@ -63,6 +63,9 @@ SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materializ
 SELECT count() FROM numbers(1) WHERE materialize('1') = toUInt8(1); -- { serverError NO_COMMON_TYPE }
 SELECT count() FROM numbers(1) WHERE materialize('257') != toUInt8(1); -- { serverError NO_COMMON_TYPE }
 
+-- folding and's second arg is safe: an unconvertible const comparison yields false, not an exception
+SELECT count() FROM numbers(1) WHERE and(0, materialize(tuple(1)) = '(1') SETTINGS short_circuit_function_evaluation = 'enable';
+
 -- empty rowset, toFloat64 is not whitelisted so no speculative fold, runtime skips the WHERE
 SELECT count() FROM numbers(0) WHERE toFloat64(materialize('x86_74')) < 50;
 
