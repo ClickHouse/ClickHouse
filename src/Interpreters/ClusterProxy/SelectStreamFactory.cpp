@@ -26,6 +26,7 @@ namespace ProfileEvents
 {
     extern const Event DistributedConnectionMissingTable;
     extern const Event DistributedConnectionStaleReplica;
+    extern const Event DistributedShardsSkipped;
 }
 
 namespace DB
@@ -243,6 +244,7 @@ void SelectStreamFactory::createForShardImpl(
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "There is no table {} on local replica of shard {}, and no remote replicas configured. Skipping.",
                     main_table.getNameForLogs(), shard_info.shard_num);
+                ProfileEvents::increment(ProfileEvents::DistributedShardsSkipped);
                 if (unavailable_shard_tracker)
                     unavailable_shard_tracker->onShardSkipped();
             }

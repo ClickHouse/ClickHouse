@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -78,6 +80,7 @@
 #include <iterator>
 #include <memory>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <city.h>
@@ -215,6 +218,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
@@ -544,7 +548,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         data.getStorageID().getFullTableName()};
 
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
-        std::move(extension),
+        extension,
         std::move(parts_with_range),
         mutations_snapshot,
         shared_virtual_fields,
@@ -558,6 +562,14 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         pool_settings,
         block_size,
         context);
+
+    /// Default pool ignores the announcement response. The latter is relevant only to InOrder
+    /// reading where we split the table into multiple streams.
+    std::ignore = extension.sendInitialRequest(
+        CoordinationMode::Default,
+        pool->buildAnnouncementDescriptions(),
+        pool->getMarkSegmentSize(),
+        pool->getMinMarksPerRequest());
 
     Pipes pipes;
 
@@ -708,7 +720,8 @@ Pipe ReadFromMergeTree::readInOrder(
     Names required_columns,
     PoolSettings pool_settings,
     ReadType read_type,
-    UInt64 read_limit)
+    UInt64 read_limit,
+    std::optional<size_t> split_index)
 {
     /// For reading in order it makes sense to read only
     /// one range per task to reduce number of read rows.
@@ -723,22 +736,37 @@ Pipe ReadFromMergeTree::readInOrder(
 
     MergeTreeReadPoolPtr pool;
 
+    /// Used when reading multiple table splits with parallel replicas. The initiator node owns
+    /// the decision of which parts are assigned to which split (in particular, because it is
+    /// the only node that actually does index analysis by default). It communicates its decision
+    /// in response to the announcement request and followers should use that to filter out parts
+    /// that don't belong to the given split. This is only relevant for InOrder reading,
+    /// because the Default reading mode doesn't split the table into multiple streams.
+    std::optional<std::set<std::pair<MergeTreePartInfo, String>>> initiator_selected_parts;
+
     if (is_parallel_reading_from_replicas)
     {
         const auto & client_info = context->getClientInfo();
+        /// Each split gets its own stream_id so the coordinator maintains an independent
+        /// ImplInterface instance per split. When splitting, suffix every split with `#split_{i}`.
+        /// When the whole table is read by a single pool, keep the bare table name.
+        String stream_id = data.getStorageID().getFullTableName();
+        if (split_index)
+            stream_id += fmt::format("#split_{}", *split_index);
+
         ParallelReadingExtension extension{
             all_ranges_callback.value(),
             read_task_callback.value(),
             number_of_current_replica.value_or(client_info.number_of_current_replica),
             context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-            data.getStorageID().getFullTableName()};
+            std::move(stream_id)};
 
         CoordinationMode mode = read_type == ReadType::InOrder
             ? CoordinationMode::WithOrder
             : CoordinationMode::ReverseOrder;
 
-        pool = std::make_shared<MergeTreeReadPoolParallelReplicasInOrder>(
-            std::move(extension),
+        auto in_order_pool = std::make_shared<MergeTreeReadPoolParallelReplicasInOrder>(
+            extension,
             mode,
             parts_with_ranges,
             mutations_snapshot,
@@ -755,6 +783,23 @@ Pipe ReadFromMergeTree::readInOrder(
             pool_settings,
             block_size,
             context);
+
+        /// The response tells us exactly which parts this stream owns: phantom parts are skipped
+        /// during source construction below, so the pool never sees `getTask` for them.
+        auto response = extension.sendInitialRequest(
+            mode,
+            in_order_pool->buildAnnouncementDescriptions(),
+            /*mark_segment_size=*/0,
+            in_order_pool->getMinMarksPerRequest());
+
+        if (response)
+        {
+            initiator_selected_parts.emplace();
+            for (const auto & part : response->parts)
+                initiator_selected_parts->emplace(part.info, part.projection_name);
+        }
+
+        pool = std::move(in_order_pool);
     }
     else
     {
@@ -787,6 +832,19 @@ Pipe ReadFromMergeTree::readInOrder(
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
         const auto & part_with_ranges = parts_with_ranges[i];
+
+        /// On followers, skip constructing source processors for parts the initiator's stream
+        /// doesn't own. Projection parts are keyed by parent part info + projection name. If the
+        /// initiator didn't send a response (older protocol), `initiator_selected_parts` is
+        /// nullopt and we build sources for every part (legacy behavior).
+        if (initiator_selected_parts)
+        {
+            const bool is_projection = part_with_ranges.data_part->isProjectionPart();
+            const auto & part_info_for_check = is_projection ? part_with_ranges.parent_part->info : part_with_ranges.data_part->info;
+            const String & projection_name_for_check = is_projection ? part_with_ranges.data_part->name : "";
+            if (!initiator_selected_parts->contains({part_info_for_check, projection_name_for_check}))
+                continue;
+        }
 
         UInt64 total_rows = part_with_ranges.getRowsCount();
         if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
@@ -874,6 +932,11 @@ Pipe ReadFromMergeTree::readInOrder(
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
+
+    /// Empty pipe — return as-is; the caller in `spreadMarkRangesAmongStreamsWithOrder` filters out
+    /// empty pipes, and `initializePipeline` substitutes a `NullSource` for an empty top-level pipe.
+    if (pipe.empty())
+        return pipe;
 
     if (read_type == ReadType::InReverseOrder)
     {
@@ -1388,18 +1451,37 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .total_query_nodes = total_query_nodes,
     };
 
-    Pipes pipes;
-    /// For parallel replicas the split will be performed on the initiator side.
-    if (is_parallel_reading_from_replicas)
-    {
-        pipes.emplace_back(readInOrder(
-            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
-    }
-    else
+    const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
+    /// Split-stream topology requires both sides to speak the announcement-response protocol so
+    /// each `#split_i` pool can ask the initiator "which parts does this stream own?". An older
+    /// initiator (parallel-replicas protocol < `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`)
+    /// has no concept of `#split_i` streams — it either errors out on the extra announcements
+    /// (e.g. 25.x raises "more initial requests than there are replicas") or silently registers
+    /// each split as its own full-table stream and the follower amplifies reads `~num_streams`×.
+    /// When the upstream can't speak the response protocol, fall through to the legacy
+    /// single-pool branch below — every parallel-replicas-aware server understands that shape.
+    const bool upstream_supports_split_topology
+        = context->getClientInfo().connection_parallel_replicas_protocol_version
+        >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE;
+    const bool is_local_plan_follower = isParallelReplicasLocalPlanForFollower() && upstream_supports_split_topology;
+    /// Genuine range splitting runs only for the initiator and for purely-local reads.
+    /// Followers use all parts for every split and only need `num_streams` as the split count,
+    /// since the initiator is the authority on split topology.
+    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+
+    /// Only the local-plan follower path needs all parts replicated across per-split pools
+    /// (each split reads from a copy and filters down to its assigned subset). The legacy
+    /// single-pool path (`parallel_replicas_local_plan=0`) consumes `parts_with_ranges` exactly
+    /// once with a `std::move`, so a separate copy would just be wasted work on the legacy
+    /// in-order parallel-replica hot path.
+    RangesInDataParts all_parts_for_replicas;
+    if (is_local_plan_follower)
+        all_parts_for_replicas = parts_with_ranges;
+
+    std::vector<RangesInDataParts> split_parts_and_ranges;
+    if (need_split)
     {
         const size_t min_marks_per_stream = (info.sum_marks - 1) / num_streams + 1;
-
-        std::vector<RangesInDataParts> split_parts_and_ranges;
         split_parts_and_ranges.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
@@ -1473,11 +1555,72 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
             split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
+    }
 
+    Pipes pipes;
+    /// Each split runs as an independent pool. If we pass the top-level `.threads = num_streams`
+    /// to every pool, `min_marks_per_request = min_marks_per_task * threads` is inflated by
+    /// num_splits-fold across all pools. Divide threads evenly across splits (rounded up).
+    auto make_per_split_pool_settings = [&](size_t num_splits)
+    {
+        PoolSettings per_split = pool_settings;
+        const size_t divisor = std::max<size_t>(num_splits, 1);
+        per_split.threads = (pool_settings.threads + divisor - 1) / divisor;
+        return per_split;
+    };
+
+    if (is_local_plan_initiator)
+    {
+        /// Initiator with local plan: each split gets its own subset of parts (genuine splitting).
+        const size_t num_splits = split_parts_and_ranges.size();
+        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
+        for (size_t i = 0; i < num_splits; ++i)
+        {
+            pipes.emplace_back(readInOrder(
+                std::move(split_parts_and_ranges[i]), index_build_context, column_names, per_split_pool_settings, read_type,
+                input_order_info->limit, /*split_index=*/i));
+        }
+    }
+    else if (is_local_plan_follower)
+    {
+        /// Non-initiator with local_plan=1: create `num_streams` pools, each over ALL local parts.
+        /// The follower can't compute the initiator's authoritative split assignment, so it
+        /// optimistically launches `num_streams` streams; the per-stream announcement response
+        /// tells each pool which parts actually belong to its split (the rest are filtered out
+        /// during source construction in `readInOrder`). Streams that own no parts on this
+        /// follower produce empty pipes and are dropped by the `erase_if` below.
+        const size_t num_splits = num_streams;
+        const PoolSettings per_split_pool_settings = make_per_split_pool_settings(num_splits);
+        for (size_t i = 0; i < num_splits; ++i)
+        {
+            pipes.emplace_back(readInOrder(
+                RangesInDataParts(all_parts_for_replicas), index_build_context, column_names, per_split_pool_settings, read_type,
+                input_order_info->limit, /*split_index=*/i));
+        }
+    }
+    else if (is_parallel_reading_from_replicas)
+    {
+        /// parallel_replicas_local_plan=0: old behavior, single pool with all parts. We never
+        /// took the local-plan-follower branch above, so `parts_with_ranges` is still intact —
+        /// move it directly into the only pool that will consume it (no copy needed).
+        pipes.emplace_back(readInOrder(
+            std::move(parts_with_ranges), index_build_context, column_names, pool_settings, read_type,
+            input_order_info->limit));
+    }
+    else /* local reading case */
+    {
+        /// Preserve master behaviour: every split gets the unmodified `pool_settings` (with
+        /// `.threads = num_streams`). The per-split divider only exists to keep the new
+        /// parallel-replicas split topology from inflating `min_marks_per_request` across the
+        /// per-split pools — local reads have no such concern.
         for (auto && item : split_parts_and_ranges)
+        {
             pipes.emplace_back(readInOrder(
                 std::move(item), index_build_context, column_names, pool_settings, read_type, input_order_info->limit));
+        }
     }
+
+    std::erase_if(pipes, [](const Pipe & p) { return p.empty(); });
 
     Block pipe_header;
     if (!pipes.empty())
@@ -2803,9 +2946,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
-                && !vector_search_parameters.has_value())
+                && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                                                         /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             /// `isDeterministicAllowingTopKFilter` keeps the previous `COLUMN`-node strictness
@@ -2985,8 +3129,16 @@ void ReadFromMergeTree::updateSortDescription()
 
 bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 {
-    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan]
+    return is_parallel_reading_from_replicas
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
         && context->canUseParallelReplicasOnInitiator();
+}
+
+bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
+{
+    return is_parallel_reading_from_replicas
+        && ClusterProxy::canUseLocalPlanForParallelReplicas(context)
+        && context->canUseParallelReplicasOnFollower();
 }
 
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
@@ -3789,6 +3941,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     if (storage_snapshot->metadata->hasUniqueKey())
         reader_settings.use_query_condition_cache = false;
 
+    /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+    /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+    if (result.sampling.use_sampling)
+        reader_settings.use_query_condition_cache = false;
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).
@@ -3816,7 +3973,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 : CoordinationMode::ReverseOrder;
         };
         // This code is executed only if there is no parts to read, so the parameter values don't really matter
-        extension.sendInitialRequest(
+        std::ignore = extension.sendInitialRequest(
             get_coordination_mode(), result.parts_with_ranges.getDescriptions(), /*mark_segment_size=*/1, /*min_marks_per_request=*/1);
     }
 
