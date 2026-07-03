@@ -83,6 +83,13 @@ public:
         const Identifier & table_identifier,
         const ContextPtr & context);
 
+    /// Suggest a same/similar-named table when a table identifier cannot be resolved,
+    /// possibly in another database (e.g. `system.functions` for a bare `functions`).
+    /// Returns a (database, table) pair, or an empty pair when there is no good hint.
+    static std::pair<String, String> tryGetTableNameHint(
+        const Identifier & table_identifier,
+        const ContextPtr & context);
+
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,
         size_t identifier_bind_size,

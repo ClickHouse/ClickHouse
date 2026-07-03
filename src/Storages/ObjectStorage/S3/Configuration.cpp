@@ -367,6 +367,33 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     path_suffix = parsing_result.path_suffix;
 }
 
+namespace
+{
+
+/// Whether an ambiguous positional literal is a partition strategy (vs a compression method). Exact enum
+/// spellings (incl. uppercase `NONE`) match for backward compatibility; matching is also case-insensitive
+/// for real strategies (`hive`), but lowercase `none` is left to mean the `compression_method`.
+bool looksLikeExplicitPartitionStrategy(const String & arg)
+{
+    if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(arg))
+        return true;
+    const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
+    return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
+}
+
+/// Whether a positional argument is a bool literal (`partition_columns_in_data_file`) rather than a
+/// `partition_strategy` string. Matches `checkAndGetLiteralArgument<bool>`: a `Bool` or a `UInt64`.
+bool looksLikeBoolArgument(const ASTPtr & arg)
+{
+    const auto * literal = arg ? arg->as<ASTLiteral>() : nullptr;
+    if (!literal)
+        return false;
+    const auto type = literal->value.getType();
+    return type == Field::Types::Which::Bool || type == Field::Types::Which::UInt64;
+}
+
+}
+
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
@@ -559,7 +586,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            if (looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -584,7 +611,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            /// A bool last argument means args[6] is the partition strategy; otherwise inspect args[6].
+            /// This keeps the valid `(..., 'NONE', 1)` form working.
+            if (looksLikeBoolArgument(args[7]) || looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }

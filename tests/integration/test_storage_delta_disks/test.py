@@ -1,4 +1,3 @@
-import glob
 import json
 import logging
 import os
@@ -16,16 +15,15 @@ from pyspark.sql.types import (
 from pyspark.sql.window import Window
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
     LocalDownloader,
-    list_s3_objects,
     prepare_s3_bucket,
 )
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,

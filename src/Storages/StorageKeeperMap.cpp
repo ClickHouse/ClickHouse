@@ -1470,7 +1470,8 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Nam
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr(local_context, false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    Block sample_block = metadata_snapshot->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
