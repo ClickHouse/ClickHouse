@@ -998,7 +998,7 @@ static void writeMetadataFiles(
             continue;
         }
 
-        Int32 total_records_count = 0;
+        UInt64 total_records_count = 0;
         for (const auto & data_file : plan.snapshot_id_to_data_files[history_record.snapshot_id])
             total_records_count += data_file->new_records_count;
 
@@ -1006,12 +1006,12 @@ static void writeMetadataFiles(
             plan.generator,
             generated_metadata_info.path,
             history_record.parent_id,
-            append->added_files,
-            total_records_count,
-            append->added_files_size,
-            append->num_partitions,
-            0,
-            0,
+            Iceberg::SnapshotSummaryUpdateAppend{
+                .added_files = append->added_files,
+                .added_records = total_records_count,
+                .added_files_size = append->added_files_size,
+                .num_partitions = append->num_partitions,
+            },
             history_record.snapshot_id,
             history_record.made_current_at.value);
 

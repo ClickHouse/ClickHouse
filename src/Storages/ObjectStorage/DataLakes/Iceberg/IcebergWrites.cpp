@@ -1077,12 +1077,12 @@ bool IcebergStorageSink::initializeMetadata()
         filename_generator,
         metadata_info.path,
         parent_snapshot,
-        total_data_files,
-        total_rows,
-        total_chunks_size,
-        /* num_partitions */ static_cast<Int64>(writer_per_partition_key.size()),
-        /* added_delete_files */ 0,
-        /* num_deleted_rows */ 0);
+        Iceberg::SnapshotSummaryUpdateAppend{
+            .added_files = static_cast<UInt64>(total_data_files),
+            .added_records = static_cast<UInt64>(total_rows),
+            .added_files_size = static_cast<UInt64>(total_chunks_size),
+            .num_partitions = writer_per_partition_key.size(),
+        });
     auto storage_manifest_list_name = resolver.resolve(manifest_list_path);
 
 

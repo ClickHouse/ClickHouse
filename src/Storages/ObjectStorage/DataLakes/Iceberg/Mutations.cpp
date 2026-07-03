@@ -401,16 +401,29 @@ static bool writeMetadataFiles(
     for (const auto & [partition_key, _] : data_files.files_by_partition)
         touched_partitions.insert(partition_key);
 
+    Iceberg::SnapshotSummaryUpdate snapshot_summary_update;
+    if (delete_rows == 0)
+        snapshot_summary_update = Iceberg::SnapshotSummaryUpdateAppend{
+            .added_files = static_cast<UInt64>(data_files_count),
+            .added_records = static_cast<UInt64>(data_rows),
+            .added_files_size = static_cast<UInt64>(delete_bytes + data_bytes),
+            .num_partitions = touched_partitions.size(),
+        };
+    else
+        snapshot_summary_update = Iceberg::SnapshotSummaryUpdateOverwrite{
+            .added_files = static_cast<UInt64>(data_files_count),
+            .added_records = static_cast<UInt64>(data_rows),
+            .added_files_size = static_cast<UInt64>(delete_bytes + data_bytes),
+            .added_delete_files = static_cast<UInt64>(delete_files_count),
+            .added_position_deletes = static_cast<UInt64>(delete_rows),
+            .num_partitions = touched_partitions.size(),
+        };
+
     auto result = MetadataGenerator(metadata).generateNextMetadata(
         filename_generator,
         metadata_info.path,
         parent_snapshot,
-        /* added_files */ data_files_count,
-        /* added_records */ data_rows,
-        /* added_files_size */ delete_bytes + data_bytes,
-        /* num_partitions */ static_cast<Int64>(touched_partitions.size()),
-        /* added_delete_files */ delete_files_count,
-        /* num_deleted_rows */ delete_rows);
+        std::move(snapshot_summary_update));
     auto new_snapshot = result.snapshot;
     auto storage_manifest_list_name = path_resolver.resolve(result.manifest_list_path);
 

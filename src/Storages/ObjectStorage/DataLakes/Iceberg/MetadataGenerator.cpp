@@ -1,20 +1,29 @@
-#include <IO/ReadHelpers.h>
+#include <type_traits>
+#include <variant>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
-#include <climits>
+#include <Common/logger_useful.h>
+
+#if USE_AVRO
+
 #include <optional>
+
+#include <IO/ReadHelpers.h>
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
 
+#include <Common/Exception.h>
 #include <Common/randomSeed.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
-#if USE_AVRO
+#include <base/types.h>
 
 namespace DB::ErrorCodes
 {
@@ -168,12 +177,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
     Int64 parent_snapshot_id,
-    Int64 added_files,
-    Int64 added_records,
-    Int64 added_files_size,
-    Int64 num_partitions,
-    Int64 added_delete_files,
-    Int64 num_deleted_rows,
+    Iceberg::SnapshotSummaryUpdate snapshot_summary_update,
     std::optional<Int64> user_defined_snapshot_id,
     std::optional<Int64> user_defined_timestamp)
 {
@@ -217,36 +221,72 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
-    auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
-    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
-    summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
-    summary->set(Iceberg::f_added_records, std::to_string(added_records));
-    summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
-    summary->set(Iceberg::f_changed_partition_count, std::to_string(num_partitions));
-    if (num_deleted_rows != 0)
+    const auto snapshot_summary = [&]() -> Iceberg::SnapshotSummary
     {
-        summary->set(Iceberg::f_added_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_position_delete_files, std::to_string(added_delete_files));
-        summary->set(Iceberg::f_added_position_deletes, std::to_string(num_deleted_rows));
-    }
+        /// `nullopt` means "no parent" (the first commit). Carrying a concrete zero here instead would
+        /// tell `SnapshotSummary` a parent total exists, so an `APPEND` would reset `total-*` and a
+        /// `DELETE`/`OVERWRITE` would subtract from zero and underflow the unsigned totals.
+        std::optional<Iceberg::SnapshotSummaryTotals> previous_totals;
 
-    setSnapshotTotals(
-        summary,
-        parent_snapshot,
-        /*added_records=*/added_records,
-        /*added_files_size=*/added_files_size,
-        /*added_data_files=*/added_files,
-        /*added_delete_files=*/added_delete_files,
-        /*added_position_deletes=*/num_deleted_rows,
-        /*added_equality_deletes=*/0);
-    new_snapshot->set(Iceberg::f_summary, summary);
+        /// `parent_snapshot_id <= 0` is the "no parent" sentinel (-1 for the first INSERT, 0 for the root
+        /// of a rebuilt history). A positive id must resolve to a real snapshot; if it does not (snapshot
+        /// expiration / catalog pruning), fail close rather than silently committing wrong totals.
+        if (parent_snapshot_id > 0)
+        {
+            auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+            if (!parent_snapshot)
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} does not contain parent snapshot {} referenced by the new snapshot",
+                    metadata_file_path,
+                    parent_snapshot_id);
+
+            auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
+            if (!parent_summary)
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} is missing summary for parent snapshot {}",
+                    metadata_file_path,
+                    parent_snapshot_id);
+
+            auto parent_totals = Iceberg::SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false)
+                                     .transform([](auto summary) { return summary.getTotals(); });
+
+            if (parent_totals)
+                previous_totals = parent_totals.value();
+            else if (format_version > 1) /// No fields were required on 1st version
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} has snapshot summary we cannot read {}",
+                    metadata_file_path,
+                    parent_totals.error());
+        }
+
+        return Iceberg::SnapshotSummary{std::move(snapshot_summary_update), std::move(previous_totals)};
+    }();
+
+    new_snapshot->set(Iceberg::f_summary, snapshot_summary.toJSON());
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
 
     if (format_version >= 3)
     {
+        Int64 added_records = 0;
+
+        /// TODO: should be easier
+        std::visit(
+            [&]<typename T>(const T & update)
+            {
+                using namespace Iceberg;
+                if constexpr ((std::is_same_v<SnapshotSummaryUpdateDelete, T>) || (std::is_same_v<std::monostate, T>))
+                    return;
+                else
+                    added_records = update.added_records;
+            },
+            snapshot_summary_update
+        );
+
         Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
             ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
             : 0;
@@ -285,7 +325,9 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
     }
 
-    if (added_delete_files > 0)
+    /// Position deletes
+    if (snapshot_summary.getOperation() == Iceberg::SnapshotSummaryOperation::OVERWRITE
+        && snapshot_summary.getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>().added_delete_files > 0)
     {
         if (!metadata_object->has(Iceberg::f_properties))
         {
