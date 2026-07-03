@@ -1154,6 +1154,24 @@
             100% { opacity: 0; }
         }
 
+        /* Floating preview shown when hovering over a cell whose value is an image URL.
+           Limited to half the viewport in each dimension; smaller images keep their
+           natural size. A single element is reused for every hovered image. */
+        #image-preview
+        {
+            position: fixed;
+            z-index: 1000;
+            max-width: 50vw;
+            max-height: 50vh;
+            padding: 0.25rem;
+            background: var(--element-background-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.25rem;
+            box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            display: none;
+        }
+
         #copy-icon
         {
             width: 1em;
@@ -2221,6 +2239,11 @@ class QueryResultElement extends HTMLElement
             link.appendChild(node);
             link.href = text;
             link.setAttribute('target', '_blank');
+            /// If the URL points to an image, preview it on hover (see `attachImagePreview`).
+            if (text.match(/\.(jpe?g|png|gif|webp)(?:[?#].*)?$/i))
+            {
+                attachImagePreview(link, text);
+            }
             node = link;
         }
 
@@ -4000,6 +4023,54 @@ async function loadTables(server_address, user, password, database, container, s
 let databases_toggle = document.getElementById('databases-toggle');
 
 let menu_elem = document.getElementById('menu');
+
+/// A single reused floating element that previews an image when the cursor is over a
+/// cell whose value is an image URL. Its size is capped to half the viewport by CSS;
+/// smaller images keep their natural size.
+let image_preview = null;
+
+/// Place the preview near the cursor, flipping to the opposite side/edge when it would
+/// otherwise overflow the viewport, so the whole image stays visible.
+function positionImagePreview(event) {
+    if (!image_preview) return;
+    const margin = 16;
+    const rect = image_preview.getBoundingClientRect();
+    let left = event.clientX + margin;
+    let top = event.clientY + margin;
+    if (left + rect.width > window.innerWidth - margin) {
+        left = event.clientX - margin - rect.width;
+    }
+    if (left < margin) { left = margin; }
+    if (top + rect.height > window.innerHeight - margin) {
+        top = event.clientY - margin - rect.height;
+    }
+    if (top < margin) { top = margin; }
+    image_preview.style.left = left + 'px';
+    image_preview.style.top = top + 'px';
+}
+
+/// Show the image preview for `url` on hovering `link`, following the cursor while it
+/// moves, and hide it when the cursor leaves.
+function attachImagePreview(link, url) {
+    link.addEventListener('mouseenter', (event) => {
+        if (!image_preview) {
+            image_preview = document.createElement('img');
+            image_preview.id = 'image-preview';
+            image_preview.alt = '';
+            document.body.appendChild(image_preview);
+        }
+        /// Hide again if the image fails to load, so a broken image icon is not shown.
+        image_preview.onerror = () => { image_preview.style.display = 'none'; };
+        image_preview.onload = () => { positionImagePreview(event); };
+        image_preview.src = url;
+        image_preview.style.display = 'block';
+        positionImagePreview(event);
+    });
+    link.addEventListener('mousemove', positionImagePreview);
+    link.addEventListener('mouseleave', () => {
+        if (image_preview) { image_preview.style.display = 'none'; }
+    });
+}
 
 /// Hide the currently visible table-info balloon on any scroll: it uses
 /// position:fixed and would detach from its anchor. Use capture phase so the
