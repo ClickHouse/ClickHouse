@@ -76,6 +76,15 @@ SELECT CAST(inf::Float64, 'DateTime');
 SELECT CAST((-inf)::Float64, 'Time');
 SELECT CAST(nan::Float64, 'DateTime');
 
+SELECT '-- saturate: NaN must clamp to the minimum for every target, not fall through to a narrowing cast';
+-- The Float* -> Date branch skipped the day-num/timestamp split for NaN (both from<0 and
+-- from>DATE_LUT_MAX_DAY_NUM are false), then reached static_cast<UInt16>(from) = undefined behavior.
+-- NaN must clamp consistently with the sibling Date32 / DateTime / Time paths.
+SELECT CAST(nan::Float64, 'Date');
+SELECT CAST(nan::Float32, 'Date');
+SELECT CAST(nan::Float64, 'Date32');
+SELECT CAST(nan::Float64, 'Time');
+
 SELECT '-- ignore (default): out-of-range numeric casts keep the legacy behavior';
 SET date_time_overflow_behavior = 'ignore';
 SELECT CAST(99999999999::Int64, 'DateTime');
@@ -85,3 +94,8 @@ SELECT CAST(999999999999::Int64, 'Date32');
 SELECT '-- ignore: sources above INT64_MAX / float extremes must also clamp, not wrap negative';
 SELECT CAST(18446744073709551615::UInt64, 'Time');
 SELECT CAST(9223372036854775813::UInt64, 'DateTime');
+SELECT '-- ignore: NaN -> Date must clamp to the minimum, not fall through to a narrowing cast';
+SELECT CAST(nan::Float64, 'Date');
+SELECT CAST(nan::Float64, 'Date32');
+SELECT CAST(nan::Float64, 'DateTime');
+SELECT CAST(nan::Float64, 'Time');

@@ -337,9 +337,16 @@ struct ToDateTransformFromSecondsOrDays
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
-        if constexpr (overflow_throw && is_floating_point<FromType>)
+        /// NaN is false for every range comparison below, so without this guard it reaches the final
+        /// static_cast<UInt16>(from) (undefined behavior). Throw mode raises; saturate/ignore clamp to
+        /// the minimum (1970-01-01), matching the sibling Date32/DateTime/Time paths.
+        if constexpr (is_floating_point<FromType>)
             if (isNaN(from)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", formatOutOfBoundsValue(from));
+            {
+                if constexpr (overflow_throw)
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", formatOutOfBoundsValue(from));
+                return 0;
+            }
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
             /// Compare in the double domain: MAX_DATETIME_TIMESTAMP is exact as double but rounds when a
