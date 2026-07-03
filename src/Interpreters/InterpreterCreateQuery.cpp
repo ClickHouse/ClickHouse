@@ -2345,13 +2345,6 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
-    {
-        ContextMutablePtr drop_context = Context::createCopy(current_context);
-        drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
-        return drop_context;
-    };
-
     auto ast_drop = make_intrusive<ASTDropQuery>();
     String target_table = create.getTable();
     const bool if_not_exists = create.if_not_exists;
@@ -2404,9 +2397,19 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
     {
         /// Create temporary table (random name will be generated)
         DDLGuardPtr ddl_guard;
-        [[maybe_unused]] bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, true);
+        bool done = InterpreterCreateQuery(query_ptr, create_context).doCreateTable(create, properties, ddl_guard, mode, true);
         ddl_guard.reset();
-        chassert(done);
+        /// The internal temporary table must always be freshly created. A leftover table from a
+        /// previous failed attempt (possible for `Replicated` databases, where the suffix is derived
+        /// deterministically from the DDL task path) would make `doCreateTable` return `false` when
+        /// `if_not_exists` is set. `chassert` is compiled out in release builds, so throw explicitly
+        /// instead of silently reusing stale storage and publishing partially-filled data.
+        if (!done)
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Internal temporary table {} for CREATE TABLE ... AS SELECT already exists; "
+                "a previous attempt was likely not cleaned up",
+                backQuoteIfNeed(create.getTable()));
         created = true;
 
         /// If table has dependencies - add them to the graph
@@ -2444,10 +2447,17 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
             if (if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
             {
                 create.setTable(target_table);
-                auto drop_context = make_drop_context();
+                /// Drop the internal temporary table under an internal context (full access), so that
+                /// cleanup cannot fail because the user lacks `DROP_TABLE` on the internal `_tmp_ctas_*`
+                /// name. Otherwise a populated temporary table could leak on the concurrent-create race.
                 try
                 {
-                    InterpreterDropQuery(ast_drop, drop_context).execute();
+                    InterpreterDropQuery::executeDropQuery(
+                        ASTDropQuery::Kind::Drop,
+                        getContext()->getGlobalContext(),
+                        current_context,
+                        StorageID{ast_drop->getDatabase(), ast_drop->getTable()},
+                        /*sync=*/false);
                 }
                 catch (...)
                 {
@@ -2465,13 +2475,20 @@ BlockIO InterpreterCreateQuery::doCreateTableAsSelect(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        /// Drop temporary table if it was successfully created, but was not renamed to target name.
+        /// Cleanup runs under an internal context (full access) so that it cannot fail because the
+        /// user lacks `DROP_TABLE` on the internal `_tmp_ctas_*` name, avoiding a leaked populated
+        /// temporary table after a failed CREATE TABLE ... AS SELECT.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
             try
             {
-                InterpreterDropQuery(ast_drop, drop_context).execute();
+                InterpreterDropQuery::executeDropQuery(
+                    ASTDropQuery::Kind::Drop,
+                    getContext()->getGlobalContext(),
+                    current_context,
+                    StorageID{ast_drop->getDatabase(), ast_drop->getTable()},
+                    /*sync=*/false);
             }
             catch (...)
             {
