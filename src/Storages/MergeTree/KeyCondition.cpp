@@ -4043,14 +4043,19 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             add_transformed_constant_candidate(transformed, /*allow_constant_relaxation*/ true);
     }
 
-    /// 3. The deterministic constant transform is tried only when nothing else matched.
+    /// 3. The deterministic constant transform contributes candidates for the key columns
+    /// that the sources above did not reach. For example, with `ORDER BY (concat(s, '_x'), s)`
+    /// and `WHERE s = 'b'`, the direct match covers only `s`, and this source adds the
+    /// leading key column `concat(s, '_x')`. Candidates for key columns that are already
+    /// covered (including the trivial identity transform of a plain key column) are dropped
+    /// by the first-wins deduplication below.
     /// Equality (in both polarities) is the only comparison that an arbitrary
     /// deterministic `f` translates: `x = c` implies `f(x) = f(c)`, but order
     /// comparisons are not preserved. `notEquals` is tolerable even though the
     /// transform may relax the atom (when the transform is not injective), because
     /// evaluation forces `can_be_false = true` for relaxed elements, so such an atom
     /// never prunes.
-    if (candidates.empty() && (func_name == "equals" || func_name == "notEquals"))
+    if (func_name == "equals" || func_name == "notEquals")
     {
         auto transformed_candidates = transformConstantByDeterministicKeyFunctions(
             key_arg, info, const_value, const_type);

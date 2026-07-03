@@ -18,12 +18,12 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_multi SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 │  Keys:
-Parts: 1 | Granules: 5
+Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
-Condition: (toDate(ts) in [20514, 20514])
+Condition: and((cityHash64(ts) in [5771977039523260380, 5771977039523260380]), (toDate(ts) in [20514, 20514]))
 Parts: 1/1
-Granules: 5/12
+Granules: 2/12
 Search Algorithm: binary search
 SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
 1
@@ -117,13 +117,13 @@ SELECT count() FROM test_det_nan WHERE c0 = -30 SETTINGS use_primary_key = 0, us
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_nan WHERE c0 = 25) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
 │  Keys:
-Parts: 1 | Granules: 50
+Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
-Condition: (c0 in [25, 25])
+Condition: and((sqrt(c0) in [5., 5.]), (c0 in [25, 25]))
 Parts: 1/1
-Granules: 50/100
-Search Algorithm: generic exclusion search
+Granules: 2/100
+Search Algorithm: binary search
 SELECT count() FROM test_det_nan WHERE c0 = 25 SETTINGS force_primary_key = 1;
 1
 SELECT count() FROM test_det_nan WHERE c0 = 25 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
