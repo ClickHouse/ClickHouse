@@ -58,9 +58,30 @@ SELECT CAST(99999999999::Int64, 'Date');
 SELECT CAST(-1::Int64, 'Date');
 SELECT CAST(999999999999::Int64, 'Date32');
 
+SELECT '-- saturate: sources above INT64_MAX / float extremes must clamp to the max, not wrap negative';
+-- The clamp used to narrow the source to time_t BEFORE std::min, so a UInt64 above INT64_MAX wrapped
+-- to a small/negative time_t (e.g. UInt64::max -> -1) and a huge/Inf float narrowed via undefined
+-- behavior, producing 1970 / -00:00:01 instead of the saturated maximum. Clamp in the source domain first.
+SELECT CAST(18446744073709551615::UInt64, 'Time');
+SELECT CAST(9223372036854775813::UInt64, 'Time');
+SELECT CAST(18446744073709551615::UInt64, 'DateTime');
+SELECT CAST(9223372036854775813::UInt64, 'DateTime');
+SELECT CAST(18446744073709551615::UInt64, 'Date');
+SELECT CAST(18446744073709551615::UInt64, 'Date32');
+SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Date32');
+SELECT CAST(1e300::Float64, 'Time');
+SELECT CAST(1e300::Float64, 'DateTime');
+SELECT CAST(3e38::Float32, 'DateTime');
+SELECT CAST(inf::Float64, 'DateTime');
+SELECT CAST((-inf)::Float64, 'Time');
+SELECT CAST(nan::Float64, 'DateTime');
+
 SELECT '-- ignore (default): out-of-range numeric casts keep the legacy behavior';
 SET date_time_overflow_behavior = 'ignore';
 SELECT CAST(99999999999::Int64, 'DateTime');
 SELECT CAST(99999999999::UInt64, 'DateTime');
 SELECT CAST(99999999999::Int64, 'Date');
 SELECT CAST(999999999999::Int64, 'Date32');
+SELECT '-- ignore: sources above INT64_MAX / float extremes must also clamp, not wrap negative';
+SELECT CAST(18446744073709551615::UInt64, 'Time');
+SELECT CAST(9223372036854775813::UInt64, 'DateTime');

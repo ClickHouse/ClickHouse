@@ -173,6 +173,26 @@ static auto formatOutOfBoundsValue(const FromType & from)
         return from;
 }
 
+/// Saturate a numeric source into the [min_bound, max_bound] second-range of a Date/DateTime/Time
+/// target and return it as a time_t. The comparisons use accurate::greaterOp/lessOp so a source
+/// wider or of different signedness than time_t (UInt64/UInt128/UInt256 above INT64_MAX, huge or
+/// infinite floats) is compared at full precision. The narrowing static_cast<time_t> only runs
+/// once `from` is proven to be inside the bounds, so it never wraps (unsigned > INT64_MAX),
+/// truncates (wide int) or hits undefined behavior (float out of time_t range). NaN is treated as
+/// below the range (callers reach saturation only in non-throw modes; throw guards NaN earlier).
+template <typename FromType>
+static time_t saturateToRange(const FromType & from, time_t min_bound, time_t max_bound)
+{
+    if constexpr (is_floating_point<FromType>)
+        if (isNaN(from))
+            return min_bound;
+    if (accurate::greaterOp(from, max_bound))
+        return max_bound;
+    if (accurate::lessOp(from, min_bound))
+        return min_bound;
+    return static_cast<time_t>(from);
+}
+
 /** Type conversion functions.
   * toType - conversion in "natural way";
   */
@@ -341,7 +361,9 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
+                /// Clamp before narrowing: static_cast<time_t>(from) would wrap/truncate for an unsigned
+                /// or wide source above INT64_MAX, so the min() no longer clamps to the maximum timestamp.
+                return static_cast<UInt16>(time_zone.toDayNum(saturateToRange(from, 0, MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
     }
@@ -381,7 +403,9 @@ struct ToDate32TransformFromSecondsOrDays
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
-                return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATETIME64_TIMESTAMP)));
+                /// Clamp before narrowing: time_t(Int64(from)) would wrap/truncate for an unsigned or wide
+                /// source above INT64_MAX, so the min() no longer clamps to the maximum timestamp.
+                return time_zone.toDayNum(saturateToRange(from, 0, MAX_DATETIME64_TIMESTAMP));
 
         return static_cast<Int32>(from);
     }
@@ -401,7 +425,9 @@ struct ToDateTimeTransform64
             if (from > MAX_DATETIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+        /// Clamp before narrowing: static_cast<time_t>(from) would wrap for an unsigned source above
+        /// INT64_MAX (e.g. UInt64::max -> -1), producing 1970 instead of the saturated maximum.
+        return static_cast<ToType>(saturateToRange(from, 0, MAX_DATETIME_TIMESTAMP));
     }
 };
 
@@ -443,9 +469,9 @@ struct ToDateTimeTransform64Signed
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", formatOutOfBoundsValue(from));
         }
 
-        if (from < 0)
-            return 0;
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+        /// Clamp before narrowing: static_cast<time_t>(from) is undefined behavior for a float source
+        /// outside the time_t range (huge or infinite), which the saturate/ignore modes hit here.
+        return static_cast<ToType>(saturateToRange(from, 0, MAX_DATETIME_TIMESTAMP));
     }
 };
 
@@ -510,7 +536,9 @@ struct ToTimeTransform64
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+        /// Clamp before narrowing: static_cast<time_t>(from) would wrap for an unsigned source above
+        /// INT64_MAX (e.g. UInt64::max -> -1), yielding -00:00:01 instead of the saturated maximum.
+        return static_cast<ToType>(saturateToRange(from, is_signed_v<FromType> ? -MAX_TIME_TIMESTAMP : 0, MAX_TIME_TIMESTAMP));
     }
 };
 
@@ -542,10 +570,9 @@ struct ToTimeTransform64Signed
             if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", formatOutOfBoundsValue(from));
         }
-        if (from > 0)
-            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
-        else
-            return static_cast<ToType>(std::max(time_t(from), time_t(-1 * MAX_TIME_TIMESTAMP)));
+        /// Clamp before narrowing: static_cast<time_t>(from) is undefined behavior for a float source
+        /// outside the time_t range (huge or infinite), which the saturate/ignore modes hit here.
+        return static_cast<ToType>(saturateToRange(from, -MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP));
     }
 };
 
