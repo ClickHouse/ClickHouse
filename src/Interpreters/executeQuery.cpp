@@ -2675,42 +2675,54 @@ void executeQuery(
         throw;
     }
 
-    /// We release the query slot here to make sure the client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    /// Only the query slot is released here, not the memory reservation: pipeline threads still hold raw pointers to it,
-    /// so it is released later by `streams.onFinish()` after the pipeline has been finalized.
-    context->releaseQuerySlot();
-
-    /// The order is important here:
-    /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
-    /// - then we flush the progress (to flush result_rows/result_bytes)
-    /// - then call the query_finish_callback() - right now the only purpose is to flush the data over HTTP
-    /// - then call onFinish() that will create entry in query_log/opentelemetry_span_log
-    ///
-    /// That way we have:
-    /// - correct finish time of the query (regardless of how long does the query_finish_callback() takes)
-    /// - correct progress for HTTP (X-ClickHouse-Summary requires result_rows/result_bytes)
-    /// - correct NetworkSendElapsedMicroseconds/NetworkSendBytes in query_log
-    const auto finish_time = std::chrono::system_clock::now();
-    std::exception_ptr exception_ptr;
+    QueryFinishCallback finish_callback;
     if (query_finish_callback)
     {
-        /// Dump result_rows/result_bytes, since query_finish_callback() will send final http header.
-        flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+        finish_callback = [&]()
+        {
+            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+            /// so the X-ClickHouse-Summary header is correct.
+            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+            query_finish_callback();
+        };
+    }
 
+    finishExecutedQuery(streams, finish_callback);
+}
+
+void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)
+{
+    /// Release the query slot now so the client can safely reuse it for its next query, otherwise it would be
+    /// released too late by BlockIO. Only the query slot is released here, not the memory reservation: pipeline
+    /// threads still hold raw pointers to it until io.onFinish() finalizes the pipeline, so releasing it here
+    /// would be a data race.
+    io.releaseQuerySlot();
+
+    /// The order is important here:
+    /// - first we save finish_time, used for query_log/opentelemetry_span_log.finish_time_us;
+    /// - then we call query_finish_callback() - right now its only purpose is to flush the data over HTTP;
+    /// - then we call onFinish() that creates the entry in query_log/opentelemetry_span_log.
+    /// That way finish_time is the correct finish time of the query regardless of how long query_finish_callback()
+    /// takes. If the callback throws, we still run onFinish() and rethrow the callback's exception afterwards, so
+    /// onFinish()'s own exceptions propagate normally.
+    const auto finish_time = std::chrono::system_clock::now();
+    std::exception_ptr callback_exception;
+    if (query_finish_callback)
+    {
         try
         {
             query_finish_callback();
         }
         catch (...)
         {
-            exception_ptr = std::current_exception();
+            callback_exception = std::current_exception();
         }
     }
 
-    streams.onFinish(finish_time);
+    io.onFinish(finish_time);
 
-    if (exception_ptr)
-        std::rethrow_exception(exception_ptr);
+    if (callback_exception)
+        std::rethrow_exception(callback_exception);
 }
 
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)

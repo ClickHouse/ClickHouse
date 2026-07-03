@@ -21,6 +21,7 @@ namespace DB
 {
 
 class PipelineExecutor;
+class QueryStatus;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
@@ -279,7 +280,7 @@ private:
             Finished,
         };
 
-        /// Protects interrupt_execution and executor.
+        /// Protects interrupt_execution, executor and executing_query_status.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
@@ -287,6 +288,9 @@ private:
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
+        /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
+        /// killed. Set/cleared together with `executor`.
+        std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
