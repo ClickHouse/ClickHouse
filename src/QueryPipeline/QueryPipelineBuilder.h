@@ -49,7 +49,8 @@ public:
     ~QueryPipelineBuilder() = default;
     QueryPipelineBuilder(QueryPipelineBuilder &&) = default;
     QueryPipelineBuilder(const QueryPipelineBuilder &) = delete;
-    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default;
+    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
+    QueryPipelineBuilder & operator= (QueryPipelineBuilder && rhs) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     QueryPipelineBuilder & operator= (const QueryPipelineBuilder & rhs) = delete;
 
     /// All pipes must have same header.

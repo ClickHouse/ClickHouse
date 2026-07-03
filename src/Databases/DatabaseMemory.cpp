@@ -237,6 +237,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
+void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -245,7 +246,10 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn);
+    factory.registerDatabase("Memory", create_fn, {}, Documentation{
+        .description = "An in-memory database whose metadata is not persisted and is lost on restart; tables and data live only for the duration of the server session.",
+        .syntax = "ENGINE = Memory",
+        .related = {"Atomic"}});
 }
 
 }

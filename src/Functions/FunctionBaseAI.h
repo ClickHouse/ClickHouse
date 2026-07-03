@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 
+#include <exception>
+
 namespace DB
 {
 
@@ -61,13 +63,18 @@ public:
 
     /// Resolve the named-collection argument: cast the first argument to a `ColumnConst`, run the
     /// `NAMED_COLLECTION` access check, fetch from `NamedCollectionFactory`, and validate that the
-    /// required fields (`provider`, `endpoint`, `model`, `api_key`) are non-empty.
+    /// required fields (`provider`, `endpoint`, `model`) are non-empty. `api_key` is optional.
     static AINamedCollectionConfig resolveAINamedCollection(const ContextPtr & context, const ColumnPtr & first_arg);
 
     /// Exponential backoff delay capped at one minute, so adversarial values of
     /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
     /// sleep or overflow `std::chrono::milliseconds`.
     static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
+
+    /// Whether a failed provider request should be retried: transient network failures and
+    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
+    /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
+    static bool isRetriableProviderError(std::exception_ptr eptr);
 
 protected:
     ContextPtr context;
@@ -109,8 +116,8 @@ private:
         String model;
         String api_key;
         String api_version;
-        float temperature;
-        UInt64 max_tokens;
+        float temperature = 0;
+        UInt64 max_tokens = 0;
     };
 
     ResolvedConfig resolveConfig(const ColumnsWithTypeAndName & arguments) const;

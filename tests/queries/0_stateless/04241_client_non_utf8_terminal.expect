@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest
+# Check that clickhouse-client falls back to the ASCII charset for the Pretty formats
+# when the terminal does not support UTF-8 (e.g. LANG=C), so that Unicode box-drawing
+# characters do not corrupt the terminal. See https://github.com/ClickHouse/ClickHouse/issues/12414
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Non-UTF-8 terminal: the Pretty grid must use ASCII characters ('|', '+', '-').
+spawn bash -c "source $basedir/../shell_config.sh ; unset LC_CTYPE ; export LC_ALL=C LANG=C ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'abcde' AS x\r"
+# ASCII vertical bars around the value; in UTF-8 mode it would be '│ abcde │' and not match.
+expect "| abcde |"
+expect ":) "
+
+send -- "\4"
+expect eof
+
+# An explicit charset choice must be respected even on a non-UTF-8 terminal.
+spawn bash -c "source $basedir/../shell_config.sh ; unset LC_CTYPE ; export LC_ALL=C LANG=C ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --output_format_pretty_grid_charset=UTF-8 --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT 'abcde' AS x\r"
+# UTF-8 box-drawing vertical bar around the value.
+expect "│ abcde │"
+expect ":) "
+
+send -- "\4"
+expect eof

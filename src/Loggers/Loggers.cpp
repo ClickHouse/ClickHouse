@@ -61,7 +61,7 @@ static std::string createDirectory(const std::string & file)
 static std::string renderFileNameTemplate(time_t now, const std::string & file_path)
 {
     fs::path path{file_path};
-    std::tm buf;
+    std::tm buf{};
     localtime_r(&now, &buf); /// NOLINT(cert-err33-c)
     std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     ss << std::put_time(&buf, path.filename().c_str());

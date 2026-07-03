@@ -134,7 +134,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     if (first_time)
     {
         LOG_DEBUG(log, "Activating replica.");
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
     }
     else if (storage.is_readonly)
     {
@@ -158,7 +158,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     {
         /// The exception when you try to zookeeper_init usually happens if DNS does not work or the connection with ZK fails
         tryLogCurrentException(log, "Failed to establish a new ZK connection. Will try again");
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
         return false;
     }
 
@@ -167,7 +167,7 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
 
     if (!tryStartup())
     {
-        assert(storage.is_readonly);
+        chassert(storage.is_readonly);
         return false;
     }
 
@@ -226,7 +226,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         const bool replica_metadata_version_exists = replica_metadata_version != -1;
         if (replica_metadata_version_exists)
         {
-            storage.setInMemoryMetadata(storage.getInMemoryMetadataPtr(storage.getContext(), false)->withMetadataVersion(replica_metadata_version));
+            auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+            storage.setInMemoryMetadata(storage_metadata_snapshot->withMetadataVersion(replica_metadata_version));
         }
         else
         {

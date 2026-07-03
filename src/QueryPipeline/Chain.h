@@ -24,7 +24,8 @@ public:
     Chain(Chain &&) = default;
     Chain(const Chain &) = delete;
 
-    Chain & operator=(Chain &&) = default;
+    /// Not noexcept: the QueryPlanResourceHolder it owns appends on move-assignment, which can throw.
+    Chain & operator=(Chain &&) = default; /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     Chain & operator=(const Chain &) = delete;
 
     explicit Chain(ProcessorPtr processor);

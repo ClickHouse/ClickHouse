@@ -88,7 +88,7 @@ public:
 
     void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
     {
-        size_t sample_count;
+        size_t sample_count = 0;
         readBinaryLittleEndian(sample_count,buf);
         bucket.samples.reserve(sample_count);
 
@@ -194,7 +194,8 @@ public:
             }
 
             /// Remove samples that are out of the window
-            while (!samples_in_window.empty() && samples_in_window.front().first + Base::window <= current_timestamp)
+            while (!samples_in_window.empty()
+                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
             {
                 samples_in_window.pop_front();
             }

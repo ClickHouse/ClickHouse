@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 #include <mutex>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <IO/AsynchronousReader.h>
 #include <IO/ReadSettings.h>
@@ -181,8 +182,8 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            assert(pos >= working_buffer.begin());
-            assert(pos <= working_buffer.end());
+            chassert(pos >= working_buffer.begin());
+            chassert(pos <= working_buffer.end());
             return new_pos;
         }
         if (prefetch_future.valid())
@@ -202,7 +203,7 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
         break;
     }
 
-    assert(!prefetch_future.valid());
+    chassert(!prefetch_future.valid());
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();

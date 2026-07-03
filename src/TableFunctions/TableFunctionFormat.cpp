@@ -172,51 +172,33 @@ Returned value: A table with data parsed from `data` argument according specifie
     {
         {
             "First example",
-            R"(
-Query:
-```
-:) select * from format(JSONEachRow,
+            R"(SELECT * FROM format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$)
-```
-
-Result:
-```
-┌───b─┬─a─────┐
+$$))",
+            R"(┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
 │ 112 │ Hello │
 │ 124 │ World │
-└─────┴───────┘
-```
-)", ""
+└─────┴───────┘)"
         },
         {
             "Second example",
-            R"(
-Query:
-```
-:) desc format(JSONEachRow,
+            R"(DESCRIBE format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$)
-```
-
-Result:
-```
-┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+$$))",
+            R"(┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
-└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-)", ""
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘)"
         },
     },
     .category = FunctionDocumentation::Category::TableFunction
@@ -225,6 +207,7 @@ Result:
 }
 
 
+void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>(format_table_function_documentation, {false}, TableFunctionFactory::Case::Insensitive);

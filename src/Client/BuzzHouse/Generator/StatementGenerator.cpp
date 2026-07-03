@@ -592,11 +592,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     SelectParen * sparen = cv->mutable_select();
 
     SQLBase::setDeterministic(fc, rg, next);
-    this->allow_not_deterministic = !next.is_deterministic;
-    this->enforce_final = next.is_deterministic;
+    this->allow_not_deterministic = !next.isDeterministic();
+    this->enforce_final = next.isDeterministic();
     next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
     cv->set_is_temp(next.is_temp);
-    const auto replaceViewLambda = [&next](const SQLView & v) { return v.isAttached() && (v.is_deterministic || !next.is_deterministic); };
+    const auto replaceViewLambda
+        = [&next](const SQLView & v) { return v.isAttached() && (v.isDeterministic() || !next.isDeterministic()); };
     const bool replace = collectionCount<SQLView>(replaceViewLambda) > 3 && rg.nextMediumNumber() < 16;
     if (replace)
     {
@@ -623,12 +624,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     if (next.is_materialized)
     {
         const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
-        { return t.isAttached() && t.cols.size() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
+        { return t.isAttached() && t.cols.size() >= view_ncols && (t.isDeterministic() || !next.isDeterministic()); };
         next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = collectionHas<SQLTable>(attached_tables);
         const bool has_to = (next.has_with_cols || has_tables) && rg.nextSmallNumber() < 7;
 
-        next.teng = MergeTree;
+        next.engine.value = MergeTree;
         if (!has_to)
         {
             TableEngine * te = cv->mutable_engine();
@@ -636,7 +637,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             if (rg.nextSmallNumber() < 4)
             {
                 getNextTableEngine(rg, false, next);
-                te->set_engine(next.teng);
+                te->set_engine(next.engine.value);
             }
             chassert(this->entries.empty());
             for (uint32_t i = 0; i < view_ncols; i++)
@@ -649,7 +650,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 next.cols.insert("c" + std::to_string(i));
             }
             generateEngineDetails(rg, createViewRelation("", next), next, true, te);
-            if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.is_deterministic && rg.nextMediumNumber() < 26)
+            if ((next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && !next.isDeterministic() && rg.nextMediumNumber() < 26)
             {
                 generateNextTTL(rg, std::nullopt, te, te->mutable_ttl_expr());
             }
@@ -697,7 +698,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 }
             }
         }
-        if (!next.is_deterministic && (next.is_refreshable = rg.nextBool()))
+        if (!next.isDeterministic() && (next.is_refreshable = rg.nextBool()))
         {
             generateNextRefreshableView(rg, cv->mutable_refresh());
             cv->set_empty(rg.nextBool());
@@ -847,7 +848,7 @@ void StatementGenerator::generateNextTablePartition(
     /// allow_parts = 0 no parts, = 1 allows parts, = 2 only parts allowed
     bool table_has_partitions = false;
 
-    if (t.isMergeTreeFamily())
+    if (t.isMergeTreeFamily(true))
     {
         const String dname = t.getDatabaseName();
         const String tname = t.getBaseName();
@@ -876,7 +877,7 @@ void StatementGenerator::generateNextTablePartition(
 
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
-    const bool has_final = t.can_run_merges && (t.supportsFinal() || t.isMergeTreeFamily() || rg.nextMediumNumber() < 21)
+    const bool has_final = t.can_run_merges && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21)
         && (strict || rg.nextSmallNumber() < 4);
     const bool has_partition = rg.nextBool();
 
@@ -1050,7 +1051,8 @@ bool StatementGenerator::tableOrFunctionRef(
               String url;
               String buf;
 
-              URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
+              TableFunction * tf = tof->mutable_tfunc();
+              URLFunc * ufunc = tf->mutable_url();
               const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
                   ? rg.pickRandomly(rg.pickRandomly(outFormats))
                   : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
@@ -1098,7 +1100,7 @@ bool StatementGenerator::tableOrFunctionRef(
                   ufunc->set_outformat(outf);
               }
               ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-              addRandomHTTPHeaders(rg, ufunc);
+              addRandomHTTPHeaders(rg, tf);
           }},
          {simple_est,
           [&]
@@ -1577,7 +1579,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return t.isAttached() && !t.is_deterministic && !t.hasDatabasePeer();
+    return t.isAttached() && !t.isDeterministic() && !t.hasDatabasePeer();
 };
 
 void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * exc)
@@ -1648,19 +1650,13 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
 
 
 std::optional<String> StatementGenerator::alterSingleTable(
-    RandomGenerator & rg,
-    SQLTable & t,
-    const uint32_t nalters,
-    const bool no_oracle,
-    const bool can_update,
-    const bool in_parallel,
-    Alter * at)
+    RandomGenerator & rg, SQLTable & t, const uint32_t nalters, const bool no_oracle, const bool in_parallel, Alter * at)
 {
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-    this->allow_not_deterministic = !t.is_deterministic;
-    this->enforce_final = t.is_deterministic;
+    this->allow_not_deterministic = !t.isDeterministic();
+    this->enforce_final = t.isDeterministic();
     at->set_is_temp(t.is_temp);
     at->set_sobject(SQLObject::TABLE);
     t.setName(at->mutable_object()->mutable_est(), false);
@@ -1669,17 +1665,18 @@ std::optional<String> StatementGenerator::alterSingleTable(
         AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
         ati->set_paren(rg.nextSmallNumber() < 9);
 
-        const bool is_mt = t.isMergeTreeFamily();
+        const bool is_mt = t.isMergeTreeFamily(true);
         const bool no_peer = !t.hasDatabasePeer();
         const bool can_merge = t.can_run_merges;
         const String dname_idx = t.getDatabaseName();
         const String tname_idx = t.getBaseName();
         const uint32_t nidxs = is_mt ? fc.tableCountIndexes(dname_idx, tname_idx) : 0;
         const uint32_t nprojs = is_mt ? fc.tableCountProjections(dname_idx, tname_idx) : 0;
+        const uint32_t nconstrs = fc.tableCountConstraints(dname_idx, tname_idx);
         const bool has_idxs = nidxs > 0;
         const bool has_projs = nprojs > 0;
-        const bool has_constrs = !t.constrs.empty();
-        const bool has_col_settings = !allColumnSettings.at(t.teng).empty();
+        const bool has_constrs = nconstrs > 0;
+        const bool has_col_settings = !allColumnSettings.at(t.engine.value).empty();
 
         rg.pickWeighted({
             /// Order by
@@ -1698,7 +1695,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
             /// Heavy delete
             {30 * static_cast<uint32_t>(no_oracle && can_merge), [&] { generateNextDelete(rg, t, ati->mutable_del()); }},
             /// Heavy update
-            {40 * static_cast<uint32_t>(can_update && can_merge), [&] { generateNextUpdate(rg, t, ati->mutable_update()); }},
+            {40 * static_cast<uint32_t>(no_oracle && can_merge), [&] { generateNextUpdate(rg, t, ati->mutable_update()); }},
             /// Add column
             {2 * static_cast<uint32_t>(no_oracle && no_peer && t.cols.size() < fc.max_columns),
              [&]
@@ -1753,7 +1750,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  }
              }},
             /// Materialize column
-            {2 * static_cast<uint32_t>(can_merge),
+            {2 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  ColInPartition * mcol = ati->mutable_materialize_column();
@@ -1786,7 +1783,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  ncol.set_column(rg.nextIdentifier("c", t.col_counter++, fc.allow_nasty_identifiers));
              }},
             /// Clear column
-            {2 * static_cast<uint32_t>(can_merge),
+            {2 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  ColInPartition * ccol = ati->mutable_clear_column();
@@ -1880,7 +1877,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  ccol->set_comment(nextComment(rg));
              }},
             /// Delete mask
-            {8 * static_cast<uint32_t>(can_merge),
+            {8 * static_cast<uint32_t>(no_oracle && can_merge),
              [&]
              {
                  OptionalPartitionExpr * ope = ati->mutable_delete_mask();
@@ -1965,7 +1962,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  ModifyColumnSetting * mcp = ati->mutable_column_modify_setting();
-                 const auto & csettings = allColumnSettings.at(t.teng);
+                 const auto & csettings = allColumnSettings.at(t.engine.value);
                  flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  columnPathRef(rg.pickRandomly(this->entries), mcp->mutable_col());
                  this->entries.clear();
@@ -1975,7 +1972,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  RemoveColumnSetting * rcp = ati->mutable_column_remove_setting();
-                 const auto & csettings = allColumnSettings.at(t.teng);
+                 const auto & csettings = allColumnSettings.at(t.engine.value);
                  flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  columnPathRef(rg.pickRandomly(this->entries), rcp->mutable_col());
                  this->entries.clear();
@@ -1986,7 +1983,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  SettingValues * svs = ati->mutable_table_modify_setting();
-                 const auto & engineSettings = allTableSettings.at(t.teng);
+                 const auto & engineSettings = allTableSettings.at(t.engine.value);
                  if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
                      generateSettingValues(rg, engineSettings, svs);
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
@@ -1998,7 +1995,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  SettingList * sl = ati->mutable_table_remove_setting();
-                 const auto & engineSettings = allTableSettings.at(t.teng);
+                 const auto & engineSettings = allTableSettings.at(t.engine.value);
                  if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
                      generateSettingList(rg, engineSettings, sl);
                  if (is_mt && !fc.hot_table_settings.empty() && rg.nextBool())
@@ -2030,10 +2027,9 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, pip->mutable_single_partition()->mutable_partition());
              }},
             /// Constraints
-            {2 * static_cast<uint32_t>(no_oracle && t.constrs.size() < 4),
-             [&] { addTableConstraint(rg, t, true, ati->mutable_add_constraint()); }},
+            {2 * static_cast<uint32_t>(no_oracle && nconstrs < 4), [&] { addTableConstraint(rg, t, ati->mutable_add_constraint()); }},
             {2 * static_cast<uint32_t>(no_oracle && has_constrs),
-             [&] { ati->mutable_remove_constraint()->set_value(rg.pickRandomly(t.constrs)); }},
+             [&] { ati->mutable_remove_constraint()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx)); }},
             /// Partition operations
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -2065,7 +2061,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      rg, 0, rg.nextSmallNumber() < 3, false, t, apf->mutable_single_partition()->mutable_partition());
                  t2.setName(apf->mutable_est(), false);
              }},
-            {5 * static_cast<uint32_t>(is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
@@ -2110,14 +2106,14 @@ std::optional<String> StatementGenerator::alterSingleTable(
                  generateStorage(rg, mp->mutable_storage());
              }},
             /// TTL
-            {5 * static_cast<uint32_t>(!t.is_deterministic && can_merge),
+            {5 * static_cast<uint32_t>(no_oracle && !t.isDeterministic() && can_merge),
              [&]
              {
                  flatTableColumnPath(flat_tuple | flat_nested, t.cols, [](const SQLColumn &) { return true; });
                  generateNextTTL(rg, std::make_optional<SQLTable>(t), nullptr, ati->mutable_modify_ttl());
                  this->entries.clear();
              }},
-            {2 * static_cast<uint32_t>(!t.is_deterministic), [&] { ati->set_remove_ttl(true); }},
+            {2 * static_cast<uint32_t>(no_oracle && !t.isDeterministic()), [&] { ati->set_remove_ttl(true); }},
             /// Attach/replace partition from
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -2128,7 +2124,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                      rg, 0, rg.nextSmallNumber() < 3, true, t2, apf->mutable_single_partition()->mutable_partition());
                  t2.setName(apf->mutable_est(), false);
              }},
-            {5 * static_cast<uint32_t>(is_mt),
+            {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
              {
                  AttachPartitionFrom * apf = ati->mutable_replace_partition_from();
@@ -2149,7 +2145,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
                          rg, 0, rg.nextSmallNumber() < 3, false, t, ope->mutable_single_partition()->mutable_partition());
              }},
             /// Apply patches
-            {3,
+            {3 * static_cast<uint32_t>(no_oracle),
              [&]
              {
                  OptionalPartitionExpr * ope = ati->mutable_apply_patches();
@@ -2222,15 +2218,15 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
               const bool prev_allow_not_deterministic = this->allow_not_deterministic;
               SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views));
 
-              this->allow_not_deterministic = !v.is_deterministic;
-              this->enforce_final = v.is_deterministic;
+              this->allow_not_deterministic = !v.isDeterministic();
+              this->enforce_final = v.isDeterministic();
               cluster = v.getCluster();
               at->set_is_temp(v.is_temp);
               at->set_sobject(SQLObject::VIEW);
               v.setName(at->mutable_object()->mutable_est(), false);
               for (uint32_t i = 0; i < nalters; i++)
               {
-                  const uint32_t alter_refresh = 1 * static_cast<uint32_t>(!v.is_deterministic);
+                  const uint32_t alter_refresh = 1 * static_cast<uint32_t>(!v.isDeterministic());
                   const uint32_t alter_query = 3;
                   const uint32_t comment_view = 2;
                   AlterItem * ati = i == 0 ? at->mutable_alter() : at->add_other_alters();
@@ -2270,7 +2266,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, const bool in_paral
           {
               SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-              cluster = this->alterSingleTable(rg, t, nalters, true, true, in_parallel, at);
+              cluster = this->alterSingleTable(rg, t, nalters, true, in_parallel, at);
           }},
          {alter_database,
           [&]
@@ -2473,13 +2469,13 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
 }
 
-static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
+static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true); };
 
 static const auto has_mergeable_mt_func
-    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && t.can_run_merges && !t.hasDatabasePeer(); };
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && t.can_run_merges && !t.hasDatabasePeer(); };
 
 static const auto has_non_mergeable_mt_func
-    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily() && !t.can_run_merges; };
+    = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(true) && !t.can_run_merges; };
 
 static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
 
@@ -2543,6 +2539,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         {8 * has_merge_tree,
          [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_wait_loading_parts()); }},
         {4 * static_cast<uint32_t>(!fc.disks.empty()), [&] { sc->set_wait_blobs_cleanup(rg.pickRandomly(fc.disks).name); }},
+        {4 * static_cast<uint32_t>(!fc.disks.empty()), [&] { sc->set_restart_disk(rg.pickRandomly(fc.disks).name); }},
         {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
          [&] { cluster = setTableSystemStatement<SQLTable>(rg, has_merge_tree_func, sc->mutable_stop_virtual_parts_update()); }},
         {4 * has_merge_tree * static_cast<uint32_t>(supports_cloud_features),
@@ -2977,7 +2974,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
               const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
               const String dname = t.getDatabaseName();
               const String tname = t.getBaseName();
-              const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
+              const bool table_has_partitions = t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname);
 
               t.setName(bro->mutable_object()->mutable_est(), false);
               cluster = backupOrRestoreObject(bro, SQLObject::TABLE, t);
@@ -3320,84 +3317,36 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
 
     switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time
     {
-        case SQLOp::CreateTable:
-            generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());
-            break;
-        case SQLOp::CreateView:
-            generateNextCreateView(rg, sq->mutable_create_view());
-            break;
-        case SQLOp::Drop:
-            generateNextDrop(rg, sq->mutable_drop());
-            break;
-        case SQLOp::Insert:
-            generateNextInsert(rg, in_parallel, sq->mutable_insert());
-            break;
-        case SQLOp::LightDelete:
-            generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del());
-            break;
-        case SQLOp::Truncate:
-            generateNextTruncate(rg, sq->mutable_trunc());
-            break;
-        case SQLOp::OptimizeTable:
-            generateNextOptimizeTable(rg, sq->mutable_opt());
-            break;
-        case SQLOp::CheckTable:
-            generateNextCheckTable(rg, sq->mutable_check());
-            break;
-        case SQLOp::DescTable:
-            generateNextDescTable(rg, sq->mutable_desc());
-            break;
-        case SQLOp::Exchange:
-            generateNextExchange(rg, sq->mutable_exchange());
-            break;
-        case SQLOp::Alter:
-            generateAlter(rg, in_parallel, sq->mutable_alter());
-            break;
+        case SQLOp::CreateTable: generateNextCreateTable(rg, in_parallel, sq->mutable_create_table()); break;
+        case SQLOp::CreateView: generateNextCreateView(rg, sq->mutable_create_view()); break;
+        case SQLOp::Drop: generateNextDrop(rg, sq->mutable_drop()); break;
+        case SQLOp::Insert: generateNextInsert(rg, in_parallel, sq->mutable_insert()); break;
+        case SQLOp::LightDelete: generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del()); break;
+        case SQLOp::Truncate: generateNextTruncate(rg, sq->mutable_trunc()); break;
+        case SQLOp::OptimizeTable: generateNextOptimizeTable(rg, sq->mutable_opt()); break;
+        case SQLOp::CheckTable: generateNextCheckTable(rg, sq->mutable_check()); break;
+        case SQLOp::DescTable: generateNextDescTable(rg, sq->mutable_desc()); break;
+        case SQLOp::Exchange: generateNextExchange(rg, sq->mutable_exchange()); break;
+        case SQLOp::Alter: generateAlter(rg, in_parallel, sq->mutable_alter()); break;
         case SQLOp::SetValues:
             generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sq->mutable_setting_values());
             break;
-        case SQLOp::Attach:
-            generateAttach(rg, sq->mutable_attach());
-            break;
-        case SQLOp::Detach:
-            generateDetach(rg, sq->mutable_detach());
-            break;
-        case SQLOp::CreateDatabase:
-            generateNextCreateDatabase(rg, sq->mutable_create_database());
-            break;
-        case SQLOp::CreateFunction:
-            generateNextCreateFunction(rg, sq->mutable_create_function());
-            break;
-        case SQLOp::SystemStmt:
-            generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
-            break;
-        case SQLOp::BackupOrRestore:
-            generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
-            break;
-        case SQLOp::CreateDictionary:
-            generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
-            break;
-        case SQLOp::Rename:
-            generateNextRename(rg, sq->mutable_rename());
-            break;
-        case SQLOp::LightUpdate:
-            generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
-            break;
-        case SQLOp::SelectQuery:
-            generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
-            break;
-        case SQLOp::Kill:
-            generateNextKill(rg, sq->mutable_kill());
-            break;
-        case SQLOp::ShowStatement:
-            generateNextShowStatement(rg, sq->mutable_show());
-            break;
+        case SQLOp::Attach: generateAttach(rg, sq->mutable_attach()); break;
+        case SQLOp::Detach: generateDetach(rg, sq->mutable_detach()); break;
+        case SQLOp::CreateDatabase: generateNextCreateDatabase(rg, sq->mutable_create_database()); break;
+        case SQLOp::CreateFunction: generateNextCreateFunction(rg, sq->mutable_create_function()); break;
+        case SQLOp::SystemStmt: generateNextSystemStatement(rg, true, sq->mutable_system_cmd()); break;
+        case SQLOp::BackupOrRestore: generateNextBackupOrRestore(rg, sq->mutable_backup_restore()); break;
+        case SQLOp::CreateDictionary: generateNextCreateDictionary(rg, sq->mutable_create_dictionary()); break;
+        case SQLOp::Rename: generateNextRename(rg, sq->mutable_rename()); break;
+        case SQLOp::LightUpdate: generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt()); break;
+        case SQLOp::SelectQuery: generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select()); break;
+        case SQLOp::Kill: generateNextKill(rg, sq->mutable_kill()); break;
+        case SQLOp::ShowStatement: generateNextShowStatement(rg, sq->mutable_show()); break;
         case SQLOp::CreatePolicy:
             generateNextCreatePolicy(rg, !supports_cloud_features || rg.nextBool(), sq->mutable_create_policy());
             break;
-        case SQLOp::SnapshotQuery:
-            generateNextSnapshot(rg, sq->mutable_snapshot_query());
-            break;
+        case SQLOp::SnapshotQuery: generateNextSnapshot(rg, sq->mutable_snapshot_query()); break;
     }
 }
 
@@ -3462,12 +3411,8 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
         {
             switch (val.value())
             {
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST:
-                    this->ids.insert(this->ids.end(), {0, 1});
-                    break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX:
-                    this->ids.insert(this->ids.end(), {2, 17, 18});
-                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_AST: this->ids.insert(this->ids.end(), {0, 1}); break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_SYNTAX: this->ids.insert(this->ids.end(), {2, 17, 18}); break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
                     this->ids.insert(this->ids.end(), {3, 4, 5, 6, 7});
                     break;
@@ -3478,10 +3423,8 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
                     this->ids.insert(this->ids.end(), {0, 8, 15, 16});
                     break;
-                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION:
-                    break;
-                default:
-                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION: break;
+                default: break;
             }
         }
         else
@@ -3935,7 +3878,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp.get())) && ntp->subtypes.size() > 1)
@@ -3977,7 +3920,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     else
                     {
                         SQLColumn & col = t.cols.at(old_cname);
-                        NestedType * ntp;
+                        NestedType * ntp = nullptr;
 
                         chassert(path.sub_cols_size() == 1);
                         if ((ntp = dynamic_cast<NestedType *>(col.tp.get())))
@@ -4045,20 +3988,6 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                     {
                         t.cols.at(cname).dmod = std::nullopt;
                     }
-                }
-                else if (ati.has_add_constraint())
-                {
-                    const String & pname = ati.add_constraint().constr().value();
-
-                    if (success)
-                    {
-                        t.constrs.insert(pname);
-                    }
-                    t.staged_constrs.erase(pname);
-                }
-                else if (ati.has_remove_constraint() && success)
-                {
-                    t.constrs.erase(ati.remove_constraint().value());
                 }
                 else if (ati.has_freeze_partition() && success)
                 {

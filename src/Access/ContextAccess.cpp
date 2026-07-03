@@ -22,7 +22,6 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <cassert>
 #include <unordered_set>
 
 
@@ -64,8 +63,8 @@ namespace
             return element;
 
         // Columns imply a resolved table and database (current DB is already substituted upstream).
-        assert(!element.table.empty());
-        assert(!element.database.empty());
+        chassert(!element.table.empty());
+        chassert(!element.database.empty());
 
         if (access.isGranted(AccessType::SHOW_COLUMNS, element.database, element.table, element.columns))
             return element;
@@ -216,6 +215,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
+            "disk_types",
+            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -250,6 +251,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+
+        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {
@@ -343,11 +347,13 @@ void ContextAccess::initialize()
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
-        [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+        [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
         {
             auto ptr = weak_ptr.lock();
             if (!ptr)
                 return;
+            /// All changes are for the same user id; the last one reflects its current state.
+            const auto & entity = changes.back().entity;
             UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
             std::lock_guard lock2{ptr->mutex};
             ptr->setUser(changed_user);
@@ -426,7 +432,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         subscription_for_initial_user_change = access_control->subscribeForChanges(
             *params.initial_user_id,
-            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> &)
             {
                 if (auto ptr = weak_ptr.lock())
                 {
@@ -441,7 +447,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
 void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const
 {
-    assert(roles_info_);
+    chassert(roles_info_);
     roles_info = roles_info_;
 
     enabled_row_policies = access_control->getEnabledRowPolicies(*params.user_id, roles_info->enabled_roles);
@@ -602,13 +608,12 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 }
 
 
-std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
 {
     auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
+    if (!quota)
         return {};
-    else
-        return quota->getUsage();
+    return quota->getAllUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const
@@ -716,7 +721,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
-    bool granted;
+    bool granted = false;
     if constexpr (wildcard)
     {
         if constexpr (grant_option)
@@ -857,7 +862,7 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
 template <bool throw_if_denied, bool grant_option, bool wildcard>
 bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const AccessRightsElement & element) const
 {
-    assert(!element.grant_option || grant_option);
+    chassert(!element.grant_option || grant_option);
     if (element.isGlobalWithParameter())
     {
         if (element.anyParameter())

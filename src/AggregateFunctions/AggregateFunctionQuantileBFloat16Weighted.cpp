@@ -45,6 +45,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
+void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileBFloat16Weighted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -48,7 +48,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
-        Float64 tie_correction;
+        Float64 tie_correction = 0;
 
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
@@ -216,7 +216,7 @@ public:
             data(place).addX(value, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);
@@ -269,6 +269,7 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
+void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

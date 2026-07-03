@@ -1,4 +1,6 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -366,7 +368,7 @@ struct JoinActionRefPairHash
     }
 };
 
-std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
     std::vector<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
@@ -389,7 +391,7 @@ std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & jo
     return joining_keys;
 }
 
-std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
     const std::vector<QueryPlan::Node *> & child_nodes,
@@ -557,7 +559,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_expressions.append_range(std::move(extra_equivalent_expressions));
     }
 
-    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
+    auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available, bool require_stable_types = false)
     {
         Names available_input_columns_for_filter;
 
@@ -577,7 +579,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// (e.g. UInt8 in the input becomes Nullable(UInt8) in the join output), pushing a
             /// filter built for the join output directly to the input side causes a type mismatch.
             /// JoinStepLogical handles this via fix_predicate_for_join_logical_step below.
-            if (!logical_join && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
+            ///
+            /// The disjunction (partial predicate) push-down path has no such type-fixup, so it
+            /// passes require_stable_types to also exclude type-changing columns for JoinStepLogical.
+            if ((!logical_join || require_stable_types)
+                && !input_header->getByName(name).type->equals(*join_header->getByName(name).type))
                 continue;
 
             available_input_columns_for_filter.push_back(name);
@@ -904,8 +910,18 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             return updated_steps;
         }
 
+        /// Unlike the main push-down above, addFilterOnTop builds the partial FilterStep directly
+        /// against the join input header without fix_predicate_for_join_logical_step. So a function
+        /// node whose type was computed for the join output (e.g. equals over a USING key widened to
+        /// Nullable) would be applied to the non-widened input column and trip the result-type check
+        /// in updateHeader. Restrict the partial predicate to columns with stable types across the join.
+        Names left_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+        Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
+            false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
+
         {
-            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
+            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
@@ -919,7 +935,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
 
         {
-            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
+            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
             {
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
@@ -1130,7 +1146,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Filter - Union - Something
         ///                - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isSQLUnion());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

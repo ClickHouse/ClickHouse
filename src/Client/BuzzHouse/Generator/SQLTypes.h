@@ -563,10 +563,13 @@ class QBitType : public SQLType
 public:
     std::unique_ptr<SQLType> subtype;
     const uint32_t dimension;
+    /// Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided.
+    const uint32_t stride;
 
-    QBitType(std::unique_ptr<SQLType> s, const uint32_t d)
+    QBitType(std::unique_ptr<SQLType> s, const uint32_t d, const uint32_t st)
         : subtype(std::move(s))
         , dimension(d)
+        , stride(st)
     {
     }
 
@@ -650,7 +653,7 @@ public:
 template <typename T>
 bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, SQLType * tp)
 {
-    LowCardinality * lc;
+    LowCardinality * lc = nullptr;
 
     if (dynamic_cast<const T *>(tp))
     {
@@ -658,7 +661,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nullable)
     {
-        Nullable * nl;
+        Nullable * nl = nullptr;
 
         if ((nl = dynamic_cast<Nullable *>(tp)))
         {
@@ -671,7 +674,7 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_array)
     {
-        ArrayType * at;
+        ArrayType * at = nullptr;
 
         if ((at = dynamic_cast<ArrayType *>(tp)))
         {
@@ -680,8 +683,8 @@ bool hasType(const bool inside_array, bool inside_nullable, bool inside_nested, 
     }
     if (inside_nested)
     {
-        TupleType * ttp;
-        NestedType * ntp;
+        TupleType * ttp = nullptr;
+        NestedType * ntp = nullptr;
 
         if ((ttp = dynamic_cast<TupleType *>(tp)))
         {

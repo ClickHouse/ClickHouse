@@ -28,7 +28,7 @@ SELECT sum(a), count(a) FROM ( SELECT CAST(materialize(1), 'LowCardinality(Nulla
 SET enable_analyzer = 1;
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT count(b) * count(b) IGNORE NULLS FROM (SELECT b FROM test);
-SELECT count(__table1.b) * count(__table1.b) AS `multiply(count(b), count(b))`
+SELECT multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`
 FROM
 (
     SELECT __table2.b AS b
@@ -37,9 +37,9 @@ FROM
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT avg(b) * 3, (sum(b) + 1) + count(b), count(b) * count(b), count() IGNORE NULLS FROM (SELECT b FROM test);
 SELECT
-    avg(__table1.b) * 3 AS `multiply(avg(b), 3)`,
-    (sum(__table1.b) + 1) + count(__table1.b) AS `plus(plus(sum(b), 1), count(b))`,
-    count(__table1.b) * count(__table1.b) AS `multiply(count(b), count(b))`,
+    multiply(avg(__table1.b), 3) AS `multiply(avg(b), 3)`,
+    plus(plus(sum(__table1.b), 1), count(__table1.b)) AS `plus(plus(sum(b), 1), count(b))`,
+    multiply(count(__table1.b), count(__table1.b)) AS `multiply(count(b), count(b))`,
     count() AS `count()`
 FROM
 (

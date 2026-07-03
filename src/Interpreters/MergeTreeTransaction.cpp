@@ -235,7 +235,7 @@ scope_guard MergeTreeTransaction::beforeCommit()
     for (const auto & table_and_mutation : mutations_to_wait)
         table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
-    assert([&]()
+    chassert([&]()
     {
         std::lock_guard lock{mutex};
         return mutations == mutations_to_wait;
@@ -255,7 +255,8 @@ scope_guard MergeTreeTransaction::beforeCommit()
     return [this]()
     {
         CSN expected_value = Tx::CommittingCSN;
-        csn.compare_exchange_strong(expected_value, Tx::UnknownCSN);
+        if (csn.compare_exchange_strong(expected_value, Tx::UnknownCSN))
+            csn.notify_all();
     };
 }
 
@@ -310,6 +311,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     chassert(prev_value == Tx::CommittingCSN);
+    /// `std::atomic::wait` requires a matching `notify`; a bare store does not wake a waiter
+    /// (works on the Linux libc++ global-table fallback by luck, but hangs on the native wait used for 8-byte atomics on macOS).
+    csn.notify_all();
 }
 
 bool MergeTreeTransaction::rollback() noexcept
@@ -322,6 +326,9 @@ bool MergeTreeTransaction::rollback() noexcept
     /// Check that it was not rolled back concurrently
     if (!need_rollback)
         return false;
+
+    /// Wake up any `waitStateChange` waiter (see note in `afterCommit`).
+    csn.notify_all();
 
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
@@ -371,12 +378,12 @@ bool MergeTreeTransaction::rollback() noexcept
         part->version->unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-    assert([&]()
+    chassert([&]()
     {
         std::lock_guard lock{mutex};
-        assert(mutations_to_kill == mutations);
-        assert(parts_to_remove == creating_parts);
-        assert(parts_to_activate == removing_parts);
+        chassert(mutations_to_kill == mutations);
+        chassert(parts_to_remove == creating_parts);
+        chassert(parts_to_activate == removing_parts);
         return csn == Tx::RolledBackCSN;
     }());
 

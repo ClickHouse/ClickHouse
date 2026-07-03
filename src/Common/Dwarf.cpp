@@ -253,16 +253,16 @@ uint64_t readULEB(std::string_view & sp, uint8_t & shift, uint8_t & val)
 
 uint64_t readULEB(std::string_view & sp)
 {
-    uint8_t shift;
-    uint8_t val;
+    uint8_t shift = 0;
+    uint8_t val = 0;
     return readULEB(sp, shift, val);
 }
 
 // Read SLEB (signed) varint value; algorithm from the DWARF spec
 int64_t readSLEB(std::string_view & sp)
 {
-    uint8_t shift;
-    uint8_t val;
+    uint8_t shift = 0;
+    uint8_t val = 0;
     uint64_t r = readULEB(sp, shift, val);
 
     if (shift < 64 && (val & 0x40))
@@ -1016,8 +1016,8 @@ std::optional<std::pair<std::optional<Dwarf::CompilationUnit>, uint64_t>> Dwarf:
     const CompilationUnit & cu, const Die & die, uint64_t attr_name) const
 {
     bool found = false;
-    uint64_t value;
-    uint64_t form;
+    uint64_t value = 0;
+    uint64_t form = 0;
     forEachAttribute(cu, die, [&](const Attribute & attr)
     {
         if (attr.spec.name == attr_name)
@@ -1952,7 +1952,7 @@ void Dwarf::LineNumberVM::init()
 
 bool Dwarf::LineNumberVM::next(std::string_view & program)
 {
-    Dwarf::LineNumberVM::StepResult ret;
+    Dwarf::LineNumberVM::StepResult ret = {};
     do
     {
         ret = step(program);
