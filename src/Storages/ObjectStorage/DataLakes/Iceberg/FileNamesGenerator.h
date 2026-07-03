@@ -15,8 +15,8 @@ namespace DB
 struct GeneratedMetadataFileWithInfo
 {
     Iceberg::IcebergPathFromMetadata path;
-    Int32 version;
-    CompressionMethod compression_method;
+    Int32 version = 0;
+    CompressionMethod compression_method = CompressionMethod::None;
 };
 
 /// Generates Iceberg metadata paths (IcebergPathFromMetadata) for new files.

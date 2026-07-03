@@ -142,7 +142,7 @@ void registerTableFunctionPrimes(TableFunctionFactory & factory)
                 {"The first prime after 1e15", "SELECT prime FROM primes() WHERE prime > toUInt64(1e15) LIMIT 1;", ""},
                 {"The first 7 Mersenne primes", "SELECT prime FROM primes() WHERE bitAnd(prime, prime + 1) = 0 LIMIT 7;", ""},
             },
-            .introduced_in = {26, 1},
+            .introduced_in = {26, 2},
             .category = FunctionDocumentation::Category::TableFunction,
         },
         {.allow_readonly = true}

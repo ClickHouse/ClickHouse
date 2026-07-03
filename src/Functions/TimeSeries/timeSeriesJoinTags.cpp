@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesJoinTags(<group>, 'dest_tag', 'separator', ['src_tag_1', 'src_tag_2', ...])
 /// joins all the values of all the `src_tags` using `separator` and returns a new group with the tag `dest_tag` set to the joined value.
-class FunctionTimeSeriesJoinTags : public IFunction
+class FunctionTimeSeriesJoinTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesJoinTags";
@@ -32,6 +32,12 @@ public:
     /// Function timeSeriesJoinTags uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

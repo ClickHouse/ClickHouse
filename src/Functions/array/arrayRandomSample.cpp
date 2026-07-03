@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -19,7 +20,7 @@ namespace ErrorCodes
 }
 
 /// arrayRandomSample(arr, k) - Returns k random elements from the input array
-class FunctionArrayRandomSample : public IFunction
+class FunctionArrayRandomSample final : public IFunction
 {
 public:
     static constexpr auto name = "arrayRandomSample";
@@ -74,7 +75,7 @@ public:
         const auto & array_offsets = col_array->getOffsets();
         auto & res_offsets = col_res->getOffsets();
 
-        std::vector<size_t> indices;
+        VectorWithMemoryTracking<size_t> indices;
         size_t prev_array_offset = 0;
         size_t prev_res_offset = 0;
 

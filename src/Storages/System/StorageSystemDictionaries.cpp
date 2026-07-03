@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -114,12 +115,9 @@ VirtualColumnsDescription StorageSystemDictionaries::createVirtuals()
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
-    const bool check_access_for_dictionaries = access->isGranted(AccessType::SHOW_DICTIONARIES);
+    const bool need_to_check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context->getExternalDictionariesLoader();
-
-    if (!check_access_for_dictionaries)
-        return;
 
     for (const auto & load_result : external_dictionaries.getLoadResults())
     {
@@ -131,7 +129,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
         StorageID dict_id = getDictionaryID(load_result, dict_ptr);
 
         String db_or_tag = dict_id.database_name.empty() ? IDictionary::NO_DATABASE_TAG : dict_id.database_name;
-        if (!access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
+        if (need_to_check_access_for_dictionaries && !access->isGranted(AccessType::SHOW_DICTIONARIES, db_or_tag, dict_id.table_name))
             continue;
 
         size_t i = 0;
@@ -223,3 +221,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDictionaries) }

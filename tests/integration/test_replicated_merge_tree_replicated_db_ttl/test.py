@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 
-import logging
-import random
-import string
-import time
-from multiprocessing.dummy import Pool
 
-import minio
 import pytest
 
 from helpers.cluster import ClickHouseCluster

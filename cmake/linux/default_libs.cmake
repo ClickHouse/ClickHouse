@@ -6,27 +6,22 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
 include (cmake/compiler_rt_link.cmake)
 
-option (ENABLE_LLVM_LIBC_MATH "Use math from llvm-libc instead of glibc" ON)
+# `libllvmlibc` supplies both the math functions and the SIMD memory functions
+# (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
+# x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
+# which then carries a versioned glibc symbol again (no portability shim).
+option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
 if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_LLVM_LIBC_MATH OFF)
 endif()
 
 if (ENABLE_LLVM_LIBC_MATH)
     link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
+    target_link_libraries(global-libs INTERFACE libllvmlibc)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
 
-    if (ARCH_AMD64)
-        if (X86_ARCH_LEVEL VERSION_LESS 2)
-            # Compat mode: single library, no dispatch
-            target_link_libraries(global-libs INTERFACE libllvmlibc)
-            set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
-        else()
-            # Dispatch mode: v2/v3 variants with runtime CPU detection
-            target_link_libraries(global-libs INTERFACE llvmlibc_dispatch libllvmlibc_x86_64_v2 libllvmlibc_x86_64_v3)
-            set (DEFAULT_LIBS "${DEFAULT_LIBS} -lllvmlibc_dispatch -llibllvmlibc_x86_64_v2 -llibllvmlibc_x86_64_v3")
-        endif()
-    elseif (ARCH_AARCH64)
-        target_link_libraries(global-libs INTERFACE libllvmlibc)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+    if (NOT SANITIZE)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
     endif()
 endif()
 

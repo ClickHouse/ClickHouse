@@ -204,7 +204,7 @@ TEST(Logger, ExceptionsFromPocoLoggerAreNotPropagated)
     EXPECT_EQ(oss.str(), "");
 }
 
-std::vector<std::string> getLogFileNames(const std::string & log_dir)
+static std::vector<std::string> getLogFileNames(const std::string & log_dir)
 {
     std::vector<std::string> log_file_names;
     for (const auto & entry : std::filesystem::directory_iterator(log_dir))
@@ -213,7 +213,7 @@ std::vector<std::string> getLogFileNames(const std::string & log_dir)
     return log_file_names;
 }
 
-std::string readLogFile(const std::string & path, bool skip_comments = true)
+static std::string readLogFile(const std::string & path, bool skip_comments = true)
 {
     std::string file_contents;
     std::ifstream input(path);
