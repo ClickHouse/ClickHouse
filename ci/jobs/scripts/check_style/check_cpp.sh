@@ -83,6 +83,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementNoTrace
+    ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -100,6 +101,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::checkCPUOverload
     ProfileEvents::getDocumentation
     ProfileEvents::NAME
+    ProfileEvents::setUserPerCPUEnabled
 
     CurrentMetrics::add
     CurrentMetrics::max
@@ -133,9 +135,12 @@ EXTERN_TYPES_EXCLUDES=(
 # and this matches with zkutil::CreateMode
 grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/extern_files"
 
-# Extract declarations: "filepath:D TYPE NAME"
+# Extract declarations: "filepath:D TYPE NAME [NOLINT]"
+# A trailing NOLINT comment marks the declaration as used elsewhere: it still counts as a
+# declaration (so same-file usages and duplicates are checked), but is exempt from the
+# "defined but not used" check below.
 xargs < "$STYLE_TMPDIR/extern_files" rg -o --no-line-number \
-    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);' -r 'D $1 $2' > "$STYLE_TMPDIR/extern_combined"
+    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);(?:.*?(NOLINT))?' -r 'D $1 $2 $3' > "$STYLE_TMPDIR/extern_combined"
 
 # Extract usages (skipping comment lines): "filepath:U NS NAME"
 xargs < "$STYLE_TMPDIR/extern_files" rg --no-line-number \
@@ -172,6 +177,7 @@ BEGIN {
         ns = type_to_ns[p[2]]
         key = file SUBSEP ns SUBSEP p[3]
         decl[key]++
+        if (p[4] == "NOLINT") used[key] = 1
     } else {
         key = file SUBSEP p[2] SUBSEP p[3]
         used[key] = 1
@@ -254,10 +260,18 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | g
 {
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/BridgeHelper
     src/Columns
     src/Compression
+    src/Core/MySQL
+    src/Core/PostgreSQL
+    src/Core/Streaming
+    src/Core/YTsaurus
+    src/Core/examples
+    src/Core/fuzzers
     src/Daemon
     src/Dictionaries
+    src/Examples
     src/Functions
     src/IO
     src/Loggers
@@ -291,6 +305,7 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
+    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/ReplxxLineReader.h
     src/Client/Suggest.cpp

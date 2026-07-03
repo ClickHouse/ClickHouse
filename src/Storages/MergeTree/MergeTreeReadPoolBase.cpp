@@ -127,7 +127,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
 static Names
-getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const std::vector<NamesAndTypesList> & prewhere_steps_columns, const Settings & settings)
+getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const NamesAndTypesLists & prewhere_steps_columns, const Settings & settings)
 {
     const auto it = std::ranges::max_element(
         prewhere_steps_columns,
@@ -140,7 +140,7 @@ static std::pair<size_t, size_t> // (min_marks_per_task, avg_mark_bytes)
 calculateMinMarksPerTask(
     const RangesInDataPart & part,
     const Names & columns_to_read,
-    const std::vector<NamesAndTypesList> & prewhere_steps_columns,
+    const NamesAndTypesLists & prewhere_steps_columns,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
@@ -316,6 +316,15 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
     ranges_in_patch_parts.optimize();
     patch_join_cache->init(ranges_in_patch_parts);
+}
+
+RangesInDataPartsDescription MergeTreeReadPoolBase::buildAnnouncementDescriptions() const
+{
+    auto descriptions = parts_ranges.getDescriptions();
+    chassert(descriptions.size() == per_part_infos.size());
+    for (size_t i = 0; i < descriptions.size(); ++i)
+        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
+    return descriptions;
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const

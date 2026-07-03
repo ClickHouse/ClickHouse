@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -26,7 +26,7 @@ new_node = cluster.add_instance(
 old_node = cluster.add_instance(
     "old_node",
     image="clickhouse/clickhouse-server",
-    tag="24.9.2.42",
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     main_configs=main_configs,
     user_configs=user_configs,
@@ -82,8 +82,8 @@ def test_different_versions():
         " ORDER BY tuple()"
     )
 
-    new_node.query(f"INSERT INTO tbl VALUES (1)")
-    old_node.query(f"INSERT INTO tbl VALUES (2)")
+    new_node.query("INSERT INTO tbl VALUES (1)")
+    old_node.query("INSERT INTO tbl VALUES (2)")
 
     backup_name = new_backup_name()
 

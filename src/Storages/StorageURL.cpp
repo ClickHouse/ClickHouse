@@ -5,11 +5,14 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/Web/Configuration.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <Storages/prepareReadingFromFormat.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
@@ -69,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -95,6 +99,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -118,10 +123,37 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
+namespace
+{
+    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context)
+    {
+        if (context->getSettingsRef()[Setting::allow_experimental_url_wildcard_from_index_pages])
+            return;
+
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Wildcard expansion for `ENGINE = URL` from HTTP index pages is experimental. "
+            "Set `allow_experimental_url_wildcard_from_index_pages = 1` to enable it");
+    }
+}
+
 
 bool urlWithGlobs(const String & uri)
 {
     return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
+}
+
+bool urlPathHasListableGlobs(std::string_view uri)
+{
+    const size_t scheme_pos = uri.find("://");
+    const size_t authority_start = (scheme_pos == std::string_view::npos) ? 0 : scheme_pos + 3;
+    const size_t path_start = uri.find('/', authority_start);
+    if (path_start == std::string_view::npos)
+        return false;
+
+    const size_t path_end = uri.find_first_of("?#", path_start);
+    const auto path = uri.substr(path_start, path_end == std::string_view::npos ? std::string_view::npos : path_end - path_start);
+    return path.contains('*');
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -313,16 +345,7 @@ size_t StorageURLSource::DisclosedGlobIterator::size()
 
 void StorageURLSource::setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri)
 {
-    const auto & user_info = request_uri.getUserInfo();
-    if (!user_info.empty())
-    {
-        std::size_t n = user_info.find(':');
-        if (n != std::string::npos)
-        {
-            credentials.setUsername(user_info.substr(0, n));
-            credentials.setPassword(user_info.substr(n + 1));
-        }
-    }
+    setCredentialsFromURL(credentials, request_uri);
 }
 
 StorageURLSource::StorageURLSource(
@@ -830,10 +853,10 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
 
 namespace
 {
-    class ReadBufferIterator : public IReadBufferIterator, WithContext
+    class URLReadBufferIterator : public IReadBufferIterator, WithContext
     {
     public:
-        ReadBufferIterator(
+        URLReadBufferIterator(
             const std::vector<String> & urls_to_check_,
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
@@ -1054,6 +1077,12 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const ContextPtr & context)
 {
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    /// Enforce <http_forbid_headers> before any network access. This is the single funnel for
+    /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
+    /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
+    /// reach the StorageURL ctor body. checkAndNormalizeHeaders mutates, so validate a copy.
+    HTTPHeaderEntries headers_to_check(headers);
+    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1063,7 +1092,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    ReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1107,12 +1136,14 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    return getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getFakeColumnSizes();
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
 }
 
 bool IStorageURLBase::prefersLargeBlocks() const
@@ -1899,15 +1930,17 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
+    /// `skip_userinfo=true` avoids persisting credentials that may originate from `url_base`
+    /// into the CREATE TABLE AST.
+    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true);
+}
+
+void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo)
+{
     if (args.empty())
         return;
 
-    /// Skip materialization when the resolved URL contains userinfo (`user:pass@host`).
-    /// Credentials may originate from `url_base` (e.g. `SET url_base = 'http://user:pass@base/dir/'`)
-    /// rather than from the user-written engine arguments, and persisting them into the
-    /// CREATE TABLE AST would expose secrets via `SHOW CREATE TABLE`. Persistence in this case
-    /// relies on `url_base` being set with the same value at attach/restart time.
-    if (urlHasUserInfo(uri))
+    if (skip_userinfo && urlHasUserInfo(resolved_url))
         return;
 
     /// Positional form: `URL('url', ...)` — replace the first literal argument.
@@ -1915,26 +1948,23 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         existing_literal && existing_literal->value.getType() == Field::Types::String)
     {
         const auto & current_url = existing_literal->value.safeGet<String>();
-        if (current_url != uri)
-            args[0] = make_intrusive<ASTLiteral>(uri);
+        if (current_url != resolved_url)
+            args[0] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
 
     /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
-    /// Only materialize when `url_base` actually changed the URL — otherwise we would copy
-    /// fields from the named collection (e.g. credentials in `user:pass@host`) into the
-    /// stored CREATE TABLE query, which is visible via `SHOW CREATE TABLE`.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
     {
         Configuration unresolved;
         StorageURL::processNamedCollectionResult(unresolved, *named_collection);
-        if (unresolved.url == uri)
+        if (unresolved.url == resolved_url)
             return;
     }
 
     /// If a `url='...'` key-value override is already present, update its literal in place.
     /// Otherwise, append a `url='<resolved>'` override so that named-collection resolution
-    /// picks up the resolved URL at restart time.
+    /// picks up the resolved URL.
     for (auto & arg : args)
     {
         auto * func = arg->as<ASTFunction>();
@@ -1946,11 +1976,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
         const auto * key_ast = func_args->children[0]->as<ASTIdentifier>();
         if (!key_ast || key_ast->name() != "url")
             continue;
-        func_args->children[1] = make_intrusive<ASTLiteral>(uri);
+        func_args->children[1] = make_intrusive<ASTLiteral>(resolved_url);
         return;
     }
 
-    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(uri)};
+    ASTs key_value_args = {make_intrusive<ASTIdentifier>("url"), make_intrusive<ASTLiteral>(resolved_url)};
     args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
@@ -2012,10 +2042,9 @@ void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage(
         "URL",
-        [](const StorageFactory::Arguments & args)
+        [](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
 
@@ -2023,19 +2052,65 @@ void registerStorageURL(StorageFactory & factory)
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            return std::make_shared<StorageURL>(
-                configuration.url,
+            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+            const bool use_object_storage
+                = config.http_method.empty()
+                && urlPathHasListableGlobs(config.url);
+
+            if (!use_object_storage)
+            {
+                return std::make_shared<StorageURL>(
+                    config.url,
+                    args.table_id,
+                    config.format,
+                    format_settings,
+                    args.columns,
+                    args.constraints,
+                    args.comment,
+                    context,
+                    config.compression_method,
+                    config.headers,
+                    config.http_method,
+                    partition_by,
+                    /* distributed_processing */ false);
+            }
+
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                checkExperimentalURLWildcardFromIndexPages(context);
+
+            /// `getConfiguration` resolves `config.url` through `url_base`, but `engine_args[0]`
+            /// still holds the raw user-provided URL. Without this override, e.g.
+            /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
+            /// would build the object storage from an unresolved relative URL.
+            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
+            /// not persisted to the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
+
+            auto configuration = std::make_shared<StorageWebConfiguration>();
+            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
+
+            ContextMutablePtr context_copy = Context::createCopy(args.getContext());
+            Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+            context_copy->setSettings(settings_copy);
+
+            return std::make_shared<StorageObjectStorage>(
+                configuration,
+                configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+                context_copy,
                 args.table_id,
-                configuration.format,
-                format_settings,
                 args.columns,
                 args.constraints,
                 args.comment,
-                context,
-                configuration.compression_method,
-                configuration.headers,
-                configuration.http_method,
-                partition_by);
+                format_settings,
+                args.mode,
+                configuration->getCatalog(context, args.table_id),
+                args.query.if_not_exists,
+                /* is_datalake_query */ false,
+                /* distributed_processing */ false,
+                partition_by,
+                /* order_by */ nullptr,
+                /* is_table_function */ false,
+                /* lazy_init */ false);
         },
         {
             .supports_settings = true,

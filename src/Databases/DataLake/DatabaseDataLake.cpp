@@ -128,7 +128,8 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
-    UUID uuid)
+    UUID uuid,
+    bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
@@ -138,6 +139,14 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
+    /// On ATTACH (server startup) defer catalog construction to first use: building it can
+    /// perform network I/O or credential validation that must not block startup. On CREATE
+    /// build eagerly so misconfiguration is reported immediately.
+    if (!lazy_init)
+    {
+        std::lock_guard lock(catalog_mutex);
+        initialize();
+    }
 }
 
 void DatabaseDataLake::validateSettings()
@@ -157,11 +166,10 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+void DatabaseDataLake::initialize() const
 {
-    if (catalog_impl)
-        return catalog_impl;
-
+    /// Caller holds `catalog_mutex`: this runs either from the constructor (CREATE, eager)
+    /// or from `getCatalog` on first access (ATTACH, lazy).
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -303,7 +311,14 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
             break;
         }
     }
+}
 
+std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
+{
+    std::lock_guard lock(catalog_mutex);
+    /// Lazily build the catalog on first access for databases attached at startup (see ctor).
+    if (!catalog_impl)
+        initialize();
     return catalog_impl;
 }
 
@@ -874,6 +889,28 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     return result;
 }
 
+VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
+{
+    VectorWithMemoryTracking<String> result;
+
+    /// Do not throw here, because this is called from the typo-hint path
+    /// (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames) which
+    /// must not fail even when the catalog is temporarily unreachable.
+    try
+    {
+        Names tables = getCatalog()->getTables();
+        result.reserve(tables.size());
+        for (auto & table : tables)
+            result.push_back(std::move(table));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return result;
+}
+
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
@@ -977,9 +1014,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        if (!auth_header_str.empty())
+        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// `auth_header` was accepted by an older version must still attach at startup, so a
+        /// single misconfigured database cannot block the server from starting. The malformed
+        /// header is then reported lazily on first use of the database.
+        if (!args.create_query.attach && !auth_header_str.empty())
         {
-            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
             if (pos != std::string::npos)
@@ -1110,7 +1151,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
-            args.uuid);
+            args.uuid,
+            /*lazy_init=*/args.create_query.attach);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
