@@ -4,19 +4,43 @@ ATTACH VIEW tables
     `table_schema` String,
     `table_name` String,
     `table_type` String,
+    `engine` Nullable(String),
+    `version` Nullable(UInt64),
+    `row_format` Nullable(String),
     `table_rows` Nullable(UInt64),
+    `avg_row_length` Nullable(UInt64),
     `data_length` Nullable(UInt64),
+    `max_data_length` Nullable(UInt64),
     `index_length` Nullable(UInt64),
+    `data_free` Nullable(UInt64),
+    `auto_increment` Nullable(UInt64),
+    `create_time` Nullable(DateTime),
+    `update_time` Nullable(DateTime),
+    `check_time` Nullable(DateTime),
     `table_collation` Nullable(String),
+    `checksum` Nullable(Int64),
+    `create_options` Nullable(String),
     `table_comment` Nullable(String),
     `TABLE_CATALOG` String,
     `TABLE_SCHEMA` String,
     `TABLE_NAME` String,
     `TABLE_TYPE` String,
+    `ENGINE` Nullable(String),
+    `VERSION` Nullable(UInt64),
+    `ROW_FORMAT` Nullable(String),
     `TABLE_ROWS` Nullable(UInt64),
+    `AVG_ROW_LENGTH` Nullable(UInt64),
     `DATA_LENGTH` Nullable(UInt64),
+    `MAX_DATA_LENGTH` Nullable(UInt64),
     `INDEX_LENGTH` Nullable(UInt64),
+    `DATA_FREE` Nullable(UInt64),
+    `AUTO_INCREMENT` Nullable(UInt64),
+    `CREATE_TIME` Nullable(DateTime),
+    `UPDATE_TIME` Nullable(DateTime),
+    `CHECK_TIME` Nullable(DateTime),
     `TABLE_COLLATION` Nullable(String),
+    `CHECKSUM` Nullable(Int64),
+    `CREATE_OPTIONS` Nullable(String),
     `TABLE_COMMENT` Nullable(String)
 )
 SQL SECURITY INVOKER
@@ -30,21 +54,45 @@ AS SELECT
             has_own_data = 0,      'FOREIGN TABLE',
             'BASE TABLE'
             )            AS table_type,
-    total_rows AS table_rows,
-    total_bytes AS data_length,
+    engine               AS engine,           -- MySQL-specific
+    NULL                 AS version,           -- MySQL-specific
+    NULL                 AS row_format,        -- MySQL-specific
+    total_rows           AS table_rows,
+    NULL                 AS avg_row_length,    -- MySQL-specific
+    total_bytes          AS data_length,
+    NULL                 AS max_data_length,   -- MySQL-specific
     sum(p.primary_key_size + p.marks_bytes
         + p.secondary_indices_compressed_bytes + p.secondary_indices_marks_bytes
     ) AS index_length,
+    NULL                 AS data_free,         -- MySQL-specific
+    NULL                 AS auto_increment,    -- MySQL-specific
+    NULL                 AS create_time,       -- MySQL-specific
+    NULL                 AS update_time,       -- MySQL-specific
+    NULL                 AS check_time,        -- MySQL-specific
     'utf8mb4_0900_ai_ci' AS table_collation,
+    NULL                 AS checksum,          -- MySQL-specific
+    NULL                 AS create_options,    -- MySQL-specific
     comment              AS table_comment,
     table_catalog        AS TABLE_CATALOG,
     table_schema         AS TABLE_SCHEMA,
     table_name           AS TABLE_NAME,
     table_type           AS TABLE_TYPE,
+    engine               AS ENGINE,
+    version              AS VERSION,
+    row_format           AS ROW_FORMAT,
     table_rows           AS TABLE_ROWS,
+    avg_row_length       AS AVG_ROW_LENGTH,
     data_length          AS DATA_LENGTH,
+    max_data_length      AS MAX_DATA_LENGTH,
     index_length         AS INDEX_LENGTH,
+    data_free            AS DATA_FREE,
+    auto_increment       AS AUTO_INCREMENT,
+    create_time          AS CREATE_TIME,
+    update_time          AS UPDATE_TIME,
+    check_time           AS CHECK_TIME,
     table_collation      AS TABLE_COLLATION,
+    checksum             AS CHECKSUM,
+    create_options       AS CREATE_OPTIONS,
     table_comment        AS TABLE_COMMENT
 FROM system.tables t
 LEFT JOIN system.parts p ON (t.database = p.database AND t.name = p.table AND p.active = 1)

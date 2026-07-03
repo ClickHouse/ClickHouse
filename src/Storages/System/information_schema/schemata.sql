@@ -7,13 +7,17 @@ ATTACH VIEW schemata
     `default_character_set_schema` Nullable(String),
     `default_character_set_name` Nullable(String),
     `sql_path` Nullable(String),
+    `default_collation_name` String,
+    `default_encryption` String,
     `CATALOG_NAME` String,
     `SCHEMA_NAME` String,
     `SCHEMA_OWNER` String,
     `DEFAULT_CHARACTER_SET_CATALOG` Nullable(String),
     `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
     `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
-    `SQL_PATH` Nullable(String)
+    `SQL_PATH` Nullable(String),
+    `DEFAULT_COLLATION_NAME` String,
+    `DEFAULT_ENCRYPTION` String
 )
 SQL SECURITY INVOKER
 AS SELECT
@@ -24,11 +28,15 @@ AS SELECT
     NULL                          AS default_character_set_schema,
     NULL                          AS default_character_set_name,
     NULL                          AS sql_path,
+    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific
+    'NO'                          AS default_encryption,      -- MySQL-specific
     catalog_name                  AS CATALOG_NAME,
     schema_name                   AS SCHEMA_NAME,
     schema_owner                  AS SCHEMA_OWNER,
     default_character_set_catalog AS DEFAULT_CHARACTER_SET_CATALOG,
     default_character_set_schema  AS DEFAULT_CHARACTER_SET_SCHEMA,
     default_character_set_name    AS DEFAULT_CHARACTER_SET_NAME,
-    sql_path                      AS SQL_PATH
+    sql_path                      AS SQL_PATH,
+    default_collation_name        AS DEFAULT_COLLATION_NAME,
+    default_encryption            AS DEFAULT_ENCRYPTION
 FROM system.databases

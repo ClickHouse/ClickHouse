@@ -1,0 +1,16 @@
+-- schemata: the exact MySQL-dialect introspection query
+utf8mb4_0900_ai_ci	NO
+-- schemata: lowercase aliases resolve too
+utf8mb4_0900_ai_ci	NO
+-- tables: MySQL-specific columns
+MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+-- columns: MySQL-specific columns (lowercase)
+a		select,insert,update,references	id + 1	\N
+id	PRI	select,insert,update,references		\N
+m		select,insert,update,references	id * 2	\N
+s		select,insert,update,references		\N
+-- columns: MySQL-specific columns (uppercase)
+a		select,insert,update,references	id + 1	\N
+id	PRI	select,insert,update,references		\N
+m		select,insert,update,references	id * 2	\N
+s		select,insert,update,references		\N

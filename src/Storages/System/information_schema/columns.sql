@@ -26,6 +26,10 @@ ATTACH VIEW columns
     `extra` Nullable(String),
     `column_comment` String,
     `column_type` String,
+    `column_key` String,
+    `privileges` String,
+    `generation_expression` String,
+    `srs_id` Nullable(UInt32),
     `TABLE_CATALOG` String,
     `TABLE_SCHEMA` String,
     `TABLE_NAME` String,
@@ -51,7 +55,11 @@ ATTACH VIEW columns
     `DOMAIN_NAME` Nullable(String),
     `EXTRA` Nullable(String),
     `COLUMN_COMMENT` String,
-    `COLUMN_TYPE` String
+    `COLUMN_TYPE` String,
+    `COLUMN_KEY` String,
+    `PRIVILEGES` String,
+    `GENERATION_EXPRESSION` String,
+    `SRS_ID` Nullable(UInt32)
 )
 SQL SECURITY INVOKER
 AS SELECT
@@ -85,6 +93,11 @@ AS SELECT
            ) AS extra,
     comment AS column_comment,
     type AS column_type,
+    if(is_in_primary_key, 'PRI', '') AS column_key,                          -- MySQL-specific
+    'select,insert,update,references' AS privileges,                         -- MySQL-specific
+    if(default_kind IN ('MATERIALIZED', 'ALIAS'), default_expression, '')
+                                      AS generation_expression,              -- MySQL-specific
+    NULL AS srs_id,                                                          -- MySQL-specific
     table_catalog AS TABLE_CATALOG,
     table_schema AS TABLE_SCHEMA,
     table_name AS TABLE_NAME,
@@ -110,5 +123,9 @@ AS SELECT
     domain_name AS DOMAIN_NAME,
     extra AS EXTRA,
     column_comment AS COLUMN_COMMENT,
-    column_type AS COLUMN_TYPE
+    column_type AS COLUMN_TYPE,
+    column_key AS COLUMN_KEY,
+    privileges AS PRIVILEGES,
+    generation_expression AS GENERATION_EXPRESSION,
+    srs_id AS SRS_ID
 FROM system.columns

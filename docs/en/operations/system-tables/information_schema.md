@@ -150,6 +150,8 @@ Columns:
 - `default_character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `default_character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 - `sql_path` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+- `default_collation_name` ([String](../../sql-reference/data-types/string.md)) — The database default collation. Always `utf8mb4_0900_ai_ci`. Provided for MySQL compatibility (not part of the SQL standard `SCHEMATA` view).
+- `default_encryption` ([String](../../sql-reference/data-types/string.md)) — Whether encryption is enabled by default. Always `NO`. Provided for MySQL compatibility (not part of the SQL standard `SCHEMATA` view).
 
 **Example**
 
@@ -194,10 +196,22 @@ Columns:
   - `FOREIGN TABLE`
   - `LOCAL TEMPORARY`
   - `SYSTEM VIEW`
+- `engine` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table engine. Provided for MySQL compatibility.
+- `version` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `row_format` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `table_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total number of rows. NULL if it could not be determined.
+- `avg_row_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of the data on-disk. NULL if it could not be determined.
+- `max_data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `index_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total size of the primary key, secondary indexes, and all marks.
+- `data_free` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `auto_increment` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `create_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `update_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `check_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
+- `checksum` ([Nullable](../../sql-reference/data-types/nullable.md)([Int64](../../sql-reference/data-types/int-uint.md))) — Always `NULL`. Provided for MySQL compatibility.
+- `create_options` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Always `NULL`. Provided for MySQL compatibility.
 - `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
 
 **Example**
