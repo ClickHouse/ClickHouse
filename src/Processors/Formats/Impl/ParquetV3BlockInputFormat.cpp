@@ -460,6 +460,55 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
     return result;
 }
 
+/// Sum of the compressed sizes of the column chunks the query will actually read
+/// (matched by top-level column name against `requested_columns`), across all row
+/// groups. Used to decide whether a single-file split is worth its per-source
+/// setup cost. An empty `requested_columns` set means "read everything" (be
+/// conservative and let the split proceed). Chunks with no metadata / no path are
+/// skipped. Nested columns are attributed to their top-level name, which
+/// over-counts a bit but only ever biases towards allowing the split.
+size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const std::unordered_set<String> & requested_columns)
+{
+    size_t total = 0;
+    for (const auto & rg : md.row_groups)
+    {
+        for (const auto & col : rg.columns)
+        {
+            if (!col.__isset.meta_data)
+                continue;
+            const auto & path = col.meta_data.path_in_schema;
+            if (!requested_columns.empty() && (path.empty() || !requested_columns.contains(path.front())))
+                continue;
+            if (col.meta_data.total_compressed_size > 0)
+                total += static_cast<size_t>(col.meta_data.total_compressed_size);
+        }
+    }
+    return total;
+}
+
+/// Like `computeBucketsByCount`, but query-aware: it refuses to split (returns a
+/// single full-file chunk) when the query reads fewer than `min_bytes_to_split`
+/// compressed bytes — too little to amortize the per-source setup — and otherwise
+/// caps the number of chunks so each bucket carries at least `min_bytes_per_bucket`
+/// of compressed data. This targets the short-query regression: fanning a
+/// light/narrow query (few or small columns) out across many sources multiplies
+/// the per-source open/reader-init overhead without any read-parallelism win.
+/// `min_row_groups_per_chunk` still applies via the delegated `computeBucketsByCount`.
+///
+/// `min_bytes_to_split == 0` disables the lower bound; `min_bytes_per_bucket == 0`
+/// disables the per-bucket size cap (falling back to a pure row-group-count split).
+std::vector<FileBucketInfoPtr> computeBucketsByCountAndBytes(
+    size_t target_count, size_t num_row_groups, size_t projected_bytes, size_t min_bytes_to_split, size_t min_bytes_per_bucket)
+{
+    if (target_count == 0 || num_row_groups == 0)
+        return {};
+    if (min_bytes_to_split > 0 && projected_bytes < min_bytes_to_split)
+        return computeBucketsByCount(1, num_row_groups);
+    const size_t max_chunks_by_bytes
+        = min_bytes_per_bucket > 0 ? std::max<size_t>(1, projected_bytes / min_bytes_per_bucket) : target_count;
+    return computeBucketsByCount(std::min(target_count, max_chunks_by_bytes), num_row_groups);
+}
+
 /// Reads the Parquet footer via the native reader (the same path `ParquetV3BlockInputFormat`
 /// takes). Returned metadata can be stored directly in `ParquetMetadataCache`.
 parquet::format::FileMetaData parseFileMetadataNative(ReadBuffer & buf, const FormatSettings & format_settings)
@@ -484,29 +533,35 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     const String & cache_etag,
     ReadBuffer & buf,
     const FormatSettings & format_settings,
-    ParquetMetadataCachePtr metadata_cache)
+    ParquetMetadataCachePtr metadata_cache,
+    const std::unordered_set<String> & requested_columns,
+    size_t min_bytes_to_split,
+    size_t min_bytes_per_bucket)
 {
-    size_t num_row_groups = 0;
+    parquet::format::FileMetaData file_metadata;
     if (metadata_cache && !file_path.empty() && !cache_etag.empty())
     {
         auto key = ParquetMetadataCache::createKey(file_path, cache_etag);
-        auto file_metadata = metadata_cache->getOrSetMetadata(
+        file_metadata = metadata_cache->getOrSetMetadata(
             key, [&] { return parseFileMetadataNative(buf, format_settings); });
-        num_row_groups = file_metadata.row_groups.size();
     }
     else
     {
-        auto file_metadata = parseFileMetadataNative(buf, format_settings);
-        num_row_groups = file_metadata.row_groups.size();
+        file_metadata = parseFileMetadataNative(buf, format_settings);
     }
-    return computeBucketsByCount(target_count, num_row_groups);
+    return computeBucketsByCountAndBytes(
+        target_count, file_metadata.row_groups.size(), projectedCompressedBytes(file_metadata, requested_columns),
+        min_bytes_to_split, min_bytes_per_bucket);
 }
 
 std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     size_t target_count,
     const String & file_path,
     const String & cache_etag,
-    const ParquetMetadataCachePtr & metadata_cache)
+    const ParquetMetadataCachePtr & metadata_cache,
+    const std::unordered_set<String> & requested_columns,
+    size_t min_bytes_to_split,
+    size_t min_bytes_per_bucket)
 {
     if (!metadata_cache || file_path.empty() || cache_etag.empty())
         return {};
@@ -514,7 +569,9 @@ std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     auto cached = metadata_cache->get(key);
     if (!cached)
         return {};
-    return computeBucketsByCount(target_count, cached->metadata.row_groups.size());
+    return computeBucketsByCountAndBytes(
+        target_count, cached->metadata.row_groups.size(), projectedCompressedBytes(cached->metadata, requested_columns),
+        min_bytes_to_split, min_bytes_per_bucket);
 }
 
 void registerInputFormatParquet(FormatFactory & factory);

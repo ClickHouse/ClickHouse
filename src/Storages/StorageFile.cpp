@@ -120,6 +120,8 @@ namespace Setting
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsUInt64 input_format_parquet_min_bytes_to_split;
+    extern const SettingsUInt64 input_format_parquet_bytes_per_split_bucket;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
@@ -2185,12 +2187,24 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                     ? ctx->tryGetParquetMetadataCache()
                     : nullptr;
 
+                /// The columns this query will actually read. The split decision uses their
+                /// combined compressed size to avoid fanning a light/narrow read out across
+                /// many sources (whose per-source setup would not be amortized) — see
+                /// `computeBucketsByCountAndBytes`.
+                std::unordered_set<String> requested_columns;
+                for (const auto & column : info.requested_columns)
+                    requested_columns.insert(column.name);
+
+                const size_t min_bytes_to_split = ctx->getSettingsRef()[Setting::input_format_parquet_min_bytes_to_split];
+                const size_t min_bytes_per_bucket = ctx->getSettingsRef()[Setting::input_format_parquet_bytes_per_split_bucket];
+
                 /// Warm-cache fast path: avoid opening the file and constructing `FormatSettings`
                 /// when the footer is already cached from a previous query against this file. The
                 /// extra `createReadBuffer` + `Prefetcher::init` is ~0.3 ms — small absolute, but
                 /// noticeable on "short" queries (see `tests/performance/clickbench_parquet_short`).
                 buckets = trySplitParquetFileFromCacheOnly(
-                    max_num_streams, single_file_path, cache_etag, metadata_cache);
+                    max_num_streams, single_file_path, cache_etag, metadata_cache, requested_columns,
+                    min_bytes_to_split, min_bytes_per_bucket);
                 if (buckets.empty())
                 {
                     auto buf = createReadBuffer(
@@ -2202,7 +2216,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
                         cache_etag,
                         *buf,
                         format_settings,
-                        metadata_cache);
+                        metadata_cache,
+                        requested_columns,
+                        min_bytes_to_split,
+                        min_bytes_per_bucket);
                 }
             }
             else

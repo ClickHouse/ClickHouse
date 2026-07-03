@@ -8,6 +8,7 @@
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -58,7 +59,10 @@ std::vector<FileBucketInfoPtr> splitParquetFileWithCache(
     const String & cache_etag,
     ReadBuffer & buf,
     const FormatSettings & format_settings,
-    ParquetMetadataCachePtr metadata_cache);
+    ParquetMetadataCachePtr metadata_cache,
+    const std::unordered_set<String> & requested_columns,
+    size_t min_bytes_to_split,
+    size_t min_bytes_per_bucket);
 
 /// Warm-cache fast path for the single-file split decision. Returns the bucket layout without any
 /// I/O when `(file_path, cache_etag)` is already present in `metadata_cache`, and an empty vector
@@ -70,7 +74,10 @@ std::vector<FileBucketInfoPtr> trySplitParquetFileFromCacheOnly(
     size_t target_count,
     const String & file_path,
     const String & cache_etag,
-    const ParquetMetadataCachePtr & metadata_cache);
+    const ParquetMetadataCachePtr & metadata_cache,
+    const std::unordered_set<String> & requested_columns,
+    size_t min_bytes_to_split,
+    size_t min_bytes_per_bucket);
 
 class ParquetV3BlockInputFormat final : public IInputFormat
 {
