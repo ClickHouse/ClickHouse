@@ -249,16 +249,33 @@ public:
     /// (must be `NativeNumber`).
     String getSignatureString() const override
     {
-        /// The point's coordinates are dispatched at execution through `CallPointInPolygon`,
-        /// a raw `typeid_cast` over the native-number `ColumnVector` types, so a non-native-number
-        /// point element would otherwise fall through to its terminal case and raise a
-        /// `LOGICAL_ERROR` ("Unknown numeric column type"). Constrain the point tuple to
-        /// `NativeNumber` elements here — matching the `isNativeNumber` check the legacy
-        /// `getReturnTypeImpl` ran — so such a call is rejected with a clean
-        /// `ILLEGAL_TYPE_OF_ARGUMENT` during analysis instead. The polygon arguments stay loose
-        /// (`Array`); their coordinates are cast to `Float64` in bulk, which already reports a
-        /// clean error for incompatible element types.
+        /// This signature is documentation-only: the polygon arguments' full contract — the
+        /// array nesting depth (1 to 3), the innermost tuple arity (exactly 2) and its element
+        /// types (`NativeNumber`), and the cross-argument consistency between the first polygon
+        /// and the subsequent hole/polygon arguments — is not expressible with the current DSL
+        /// vocabulary, so a bare `Array` matcher is used for them. The authoritative validation
+        /// runs in `getReturnTypeImpl`, which the `getReturnTypeImpl(ColumnsWithTypeAndName)`
+        /// override below routes to on the column path (the base column-path implementation
+        /// would otherwise short-circuit to this loose signature, letting a malformed polygon
+        /// argument such as an array of one-element tuples reach `executeImpl` and abort while
+        /// reading the missing coordinate). The point tuple is documented as
+        /// `Tuple(NativeNumber, NativeNumber)` here to match the `isNativeNumber` check the
+        /// legacy `getReturnTypeImpl` performs.
         return "(Tuple(NativeNumber, NativeNumber), Array, ...) -> UInt8";
+    }
+
+    /// Route the column path through the hand-written `getReturnTypeImpl(DataTypes)` above so its
+    /// authoritative validation runs. Without this override the base
+    /// `IFunction::getReturnTypeImpl(ColumnsWithTypeAndName)` short-circuits to the (deliberately
+    /// loose) declarative signature and skips the per-shape checks, allowing malformed polygon
+    /// arguments to slip through to `executeImpl`. The return type is fully determined by the
+    /// argument types, so no column-level information is required here.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes argument_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            argument_types[i] = arguments[i].type;
+        return getReturnTypeImpl(argument_types);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
