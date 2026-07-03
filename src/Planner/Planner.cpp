@@ -716,7 +716,7 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 /// Pattern 2 (no ORDER BY) must stay final-only: without an ordered final
 /// selection the initiator could return a group whose partial state lost rows
 /// to local pruning.
-static void applyTopKPushdownToPartialAggregation(
+void applyTopKPushdownToPartialAggregation(
     AggregatingStep & aggregating_step,
     const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
