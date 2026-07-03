@@ -10,6 +10,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 wait_for_number_of_parts() {
     for _ in `seq $3`
     do
+        # Reschedule the merge-selecting task ASAP. For non-replicated MergeTree the
+        # merge cadence is the background-pool no-work backoff (up to 600s), which
+        # merge_selecting_sleep_ms does not affect; a nudge bounds the wait. It only
+        # schedules selection, so min_age/byte-limit rules still decide what merges.
+        $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES $1" 2>/dev/null
         sleep 1
         res=`$CLICKHOUSE_CLIENT -q "SELECT count(*) FROM system.parts WHERE database = currentDatabase() AND table='$1' AND active"`
         if [ "$res" -eq "$2" ]
