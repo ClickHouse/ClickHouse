@@ -498,6 +498,94 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     assert "out-of-order release" in (result.stdout + result.stderr)
 
 
+def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path):
+    """A bare SHA of an older *tagged* release is still out-of-order, not recovery.
+
+    Recovery is expressed by the ref being a release *tag name*; passing the raw
+    commit that an older release tag points at must not be mistaken for recovery
+    of that release. The commit predates the branch's latest release tag
+    (``v26.6.3.1-stable``), so ``prepare`` must refuse it as out-of-order rather
+    than re-publish the stale ``v26.6.2.1-stable`` sitting at that commit. This
+    mirrors dispatching e.g. the commit behind an existing ``v25.8.24.21-lts``.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit")
+    # The stale commit already carries its own (older) release tag; we will
+    # dispatch it by raw SHA, which must NOT be read as recovery of that tag.
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    # Advance the branch and put a newer release tag ahead of that commit.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Later commit")
+    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            commit_sha,  # raw SHA of an older tagged release, not the tag name
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, "stale tagged commit should have failed"
+    assert "out-of-order release" in (result.stdout + result.stderr)
+
+
 def test_prepare_creates_from_branch_ref(tmp_path):
     """A branch ref whose tip is after the latest release tag creates the next
     release — it is never treated as out-of-order, even if a version file lags.
