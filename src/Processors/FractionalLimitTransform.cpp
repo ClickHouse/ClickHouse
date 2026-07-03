@@ -280,7 +280,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     const UInt64 chunk_rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(chunk_rows);
 
     /// Process block.
