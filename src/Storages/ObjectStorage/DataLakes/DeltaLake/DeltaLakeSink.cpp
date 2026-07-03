@@ -4,6 +4,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -16,6 +17,11 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+}
+
+namespace FailPoints
+{
+    extern const char delta_lake_write_commit_pause[];
 }
 
 DeltaLakeSink::DeltaLakeSink(
@@ -120,6 +126,11 @@ void DeltaLakeSink::onFinish()
         files.emplace_back(std::move(file_location), file_size, written_rows, Map{});
     }
 
+    /// Test-only hook: pause inside the commit window (after the data files are
+    /// finalized, before commit) so a test can inject an external cancel and
+    /// check that a late cancel does not delete committed files.
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_write_commit_pause);
+
     try
     {
         delta_transaction->commit(files);
@@ -135,6 +146,13 @@ void DeltaLakeSink::onFinish()
         }
         throw;
     }
+
+    /// The commit succeeded: the data files are now referenced by the Delta log.
+    /// Drop the tracked sinks so a cancel that arrives after this point (the
+    /// pipeline executor flips isCancelled() asynchronously, so it can race with
+    /// this commit) does not make ~DeltaLakeSink -> cancelBuffers() unlink the
+    /// just-committed files and leave the Delta log pointing at missing data.
+    data_files.clear();
 }
 
 }
