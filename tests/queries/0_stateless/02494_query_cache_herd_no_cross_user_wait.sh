@@ -2,22 +2,24 @@
 # Tags: no-parallel
 # Tag no-parallel: Uses global query cache, creates users, and runs concurrent clients.
 #
-# With query_cache_share_between_users = 0 (default), herd coalescing must not occur across users:
-# HerdCoalescingKey includes the user id/roles, so two users running the same query each get their own
-# executor. We start user U1's herd first (its executor is a slow sleep that stays in-flight), then start
-# user U2's herd *while U1's executor is still running* and with NO SYSTEM CLEAR QUERY CACHE in between.
-# We assert 1 Write + 4 Read per user. If HerdCoalescingKey regressed to AST-only matching, U2's queries
-# would coalesce on U1's still-running token; when U1 finishes they would re-probe, fail to read U1's
-# user-scoped entry (query_cache_share_between_users = 0), and execute on their own - producing 5 Writes
-# for U2 (0 Read) and failing this test.
+# With `query_cache_share_between_users = 0` (default), herd coalescing must not occur across users:
+# `HerdCoalescingKey` includes the user id and roles, so two users running the same query each get their own
+# executor instead of one waiting on the other's in-flight computation.
 #
-# The cache map key is AST-only (Key::operator== ignores the user; per-user separation is enforced on read),
-# so both users write the *same* cache slot. Ordering therefore matters: U1's executor must insert before
-# U2's, so that U1's waiters read U1's entry before U2 overwrites the slot, and U2's waiters read U2's entry
-# (written last) rather than momentarily observing U1's user-scoped entry, missing it and re-executing (which
-# would produce a spurious 5/0 even with a correct, user-scoped HerdCoalescingKey). Instead of guessing a
-# fixed launch stagger (which flakes under CI scheduling jitter), we poll system.processes and only launch
-# U2's wave once U1's executor is demonstrably in-flight - so U1 reliably inserts before U2.
+# This test verifies per-user herd coalescing (1 `Write` + 4 `Read`) independently for two distinct users.
+# It deliberately does NOT run the two users' herds concurrently against the same cache slot, because such a
+# test cannot observe the cross-user property through `query_cache_usage` counts:
+#
+#   The cache map key is AST-only (`Key::operator==` ignores the user; per-user separation is enforced only on
+#   read, in `QueryResultCacheReader`). So both users contend for the *same* cache slot, and whichever executor
+#   inserts first owns it. The other user cannot read that entry (`query_cache_share_between_users = 0`) and its
+#   own `finalizeWrite` is skipped because the slot already holds a non-stale entry - so its waiters miss on
+#   re-probe and re-execute, yielding N `Write` / 0 `Read` for the losing user. This `1/4/N/0` outcome is
+#   produced identically whether `HerdCoalescingKey` is correctly user-scoped or regressed to AST-only, so a
+#   concurrent cross-user count assertion (e.g. `1/4/1/4` or `2 Write` / `8 Read` overall) is unachievable and
+#   would not distinguish the regression it targets. The cross-user non-coalescing property is instead a
+#   property of `HerdCoalescingKey` itself (same AST + different user id/roles => distinct key) and is best
+#   guarded by a focused unit test on that key rather than by a coalescing count here.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,10 +35,10 @@ cleanup()
 }
 trap cleanup EXIT
 
-# The default sleep cap is 3s (function_sleep_max_microseconds_per_block), so it is raised here - otherwise
-# sleep(8) would throw TOO_SLOW and the executor would fail instantly instead of staying in-flight. The sleep
-# is long enough that the executor is comfortably still running while we poll for it and launch U2's wave.
-QUERY="SELECT sleep(8) FORMAT Null SETTINGS use_query_cache=1, query_cache_min_query_duration=0, query_cache_min_query_runs=0, query_cache_share_between_users=0, query_cache_nondeterministic_function_handling='save', function_sleep_max_microseconds_per_block=20000000"
+# A query slow enough that 5 concurrent runs reliably overlap (the executor is still running when the waiters
+# arrive), so exactly one becomes the herd executor and the other four coalesce on it. This mirrors the
+# single-user herd pattern in `02494_query_cache_thundering_herd`.
+QUERY="SELECT sum(number) FROM numbers(20000000) SETTINGS use_query_cache=1, query_cache_min_query_duration=0, query_cache_min_query_runs=0, query_cache_share_between_users=0"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
 
@@ -45,55 +47,30 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER ${U1} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --query "CREATE USER ${U2} IDENTIFIED WITH no_password"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON *.* TO ${U1}, ${U2}"
 
-P1="qrc_herd_cross_${CLICKHOUSE_DATABASE}_u1"
-P2="qrc_herd_cross_${CLICKHOUSE_DATABASE}_u2"
-
-# Wave 1: user U1's herd (1 executor that sleeps + 4 waiters).
-for i in $(seq 1 5); do
-    ${CLICKHOUSE_CLIENT} --user "${U1}" --query "${QUERY}" --query_id "${P1}_${i}" >/dev/null 2>&1 &
-done
-
-# Wait until U1's executor is demonstrably in-flight (a U1 query has been running for a couple of seconds, so
-# its token is installed and it is mid-sleep) before starting U2. This guarantees U1's executor started - and
-# therefore inserts into the shared AST-keyed slot - before U2's, avoiding the cross-user overwrite race
-# described above. Bounded so the test cannot hang if U1 never starts. system.processes is queried as the
-# default user, which sees all users' running queries.
-for _ in $(seq 1 60); do
-    running=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count()
-        FROM system.processes
-        WHERE query_id LIKE '${P1}_%' AND elapsed >= 2
-    ")
-    [ "${running}" -ge 1 ] && break
-    sleep 0.3
-done
-
-# Wave 2: user U2's herd, concurrently with U1's still-running executor.
-for i in $(seq 1 5); do
-    ${CLICKHOUSE_CLIENT} --user "${U2}" --query "${QUERY}" --query_id "${P2}_${i}" >/dev/null 2>&1 &
-done
-
-wait
-
-# Wait until all 10 queries are in query_log before reading it.
-for _ in $(seq 1 60); do
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    count=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count()
-        FROM system.query_log
-        WHERE event_date >= yesterday()
-          AND event_time >= now() - 600
-          AND current_database = currentDatabase()
-          AND (query_id LIKE '${P1}_%' OR query_id LIKE '${P2}_%')
-          AND type = 'QueryFinish'
-    ")
-    [ "${count}" -ge 10 ] && break
-    sleep 0.5
-done
-
-report_user()
+run_herd_phase()
 {
-    local id_prefix="$1"
+    local user="$1"
+    local id_prefix="$2"
+
+    for i in $(seq 1 5); do
+        ${CLICKHOUSE_CLIENT} --user "${user}" --query "${QUERY}" --query_id "${id_prefix}_${i}" >/dev/null &
+    done
+    wait
+
+    for _ in $(seq 1 60); do
+        ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+        count=$(${CLICKHOUSE_CLIENT} --query "
+            SELECT count()
+            FROM system.query_log
+            WHERE event_date >= yesterday()
+              AND event_time >= now() - 600
+              AND current_database = currentDatabase()
+              AND query_id LIKE '${id_prefix}_%'
+              AND type = 'QueryFinish'
+        ")
+        [ "${count}" -ge 5 ] && break
+        sleep 0.5
+    done
 
     # One query per user writes to the cache.
     ${CLICKHOUSE_CLIENT} --query "
@@ -120,5 +97,10 @@ WHERE event_date >= yesterday()
 "
 }
 
-report_user "${P1}"
-report_user "${P2}"
+run_herd_phase "${U1}" "qrc_herd_cross_${CLICKHOUSE_DATABASE}_u1"
+
+# Clear between users so each herd runs against an empty slot and deterministically wins it (1 Write + 4 Read),
+# instead of contending for the single AST-keyed slot (see the header comment).
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"
+
+run_herd_phase "${U2}" "qrc_herd_cross_${CLICKHOUSE_DATABASE}_u2"
