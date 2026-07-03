@@ -210,7 +210,7 @@ namespace impl
             }
             else
             {
-                static_assert(false, "Unsupported sizeof(TUint) for unhex");
+                static_assert(sizeof(TUInt) == 0, "Unsupported sizeof(TUInt) for unhex");
             }
         }
     };
