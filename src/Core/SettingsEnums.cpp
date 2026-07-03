@@ -64,6 +64,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
      {"dpsize",             JoinOrderAlgorithm::DPSIZE},
+     {"dpsub",              JoinOrderAlgorithm::DPSUB},
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
@@ -387,6 +388,13 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
@@ -508,6 +516,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
+    {{"legacy", ExplainQueryPlanDefault::LEGACY},
+     {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,

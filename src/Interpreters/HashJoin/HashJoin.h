@@ -6,6 +6,7 @@
 #include <variant>
 #include <vector>
 
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
@@ -114,7 +115,8 @@ public:
         bool any_take_last_row_ = false,
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
-        bool use_two_level_maps_ = false);
+        bool use_two_level_maps_ = false,
+        const StatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;
 
@@ -609,6 +611,9 @@ private:
 
     /// Track if shared runtime filters were already published to keep publication one-shot.
     bool shared_runtime_filters_publish_attempted = false;
+
+    const StatsCollectingParams stats_collecting_params;
+    bool build_phase_finished = false;
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
