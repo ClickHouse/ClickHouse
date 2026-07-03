@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQueryResultCache.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -64,6 +63,3 @@ void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, Conte
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQueryResultCache) }

@@ -128,6 +128,7 @@ void calculateHashTableCacheKeys(
             const bool calculate = allowParallelHashJoin(
                 join_step->getJoinSettings().join_algorithms,
                 join_step->getJoinOperator().kind,
+                join_step->getJoinOperator().strictness,
                 typeid_cast<JoinStepLogicalLookup *>(node.children.back()->step.get()),
                 single_disjunct);
 
@@ -190,7 +191,7 @@ void calculateHashTableCacheKeys(
     }
 }
 
-static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
 {
     std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(root, cache_keys, raw_hashes);

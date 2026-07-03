@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -21,7 +20,7 @@ namespace
 
 /// Implements the CASE construction when it is
 /// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression final : public IFunction
+class FunctionCaseWithExpression : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";
@@ -103,7 +102,7 @@ public:
         if (equals_return_type->isNullable())
         {
             const auto & if_null_func = fun_if_null;
-            ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             ColumnsWithTypeAndName if_null_args
             {
                 {equals_result, equals_return_type, ""},
@@ -114,7 +113,7 @@ public:
         }
 
         // if (isNull(when)) then 0 else (expr = when)
-        ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
         ColumnsWithTypeAndName inner_if_args
         {
             {is_null_when, std::make_shared<DataTypeUInt8>(), ""},
@@ -198,15 +197,19 @@ public:
             /// `Decimal(9, 2)` (`Decimal32`).
             dst_array_types.push_back(args.back().type);
 
-            /// `transform` uses standard equality (`NULL != NULL`), so skip it when WHEN values
-            /// are Nullable; `multiIf` via `caseWhenEquals` handles CASE's `NULL = NULL` semantics.
-            /// See https://github.com/ClickHouse/ClickHouse/issues/101262.
-            /// Also skip Dynamic/Variant: their hash-based lookup keys on type discriminator.
+            /// Check whether `transform` can handle these types.
+            /// `transform` casts WHEN values to the expression type; if WHEN values are Nullable
+            /// but the expression is non-Nullable, the cast will fail on NULLs.
             auto src_supertype = tryGetLeastSupertype(src_array_types);
             auto dst_supertype = tryGetLeastSupertype(dst_array_types);
+
+            /// The `transform` function cannot handle Dynamic/Variant types because its
+            /// hash-based lookup includes the type discriminator, so values with the same
+            /// logical content but different stored subtypes (e.g. Dynamic(UInt8(1)) vs
+            /// Dynamic(Int64(1))) produce different hashes and never match.
             auto expr_type = removeNullable(args.front().type);
             bool can_use_transform = src_supertype && dst_supertype
-                && !isNullableOrLowCardinalityNullable(src_supertype)
+                && !(src_supertype->isNullable() && !args.front().type->isNullable())
                 && !isDynamic(expr_type)
                 && !isVariant(expr_type);
 

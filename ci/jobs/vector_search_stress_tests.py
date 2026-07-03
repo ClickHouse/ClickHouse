@@ -14,7 +14,7 @@ import numpy as np
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
 from ci.praktika.result import Result
-from ci.praktika.utils import Utils
+from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -45,7 +45,6 @@ TRUTH_SET_COUNT = "truth_set_count"
 RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
-USE_RAW_BYTES_FOR_QUERY_VECTOR = "use_raw_bytes_for_query_vector"
 
 TRUTH_SET_QUERY_SOURCE_ID = "id"
 TRUTH_SET_QUERY_SOURCE_VECTOR = "vector"
@@ -149,7 +148,6 @@ test_params_laion_5b_full_run = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_quick_test = {
@@ -170,7 +168,6 @@ test_params_laion_5b_quick_test = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_laion_5b_1m = {
@@ -189,7 +186,6 @@ test_params_laion_5b_1m = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_hackernews_10m = {
@@ -210,7 +206,6 @@ test_params_hackernews_10m = {
     MERGE_TREE_SETTINGS: None,
     OTHER_SETTINGS: None,
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
 test_params_cohere_wiki_20m = {
@@ -232,7 +227,6 @@ test_params_cohere_wiki_20m = {
     MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
     OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
     CONCURRENCY_TEST: True,
-    USE_RAW_BYTES_FOR_QUERY_VECTOR: True, # only set if query vector is numpy.Array(Float32)
 }
 
 
@@ -655,30 +649,17 @@ class RunTest:
             try:
                 ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {warmup_query_source} ) AS distance LIMIT {self._k}"
                 result = chclient.query(ann_search_query)
-                logger("Vector indexes have loaded!")
+                logger(f"Vector indexes have loaded!")
                 break
-            except Exception:
-                logger("Waiting for indexes to load...")
+            except Exception as e:
+                logger(f"Waiting for indexes to load...")
                 time.sleep(30)
 
         for truth_record in self._truth_set:
-            # Use reinterpret technique to demonstrate CPU savings, ref : https://github.com/ClickHouse/ClickHouse/pull/105504
-            if self._test_params.get(USE_RAW_BYTES_FOR_QUERY_VECTOR):
-                query_vector = truth_record["query_vector"]
-                if query_vector is None:
-                    raise ValueError(
-                        "USE_RAW_BYTES_FOR_QUERY_VECTOR requires truth records with a materialised query_vector"
-                    )
-                params = {"$search_vector_binary$": query_vector.tobytes()}
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, reinterpret($search_vector_binary$, 'Array(Float32)') ) AS distance LIMIT {self._k}"
-                q_start = current_time_ms()
-                result = chclient.query(ann_search_query, parameters=params)
-            else:
-                query_source = self._render_query_source_sql(truth_record)
-                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k}"
-                q_start = current_time_ms()
-                result = chclient.query(ann_search_query)
-
+            query_source = self._render_query_source_sql(truth_record)
+            q_start = current_time_ms()
+            ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {query_source} ) AS distance LIMIT {self._k} SETTINGS use_skip_indexes = 1, max_parallel_replicas = 1"
+            result = chclient.query(ann_search_query)
             q_end = current_time_ms()
             runtime = runtime + (q_end - q_start)
 
@@ -788,7 +769,7 @@ def run_single_test(test_name, dataset, test_params):
         # Run concurrency test on the current truth set
         if test_runner._test_params[CONCURRENCY_TEST]:
             test_runner.concurrency_test()
-    except Exception:
+    except Exception as e:
         print(traceback.format_exc(), file=sys.stdout)
         result = False
     finally:
@@ -805,14 +786,14 @@ def install_and_start_clickhouse():
     res = True
     results = []
     ch = ClickHouseProc()
-    Info()
+    info = Info()
 
     if Utils.is_arm():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
     elif Utils.is_amd():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
     else:
-        assert False, "Unknown processor architecture"
+        assert False, f"Unknown processor architecture"
 
     if True:
         step_name = "Download ClickHouse"

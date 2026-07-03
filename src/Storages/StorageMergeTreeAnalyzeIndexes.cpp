@@ -3,7 +3,6 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -38,7 +37,7 @@ namespace ErrorCodes
 ///
 /// MergeTreeAnalyzeIndexSource
 ///
-class MergeTreeAnalyzeIndexSource final : public ISource, WithContext
+class MergeTreeAnalyzeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeAnalyzeIndexSource(
@@ -76,8 +75,6 @@ protected:
 
         if (data_parts.empty())
             return {};
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeAnalyzeIndexSource::generate");
 
         auto ranges = getIndexAnalysis();
         MutableColumns res_columns = header->cloneEmptyColumns();
@@ -127,7 +124,7 @@ protected:
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        StorageMetadataPtr metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/StorageID.h>
@@ -104,7 +103,7 @@ public:
         return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
-    VectorWithMemoryTracking<Chain> createChainWithDependenciesForAllStreams() const;
+    std::vector<Chain> createChainWithDependenciesForAllStreams() const;
 
     Chain createChainWithDependencies() const;
     Chain createChainForDeduplicationRetry(const DeduplicationInfo & info, const std::string & partition_id) const;

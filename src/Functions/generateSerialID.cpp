@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -42,7 +41,7 @@ namespace Setting
 namespace
 {
 
-class FunctionSerial final : public IFunction
+class FunctionSerial : public IFunction
 {
 private:
     ContextPtr context;
@@ -187,7 +186,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            UnorderedMapWithMemoryTracking<std::string_view, Series, StringViewHash> series;
+            std::unordered_map<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)

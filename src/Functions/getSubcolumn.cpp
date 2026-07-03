@@ -13,7 +13,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetSubcolumn final : public IFunction
+class FunctionGetSubcolumn : public IFunction
 {
 public:
     static constexpr auto name = "getSubcolumn";

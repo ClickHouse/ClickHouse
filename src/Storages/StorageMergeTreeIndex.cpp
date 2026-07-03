@@ -1,5 +1,4 @@
 #include <Storages/StorageMergeTreeIndex.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
@@ -19,7 +18,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -38,7 +36,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class MergeTreeIndexSource final : public ISource, WithContext
+class MergeTreeIndexSource : public ISource, WithContext
 {
 public:
     MergeTreeIndexSource(
@@ -65,8 +63,6 @@ protected:
     {
         if (part_index >= data_parts.size())
             return {};
-
-        auto component_guard = Coordination::setCurrentComponent("MergeTreeIndexSource::generate");
 
         const auto & part = data_parts[part_index];
         const auto & index_granularity = part->index_granularity;
@@ -292,8 +288,7 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
+    key_sample_block = std::make_shared<const Block>(merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {

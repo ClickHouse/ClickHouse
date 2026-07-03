@@ -1,5 +1,3 @@
-#include <Examples/clickhouse_examples.h>
-
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #if defined (OS_LINUX)
