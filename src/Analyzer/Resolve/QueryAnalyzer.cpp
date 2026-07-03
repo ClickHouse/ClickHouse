@@ -1525,6 +1525,49 @@ static void correctColumnExpressionType(ColumnNode & column_node, const ContextP
   * Example: Try to lookup identifier as expression, if it is not found, lookup as table.
   */
 
+namespace
+{
+
+/// JOIN USING key resolution addresses one side's subtree directly (bypassing
+/// `tryResolveIdentifier`), so the `standard`-mode case-fold respell must be applied locally:
+/// find the unique folded column-name match among the scope's table expressions, respell the
+/// lookup, and retry against the same subtree. Definition-side pins are honoured; two distinct
+/// canonical spellings are ambiguous.
+QueryTreeNodePtr tryResolveUsingColumnWithCaseFold(
+    IdentifierResolver & identifier_resolver,
+    const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & table_expression_subtree,
+    IdentifierResolveScope & scope)
+{
+    if (!scope.isStandardMode() || identifier_lookup.anyPartDoubleQuoted())
+        return nullptr;
+
+    const auto & full_name = identifier_lookup.identifier.getFullName();
+    String canonical;
+    for (const auto & [_, table_expression_data] : scope.table_expression_node_to_data)
+    {
+        for (const auto & [column_name, _2] : table_expression_data.column_names_and_types)
+        {
+            if (table_expression_data.case_sensitive_column_names.contains(column_name))
+                continue;
+            if (column_name == full_name || !identifierPartsEqual(column_name, full_name, true))
+                continue;
+            if (!canonical.empty() && canonical != column_name)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "JOIN USING identifier '{}' is ambiguous: matches columns with different cases: '{}' and '{}'. In scope {}",
+                    full_name, canonical, column_name, scope.scope_node->formatASTForErrorMessage());
+            canonical = column_name;
+        }
+    }
+    if (canonical.empty())
+        return nullptr;
+
+    IdentifierLookup respelled_lookup{Identifier(canonical), identifier_lookup.lookup_context};
+    return identifier_resolver.tryResolveIdentifierFromJoinTreeNode(respelled_lookup, table_expression_subtree, scope).resolved_identifier;
+}
+
+}
+
 /** `standard`-mode fallback: exact resolution in this scope failed, so try to respell the
   * identifier's unquoted parts to the canonical spelling of a case-insensitive match from this
   * scope's namespaces and retry the exact resolution with the respelled identifier.
@@ -1567,16 +1610,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
         return Identifier(std::move(respelled_parts)).getFullName();
     };
 
-    auto throw_if_ambiguous = [&](const char * namespace_description)
-    {
-        if (candidates.size() > 1)
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "Identifier '{}' is ambiguous: matches multiple {} with different cases: '{}' and '{}'. In scope {}",
-                full_name, namespace_description, candidates[0], candidates[1],
-                scope.scope_node->formatASTForErrorMessage());
-    };
-
-    auto retry = [&](const String & respelled_full_name) -> IdentifierResolveResult
+    auto retry_one = [&](const String & respelled_full_name) -> IdentifierResolveResult
     {
         IdentifierLookup respelled_lookup{Identifier(respelled_full_name), identifier_lookup.lookup_context};
         /// Keep the reference-side quote flags when the part structure is unchanged: the local
@@ -1585,7 +1619,46 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
             respelled_lookup.is_part_double_quoted = identifier_lookup.is_part_double_quoted;
         auto retry_context = identifier_resolve_context;
         retry_context.allow_case_fold_fallback = false;
-        return tryResolveIdentifier(respelled_lookup, scope, retry_context);
+        try
+        {
+            return tryResolveIdentifier(respelled_lookup, scope, retry_context);
+        }
+        catch (const Exception & retry_exception)
+        {
+            /// A candidate spelling that does not actually resolve is simply not a match.
+            if (retry_exception.code() == ErrorCodes::UNKNOWN_IDENTIFIER)
+                return {};
+            throw;
+        }
+    };
+
+    /// Resolve every candidate and judge ambiguity by RESOLUTION, not by spelling: different
+    /// respellings of the same logical target (e.g. `Data.Name` as a subcolumn full name and
+    /// `Data.name` as base column + type-suffix fold) resolve to equal nodes and are one match;
+    /// two genuinely different case-siblings resolve to different nodes and are ambiguous.
+    auto retry_candidates = [&](const char * namespace_description) -> IdentifierResolveResult
+    {
+        IdentifierResolveResult first_resolved;
+        String first_resolved_spelling;
+        for (const auto & candidate : candidates)
+        {
+            auto candidate_result = retry_one(candidate);
+            if (!candidate_result.resolved_identifier)
+                continue;
+            if (!first_resolved.resolved_identifier)
+            {
+                first_resolved = candidate_result;
+                first_resolved_spelling = candidate;
+                continue;
+            }
+            if (!first_resolved.resolved_identifier->isEqual(*candidate_result.resolved_identifier))
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Identifier '{}' is ambiguous: matches multiple {} with different cases: '{}' and '{}'. In scope {}",
+                    full_name, namespace_description, first_resolved_spelling, candidate,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+        candidates.clear();
+        return first_resolved;
     };
 
     /// 1. Expression arguments (lambda parameters, INTERPOLATE targets, recursive-CTE self-names).
@@ -1598,9 +1671,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
             if (argument_name != front_part && identifierPartsEqual(argument_name, front_part, /*case_insensitive=*/ true))
                 add_candidate(respell_front(argument_name));
         }
-        throw_if_ambiguous("arguments");
         if (!candidates.empty())
-            return retry(candidates.front());
+        {
+            if (auto result = retry_candidates("arguments"); result.resolved_identifier)
+                return result;
+        }
     }
 
     /// 2. Aliases. Whole-name match for single-part lookups, front-part match for compound ones.
@@ -1621,9 +1696,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
                 add_candidate(respell_front(alias_name));
             }
         }
-        throw_if_ambiguous("aliases");
         if (!candidates.empty())
-            return retry(candidates.front());
+        {
+            if (auto result = retry_candidates("aliases"); result.resolved_identifier)
+                return result;
+        }
     }
 
     /// 3. Join-tree columns, subcolumns and qualifiers.
@@ -1655,6 +1732,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
                         continue;
                     if (column_name != front_part && identifierPartsEqual(column_name, front_part, true))
                         add_candidate(respell_front(column_name));
+                }
+            }
+            if (parts_size == 1 && front_may_fold)
+            {
+                /// Bare Nested prefix: `SELECT items` for columns `Items.a`, `Items.b` resolves
+                /// through the nested-prefix machinery, which is exact — respell against the
+                /// first part of each column name.
+                for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+                {
+                    if (table_expression_data.case_sensitive_column_names.contains(column_name))
+                        continue;
+                    const auto dot_pos = column_name.find('.');
+                    const std::string_view column_front = dot_pos == String::npos
+                        ? std::string_view(column_name)
+                        : std::string_view(column_name).substr(0, dot_pos);
+                    if (column_front != front_part && identifierPartsEqual(column_front, front_part, true))
+                        add_candidate(String(column_front));
                 }
             }
 
@@ -1694,10 +1788,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
                         remainder_exists_exactly = column_name == remainder_full_name
                             || (parts_size > 2 && column_name == remainder.front());
                     }
-                    if (remainder_exists_exactly || canonical_qualifier != front_part)
+                    if (remainder_exists_exactly)
                         add_qualified(remainder_full_name);
 
-                    if (remainder_may_fold)
+                    /// Exact-first within the respell: an exactly-matching remainder binds to the
+                    /// literal column, so folded remainder siblings must not create ambiguity.
+                    if (remainder_may_fold && !remainder_exists_exactly)
                     {
                         for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
                         {
@@ -1713,12 +1809,42 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
                 }
             }
         }
-        throw_if_ambiguous("columns");
         if (!candidates.empty())
-            return retry(candidates.front());
+        {
+            if (auto result = retry_candidates("columns"); result.resolved_identifier)
+                return result;
+        }
     }
 
-    /// 4. CTE names (table lookups only).
+    /// 4. Join-tree table-expression names (table lookups only): aliases and table names of the
+    /// registered table expressions, e.g. a qualified matcher `TBL.*` over `FROM tbl`.
+    if (identifier_lookup.isTableExpressionLookup() && identifier_resolve_context.allow_to_check_join_tree && full_name_may_fold)
+    {
+        for (const auto & [table_expression_node, table_expression_data] : scope.table_expression_node_to_data)
+        {
+            const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
+            if (!table_alias.empty() && !table_expression_node->isAliasDoubleQuoted()
+                && table_alias != full_name && identifierPartsEqual(table_alias, full_name, true))
+                add_candidate(table_alias);
+            const auto & data_table_name = table_expression_data.table_name;
+            if (parts_size == 1 && !data_table_name.empty() && !table_expression_data.table_name_is_double_quoted
+                && data_table_name != full_name && identifierPartsEqual(data_table_name, full_name, true))
+                add_candidate(data_table_name);
+            if (parts_size == 2 && !table_expression_data.database_name.empty())
+            {
+                const String db_table = table_expression_data.database_name + "." + data_table_name;
+                if (db_table != full_name && identifierPartsEqual(db_table, full_name, true))
+                    add_candidate(db_table);
+            }
+        }
+        if (!candidates.empty())
+        {
+            if (auto result = retry_candidates("table expressions"); result.resolved_identifier)
+                return result;
+        }
+    }
+
+    /// 5. CTE names (table lookups only).
     if (identifier_lookup.isTableExpressionLookup() && identifier_resolve_context.allow_to_check_cte && full_name_may_fold)
     {
         for (const auto & [cte_name, cte_node] : scope.cte_name_to_query_node)
@@ -1735,9 +1861,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
             if (cte_name != full_name && identifierPartsEqual(cte_name, full_name, true))
                 add_candidate(cte_name);
         }
-        throw_if_ambiguous("CTEs");
         if (!candidates.empty())
-            return retry(candidates.front());
+        {
+            if (auto result = retry_candidates("CTEs"); result.resolved_identifier)
+                return result;
+        }
     }
 
     return {};
@@ -1793,11 +1921,35 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             }
         }
 
+        /// The exact join-tree machinery throws UNKNOWN_IDENTIFIER when a qualifier binds to a
+        /// table expression but the column part is missing (`j1.id` over column `ID`). In
+        /// `standard` mode that is exactly the situation the case-fold respell fallback handles,
+        /// so deflect the exception into the fallback; if the fallback cannot respell either,
+        /// rethrow the original error.
+        auto resolve_from_join_tree_with_fold_fallback = [&]() -> IdentifierResolveResult
+        {
+            if (!scope.isStandardMode() || !identifier_resolve_context.allow_case_fold_fallback)
+                return identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+            try
+            {
+                return identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+            }
+            catch (const Exception & join_tree_exception)
+            {
+                if (join_tree_exception.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
+                    throw;
+                auto fallback_result = tryResolveIdentifierByCaseFoldRespell(identifier_lookup, scope, identifier_resolve_context);
+                if (fallback_result.resolved_identifier)
+                    return fallback_result;
+                throw;
+            }
+        };
+
         if (unlikely(prefer_column_name_to_alias))
         {
             if (identifier_resolve_context.allow_to_check_join_tree)
             {
-                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                resolve_result = resolve_from_join_tree_with_fold_fallback();
             }
 
             if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
@@ -1812,7 +1964,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
             if (!resolve_result.resolved_identifier && identifier_resolve_context.allow_to_check_join_tree)
             {
-                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                resolve_result = resolve_from_join_tree_with_fold_fallback();
             }
         }
 
@@ -4832,7 +4984,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
 
     /// Enable (SQL-)standard mode (case-insensitive) if the setting is enabled. Double-quoted
     /// projection aliases and projection-override aliases stay case-sensitive — collect them so
-    /// `enableStandardMode` keeps them out of the lowercase index.
+    /// the case-fold respell fallback skips them.
     if (scope.isStandardMode())
         table_expression_data.enableStandardMode(collectCaseSensitiveProjectionNames(query_node, union_node));
 
@@ -5936,6 +6088,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 /// Preserve per-part double-quoting from `USING ("Key")` so case-sensitivity matches `standard` mode.
                 identifier_lookup.setQuoteFlagsFrom(identifier_node->getQuoteStyles());
                 result_left_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getLeftTableExpression(), scope).resolved_identifier;
+                if (!result_left_table_expression)
+                    result_left_table_expression = tryResolveUsingColumnWithCaseFold(identifier_resolver, identifier_lookup, join_node_typed.getLeftTableExpression(), scope);
             }
 
             if (!result_left_table_expression)
@@ -6017,6 +6171,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 identifier_lookup.is_part_double_quoted.back() = true;
             }
             auto result_right_table_expression = identifier_resolver.tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_node_typed.getRightTableExpression(), scope).resolved_identifier;
+            if (!result_right_table_expression)
+                result_right_table_expression = tryResolveUsingColumnWithCaseFold(identifier_resolver, identifier_lookup, join_node_typed.getRightTableExpression(), scope);
             if (!result_right_table_expression)
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
                     "JOIN {} using identifier '{}' cannot be resolved from right table expression. In scope {}",

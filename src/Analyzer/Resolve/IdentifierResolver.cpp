@@ -194,19 +194,13 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
     const Identifier & identifier,
     const AnalysisTableExpressionData & table_expression_data,
-    const ContextPtr & context,
-    bool case_insensitive_prefix)
+    const ContextPtr & context)
 {
     QueryTreeNodes nested_column_nodes;
     DataTypes nested_types;
     Array nested_names_array;
 
     bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
-
-    auto parts_equal = [case_insensitive_prefix](std::string_view a, std::string_view b)
-    {
-        return case_insensitive_prefix ? Poco::icompare(a, b) == 0 : a == b;
-    };
 
     for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
     {
@@ -219,7 +213,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
         for (const auto & part : identifier.getParts())
         {
-            if (suffix.empty() || !parts_equal(part, suffix.front()))
+            if (suffix.empty() || part != suffix.front())
                 break;
 
             suffix.popFirst();
@@ -630,7 +624,8 @@ bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & ide
 
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    /// USING columns are matched by full name, so last-part quoting decides case sensitivity
+    /// USING columns are matched by full name, so last-part quoting decides case sensitivity.
+    /// TODO(exact-retry): the respell fallback does not scan USING-key names yet, so keep this fold.
     const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
@@ -676,43 +671,25 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
 
-    /// Whole-name column match is case-insensitive only if every part of the lookup is unquoted —
-    /// a single double-quoted part anywhere in the identifier pins the lookup to case-sensitive.
-    bool full_name_case_insensitive = standard_mode;
-    for (size_t p = 0, n = identifier.getPartsSize(); p < n && full_name_case_insensitive; ++p)
-    {
-        if (identifier_lookup.isPartDoubleQuoted(p))
-            full_name_case_insensitive = false;
-    }
-    /// Subcolumn base keys off the first part of the lookup (the tuple/struct column); the suffix
-    /// is folded case-insensitively only when every suffix part of the lookup was also unquoted.
-    /// A double-quoted suffix like `data."Name"` must stay case-sensitive even when the base
-    /// (`data`) is case-insensitive.
-    const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
+    /// Column names are matched exactly: a case-folded reference is respelled to the canonical
+    /// column name by the `tryResolveIdentifierByCaseFoldRespell` fallback and retried here.
+    /// The type-based subcolumn suffix (tuple element / subcolumn) still folds locally: it is
+    /// case-insensitive only when every suffix part of the lookup was unquoted — a double-quoted
+    /// suffix like `data."Name"` stays case-sensitive.
     bool subcolumn_suffix_case_insensitive = standard_mode;
     for (size_t p = 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
         subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
-    if (full_name_case_insensitive)
-    {
-        auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(
-            identifier_full_name, [&] { return scope.scope_node->formatASTForErrorMessage(); });
-        if (it != node_map.end())
-            return it->second;
-    }
-    else
-    {
-        auto it = node_map.find(identifier_full_name);
-        if (it != node_map.end())
-            return it->second;
-    }
+    auto it = node_map.find(identifier_full_name);
+    if (it != node_map.end())
+        return it->second;
 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
             identifier_full_name,
-            {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
-            [&] { return scope.scope_node->formatASTForErrorMessage(); }))
+            [&] { return scope.scope_node->formatASTForErrorMessage(); },
+            subcolumn_suffix_case_insensitive))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
         /// because aliases don't have real subcolumns, they should be extracted
@@ -754,20 +731,12 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    const bool standard_mode = table_expression_data.standard_mode;
-    /// Qualifier matches (db / table / alias) use per-part quoting; the column-name lookup uses the last part's
-    auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
-    /// The full-name check looks up the joined identifier text in the storage column map. A single
-    /// double-quoted part anywhere along the identifier pins it to case-sensitive — otherwise a
-    /// `"data".Name` lookup with unquoted `Name` would still fold to `Data.Name` here, ahead of a
-    /// later table that exposes the exact spelling.
-    bool full_name_case_insensitive = standard_mode && !identifier_lookup.anyPartDoubleQuoted();
-
-
-    /// A double-quoted CTE definition (`WITH "MyCte" AS ...`) pins the table-expression name to
-    /// its canonical case; an unquoted reference must not fold onto it. Mirrors the resolve side.
-    const bool table_name_case_insensitive_0 = part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted;
-    const bool table_name_case_insensitive_1 = part_case_insensitive(1) && !table_expression_data.table_name_is_double_quoted;
+    /// Names are matched exactly: a case-folded reference is respelled to the canonical spelling
+    /// by the `tryResolveIdentifierByCaseFoldRespell` fallback and retried through this same path.
+    /// Only the type-based subcolumn suffix (tuple element / subcolumn) still folds locally.
+    bool subcolumn_suffix_case_insensitive = table_expression_data.standard_mode;
+    for (size_t p = 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
+        subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     if (identifier_lookup.isTableExpressionLookup())
     {
@@ -778,36 +747,28 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && identifierPartsEqual(path_start, table_name, table_name_case_insensitive_0))
+        if (parts_size == 1 && path_start == table_name)
             return true;
-        if (parts_size == 2
-            && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
-            && identifierPartsEqual(identifier[1], table_name, table_name_case_insensitive_1))
+        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
         return false;
     }
 
-    /// Bind check keys off the base column (part 0); full-name check requires every part to be unquoted.
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), full_name_case_insensitive)
-        || table_expression_data.canBindIdentifier(IdentifierView(identifier), part_case_insensitive(0)))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier))
+        || table_expression_data.canBindIdentifier(IdentifierView(identifier), subcolumn_suffix_case_insensitive))
         return true;
 
     if (identifier.getPartsSize() == 1)
         return false;
 
-    /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
-    const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
-
-    if ((!table_name.empty() && identifierPartsEqual(path_start, table_name, table_name_case_insensitive_0))
-        || (table_expression_node->hasAlias() && identifierPartsEqual(path_start, table_expression_node->getAlias(), alias_case_insensitive)))
+    if ((!table_name.empty() && path_start == table_name)
+        || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty()
-        && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
-        && identifierPartsEqual(identifier[1], table_name, part_case_insensitive(1)))
+    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return true;
 
     return false;
@@ -835,6 +796,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
 bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
     /// ARRAY JOIN binds by the alias's leading part; later parts are subcolumn accesses on the array's elements
+    /// TODO(exact-retry): move ARRAY JOIN alias folding into the respell fallback
     const bool standard_mode = scope.isStandardMode();
     const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
@@ -892,54 +854,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
     const bool standard_mode = table_expression_data.standard_mode;
-    /// Full column lookup uses the last-part quote style (the column name itself)
-    bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
-    /// But for compound column names, a double-quoted qualifier part must NOT be case-folded
-    /// through `findColumnCaseInsensitive`. E.g. `"data".Name` should not match `Data.Name`
-    /// even though the last part is unquoted. Disable case-insensitive full lookup whenever
-    /// any qualifier part of the trimmed identifier was double-quoted.
+    /// Column names are matched exactly: a case-folded reference is respelled to the canonical
+    /// column name by the `tryResolveIdentifierByCaseFoldRespell` fallback and retried here.
+    /// The type-based subcolumn suffix (tuple element / subcolumn) still folds locally: it covers
+    /// parts beyond the base column — a double-quoted suffix part pins it case-sensitively.
     const size_t identifier_qualifier_parts = identifier.getPartsSize() - identifier_without_column_qualifier.getPartsSize();
-    if (use_case_insensitive && identifier_without_column_qualifier.getPartsSize() > 1)
-    {
-        for (size_t p = identifier_qualifier_parts; p + 1 < identifier.getPartsSize(); ++p)
-        {
-            if (identifier_lookup.isPartDoubleQuoted(p))
-            {
-                use_case_insensitive = false;
-                break;
-            }
-        }
-    }
-    /// Subcolumn base lookup keys off the first part of the trimmed identifier (the tuple/struct column).
-    /// `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
-    /// case-sensitive. The suffix flag covers parts beyond the base — a double-quoted suffix part
-    /// must pin the fallback case-sensitively even when the base was unquoted.
-    const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(identifier_qualifier_parts, standard_mode);
     bool subcolumn_suffix_case_insensitive = standard_mode;
     for (size_t p = identifier_qualifier_parts + 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
         subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     const auto & node_map = table_expression_data.getColumnNodeMap();
-    if (use_case_insensitive)
-    {
-        auto it = table_expression_data.findColumnCaseInsensitive(
-            identifier_full_name,
-            [&] { return scope.scope_node ? scope.scope_node->formatASTForErrorMessage() : String{}; });
-        if (it != node_map.end())
-            result_expression = it->second;
-    }
-    else if (auto it = node_map.find(identifier_full_name); it != node_map.end())
-    {
+    if (auto it = node_map.find(identifier_full_name); it != node_map.end())
         result_expression = it->second;
-    }
 
     /// Check if it's a subcolumn
     if (!result_expression)
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
                 identifier_full_name,
-                {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
-                [&] { return scope.scope_node->formatASTForErrorMessage(); }))
+                [&] { return scope.scope_node->formatASTForErrorMessage(); },
+                subcolumn_suffix_case_insensitive))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
             /// because aliases don't have real subcolumns, they should be extracted
@@ -966,11 +900,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         /// Here we try to create Nested from Array columns with the `identifier` prefix.
         /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
-        /// we resolve `x` into Nested(a String, b String). The prefix-part comparison must
-        /// honour the base-column case sensitivity so e.g. `items` against `Items Nested(...)`
-        /// matches in standard mode.
+        /// we resolve `x` into Nested(a String, b String).
         if (auto nested_function_node = tryResolveIdentifierAsNestedPrefix(
-                identifier_without_column_qualifier, table_expression_data, scope.context, subcolumn_base_case_insensitive))
+                identifier_without_column_qualifier, table_expression_data, scope.context))
         {
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);
@@ -1067,31 +999,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const auto & table_name = table_expression_data.table_name;
         const auto & database_name = table_expression_data.database_name;
 
-        /// Used by qualified matcher resolution (`T.*`, `T.COLUMNS(...)`), which disables the
-        /// database-catalog fallback, so per-part case-insensitive matching has to happen here too
-        const bool tbl_standard_mode = table_expression_data.standard_mode;
-        auto eq = [tbl_standard_mode, &identifier_lookup](const std::string & a, const std::string & b, size_t part)
-        {
-            const bool case_insensitive = identifier_lookup.isPartCaseInsensitive(part, tbl_standard_mode);
-            return case_insensitive ? Poco::icompare(a, b) == 0 : a == b;
-        };
-
-        if (parts_size == 1 && eq(path_start, table_name, 0))
+        /// Exact compares: a case-folded reference is respelled to the canonical spelling by the
+        /// `tryResolveIdentifierByCaseFoldRespell` fallback and retried through this same path.
+        if (parts_size == 1 && path_start == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else if (parts_size == 2 && eq(path_start, database_name, 0) && eq(identifier[1], table_name, 1))
+        else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else
             return {};
     }
 
     const bool standard_mode = table_expression_data.standard_mode;
-    /// Qualifier matches (db / table / alias) use per-part quoting.
-    auto part_case_insensitive = [&](size_t part) { return identifier_lookup.isPartCaseInsensitive(part, standard_mode); };
-    /// Full-name folded lookups require every part to be unquoted — a single double-quoted part
-    /// anywhere along the identifier pins the gate to case-sensitive so a later table with the
-    /// exact spelling is not pre-empted by a folded match here.
-    bool full_name_case_insensitive = standard_mode && !identifier_lookup.anyPartDoubleQuoted();
-
+    /// Names are matched exactly; only the type-based subcolumn suffix still folds locally
+    /// (inside `tryResolveIdentifierFromStorage`). Case-folded references are respelled by the
+    /// `tryResolveIdentifierByCaseFoldRespell` fallback and retried through this same path.
+    bool subcolumn_suffix_case_insensitive = standard_mode;
+    for (size_t p = 1, n = identifier.getPartsSize(); p < n && subcolumn_suffix_case_insensitive; ++p)
+        subcolumn_suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
 
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
       * strip path over `hasFullIdentifierName` / subcolumn lookup. This restores the
@@ -1103,10 +1027,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         && identifier.getPartsSize() > 1)
     {
         const auto & table_name_compat = table_expression_data.table_name;
-        const bool prefix_matches_table_name = !table_name_compat.empty()
-            && identifierPartsEqual(path_start, table_name_compat, part_case_insensitive(0));
+        const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
         const bool prefix_matches_alias = table_expression_node->hasAlias()
-            && identifierPartsEqual(path_start, table_expression_node->getAlias(), part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted());
+            && path_start == table_expression_node->getAlias();
         if (prefix_matches_table_name || prefix_matches_alias)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
@@ -1123,13 +1046,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), full_name_case_insensitive))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
-    /// The bind check is keyed off the base column (part 0), not the trailing subcolumn part.
-    /// For mixed-quoting like `Data."Name"`, the unquoted `Data` must bind case-insensitively
-    /// even though the quoted `"Name"` field stays exact.
-    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), part_case_insensitive(0)))
+    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), subcolumn_suffix_case_insensitive))
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
@@ -1149,18 +1069,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
 
-
-    /// A double-quoted table alias stays case-sensitive even when the reference is unquoted
-    const bool alias_case_insensitive = part_case_insensitive(0) && !table_expression_node->isAliasDoubleQuoted();
-
-    /// A double-quoted CTE definition (`WITH "MyCte" AS ...`) pins the CTE name to its canonical
-    /// case; an unquoted `mycte.x` must not bind to it. Non-CTE table names come from storage so
-    /// they're already canonical and can fold as usual.
-    const bool table_name_case_insensitive
-        = part_case_insensitive(0) && !table_expression_data.table_name_is_double_quoted;
-
-    if ((!table_name.empty() && identifierPartsEqual(path_start, table_name, table_name_case_insensitive))
-        || (!table_alias.empty() && identifierPartsEqual(path_start, table_alias, alias_case_insensitive)))
+    if ((!table_name.empty() && path_start == table_name)
+        || (!table_alias.empty() && path_start == table_alias))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
@@ -1169,10 +1079,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         if (table_node->isMaterializedCTE())
         {
             const auto & cte = *table_node->getMaterializedCTE();
-            /// A double-quoted CTE definition (`WITH "MyCte" AS MATERIALIZED ...`) pins the CTE
-            /// name to its canonical case; an unquoted qualifier `mycte.x` must not bind to it.
-            const bool cte_case_insensitive = part_case_insensitive(0) && !cte.name_is_double_quoted;
-            if (identifierPartsEqual(path_start, cte.cte_name, cte_case_insensitive))
+            if (path_start == cte.cte_name)
                 return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
         }
     }
@@ -1181,9 +1088,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & database_name = table_expression_data.database_name;
-    if (!database_name.empty()
-        && identifierPartsEqual(path_start, database_name, part_case_insensitive(0))
-        && identifierPartsEqual(identifier[1], table_name, part_case_insensitive(1)))
+    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1376,6 +1281,9 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+/// The fold gates here are kept: this is also reached from JOIN USING and qualified-matcher
+/// resolution via `tryResolveIdentifierFromJoinTreeNode`, which bypass the respell fallback
+/// in `tryResolveIdentifier`.
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
     const std::string & qualifier,
@@ -1934,6 +1842,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
     /// The match is against the *first* part of the lookup identifier (the alias name), so use the first-part flag.
     /// If the ARRAY JOIN expression had a quoted alias (`ARRAY JOIN arr AS "X"`), that alias stays case-sensitive
     /// in standard mode regardless of the lookup's quoting.
+    /// TODO(exact-retry): move ARRAY JOIN alias folding into the respell fallback
     const bool lookup_first_part_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();

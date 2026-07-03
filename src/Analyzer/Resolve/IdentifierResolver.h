@@ -79,8 +79,7 @@ public:
     static QueryTreeNodePtr tryResolveIdentifierAsNestedPrefix(
         const Identifier & identifier,
         const AnalysisTableExpressionData & table_expression_data,
-        const ContextPtr & context,
-        bool case_insensitive_prefix = false);
+        const ContextPtr & context);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,

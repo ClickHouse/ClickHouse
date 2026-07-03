@@ -694,7 +694,7 @@ public:
 
     /// Parallel vector marking which override aliases were defined as double-quoted in source
     /// (e.g. `AS t("MyCol")`). Used to keep those aliases case-sensitive in standard mode
-    /// (they are NOT added to the lowercase column index in `enableStandardMode`).
+    /// (the case-fold respell fallback skips names in `case_sensitive_column_names`).
     void setProjectionAliasesToOverrideIsDoubleQuoted(std::vector<bool> flags)
     {
         projection_aliases_to_override_is_double_quoted = std::move(flags);
