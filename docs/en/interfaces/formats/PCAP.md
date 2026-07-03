@@ -35,6 +35,12 @@ bytes of each packet are saved, so `capture_length` is smaller than
 `original_length`. For a full capture the two are equal.
 :::
 
+:::note
+Capture files are read with microsecond timestamp precision. The `timestamp`
+column has a nanosecond-scale type (`DateTime64(9)`) for future compatibility,
+but nanosecond-resolution captures are currently truncated to microseconds.
+:::
+
 ## Columns {#columns}
 
 The `PCAP` format produces the following columns:
@@ -42,7 +48,7 @@ The `PCAP` format produces the following columns:
 | Column | Type | Description |
 |--------|------|-------------|
 | `number` | `UInt64` | 1-based index of the packet within the capture |
-| `timestamp` | `DateTime64(9)` | Capture time of the packet |
+| `timestamp` | `DateTime64(9)` | Capture time of the packet. The column type has nanosecond scale, but capture files are read with microsecond precision, so the value is currently truncated to microseconds even for nanosecond captures |
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
 | `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
