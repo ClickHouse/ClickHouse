@@ -4095,10 +4095,18 @@ function attachImagePreview(link, url) {
         image_preview_y = event.clientY;
         positionImagePreview();
     });
-    link.addEventListener('mouseleave', () => {
-        image_preview_hovered_url = null;
-        if (image_preview) { image_preview.style.display = 'none'; }
-    });
+    link.addEventListener('mouseleave', hideImagePreview);
+}
+
+/// Hide the floating image preview, if any. Called on `mouseleave` and, like the table
+/// balloons below, on any scroll: this `position: fixed` preview would otherwise stay
+/// pinned when the hovered link scrolls out from under a stationary cursor (scrolling
+/// delivers no mouse event, so `mouseleave` does not fire). Clearing the hovered URL
+/// also suppresses an in-flight `load` that would otherwise reveal a stale preview
+/// after the scroll.
+function hideImagePreview() {
+    image_preview_hovered_url = null;
+    if (image_preview) { image_preview.style.display = 'none'; }
 }
 
 /// Hide the currently visible table-info balloon on any scroll: it uses
@@ -4137,6 +4145,9 @@ function positionTableBalloon(table) {
 }
 
 document.addEventListener('scroll', () => {
+    /// The image preview follows the cursor and has no keyboard-focus counterpart, so
+    /// hide it on any scroll (see `hideImagePreview`).
+    hideImagePreview();
     /// When a table row (or one of its balloon links) is focused via the keyboard,
     /// keep its balloon glued to the row across the scroll instead of hiding it.
     const focused_table = document.activeElement?.closest?.('.table');
