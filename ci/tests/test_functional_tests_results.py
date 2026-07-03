@@ -105,6 +105,20 @@ _NON_CIDB_DISTRIBUTED_ERROR_LINE = (
     "batch due to: Code: 210. DB::NetException: Connection refused "
     "(NETWORK_ERROR) some-test-shard:9000"
 )
+# A `Distributed`-shipping error from a table a test forged inside the
+# `system` database. A functional test CAN create tables under `system`
+# (e.g. `02494_query_cache_system_tables.sql` creates `system.system`), so a
+# test could create `system.fake_sender` and flood this logger name. The
+# classifier must NOT be fooled by it: the un-forgeable `log_export_started`
+# gate keeps a run that never started log export (every `fast_test.py` run) on
+# the `Server died` path, and the tightened `_log_sender` regex does not even
+# match a bare `_sender` name. See clickhouse-gh[bot] review on PR #106176.
+_FORGED_SYSTEM_SENDER_ERROR_LINE = (
+    "2026.05.30 14:37:00.000000 [ 4249 ] {} <Error> "
+    "system.fake_sender.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 210. DB::NetException: Connection refused "
+    "(NETWORK_ERROR) some-test-shard:9000"
+)
 
 # Two real failures from a parallel run that stopped early. No "All tests have
 # finished" line, because the run was aborted before completing.
@@ -230,11 +244,13 @@ def _empty_test_results_file(tmp_path: Path, success_finish: bool = True) -> Pat
 
 def test_run_emits_server_died_when_err_log_missing(tmp_path):
     # Runner killed by SIGTERM but the `err.log` does not exist - keep
-    # the legacy `Server died` behaviour.
+    # the legacy `Server died` behaviour. `log_export_started=True` so the
+    # gate passes and the missing-log branch is what's exercised.
     _empty_test_results_file(tmp_path)
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(tmp_path / "no-such-file.err.log"),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -255,6 +271,7 @@ def test_run_emits_server_died_on_staging_cluster_overload_without_aborted_exit(
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=0)
 
@@ -274,6 +291,7 @@ def test_run_classifies_staging_overload_as_skipped(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
 
     for code in (
@@ -309,6 +327,7 @@ def test_run_keeps_server_died_when_real_crash_marker_present(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -335,6 +354,7 @@ def test_run_keeps_server_died_when_tests_failed(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -358,6 +378,7 @@ def test_run_keeps_server_died_when_test_run_was_incomplete(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -382,6 +403,7 @@ def test_run_keeps_server_died_on_non_cidb_distributed_errors(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -389,6 +411,69 @@ def test_run_keeps_server_died_on_non_cidb_distributed_errors(tmp_path):
     leaf_names = [r.name for r in result.results]
     assert "Server died" in leaf_names
     assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_run_keeps_server_died_when_log_export_not_started(tmp_path):
+    # clickhouse-gh[bot] correctness review on PR #106176 (follow-up on the
+    # `system.<table>_sender` narrowing): a functional test CAN create tables
+    # under the `system` database (e.g. `02494_query_cache_system_tables.sql`
+    # creates `system.system`), so a test could forge a `system.fake_sender`
+    # `Distributed` table and flood the log with matching shipping errors.
+    # `fast_test.py` shares `FTResultsProcessor` but NEVER starts log export,
+    # so a run that did not start log export must never be reclassified -
+    # regardless of what the log looks like. Here the log is 500 forged
+    # `system.fake_sender` shipping lines, the run finished and was killed by
+    # the wall-clock timeout, but `log_export_started` is False (the
+    # constructor default, as `fast_test.py` leaves it): the result must stay
+    # `Server died`.
+    _empty_test_results_file(tmp_path)
+    err_log = _write_err_log(
+        tmp_path, [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    )
+    processor = FTResultsProcessor(
+        wd=str(tmp_path),
+        server_err_log_path=str(err_log),
+        # log_export_started defaults to False - exactly the fast_test.py case.
+    )
+    result = processor.run(runner_exit_code=-signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    leaf_names = [r.name for r in result.results]
+    assert "Server died" in leaf_names
+    assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_run_keeps_server_died_on_forged_system_sender_even_with_export(tmp_path):
+    # Defense-in-depth companion to the test above: even if log export DID
+    # start for this job, a test-forged `system.fake_sender` table (bare
+    # `_sender`, not the `_log_sender` suffix `setup_log_cluster.sh` creates)
+    # must not match the tightened classifier regex, so the run stays
+    # `Server died`. This proves the regex narrowing and the
+    # `log_export_started` gate are independent layers.
+    _empty_test_results_file(tmp_path)
+    err_log = _write_err_log(
+        tmp_path, [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    )
+    processor = FTResultsProcessor(
+        wd=str(tmp_path),
+        server_err_log_path=str(err_log),
+        log_export_started=True,
+    )
+    result = processor.run(runner_exit_code=-signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    leaf_names = [r.name for r in result.results]
+    assert "Server died" in leaf_names
+    assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_overload_classifier_rejects_forged_system_sender_name(tmp_path):
+    # Classifier-level companion: a bare `system.<name>_sender` (not
+    # `_log_sender`) must not be counted as a CIDB shipping line, so a log
+    # full of forged `system.fake_sender` errors is not an overload.
+    lines = [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    err_log = _write_err_log(tmp_path, lines)
+    assert is_ci_logs_cluster_overload(err_log) is False
 
 
 def test_overload_classifier_scans_full_file_for_late_fatal_marker(tmp_path):
@@ -438,6 +523,7 @@ def test_run_keeps_server_died_when_oversized_log_has_late_logical_error(tmp_pat
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
+        log_export_started=True,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 

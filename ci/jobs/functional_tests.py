@@ -474,6 +474,13 @@ def main():
     results = []
     debug_files = []
 
+    # Whether CIDB log export was actually started for this run. Threaded into
+    # `FTResultsProcessor` so the CIDB-staging-overload heuristic is gated on
+    # the harness having really created the `system.<table>_log_sender` tables
+    # - a signal a test cannot forge. Defined at function scope so it is always
+    # available to the TEST stage even if the START stage is scoped out.
+    log_export_state = {"started": False}
+
     stages = list(JobStages)
     if not is_per_test_coverage:
         stages.remove(JobStages.COLLECT_COVERAGE)
@@ -676,6 +683,11 @@ def main():
                 if not CH.start_log_exports(stop_watch.start_time):
                     info.add_workflow_warning("Failed to start log export")
                     print("Failed to start log export")
+                else:
+                    # Record that the CIDB `system.<table>_log_sender` tables
+                    # were created for this run, so the staging-overload
+                    # heuristic in `FTResultsProcessor` is allowed to fire.
+                    log_export_state["started"] = True
             # MinIO log tables are non-fatal (tests still run without the
             # webhook log tables), so keep going - but record the concrete
             # failure reason (the real clickminio restart status, carried out of
@@ -732,7 +744,9 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        ft_res_processor = FTResultsProcessor(
+            wd=temp_dir, log_export_started=log_export_state["started"]
+        )
 
         global_time_limit = 0
         if is_flaky_check:
@@ -931,7 +945,9 @@ def main():
                         test_result.status = Result.Status.ERROR
                         break
 
-                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    ft_res_processor_bt = FTResultsProcessor(
+                        wd=temp_dir, log_export_started=log_export_state["started"]
+                    )
                     bt_runner_exit_code = run_tests(
                         batch_num=0,
                         batch_total=0,
