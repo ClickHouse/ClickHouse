@@ -29,6 +29,9 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
         global_with_aliases = parent_scope->global_with_aliases;
+        /// Inherit the JOIN ON marker so nested scopes (e.g. lambda bodies) resolving a matcher or
+        /// column inside the same ON expression keep the both-sides exemption for SEMI/ANTI JOIN.
+        resolving_join_on_expression = parent_scope->resolving_join_on_expression;
 
         if (parent_scope->identifier_resolve_cache_force_disabled)
             disableIdentifierCachePermanently();

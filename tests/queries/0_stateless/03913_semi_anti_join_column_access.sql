@@ -111,6 +111,13 @@ LEFT SEMI JOIN (SELECT 1 AS b) t2
     ON (SELECT count() FROM (SELECT 1 AS c) t3 INNER JOIN (SELECT 1 AS d) t4 ON t3.c = t4.d) > 0
     AND t1.a = t2.b;
 
+-- A lambda body inside the JOIN ON expression is resolved in a child scope; that child scope must
+-- inherit the ON-clause exemption, so a matcher/column from the non-preserved side stays accessible.
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON arrayExists(x -> ignore(t2.*) = 0, [1]);
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON arrayExists(x -> t2.b = 2, [1]);
+-- The exemption must not leak past the ON clause: the same lambda in WHERE still cannot see the non-preserved side.
+SELECT * FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true WHERE arrayExists(x -> ignore(t2.*) = 0, [1]); -- { serverError UNKNOWN_IDENTIFIER }
+
 -- (t1 LEFT SEMI JOIN t2) LEFT SEMI JOIN t3: outer sees t2 on its preserved left side, but
 -- the inner LEFT SEMI JOIN places t2 on its non-preserved right side -- must be denied.
 SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true LEFT SEMI JOIN (SELECT 1 AS c) t3 ON true; -- { serverError UNKNOWN_IDENTIFIER }
