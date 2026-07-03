@@ -249,6 +249,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
     ///  * DateTime64(`3`) -> DateTime64(3) -> the argument parses back as a numeric literal
+    ///  * Nullable(`true`) -> Nullable(true) -> the argument parses back as a bool literal
     /// Here we check for these cases and reject.
     if (type_name.empty() || isNumericASCII(type_name[0])
         || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
@@ -263,6 +264,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String n = type_name;
         boost::to_upper(n);
         if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
+        {
+            expected.add(pos, "type name");
+            return false;
+        }
+        /// Bareword literals (Bool and inf/nan Float64): in data type argument position
+        /// literals are parsed before nested types, so these names cannot round-trip.
+        if (n == "TRUE" || n == "FALSE" || n == "INF" || n == "INFINITY" || n == "NAN")
         {
             expected.add(pos, "type name");
             return false;
