@@ -58,6 +58,26 @@ FROM t2_04299 LEFT ARRAY JOIN na, nb ORDER BY vx;
 SELECT 'select star';
 SELECT *, toTypeName(n.x) FROM t_04299 LEFT ARRAY JOIN n ORDER BY n.x;
 
+-- Per-query SETTINGS: a subquery that array-joins and prunes a Nested column must be typed by its own
+-- `array_join_use_nulls`, independent of the outer query. resolveArrayJoin uses the per-query scope
+-- context, so PruneArrayJoinColumnsPass must preserve that per-query nullability decision when it
+-- prunes the subquery's nested() rather than re-deriving it from the outer query's setting.
+SELECT 'subquery settings inner 1 outer 0';
+SELECT toTypeName(v), v IS NULL FROM
+(
+    SELECT tupleElement(n, 'x') AS v FROM t_04299 LEFT ARRAY JOIN n SETTINGS array_join_use_nulls = 1
+)
+ORDER BY v
+SETTINGS array_join_use_nulls = 0;
+
+SELECT 'subquery settings inner 0 outer 1';
+SELECT toTypeName(v) FROM
+(
+    SELECT tupleElement(n, 'x') AS v FROM t_04299 LEFT ARRAY JOIN n SETTINGS array_join_use_nulls = 0
+)
+ORDER BY v
+SETTINGS array_join_use_nulls = 1;
+
 -- array_join_use_nulls = 0: behavior unchanged (non-nullable, empty arrays produce defaults).
 SET array_join_use_nulls = 0;
 SELECT 'array_join_use_nulls = 0';

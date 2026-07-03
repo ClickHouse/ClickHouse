@@ -23,6 +23,12 @@ two nested columns
 select star
 1	2	Nullable(UInt8)
 \N	\N	Nullable(UInt8)
+subquery settings inner 1 outer 0
+Nullable(UInt8)	0
+Nullable(UInt8)	1
+subquery settings inner 0 outer 1
+UInt8
+UInt8
 array_join_use_nulls = 0
 0	UInt8
 1	UInt8
