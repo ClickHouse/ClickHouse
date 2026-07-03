@@ -32,6 +32,16 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 
+#include <Backups/BackupEntriesCollector.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupEntriesLazyBatch.h>
+#include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -67,6 +77,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool optimize_trivial_approximate_count_query;
+extern const SettingsUInt64 max_compress_block_size;
 }
 
 namespace RocksDBSetting
@@ -77,6 +88,7 @@ extern const RocksDBSettingsBool optimize_for_bulk_insert;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_RESTORE_TABLE;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
@@ -460,6 +472,136 @@ bool StorageEmbeddedRocksDB::optimize(
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
     return true;
+}
+
+/// Single file holding all key-value pairs of the table as (raw key, raw value) length-prefixed
+/// binary records. RocksDB already stores keys/values as raw serialized strings, so no
+/// (de)serialization is required - we copy the bytes verbatim.
+static constexpr std::string_view rocksdb_backup_data_filename = "data.bin";
+
+/// Lazily dumps all key-value pairs of a RocksDB table into a single compressed backup entry.
+class EmbeddedRocksDBBackup : public IBackupEntriesLazyBatch, boost::noncopyable
+{
+public:
+    EmbeddedRocksDBBackup(
+        std::shared_ptr<const StorageEmbeddedRocksDB> storage_,
+        const String & data_path_in_backup,
+        TemporaryDataOnDiskScopePtr tmp_data_)
+        : storage(std::move(storage_))
+        , tmp_data(std::move(tmp_data_))
+    {
+        file_path = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+    }
+
+private:
+    size_t getSize() const override { return 1; }
+
+    const String & getName(size_t i) const override
+    {
+        chassert(i == 0);
+        return file_path;
+    }
+
+    BackupEntries generate() override
+    {
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
+
+        {
+            /// A shared lock keeps the rocksdb handle alive for the whole scan without blocking
+            /// concurrent inserts (they take a shared lock too); it only excludes drop/truncate.
+            /// The iterator reads from an implicit snapshot, so the dump is consistent.
+            SharedLockGuard lock(storage->rocksdb_ptr_mx);
+            if (!storage->rocksdb_ptr)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+
+            std::unique_ptr<rocksdb::Iterator> iterator(storage->rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next())
+            {
+                writeStringBinary(iterator->key().ToStringView(), *data_out);
+                writeStringBinary(iterator->value().ToStringView(), *data_out);
+            }
+
+            if (!iterator->status().ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
+        }
+
+        data_out->finishWriting();
+        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))}};
+    }
+
+    std::shared_ptr<const StorageEmbeddedRocksDB> storage;
+    TemporaryDataOnDiskScopePtr tmp_data;
+    String file_path;
+};
+
+void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
+{
+    TemporaryDataOnDiskSettings tmp_data_settings;
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+    auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+
+    backup_entries_collector.addBackupEntries(
+        std::make_shared<EmbeddedRocksDBBackup>(
+            std::static_pointer_cast<const StorageEmbeddedRocksDB>(shared_from_this()), data_path_in_backup, std::move(tmp_data))
+            ->getBackupEntries());
+}
+
+void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
+{
+    auto backup = restorer.getBackup();
+    if (!backup->hasFiles(data_path_in_backup))
+        return;
+
+    if (!restorer.isNonEmptyTableAllowed())
+    {
+        bool empty = false;
+        {
+            SharedLockGuard lock(rocksdb_ptr_mx);
+            if (!rocksdb_ptr)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+            std::unique_ptr<rocksdb::Iterator> iterator(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            iterator->SeekToFirst();
+            empty = !iterator->Valid();
+            if (!iterator->status().ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
+        }
+        if (!empty)
+            RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
+    }
+
+    restorer.addDataRestoreTask(
+        [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()), backup, data_path_in_backup]
+        { storage->restoreDataImpl(backup, data_path_in_backup); });
+}
+
+void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
+{
+    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
+    if (!backup->fileExists(data_file))
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
+
+    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
+
+    rocksdb::WriteBatch batch;
+    String key;
+    String value;
+    while (!compressed_in.eof())
+    {
+        readStringBinary(key, compressed_in);
+        readStringBinary(value, compressed_in);
+
+        auto status = batch.Put(key, value);
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    }
+
+    SharedLockGuard lock(rocksdb_ptr_mx);
+    if (!rocksdb_ptr)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+    auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+    if (!status.ok())
+        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
 }
 
 static_assert(rocksdb::DEBUG_LEVEL == 0);
