@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
@@ -67,7 +68,7 @@ bool ClickHouseIntegratedDatabase::performTableIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 quoteIdentifier(entry.getBottomName()),
-                columnTypeAsString(rg, t.is_deterministic, tp),
+                columnTypeAsString(rg, t.isDeterministic(), tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
@@ -311,7 +312,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName())));
+    return !performQuery(fmt::format("{} {}{};", truncateStatement(), getSQLQuotedTableName(t.db, t.getBaseName()), truncateSuffix()));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -406,6 +407,12 @@ String MySQLIntegration::getSQLQuotedTableName(std::shared_ptr<SQLDatabase> db, 
 String MySQLIntegration::truncateStatement()
 {
     return fmt::format("TRUNCATE{}", is_clickhouse ? " TABLE" : "");
+}
+
+String MySQLIntegration::truncateSuffix()
+{
+    /// SYNC is ClickHouse-only; plain MySQL does not accept it.
+    return is_clickhouse ? " SYNC" : "";
 }
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
@@ -1697,6 +1704,11 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
 
         collectColumnPaths(val.getColumnName(), val.tp.get(), 0, cpc, entries);
     }
+    /// Sometimes send the columns in a different order to stress schema resolution by name
+    if (entries.size() > 1 && rg.nextSmallNumber() < 4)
+    {
+        std::shuffle(entries.begin(), entries.end(), rg.generator);
+    }
     /// Common information
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
@@ -1704,7 +1716,7 @@ bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & 
         escapeJSON(t.getDatabaseName()),
         escapeJSON(t.getBaseName(false)),
         t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
-        t.is_deterministic ? "1" : "0");
+        t.isDeterministic() ? "1" : "0");
     for (const auto & entry : entries)
     {
         buf += fmt::format(
