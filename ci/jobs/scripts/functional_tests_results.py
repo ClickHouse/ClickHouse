@@ -82,15 +82,27 @@ _REAL_CRASH_PATTERN = re.compile(
     r"<Fatal>|AddressSanitizer:|MemorySanitizer:|ThreadSanitizer:|UndefinedBehaviorSanitizer:|LOGICAL_ERROR"
 )
 
-# Logger names / table names that identify CIDB log-export shipping errors.
-# When the CIDB staging log cluster is overloaded or unresponsive, the
-# server keeps retrying to ship rows from `system.<table>_sender`
-# `Distributed` tables; these retries are logged as `<Error>` lines with
-# the logger names / source tables below. See `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`.
-_STAGING_SHIPPING_LOGGER_PATTERN = re.compile(
-    r"DistributedAsyncInsertQueue|DistributedAsyncInsertBatch|DistributedSink|"
-    r"BgDistSchPool|StorageDistributed|system\.\w+_sender"
-)
+# Pattern that identifies a CIDB log-export shipping error and nothing
+# else. `ci/jobs/scripts/functional_tests/setup_log_cluster.sh` ships
+# system logs by creating `Distributed` tables named `system.<table>_sender`
+# (e.g. `system.query_log_sender`) that point at the CIDB staging cluster.
+# When that cluster is overloaded, the background sender keeps retrying and
+# every such `<Error>` line is logged under that table's directory-queue
+# logger, whose name is `system.<table>_sender.DistributedInsertQueue.<disk>`
+# (see `DistributedAsyncInsertDirectoryQueue::getLoggerName`) - so it always
+# contains the `system.<table>_sender` substring.
+#
+# We deliberately do NOT match the bare `Distributed` logger/engine names
+# (`DistributedAsyncInsertQueue`, `BgDistSchPool`, `StorageDistributed`, ...):
+# those also fire for a test-owned `Distributed` table in the `default` /
+# `test_*` databases, and `FTResultsProcessor` is shared with
+# `ci/jobs/fast_test.py`, which never calls `setup_logs_replication`. Keying
+# strictly on the `system.<table>_sender` path is what makes the heuristic
+# specific to the CIDB log-export contract: a run that never started log
+# export has no `_sender` tables, so a real non-CIDB `Distributed` regression
+# can never be silenced. Tables cannot be created in the `system` database by
+# tests, so this name space is CI-owned.
+_STAGING_SHIPPING_SENDER_PATTERN = re.compile(r"system\.\w+_sender")
 
 # Minimum number of `<Error>` lines that must point at the CIDB staging
 # cluster before we treat the run as "infrastructure-only". A handful of
@@ -118,8 +130,11 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
       anywhere in the file;
     * at least `_STAGING_OVERLOAD_MIN_ERRORS` `<Error>` lines in the file;
     * at least `_STAGING_OVERLOAD_MIN_FRACTION` of those `<Error>` lines
-      naming a Distributed-shipping logger (`DistributedAsyncInsertQueue`,
-      `BgDistSchPool`, `system.<table>_sender`, ...).
+      naming the CIDB log-export path `system.<table>_sender` (the
+      `Distributed` tables `setup_log_cluster.sh` creates to ship system
+      logs to the staging cluster). Errors from any other `Distributed`
+      table - including test-owned ones - do not count, so a real
+      non-CIDB regression is never mistaken for a log-export outage.
 
     The file is streamed line by line because under chronic staging
     overload it can grow to hundreds of MiB; any fixed byte cap on the
@@ -148,7 +163,7 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
                 if "<Error>" not in line:
                     continue
                 error_lines += 1
-                if _STAGING_SHIPPING_LOGGER_PATTERN.search(line):
+                if _STAGING_SHIPPING_SENDER_PATTERN.search(line):
                     shipping_lines += 1
     except OSError:
         return False
@@ -329,9 +344,9 @@ class FTResultsProcessor:
         elif runner_exit_code in ABORTED_RUN_EXIT_CODES:
             failed_results = [r for r in test_results if r.is_failure()]
             # `@ alexey-milovidov` directive on PR #106154: when the only
-            # evidence in `clickhouse-server.err.log` is repeated
-            # `Distributed`-shipping retries to the CIDB staging cluster
-            # (`DistributedAsyncInsertQueue` / `BgDistSchPool` errors with
+            # evidence in `clickhouse-server.err.log` is repeated shipping
+            # retries from the CIDB log-export `system.<table>_sender`
+            # `Distributed` tables to the staging cluster (with
             # `TOO_MANY_PARTS` / `SOCKET_TIMEOUT` / `NETWORK_ERROR`), the
             # ClickHouse server itself is healthy. The runner only got
             # killed by the harness wall-clock timeout because flushing

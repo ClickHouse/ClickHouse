@@ -52,23 +52,29 @@ from ci.praktika.result import Result
 # Representative shipping-failure lines as they appear in the server's
 # `err.log` when the CIDB staging cluster is overloaded. The real
 # samples on PR #106154 mixed `TOO_MANY_PARTS`, `SOCKET_TIMEOUT`, and
-# `NETWORK_ERROR` codes; the classifier keys off the logger name, not
-# the error code, so any of them work.
+# `NETWORK_ERROR` codes; the classifier keys off the log-export table
+# path, not the error code, so any of them work. The logger name is the
+# one `DistributedAsyncInsertDirectoryQueue::getLoggerName` emits for the
+# `system.<table>_sender` `Distributed` tables that `setup_log_cluster.sh`
+# creates: `system.<table>_sender.DistributedInsertQueue.<disk>`.
 _SHIPPING_ERROR_LINE_TOO_MANY_PARTS = (
-    "2026.05.30 14:31:02.123456 [ 4242 ] {abc} <Error> "
-    "DistributedAsyncInsertQueue: Code: 252. DB::Exception: Too many parts "
-    "(...). (TOO_MANY_PARTS), Stack trace ... "
+    "2026.05.30 14:31:02.123456 [ 4242 ] {} <Error> "
+    "system.query_log_sender.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 252. DB::Exception: Too many parts (...). "
+    "(TOO_MANY_PARTS), Stack trace ... "
     "remote: kng4alm55c.us-east-2.aws.clickhouse-staging.com:9440"
 )
 _SHIPPING_ERROR_LINE_SOCKET_TIMEOUT = (
-    "2026.05.30 14:32:05.789012 [ 4243 ] {def} <Error> "
-    "BgDistSchPool: Code: 209. DB::NetException: Timeout: connect timed out "
+    "2026.05.30 14:32:05.789012 [ 4243 ] {} <Error> "
+    "system.trace_log_sender.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 209. DB::NetException: Timeout: connect timed out "
     "(SOCKET_TIMEOUT) "
     "kng4alm55c.us-east-2.aws.clickhouse-staging.com:9440"
 )
 _SHIPPING_ERROR_LINE_NETWORK_ERROR = (
-    "2026.05.30 14:33:42.123456 [ 4244 ] {ghi} <Error> "
-    "system.query_log_sender: Code: 210. DB::NetException: Connection refused "
+    "2026.05.30 14:33:42.123456 [ 4244 ] {} <Error> "
+    "system.metric_log_sender.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 210. DB::NetException: Connection refused "
     "(NETWORK_ERROR) "
     "kng4alm55c.us-east-2.aws.clickhouse-staging.com:9440"
 )
@@ -86,6 +92,20 @@ _REAL_LOGICAL_ERROR_LINE = (
 _UNRELATED_ERROR_LINE = (
     "2026.05.30 14:30:00.000000 [ 4247 ] {} <Error> TCPHandler: "
     "Code: 60. DB::Exception: Table default.foo does not exist"
+)
+# A `Distributed`-shipping error from a *test-owned* `Distributed` table
+# (not the CIDB log-export `system.<table>_sender` path). This is the case
+# the classifier must NOT treat as a staging-cluster overload: it may be a
+# real regression in a test's own `Distributed` table, and in `fast_test.py`
+# - which shares `FTResultsProcessor` but never starts log export - it can
+# only be a real failure. The logger name is the same
+# `<db>.<table>.DistributedInsertQueue.<disk>` shape, but the table lives in
+# a user database, so it does not match `system.<table>_sender`.
+_NON_CIDB_DISTRIBUTED_ERROR_LINE = (
+    "2026.05.30 14:36:00.000000 [ 4248 ] {} <Error> "
+    "default.dist_table.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 210. DB::NetException: Connection refused "
+    "(NETWORK_ERROR) some-test-shard:9000"
 )
 
 # Two real failures from a parallel run that stopped early. No "All tests have
@@ -181,6 +201,19 @@ def test_overload_classifier_accepts_mostly_shipping_with_minor_noise(tmp_path):
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * shipping + [_UNRELATED_ERROR_LINE] * other
     err_log = _write_err_log(tmp_path, lines)
     assert is_ci_logs_cluster_overload(err_log) is True
+
+
+def test_overload_classifier_rejects_non_cidb_distributed_errors(tmp_path):
+    # Blocker from clickhouse-gh[bot] / AI review on PR #106176: a log
+    # dominated by `Distributed`-shipping errors from a *test-owned*
+    # `Distributed` table (not `system.<table>_sender`) must NOT be
+    # classified as a CIDB log-export overload. Only the CIDB log-export
+    # path is in the contract; a real regression in a test's own
+    # `Distributed` table (or any run that never started log export, e.g.
+    # `fast_test.py`) must keep the `Server died` path.
+    lines = [_NON_CIDB_DISTRIBUTED_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    err_log = _write_err_log(tmp_path, lines)
+    assert is_ci_logs_cluster_overload(err_log) is False
 
 
 # --- FTResultsProcessor.run --------------------------------------------------
@@ -323,6 +356,30 @@ def test_run_keeps_server_died_when_test_run_was_incomplete(tmp_path):
     _empty_test_results_file(tmp_path, success_finish=False)
     err_log = _write_err_log(
         tmp_path, [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    )
+    processor = FTResultsProcessor(
+        wd=str(tmp_path),
+        server_err_log_path=str(err_log),
+    )
+    result = processor.run(runner_exit_code=-signal.SIGTERM)
+
+    assert result.status == Result.Status.FAIL
+    leaf_names = [r.name for r in result.results]
+    assert "Server died" in leaf_names
+    assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_run_keeps_server_died_on_non_cidb_distributed_errors(tmp_path):
+    # Blocker from clickhouse-gh[bot] / AI review on PR #106176, exercised
+    # end-to-end: a completed run killed by the wall-clock timeout whose
+    # `err.log` is dominated by `Distributed`-shipping errors from a
+    # test-owned `Distributed` table (not `system.<table>_sender`). This
+    # is exactly the shape a real `Distributed` regression takes in
+    # `fast_test.py`, which shares `FTResultsProcessor` but never starts
+    # log export. The heuristic must abstain and keep `Server died`.
+    _empty_test_results_file(tmp_path)
+    err_log = _write_err_log(
+        tmp_path, [_NON_CIDB_DISTRIBUTED_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     )
     processor = FTResultsProcessor(
         wd=str(tmp_path),
