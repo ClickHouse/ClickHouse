@@ -7491,28 +7491,18 @@ query_area.addEventListener('input', (e) =>
     /// pre-edit contents, so the freshly typed characters would be invisible.
     updateQueryParams();
 
-    /// Keep the active tab and its persisted copy in sync with the editor. The hue of
-    /// the active tab follows the page background, so no per-tab recolor is needed here.
+    /// Keep the active tab in sync with the editor in memory, so a tab switch or a run sees the
+    /// latest text. The hue of the active tab follows the page background, so no per-tab recolor
+    /// is needed here. We deliberately do NOT touch browser history / the URL or persist the
+    /// workspace on every keystroke: doing so rebuilt the tab bar and re-titled the page per
+    /// character (costly for a long query) and is unnecessary for an unrun draft. Both are
+    /// recorded only when a query is successfully run (`saveHistory`) or on a structural tab
+    /// change — switch/add/close/rename — which capture the editor and call `syncHistory` /
+    /// `scheduleSave` themselves. A consequence is that an unrun edit is not restored across a
+    /// reload if no run or tab change happened after it.
     const tab = getActiveTab();
     if (tab) {
         tab.query = query_area.value;
-        /// Fold the edit into the current browser-history entry (and its URL) right away, not
-        /// only on a click-driven tab switch (`switchToTab`/`addTab`). Otherwise the entry keeps
-        /// the query last written by a run/switch, and browser Back/Forward away from this tab and
-        /// back — or closing it and pressing Back to recreate it — restores that stale text from
-        /// `history.state` over the newer unrun edit (both `window.onpopstate` and
-        /// `resolveTabForState` read `event.state.query`). Refreshing here keeps the entry the tab
-        /// would be restored from in sync with the latest keystroke. Only genuine keystrokes do it:
-        /// the synthetic 'input' events `restoreFromHistory`/bootstrap dispatch merely replay
-        /// already-recorded state (`isTrusted === false`, as `markBootstrapDirty` relies on) and
-        /// must not rewrite the entry. `refreshCurrentHistoryEntry` only touches the current entry
-        /// when it belongs to this tab (or seeds the page's initial entry when a fresh load has not
-        /// written one yet — this first trusted edit), always via replaceState, so it never spams
-        /// new entries, and it drops `run=1` once the edit diverges the editor from the produced
-        /// result (`tabReflectsRun`) — a genuine keystroke does — so an unrun edit never becomes
-        /// auto-runnable on reload.
-        if (e.isTrusted) refreshCurrentHistoryEntry(tab);
-        scheduleSave();
     }
 });
 
