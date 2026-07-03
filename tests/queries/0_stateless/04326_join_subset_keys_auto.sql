@@ -39,7 +39,7 @@ SETTINGS query_plan_hash_join_subset_keys_auto = 1,
 -- With the optimization off, both columns are hash keys.
 SELECT trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS query_plan_hash_join_subset_keys_auto = 0
@@ -50,7 +50,7 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain 
 -- the target and is the smallest single key that does, so user_id (NDV=500) is demoted.
 SELECT trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS query_plan_hash_join_subset_keys_auto = 1,
@@ -62,7 +62,7 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain 
 -- min_rows gate: right-side row count below the threshold disables the optimization.
 SELECT 'rows_gate' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS query_plan_hash_join_subset_keys_auto = 1, query_plan_hash_join_subset_keys_min_rows = 100000
@@ -73,7 +73,7 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%';
 -- (max is user_id with NDV=500). No key reaches the target -> optimization bails.
 SELECT 'selectivity_gate' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS query_plan_hash_join_subset_keys_auto = 1, query_plan_hash_join_subset_keys_min_rows = 0,
@@ -86,7 +86,7 @@ WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%';
 -- both keys as equi keys.
 SELECT 'algo_gate' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'full_sorting_merge',
@@ -108,7 +108,7 @@ SETTINGS join_algorithm = 'auto',
 
 SELECT 'algo_gate_auto_plan' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'auto',
@@ -130,7 +130,7 @@ SETTINGS any_join_distinct_right_table_keys = 1,
 
 SELECT 'right_any_plan' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l ANY LEFT JOIN jks_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS any_join_distinct_right_table_keys = 1,
@@ -158,7 +158,7 @@ OPTIMIZE TABLE jks_right_filtered FINAL;
 
 SELECT 'filtered_picks_real_discriminator' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l
     JOIN (SELECT * FROM jks_right_filtered WHERE keep_col = 5) r
         ON l.user_id = r.keep_col AND l.request_id = r.drop_col
@@ -175,7 +175,7 @@ DROP TABLE jks_right_filtered;
 -- but the filter selects ~10% (~500 rows), below min_rows=4000.
 SELECT 'filtered_below_min_rows' AS label, trimLeft(explain) FROM
 (
-    EXPLAIN actions = 1
+    EXPLAIN actions = 1, pretty = 0
     SELECT count() FROM jks_left l JOIN (SELECT * FROM jks_right WHERE extra < 500) r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS query_plan_hash_join_subset_keys_auto = 1,
