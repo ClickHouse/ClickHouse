@@ -565,6 +565,15 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
+    /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only),
+    /// which rejects the Write() that restore issues. Reject it up front with a clear error instead
+    /// of failing later with an opaque RocksDB write error.
+    if (read_only)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore data into read_only EmbeddedRocksDB table {}. Restore into a writable table instead",
+            getStorageID().getNameForLogs());
+
     if (!restorer.isNonEmptyTableAllowed())
     {
         bool empty = false;
