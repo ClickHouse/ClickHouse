@@ -16,9 +16,9 @@ namespace ErrorCodes
 template <typename Variant>
 void SetVariantsTemplate<Variant>::init(Type type_)
 {
-    type = type_;
-
-    switch (type)
+    /// Allocate before changing `type`: if make_unique throws, the object stays EMPTY
+    /// instead of having `type != EMPTY` with a null variant pointer (matches AggregatedDataVariants::init).
+    switch (type_)
     {
         case Type::EMPTY: break;
 
@@ -27,6 +27,8 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
+
+    type = type_;
 }
 
 template <typename Variant>
@@ -146,6 +148,10 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If the keys fit in N bits, we will use a hash table for N-bit-packed keys
+    if (all_fixed && keys_bytes <= 4)
+        return Type::keys32;
+    if (all_fixed && keys_bytes <= 8)
+        return Type::keys64;
     if (all_fixed && keys_bytes <= 16)
         return Type::keys128;
     if (all_fixed && keys_bytes <= 32)
@@ -166,5 +172,6 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
 
 template struct SetVariantsTemplate<NonClearableSet>;
 template struct SetVariantsTemplate<ClearableSet>;
+template struct SetVariantsTemplate<CountingSet>;
 
 }

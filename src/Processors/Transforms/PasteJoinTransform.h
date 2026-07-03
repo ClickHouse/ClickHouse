@@ -1,5 +1,4 @@
 #pragma once
-#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <mutex>

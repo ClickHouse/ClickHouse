@@ -13,8 +13,6 @@ ln -s /repo/tests/clickhouse-test /usr/bin/clickhouse-test
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
 
-# shellcheck disable=SC1091
-source /repo/tests/docker_scripts/utils.lib
 
 install_packages package_folder
 
@@ -53,6 +51,7 @@ configure
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and
 # do not leave behind broken StorageKafka tables whose background threads cause
@@ -230,7 +229,10 @@ stop_server
 # Let's enable S3 storage by default
 export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
-export THREAD_POOL_FAULT_INJECTION=1
+# THREAD_POOL_FAULT_INJECTION is not exported here: if `cannot_allocate_thread_injection.xml`
+# is installed before the server starts, the smoke-check `CREATE DATABASE ... ON CLUSTER`
+# can hit `CANNOT_SCHEDULE_TASK` and break the HTTP response. `stress.py` installs the
+# config and `SYSTEM RELOAD CONFIG`s the server after the smoke check passes.
 export CLICKHOUSE_FAILPOINTS_INJECTION=1
 configure
 configure_limits
@@ -297,15 +299,15 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
-# Also disable cannot_allocate_thread_fault_injection_probability, since this
-# will not allow to load tables asynchronously. Anyway the stress tests was
-# running with fault injection.
-rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
+# Disable cannot_allocate_thread_fault_injection_probability so the post-stress
+# restart can load tables asynchronously. `-f` covers the case where the smoke
+# check aborted before stress.py installed the symlink.
+rm -f /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 30 || { echo "Failed to start server"; exit 1; }
+start_server 10 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 
@@ -324,5 +326,3 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 collect_query_and_trace_logs
 
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-collect_core_dumps

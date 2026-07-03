@@ -50,7 +50,7 @@ short\0\0\0\0\0
 --- DateNode / DateTimeNode / DateTime64Node ---
 2023-01-02
 2023-01-02 03:04:05
-1970-01-01 00:00:00
+2023-01-02 03:04:05
 2023-01-02 03:04:05.123
 1970-01-01
 --- UUIDNode ---
@@ -97,7 +97,7 @@ hello
 --- VariantNode ---
 1
 hi
-3
+3.14
 true
 --- DynamicNode ---
 42

@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace test
@@ -48,7 +49,7 @@ namespace test
 }
 
 
-int main(int, char **)
+int mainEntryExampleParseIntPerf2(int, char **)
 {
     try
     {

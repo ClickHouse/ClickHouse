@@ -1,5 +1,7 @@
 #include <Parsers/ParserDataType.h>
 
+#include <string_view>
+#include <unordered_set>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
@@ -25,6 +27,21 @@ namespace
 bool isEnumType(const String & type_name_upper)
 {
     return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
+}
+
+/// Integer type names (and MySQL aliases) that accept the MySQL display-width modifier `(N)` and the
+/// SIGNED/UNSIGNED suffix. Matched by exact (uppercased) name: a loose substring test on "INT" also
+/// matched unrelated names like `quantileInterpolatedWeighted`, silently eating their first `(...)`
+/// group as a display width and breaking the parse round-trip.
+bool isIntegerTypeName(const String & type_name_upper)
+{
+    static const std::unordered_set<std::string_view> integer_type_names
+    {
+        "INT8", "INT16", "INT32", "INT64", "INT128", "INT256",
+        "UINT8", "UINT16", "UINT32", "UINT64", "UINT128", "UINT256",
+        "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "INT1",
+    };
+    return integer_type_names.contains(type_name_upper);
 }
 
 /// Parse enum values directly into the vector without creating ASTLiteral nodes.
@@ -96,6 +113,13 @@ bool parseEnumValues(
         if (!tryReadIntText(abs_value, num_in) || num_in.count() != pos->size())
             return false;
         ++pos;
+
+        /// Values are stored as Int64. A magnitude above Int64 cannot be stored faithfully:
+        /// a plain cast would silently wrap (e.g. UInt64 18446744073709551615 to -1) and pass
+        /// the downstream range check. Such a value is out of range for any Enum anyway, so
+        /// fall back to the generic parser, which rejects it.
+        if (abs_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            return false;
 
         Int64 elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
         values.emplace_back(elem_name, elem_value);
@@ -276,7 +300,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ParserKeyword(Keyword::PRECISION).ignore(pos))
             type_name_suffix = toStringView(Keyword::PRECISION);
     }
-    else if (type_name_upper.contains("INT"))
+    else if (isIntegerTypeName(type_name_upper))
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
         if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
@@ -508,7 +532,20 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             ParserDataType data_type_parser;
-            ParserAllCollectionsOfLiterals literal_parser(false);
+            /// Only accept simple literals (numbers, strings, NULL, ...) as
+            /// data-type arguments. We deliberately do NOT accept collection
+            /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data
+            /// type takes a tuple/array/map literal as an argument, and
+            /// accepting them produces an `ASTLiteral` with `Field::Tuple`
+            /// (or `Field::Array`) inside the type's argument list. The
+            /// formatter then prints such a Tuple literal as `tuple(...)`
+            /// (the explicit function form -- see
+            /// `FieldVisitorToString::operator()(const Tuple &)`), and
+            /// re-parsing `tuple(...)` in this context yields an
+            /// `ASTDataType("tuple")` instead of an `ASTLiteral`, breaking
+            /// the AST round-trip check in `executeQuery` (DEBUG/sanitizer
+            /// builds). See STID 1941-1bfa.
+            ParserLiteral literal_parser;
 
             const char * operators[] = {"=", "equals", nullptr};
             ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());

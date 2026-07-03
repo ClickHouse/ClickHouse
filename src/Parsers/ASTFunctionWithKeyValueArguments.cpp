@@ -59,7 +59,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return first == "password";
+    return (first == "password") || second->hasSecretParts();
 }
 
 

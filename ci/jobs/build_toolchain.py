@@ -37,7 +37,7 @@ STAGE2_LLVM_PROJECTS = "clang;clang-tools-extra;lld;bolt;polly"
 # Cross-target triples for compiler-rt builtins. Builtins are freestanding C code
 # (no sysroot needed), built via LLVM_BUILTIN_TARGETS so the toolchain is
 # self-contained for all ClickHouse cross-compilation targets.
-# Must match triples in cmake/build_clang_builtin.cmake.
+# Must match the architectures supported in contrib/compiler-rt-cmake/CMakeLists.txt.
 CROSS_BUILTIN_TARGETS = [
     ("x86_64-unknown-linux-gnu", "Linux"),
     ("aarch64-unknown-linux-gnu", "Linux"),

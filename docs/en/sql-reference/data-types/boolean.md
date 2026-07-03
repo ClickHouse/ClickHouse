@@ -7,8 +7,6 @@ title: 'Bool'
 doc_type: 'reference'
 ---
 
-# Bool
-
 Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
 
 ```sql

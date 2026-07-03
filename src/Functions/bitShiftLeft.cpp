@@ -61,7 +61,7 @@ struct BitShiftLeftImpl
             const UInt8 * begin = pos;
 
             const size_t old_size = out_vec.size();
-            size_t length;
+            size_t length = 0;
             if (shift_left_bits)
                 length = end + shift_left_bytes - begin + 1; /// Moving to the left here will make a redundant byte to store the overflowing bits in the front
             else

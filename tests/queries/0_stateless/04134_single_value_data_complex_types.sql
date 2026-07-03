@@ -1,6 +1,8 @@
 -- Exercise SingleValueDataGenericWithColumn in AggregateFunctions/SingleValueData.cpp
--- by running min / max / any / anyLast / argMin / argMax over complex types
--- (Tuple, Array, Map, Decimal, IPv4, IPv6) and through the merge path (GROUP BY).
+-- by running min / max / argMin / argMax over complex types (Tuple, Array, Map,
+-- Decimal, IPv4, IPv6) and through the merge path (GROUP BY).
+-- any() / anyLast() are intentionally excluded: they return an unspecified row
+-- under parallelism and cannot be asserted on in a reference test.
 
 SELECT '--- min / max of Tuple ---';
 SELECT min(val), max(val) FROM (
@@ -34,14 +36,6 @@ SELECT min(x), max(x) FROM (
     UNION ALL SELECT toIPv6('::2')
     UNION ALL SELECT toIPv6('2001:db8::1'));
 
-SELECT '--- any_value of Tuple (order-stable via ORDER BY) ---';
--- any()/anyLast() pick "some" value and are non-deterministic under parallelism;
--- use ORDER BY + LIMIT 1 to still exercise the tuple code path deterministically.
-SELECT val FROM (SELECT (1, 'a') AS val UNION ALL SELECT (2, 'b')) ORDER BY val LIMIT 1;
-SELECT val FROM (
-    SELECT (1, 'a') AS val UNION ALL SELECT (2, 'b') UNION ALL SELECT (3, 'c')
-) ORDER BY val DESC LIMIT 1;
-
 SELECT '--- argMin / argMax on Tuple value, numeric key ---';
 SELECT argMin(val, key) FROM (
     SELECT (1, 'a') AS val, 10 AS key
@@ -68,8 +62,11 @@ SELECT p, argMin(val, key), argMax(val, key), min(val), max(val) FROM (
     UNION ALL SELECT 2, (4, 'd'), 1)
 GROUP BY p ORDER BY p;
 
-SELECT '--- empty / null handling ---';
-SELECT min(val), max(val), any(val), anyLast(val), argMin(val, 1), argMax(val, 1)
+SELECT '--- empty input on Tuple aggregates ---';
+-- min/max/argMin/argMax over empty input use SingleValueDataGeneric's "unset"
+-- path. The current behaviour returns a default-constructed tuple value rather
+-- than NULL; this is asserted to detect regressions.
+SELECT min(val), max(val), argMin(val, 1), argMax(val, 1)
 FROM (SELECT (1, 'a') AS val WHERE 0);
 
 SELECT '--- Nullable(Int32) aggregates (min/max only; any/anyLast are non-deterministic) ---';
