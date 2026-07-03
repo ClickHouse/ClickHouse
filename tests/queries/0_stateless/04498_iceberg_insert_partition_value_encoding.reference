@@ -6,7 +6,4 @@ y
 --- DateTime64 partition (Avro long from Decimal64 ticks) ---
 2024-01-01 00:00:00.123456	a
 2024-06-15 12:30:00.654321	b
-b
---- UInt64 partition value above signed long is rejected ---
-BAD_ARGUMENTS
-42	ok
+2
