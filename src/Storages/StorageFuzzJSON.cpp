@@ -2,8 +2,6 @@
 
 #if USE_SIMDJSON || USE_RAPIDJSON
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <optional>
 #include <random>
 #include <string_view>
@@ -16,6 +14,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
@@ -465,7 +464,7 @@ void fuzzJSONObject(std::shared_ptr<JSONNode> n, WriteBuffer & out, const Storag
     fuzzJSONObject(n, out, config, rnd, /*depth*/ 0, node_count);
 }
 
-class FuzzJSONSource final : public ISource
+class FuzzJSONSource : public ISource
 {
 public:
     FuzzJSONSource(
@@ -539,21 +538,12 @@ ColumnPtr FuzzJSONSource::createColumn()
 
 StorageFuzzJSON::StorageFuzzJSON(
     const StorageID & table_id_, const ColumnsDescription & columns_, const String & comment_, const Configuration & config_)
-    : StorageWithCommonVirtualColumns(table_id_), config(config_)
+    : IStorage(table_id_), config(config_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageFuzzJSON::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 Pipe StorageFuzzJSON::read(
@@ -680,21 +670,21 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'min_key_length' argument must be less or equal than "
-                "the value of the 'max_key_length' argument.");
+                "the value of the 'max_key_lenght' argument.");
 
         configuration.min_key_length = min_key_length;
         configuration.max_key_length = std::max(configuration.max_key_length, configuration.min_key_length);
     }
 }
 
-StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id)
+StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context)
 {
     StorageFuzzJSON::Configuration configuration{};
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         /// Perform strict validation of ASTs in addition to name collection extraction.
-        for (auto args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
+        for (auto * args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
             getKeyValueFromAST(*args_it, local_context);
 
         StorageFuzzJSON::processNamedCollectionResult(configuration, *named_collection);
@@ -737,7 +727,7 @@ void registerStorageFuzzJSON(StorageFactory & factory)
             if (engine_args.empty())
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage FuzzJSON must have arguments.");
 
-            StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
+            StorageFuzzJSON::Configuration configuration = StorageFuzzJSON::getConfiguration(engine_args, args.getLocalContext());
 
             for (const auto& col : args.columns)
                 if (col.type->getTypeId() != TypeIndex::String)

@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <optional>
@@ -39,7 +40,7 @@ namespace ErrorCodes
   */
 
 template <typename Impl>
-class FunctionsMultiStringFuzzySearch final : public IFunction
+class FunctionsMultiStringFuzzySearch : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

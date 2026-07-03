@@ -30,7 +30,7 @@ private:
     bool supportsCountRows() const override { return true; }
 };
 
-class LinaAsStringSchemaReader final : public IExternalSchemaReader
+class LinaAsStringSchemaReader : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override

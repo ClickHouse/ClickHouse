@@ -1,10 +1,4 @@
 #include <IO/AIO.h>
-#include <Common/ErrnoException.h>
-
-namespace DB::ErrorCodes
-{
-    extern const int CANNOT_IOSETUP;
-}
 
 #if defined(OS_LINUX)
 
@@ -17,6 +11,15 @@ namespace DB::ErrorCodes
 
 /** Small wrappers for asynchronous I/O.
   */
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_IOSETUP;
+    }
+}
+
 
 int io_setup(unsigned nr, aio_context_t * ctxp)
 {
@@ -70,6 +73,15 @@ AIOContext & AIOContext::operator=(AIOContext && rhs) noexcept
 
 /** Small wrappers for asynchronous I/O.
   */
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int CANNOT_IOSETUP;
+}
+}
+
 
 int io_setup(void)
 {

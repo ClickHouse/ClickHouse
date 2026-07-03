@@ -30,7 +30,7 @@ namespace DB
   * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 
-#if defined(SIGEV_THREAD_ID)
+#ifndef __APPLE__
 class Timer
 {
 public:
@@ -48,7 +48,7 @@ private:
     LoggerPtr log;
     std::optional<timer_t> timer_id;
 };
-#endif // defined(SIGEV_THREAD_ID)
+#endif
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -66,7 +66,7 @@ private:
 
     LoggerPtr log;
 
-#if defined(SIGEV_THREAD_ID)
+#ifndef __APPLE__
     inline static thread_local Timer timer = Timer();
 #endif
 
@@ -81,8 +81,6 @@ public:
     QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR1;
 };
 
 /// Query profiler with timer based on CPU clock
@@ -92,8 +90,6 @@ public:
     QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR2;
 };
 
 }

@@ -66,7 +66,7 @@ private:
 };
 
 /// Totals source from RemoteQueryExecutor.
-class RemoteTotalsSource final : public ISource
+class RemoteTotalsSource : public ISource
 {
 public:
     explicit RemoteTotalsSource(RemoteQueryExecutorPtr executor);
@@ -82,7 +82,7 @@ private:
 };
 
 /// Extremes source from RemoteQueryExecutor.
-class RemoteExtremesSource final : public ISource
+class RemoteExtremesSource : public ISource
 {
 public:
     explicit RemoteExtremesSource(RemoteQueryExecutorPtr executor);

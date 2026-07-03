@@ -13,8 +13,6 @@ enum class KeeperApiVersion : uint8_t
     WITH_MULTI_READ,
     WITH_CHECK_NOT_EXISTS,
     WITH_REMOVE_RECURSIVE,
-    WITH_CHECK_STAT,
-    WITH_GET_RECURSIVE,
 };
 
 const String keeper_system_path = "/keeper";

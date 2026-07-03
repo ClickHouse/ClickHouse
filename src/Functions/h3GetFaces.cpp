@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -10,6 +10,8 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
+
+#include <h3api.h>
 
 
 namespace DB
@@ -23,16 +25,12 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3GetFaces final : public IFunction
+class FunctionH3GetFaces : public IFunction
 {
 public:
     static constexpr auto name = "h3GetFaces";
 
-    H3Validator validator;
-
-    explicit FunctionH3GetFaces(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetFaces>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetFaces>(); }
 
     std::string getName() const override { return name; }
 
@@ -81,17 +79,11 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            if (!validator.validateCell(data[row]))
-            {
-                result_offsets[row] = current_offset;
-                continue;
-            }
-
-            int max_faces = 0;
-            maxFaceCount(data[row], &max_faces);
+            int max_faces = maxFaceCount(data[row]);
 
             faces.resize(max_faces);
 
+            // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
             for (int i = 0; i < max_faces; ++i)
@@ -100,7 +92,7 @@ public:
                 if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    result_data.emplace_back(static_cast<UInt8>(faces[i]));
+                    result_data.emplace_back(faces[i]);
                 }
             }
 
@@ -116,32 +108,7 @@ public:
 
 REGISTER_FUNCTION(H3GetFaces)
 {
-    FunctionDocumentation::Description description = R"(
-Returns [icosahedron](https://en.wikipedia.org/wiki/Icosahedron) faces intersected by a given [H3](#h3-index) index.
-    )";
-    FunctionDocumentation::Syntax syntax = "h3GetFaces(index)";
-    FunctionDocumentation::Arguments arguments = {
-        {"index", "Hexagon index number.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array containing the indices (0-19) of the icosahedron faces that the H3 index intersects with.",
-        {"Array(UInt8)"}
-    };
-    FunctionDocumentation::Examples examples = {
-        {
-            "Get icosahedron faces for an H3 index",
-            "SELECT h3GetFaces(599686042433355775) AS faces",
-            R"(
-┌─faces─┐
-│ [7]   │
-└───────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3GetFaces>(documentation);
+    factory.registerFunction<FunctionH3GetFaces>();
 }
 
 }

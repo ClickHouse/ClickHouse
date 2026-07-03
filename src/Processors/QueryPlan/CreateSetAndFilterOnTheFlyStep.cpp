@@ -10,7 +10,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/IProcessor.h>
 #include <Processors/PingPongProcessor.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 
 namespace DB
 {
@@ -129,12 +128,12 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
         auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, num_streams, own_set);
-        res->setDescription(std::string(this->getStepDescription()));
+        res->setDescription(this->getStepDescription());
         return res;
     });
 
     Block input_header = pipeline.getHeader();
-    auto pipeline_transform = [&input_header, this](const OutputPortRawPtrs & ports)
+    auto pipeline_transform = [&input_header, this](OutputPortRawPtrs ports)
     {
         Processors result_transforms;
 
@@ -187,7 +186,7 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map)
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << getName();
 
     settings.out << '\n';

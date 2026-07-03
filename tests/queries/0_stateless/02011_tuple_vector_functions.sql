@@ -87,29 +87,6 @@ SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT LpNorm((1, 2, 3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT max2(1, 2, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
-SELECT '-- Test non-tuple argument for variadic tuple operators';
-SELECT tuplePlus((1, 2), (3, 4), 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tupleMinus((1, 2), (3, 4), 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tupleMultiply((1, 2), (3, 4), 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tupleDivide((1, 2), (3, 4), 5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '-- Test wrong type (non-tuple) for binary tuple operators';
-SELECT tuplePlus(1, (3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT tupleMinus((1, 2), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '-- Test excess arguments for unary tuple operator';
-SELECT tupleNegate((1, 2), (3, 4)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
-SELECT '-- Test wrong type for unary tuple operator';
-SELECT tupleNegate(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '-- Test excess arguments for tuple-by-number operators';
-SELECT tupleMultiplyByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT tupleDivideByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-
-SELECT '-- Test wrong type (non-tuple) for tuple-by-number operators';
-SELECT tupleMultiplyByNumber(5, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
 SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError ILLEGAL_COLUMN }
 
 SELECT tuple(*, 1) + tuple(2, *) FROM numbers(3);
@@ -118,7 +95,7 @@ SELECT cosineDistance(tuple(*, * + 1), tuple(1, 2)) FROM numbers(1, 3);
 SELECT -tuple(NULL, * * 2, *) FROM numbers(2);
 
 SELECT normL1((1, 1)), normL2((1, 1)), normLinf((1, 1)), normLp((1, 1), 1.);
-SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.), round(distanceCosine((1, 1), (1, 1)), 7);
+SELECT distanceL1((1, 1), (1, 1)), distanceL2((1, 1), (1, 1)), distanceLinf((1, 1), (1, 1)), distanceLp((1, 1), (1, 1), 1.);
 SELECT normalizeL1((1, 1)), normalizeL2((1, 1)), normalizeLinf((1, 1)), normalizeLp((1, 1), 1.);
 
 SELECT LpNorm((1, 2, 3), 2.2);
@@ -133,47 +110,3 @@ SELECT cosineDistance(materialize((NULL, -2147483648)), (1048577, 1048575));
 
 -- not extra parentheses
 EXPLAIN SYNTAX SELECT -((3, 7, 3), 100);
-
-SELECT '-- Variadic operators with 3+ arguments';
-SELECT tuplePlus((1, 2), (3, 4), (5, 6));
-SELECT tuplePlus(materialize((1, 2)), (3, 4), (5, 6));
-SELECT tupleMinus((10, 20), (3, 4), (1, 2));
-SELECT tupleMultiply((1, 2), (2, 3), (1, 2));
-SELECT tupleMultiply((1.5, 1.5), (1.5, 1.5), (1.5, 1.5));
-SELECT tupleMultiply((2,), (3,), (4,), (5,));
-SELECT tupleMultiply(materialize((1, 2)), (2, 3), (1, 2));
-SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0));
-SELECT tupleModulo((10, 20), (7, 9), (3, 5));
-SELECT tupleIntDiv((120, 60), (4, 3), (2, 4));
-SELECT tupleIntDivOrZero((120, 60), (4, 3), (2, 4));
-
-SELECT '-- Variadic error cases: too few arguments';
-SELECT tuplePlus((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleMinus((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleMultiply((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleDivide((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleModulo((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleIntDiv((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleIntDivOrZero((1, 2)); -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
-SELECT tupleMultiply((1, 2), (3, 4, 5)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '-- Size mismatch detected on a later argument (not just the second)';
-SELECT tupleMultiply((1, 2), (3, 4), (5, 6, 7)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-SELECT '-- NULL propagation across more than two folded arguments';
-SELECT tuplePlus((NULL, 1), (1, 2), (1, 1));
-
-SELECT '-- tupleIntDivOrZero: zero divisor in a middle fold step still proceeds';
-SELECT tupleIntDivOrZero((10, 10), (2, 2), (0, 0), (5, 5));
-
-SELECT '-- Mixed numeric types: result type promotes across fold steps (Int -> Float -> Decimal)';
-SELECT tuplePlus((1, 2), (1.5, 2.5), (toDecimal32(1.0, 2), toDecimal32(2.0, 2)));
-
-SELECT '-- tupleDivide: division by zero in a later fold step yields inf';
-SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0));
-SELECT '-- tupleDivide: division by zero in a middle fold step propagates inf to the final result';
-SELECT tupleDivide((1.0, 2.0), (1.0, 1.0), (0.0, 0.0), (5.0, 5.0));
-
-SELECT '-- Nested variadic operators: outer operator validates against inner result tuple size';
-SELECT tupleMultiply(tuplePlus((1, 2, 3), (4, 5, 6), (7, 8, 9)), tuplePlus((1, 1, 1), (1, 1, 1), (2, 2, 2)));
-SELECT tuplePlus(tuplePlus((1, 2, 3), (4, 5, 6), (7, 8, 9)), tuplePlus((1, 2, 3, 4), (5, 6, 7, 8), (9, 10, 11, 12))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -38,7 +38,7 @@ namespace
   *
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
-class FunctionRunningAccumulate final : public IFunction
+class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
@@ -159,48 +159,7 @@ public:
 
 REGISTER_FUNCTION(RunningAccumulate)
 {
-    FunctionDocumentation::Description description = R"(
-Accumulates the states of an aggregate function for each row of a data block.
-
-:::warning Deprecated
-The state is reset for each new block of data.
-Due to this error-prone behavior the function has been deprecated, and you are advised to use [window functions](/sql-reference/window-functions) instead.
-You can use setting [`allow_deprecated_error_prone_window_functions`](/operations/settings/settings#allow_deprecated_error_prone_window_functions) to allow usage of this function.
-:::
-)";
-    FunctionDocumentation::Syntax syntax = "runningAccumulate(agg_state[, grouping])";
-    FunctionDocumentation::Arguments arguments = {
-        {"agg_state", "State of the aggregate function.", {"AggregateFunction"}},
-        {"grouping", "Optional. Grouping key. The state of the function is reset if the `grouping` value is changed. It can be any of the supported data types for which the equality operator is defined.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the accumulated result for each row.", {"Any"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example with initializeAggregation",
-        R"(
-WITH initializeAggregation('sumState', number) AS one_row_sum_state
-SELECT
-    number,
-    finalizeAggregation(one_row_sum_state) AS one_row_sum,
-    runningAccumulate(one_row_sum_state) AS cumulative_sum
-FROM numbers(5);
-        )",
-        R"(
-┌─number─┬─one_row_sum─┬─cumulative_sum─┐
-│      0 │           0 │              0 │
-│      1 │           1 │              1 │
-│      2 │           2 │              3 │
-│      3 │           3 │              6 │
-│      4 │           4 │             10 │
-└────────┴─────────────┴────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionRunningAccumulate>(documentation);
+    factory.registerFunction<FunctionRunningAccumulate>();
 }
 
 }

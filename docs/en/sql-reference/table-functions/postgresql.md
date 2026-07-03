@@ -5,8 +5,9 @@ sidebar_label: 'postgresql'
 sidebar_position: 160
 slug: /sql-reference/table-functions/postgresql
 title: 'postgresql'
-doc_type: 'reference'
 ---
+
+# postgresql Table Function
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
@@ -149,7 +150,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 ## Related {#related}
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
 
 ### Replicating or migrating Postgres data with with PeerDB {#replicating-or-migrating-postgres-data-with-with-peerdb}
 

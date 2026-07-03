@@ -107,7 +107,7 @@ private:
     size_t row_num;
 };
 
-class TemplateSchemaReader final : public IRowSchemaReader
+class TemplateSchemaReader : public IRowSchemaReader
 {
 public:
     TemplateSchemaReader(ReadBuffer & in_,

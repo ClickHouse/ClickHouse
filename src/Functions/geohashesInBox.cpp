@@ -25,7 +25,7 @@ extern const int TOO_LARGE_ARRAY_SIZE;
 namespace
 {
 
-class FunctionGeohashesInBox final : public IFunction
+class FunctionGeohashesInBox : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
@@ -213,7 +213,7 @@ This function throws an exception if the size of the resulting array exceeds mor
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 

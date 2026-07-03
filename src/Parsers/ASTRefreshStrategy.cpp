@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTRefreshStrategy::clone() const
 {
-    auto res = make_intrusive<ASTRefreshStrategy>(*this);
+    auto res = std::make_shared<ASTRefreshStrategy>(*this);
     res->children.clear();
 
     if (period)
@@ -26,6 +26,8 @@ ASTPtr ASTRefreshStrategy::clone() const
 void ASTRefreshStrategy::formatImpl(
     WriteBuffer & ostr, const IAST::FormatSettings & f_settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
+    frame.need_parens = false;
+
     ostr << "REFRESH ";
     using enum RefreshScheduleKind;
     switch (schedule_kind)

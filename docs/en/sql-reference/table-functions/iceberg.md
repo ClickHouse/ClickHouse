@@ -5,15 +5,16 @@ sidebar_label: 'iceberg'
 sidebar_position: 90
 slug: /sql-reference/table-functions/iceberg
 title: 'iceberg'
-doc_type: 'reference'
 ---
+
+# iceberg Table Function {#iceberg-table-function}
 
 Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
 ## Syntax {#syntax}
 
 ```sql
-icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
 icebergS3(named_collection[, option=value [,..]])
 
 icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -30,8 +31,6 @@ icebergLocal(named_collection[, option=value [,..]])
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
-
-For `icebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
 ### Returned value {#returned-value}
 
@@ -68,36 +67,6 @@ Here is an example of configuring a named collection for storing the URL and cre
 ```sql
 SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
-```
-
-## Using a data catalog {#iceberg-writes-catalogs}
-
-Iceberg tables can also be used with various data catalogs, such as the [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/), [AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) and [Unity Catalog](https://www.unitycatalog.io/).
-
-:::important
-When using a catalog, most users will want to use the `DataLakeCatalog` database engine, which connects ClickHouse to your catalog to discover your tables. You can use this database engine instead of manually creating individual tables with `IcebergS3` table engine.
-:::
-
-To use them, create a table with the `IcebergS3` engine and provide the necessary settings.
-
-For example, using REST Catalog with MinIO storage:
-```sql
-CREATE TABLE `database_name.table_name`
-ENGINE = IcebergS3(
-  'http://minio:9000/warehouse-rest/table_name/',
-  'minio_access_key',
-  'minio_secret_key'
-)
-```
-
-Or, using AWS Glue Data Catalog with S3:
-```sql
-CREATE TABLE `my_database.my_table`  
-ENGINE = IcebergS3(
-  's3://my-data-bucket/warehouse/my_database/my_table/',
-  'aws_access_key',
-  'aws_secret_key'
-)
 ```
 
 ## Schema Evolution {#schema-evolution}
@@ -189,6 +158,8 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
+
+
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -245,6 +216,8 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
+
+
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
@@ -328,392 +301,6 @@ Table function `iceberg` is an alias to `icebergS3` now.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_etag` — The etag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
-
-## Writes into iceberg table {#writes-into-iceberg-table}
-
-Starting from version 25.7, ClickHouse supports modifications of user’s Iceberg tables.
-
-Currently, this is an experimental feature, so you first need to enable it:
-
-```sql
-SET allow_insert_into_iceberg = 1;
-```
-
-### Creating table {#create-iceberg-table}
-
-To create your own empty Iceberg table, use the same commands as for reading, but specify the schema explicitly.
-Writes supports all data formats from iceberg specification, such as Parquet, Avro, ORC.
-
-### Example {#example-iceberg-writes-create}
-
-```sql
-CREATE TABLE iceberg_writes_example
-(
-    x Nullable(String),
-    y Nullable(Int32)
-)
-ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
-```
-
-Note: To create a version hint file, enable the `iceberg_use_version_hint` setting.
-If you want to compress the metadata.json file, specify the codec name in the `iceberg_metadata_compression_method` setting.
-
-### INSERT {#writes-inserts}
-
-After creating a new table, you can insert data using the usual ClickHouse syntax.
-
-### Example {#example-iceberg-writes-insert}
-
-```sql
-INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Pavel
-y: 777
-
-Row 2:
-──────
-x: Ivanov
-y: 993
-```
-
-### DELETE {#iceberg-writes-delete}
-
-Deleting extra rows in the merge-on-read format is also supported in ClickHouse.
-This query will create a new snapshot with position delete files.
-
-### Example {#example-iceberg-writes-delete}
-
-```sql
-ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
-```
-
-### Schema evolution {#iceberg-writes-schema-evolution}
-
-ClickHouse allows you to add, drop, modify, or rename columns with simple types (non-tuple, non-array, non-map).
-
-### Example {#example-iceberg-writes-evolution}
-
-```sql
-ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
-SHOW CREATE TABLE iceberg_writes_example;
-
-   ┌─statement─────────────────────────────────────────────────┐
-1. │ CREATE TABLE default.iceberg_writes_example              ↴│
-   │↳(                                                        ↴│
-   │↳    `x` Nullable(String),                                ↴│
-   │↳    `y` Nullable(Int64)                                  ↴│
-   │↳)                                                        ↴│
-   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
-   └───────────────────────────────────────────────────────────┘
-
-ALTER TABLE iceberg_writes_example ADD COLUMN z Nullable(Int32);
-SHOW CREATE TABLE iceberg_writes_example;
-
-   ┌─statement─────────────────────────────────────────────────┐
-1. │ CREATE TABLE default.iceberg_writes_example              ↴│
-   │↳(                                                        ↴│
-   │↳    `x` Nullable(String),                                ↴│
-   │↳    `y` Nullable(Int64),                                 ↴│
-   │↳    `z` Nullable(Int32)                                  ↴│
-   │↳)                                                        ↴│
-   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
-   └───────────────────────────────────────────────────────────┘
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
-z: ᴺᵁᴸᴸ
-
-ALTER TABLE iceberg_writes_example DROP COLUMN z;
-SHOW CREATE TABLE iceberg_writes_example;
-   ┌─statement─────────────────────────────────────────────────┐
-1. │ CREATE TABLE default.iceberg_writes_example              ↴│
-   │↳(                                                        ↴│
-   │↳    `x` Nullable(String),                                ↴│
-   │↳    `y` Nullable(Int64)                                  ↴│
-   │↳)                                                        ↴│
-   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
-   └───────────────────────────────────────────────────────────┘
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
-
-ALTER TABLE iceberg_writes_example RENAME COLUMN y TO value;
-SHOW CREATE TABLE iceberg_writes_example;
-
-   ┌─statement─────────────────────────────────────────────────┐
-1. │ CREATE TABLE default.iceberg_writes_example              ↴│
-   │↳(                                                        ↴│
-   │↳    `x` Nullable(String),                                ↴│
-   │↳    `value` Nullable(Int64)                              ↴│
-   │↳)                                                        ↴│
-   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
-   └───────────────────────────────────────────────────────────┘
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-value: 993
-```
-
-### Compaction {#iceberg-writes-compaction}
-
-ClickHouse supports compaction iceberg table. Currently, it can merge position delete files into data files while updating metadata. Previous snapshot IDs and timestamps remain unchanged, so the time-travel feature can still be used with the same values.
-
-How to use it:
-
-```sql
-SET allow_experimental_iceberg_compaction = 1
-
-OPTIMIZE TABLE iceberg_writes_example;
-
-SELECT *
-FROM iceberg_writes_example
-FORMAT VERTICAL;
-
-Row 1:
-──────
-x: Ivanov
-y: 993
-```
-
-### Expire Snapshots {#iceberg-expire-snapshots}
-
-Iceberg tables accumulate snapshots with each INSERT, DELETE, or UPDATE operation. Over time, this can lead to a large number of snapshots and associated data files. The `expire_snapshots` command removes old snapshots and cleans up data files that are no longer referenced by any retained snapshot.
-
-**Syntax:**
-
-```sql
-ALTER TABLE iceberg_table EXECUTE expire_snapshots(
-    ['timestamp']
-    [, expire_before = 'timestamp']
-    [, retention_period = '3d']
-    [, retain_last = 100]
-    [, snapshot_ids = [1, 2, 3, 4]]
-    [, dry_run = 1]
-);
-```
-
-By default, which snapshots to keep is determined by the [retention policy](#iceberg-snapshot-retention-policy) (table properties `min-snapshots-to-keep`, `max-snapshot-age-ms`, and per-ref overrides). When `snapshot_ids` is specified, the retention policy is bypassed and only the listed snapshots are considered for expiration.
-
-**Arguments:**
-
-- `'timestamp'` (positional) or `expire_before = 'timestamp'` — a datetime string (e.g., `'2024-06-01 00:00:00'`) interpreted in the **server's timezone**. Acts as a safety fuse: snapshots whose `timestamp-ms` is at or after this value are protected from expiration, even if the retention policy would otherwise expire them. Can be combined with `snapshot_ids`, in which case listed snapshots at or newer than the timestamp are not expired.
-- `retention_period = '<duration>'` — overrides the table-level `history.expire.max-snapshot-age-ms` for this invocation only. Snapshots older than this duration (measured from now) become candidates for expiration. The value is a duration string consisting of one or more `{number}{unit}` pairs concatenated together. Supported units: `y` (365 days), `w` (7 days), `d` (24 hours), `h` (60 minutes), `m` (60 seconds), `s` (1 second), `ms` (1 millisecond). Units can be combined, e.g. `'3d'`, `'12h'`, `'1d12h30m'`, `'500ms'`.
-- `retain_last = N` — overrides the table-level `history.expire.min-snapshots-to-keep` for this invocation only. At least `N` snapshots are always retained regardless of age.
-- `snapshot_ids = [id1, id2, ...]` — expires exactly the listed snapshot IDs (except snapshots referenced by current snapshot, branches, or tags). This mode bypasses the retention policy entirely and cannot be combined with `retention_period` or `retain_last`.
-- `dry_run = 1` — computes what would be expired and returns metrics without writing new metadata or deleting files.
-
-:::note
-`retention_period` and `retain_last` override only the **table-level** retention defaults. Per-ref (branch/tag) retention overrides configured in the Iceberg table properties (e.g., `refs.<branch>.min-snapshots-to-keep`) are never overridden — they always take effect as specified in the table metadata.
-:::
-
-**Example:**
-
-```sql
-SET allow_insert_into_iceberg = 1;
-
--- Create some snapshots by inserting data
-INSERT INTO iceberg_table VALUES (1);
-INSERT INTO iceberg_table VALUES (2);
-INSERT INTO iceberg_table VALUES (3);
-
--- Expire using retention policy only
-ALTER TABLE iceberg_table EXECUTE expire_snapshots();
-
--- Expire with a safety fuse: protect snapshots newer than the timestamp (positional syntax)
-ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
-
--- Same using the named argument form
-ALTER TABLE iceberg_table EXECUTE expire_snapshots(expire_before = '2025-01-01 00:00:00');
-
--- Override retention parameters for one execution
-ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '3d', retain_last = 10);
-
--- Expire explicit snapshots
-ALTER TABLE iceberg_table EXECUTE expire_snapshots(snapshot_ids = [101, 102, 103]);
-
--- Dry-run preview (no metadata updates, no file deletes)
-ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_run = 1);
-```
-
-**Output:**
-
-The command returns a table with two columns (`metric_name String`, `metric_value Int64`) containing one row per metric. The metric names follow the [Iceberg spec](https://iceberg.apache.org/docs/latest/spark-procedures/#output):
-
-| metric_name | Description |
-|---|---|
-| `deleted_data_files_count` | Number of data files deleted |
-| `deleted_position_delete_files_count` | Number of position delete files deleted |
-| `deleted_equality_delete_files_count` | Number of equality delete files deleted |
-| `deleted_manifest_files_count` | Number of manifest files deleted |
-| `deleted_manifest_lists_count` | Number of manifest list files deleted |
-| `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
-| `dry_run` | `1` for dry-run mode, `0` for normal execution |
-
-The command performs the following steps:
-
-1. Evaluates the retention policy (see below) to determine which snapshots must be preserved
-2. If a timestamp argument was provided, additionally protects all snapshots at or newer than that timestamp
-3. Expires snapshots that are neither retained by the policy nor protected by the timestamp fuse
-4. Computes which files are exclusively associated with expired snapshots
-5. In normal mode: generates new metadata without the expired snapshots
-6. In normal mode: physically deletes unreachable manifest lists, manifest files, and data files
-7. In `dry_run = 1` mode: skips steps 5 and 6 and only returns the calculated metrics
-
-#### Snapshot Retention Policy {#iceberg-snapshot-retention-policy}
-
-The `expire_snapshots` command respects the [Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy). Retention is configured via Iceberg table properties and per-reference overrides:
-
-| Property | Scope | Default | Description |
-|---|---|---|---|
-| `history.expire.min-snapshots-to-keep` | Table | `iceberg_expire_default_min_snapshots_to_keep` (default `1`) | Minimum number of snapshots to keep in each branch's ancestor chain |
-| `history.expire.max-snapshot-age-ms` | Table | `iceberg_expire_default_max_snapshot_age_ms` (default `432000000`, 5 days) | Maximum age (in ms) of snapshots to retain in a branch |
-| `history.expire.max-ref-age-ms` | Table | `iceberg_expire_default_max_ref_age_ms` (default `∞`) | Maximum age (in ms) for a snapshot reference (branch or tag) before the reference itself is removed |
-
-Each snapshot reference (`refs` in the Iceberg metadata) can override these with per-ref fields: `min-snapshots-to-keep`, `max-snapshot-age-ms`, and `max-ref-age-ms`.
-
-**Retention evaluation:**
-
-- **For each branch** (including `main`): the ancestor chain is walked starting from the branch head. Snapshots are retained while either of these conditions is true:
-  - The snapshot is one of the first `min-snapshots-to-keep` in the chain
-  - The snapshot's age is within `max-snapshot-age-ms` (i.e., `now - timestamp-ms <= max-snapshot-age-ms`)
-- **For tags**: the tagged snapshot is retained unless the tag has exceeded its `max-ref-age-ms`, in which case the tag reference is removed
-- **Non-main references** whose age exceeds `max-ref-age-ms` are removed entirely (the `main` branch is never removed)
-- **Dangling references** that point to non-existent snapshots are removed with a warning
-- **The current snapshot is always preserved**, regardless of retention settings
-
-**Required privileges:**
-
-The `ALTER TABLE EXECUTE` privilege is required, which is a child of `ALTER TABLE` in the ClickHouse access control hierarchy. You can grant it specifically or via the parent:
-
-```sql
--- Grant only EXECUTE permission
-GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
-
--- Or grant all ALTER TABLE permissions (includes ALTER TABLE EXECUTE)
-GRANT ALTER TABLE ON my_iceberg_table TO my_user;
-```
-
-:::note
-- Only Iceberg format version 2 tables are supported (v1 snapshots do not guarantee `manifest-list`, which is required to safely identify files for cleanup)
-- The current snapshot is always preserved, even if it is older than the specified timestamp
-- Requires the `allow_insert_into_iceberg` setting to be enabled
-- Requires the `allow_experimental_expire_snapshots` setting to be enabled
-- The catalog's own authorization (REST catalog auth, AWS Glue IAM, etc.) is enforced independently when ClickHouse updates the metadata
-:::
-
-### Remove Orphan Files {#iceberg-remove-orphan-files}
-
-Orphan files are files on storage that are not referenced by any snapshot in the Iceberg table metadata. They accumulate from failed writes, partial cleanup after compaction, and interrupted operations, causing unbounded storage growth. The `remove_orphan_files` command identifies and removes these orphan files.
-
-**Syntax:**
-
-```sql
--- Positional form: single unnamed older_than argument
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
-
--- Named form
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
-    older_than = 'timestamp',
-    location = 'path',
-    dry_run = 0|1
-)
-
--- No arguments: use all defaults (older_than = 3 days ago)
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
-```
-
-**Parameters:**
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `older_than` | `String` (timestamp) | 3 days ago (configurable via `iceberg_orphan_files_older_than_seconds`) | Only consider files with a last-modified time older than this timestamp as orphan candidates. Safety guard against deleting files from in-progress writes. |
-| `location` | `String` | Table location | Restrict the scan to a specific subdirectory under the table location (e.g., `'data/'` or `'metadata/'`). |
-| `dry_run` | `UInt64` | `0` | When `1`, identify orphan files and return the result summary without actually deleting anything. |
-
-**Examples:**
-
-```sql
--- Remove orphan files older than a specific timestamp
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
-
--- Dry run: preview which files would be deleted
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
-
--- Scan only the data directory
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
-    older_than = '2026-03-01 00:00:00',
-    location = 'data/'
-);
-
--- Combine positional older_than with named arguments
-ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
-    '2026-03-01 00:00:00',
-    dry_run = 1
-);
-```
-
-**Output:**
-
-The command returns a table with `metric_name` and `metric_value` columns showing the count of deleted (or would-be-deleted in dry_run mode) files by category. File categories are classified using best-effort heuristics based on file naming conventions; files that do not match any specific pattern default to `deleted_data_files_count`:
-
-| metric_name | metric_value |
-|---|---|
-| deleted_data_files_count | 5 |
-| deleted_position_delete_files_count | 2 |
-| deleted_equality_delete_files_count | 0 |
-| deleted_manifest_files_count | 3 |
-| deleted_manifest_lists_count | 1 |
-| deleted_metadata_files_count | 0 |
-| deleted_statistics_files_count | 0 |
-| skipped_missing_metadata_count | 0 |
-| failed_deletions_count | 0 |
-
-**Settings:**
-
-| Setting | Type | Default | Description |
-|---|---|---|---|
-| `allow_iceberg_remove_orphan_files` | `Bool` | `false` | Gate setting to enable the feature (experimental). |
-| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | Default `older_than` threshold in seconds when the argument is omitted. |
-
-:::note
-- **Requires Iceberg format version 2 (or higher).** Version 1 tables are rejected because they lack `manifest-list` pointers in snapshots, which are needed to safely determine the reachable file set. Running the command on a v1 table returns a `BAD_ARGUMENTS` error.
-- Requires both `allow_insert_into_iceberg` and `allow_iceberg_remove_orphan_files` settings to be enabled
-- It is recommended to run `expire_snapshots` before `remove_orphan_files` so that files uniquely referenced by expired snapshots are cleaned up first
-- Use `dry_run = 1` to preview orphan files before deletion
-- The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
-:::
 
 ## See Also {#see-also}
 

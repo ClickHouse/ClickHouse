@@ -42,7 +42,7 @@ void GroupByModifierTransform::mergeConsumed()
     if (use_nulls)
     {
         for (auto key : keys)
-            columns[key] = makeNullableOrLowCardinalityNullableSafe(columns[key]);
+            columns[key] = makeNullableSafe(columns[key]);
     }
     current_chunk = Chunk{ columns, rows };
 
@@ -53,13 +53,14 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
 {
     auto header = is_input ? getInputPort().getHeader() : intermediate_header;
 
-    Aggregator::AggregatedChunks agg_chunks;
+    BlocksList blocks;
     for (auto & chunk : chunks)
-        agg_chunks.emplace_back(std::move(chunk));
+        blocks.emplace_back(header.cloneWithColumns(chunk.detachColumns()));
 
     auto & aggregator = is_input ? params->aggregator : *output_aggregator;
-    auto result = aggregator.mergeBlocks(agg_chunks, final, is_cancelled, /* dataflow_cache_updater= */ nullptr);
-    return std::move(result.chunk);
+    auto current_block = aggregator.mergeBlocks(blocks, final, is_cancelled);
+    auto num_rows = current_block.rows();
+    return Chunk(current_block.getColumns(), num_rows);
 }
 
 MutableColumnPtr GroupByModifierTransform::getColumnWithDefaults(size_t key, size_t n) const

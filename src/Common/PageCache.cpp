@@ -2,7 +2,6 @@
 
 #include <sys/mman.h>
 #include <Common/Allocator.h>
-#include <Common/JemallocCacheAllocator.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
@@ -34,20 +33,19 @@ namespace ErrorCodes
 
 template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-SipHash PageCacheFile::baseHash() const
+UInt128 PageCacheKey::hash() const
 {
-    SipHash h;
-    h.update(path.data(), path.size());
-    h.update("\0", 1);
-    h.update(file_version.data(), file_version.size());
-    return h;
+    SipHash hash(offset);
+    hash.update(size);
+    hash.update(path.data(), path.size());
+    hash.update("\0", 1);
+    hash.update(file_version.data(), file_version.size());
+    return hash.get128();
 }
 
-UInt128 PageCacheByteRange::hash(SipHash base) const
+std::string PageCacheKey::toString() const
 {
-    base.update(offset);
-    base.update(size);
-    return base.get128();
+    return fmt::format("{}:{}:{}{}{}", path, offset, size, file_version.empty() ? "" : ":", file_version);
 }
 
 PageCache::PageCache(
@@ -73,11 +71,12 @@ PageCache::PageCache(
     }
 }
 
-PageCache::MappedPtr PageCache::getOrSet(const PageCacheFile & file, const PageCacheByteRange & range, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load, std::optional<UInt128> key_hash_opt)
+PageCache::MappedPtr PageCache::getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load)
 {
+    /// Prevent MemoryTracker from calling autoResize while we may be holding the mutex.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
 
-    Key key_hash = key_hash_opt.has_value() ? *key_hash_opt : range.hash(file.baseHash());
+    Key key_hash = key.hash();
 
     Shard & shard = *shards[getShardIdx(key_hash)];
 
@@ -94,7 +93,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheFile & file, const PageC
             blocker.reset(); // allow throwing out-of-memory exception when allocating or loading cell
 
             miss = true;
-            result = std::make_shared<PageCacheCell>(file, range, /*temporary*/ true);
+            result = std::make_shared<PageCacheCell>(key, /*temporary*/ true);
             load(result);
         }
     }
@@ -109,7 +108,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheFile & file, const PageC
             MappedPtr cell;
             try
             {
-                cell = std::make_shared<PageCacheCell>(file, range, /*temporary*/ false);
+                cell = std::make_shared<PageCacheCell>(key, /*temporary*/ false);
                 load(cell);
             }
             catch (...)
@@ -132,24 +131,7 @@ PageCache::MappedPtr PageCache::getOrSet(const PageCacheFile & file, const PageC
     return result;
 }
 
-PageCache::MappedPtr PageCache::get(UInt128 key_hash, bool inject_eviction)
-{
-    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-
-    if (inject_eviction && thread_local_rng() % 10 == 0)
-        return nullptr;
-
-    Shard & shard = *shards[getShardIdx(key_hash)];
-
-    const auto result = shard.get(key_hash);
-
-    if (result)
-        ProfileEvents::increment(ProfileEvents::PageCacheHits);
-
-    return result;
-}
-
-bool PageCache::contains(UInt128 key_hash, bool inject_eviction) const
+bool PageCache::contains(const PageCacheKey & key, bool inject_eviction) const
 {
     /// Avoid deadlock if MemoryTracker calls PageCache::autoResize.
     /// (If you're here because it turned out that CacheBase::contains actually needs to allocate,
@@ -158,6 +140,7 @@ bool PageCache::contains(UInt128 key_hash, bool inject_eviction) const
 
     if (inject_eviction && thread_local_rng() % 10 == 0)
         return false;
+    Key key_hash = key.hash();
     const Shard & shard = *shards[getShardIdx(key_hash)];
     return shard.contains(key_hash);
 }
@@ -168,7 +151,7 @@ void PageCache::Shard::onEntryRemoval(const size_t weight_loss, const MappedPtr 
     UNUSED(mapped_ptr);
 }
 
-bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
+void PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
 {
     /// Avoid recursion when called from MemoryTracker.
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
@@ -199,21 +182,15 @@ bool PageCache::autoResize(Int64 memory_usage_signed, size_t memory_limit)
         }
     }
 
-    size_t reduced_limit = size_t(static_cast<double>(memory_limit) * (1. - std::min(free_memory_ratio, 1.)));
+    size_t reduced_limit = size_t(memory_limit * (1. - std::min(free_memory_ratio, 1.)));
     size_t target_size = reduced_limit - std::min(peak, reduced_limit);
     target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
 
     size_t size_per_shard = (target_size + shards.size() - 1) / shards.size();
-    size_t new_cache_size = 0;
     for (const auto & shard : shards)
-    {
         shard->setMaxSizeInBytes(size_per_shard);
-        new_cache_size += shard->sizeInBytes();
-    }
 
     ProfileEvents::increment(ProfileEvents::PageCacheResized);
-
-    return memory_usage_signed - Int64(cache_size) + Int64(new_cache_size) <= Int64(memory_limit);
 }
 
 void PageCache::clear()
@@ -250,7 +227,7 @@ size_t PageCache::maxSizeInBytes() const
     return sum;
 }
 
-PageCacheCell::PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, bool temporary) : file(std::move(file_)), range(range_), m_size(range.size), m_temporary(temporary)
+PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(key_)), m_size(key.size), m_temporary(temporary)
 {
     /// Don't attribute page cache memory to the query that happened to allocate it.
     std::optional<MemoryTrackerBlockerInThread> blocker;
@@ -258,7 +235,7 @@ PageCacheCell::PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, boo
         blocker.emplace();
 
     /// Allow throwing out-of-memory exceptions from here.
-    m_data = reinterpret_cast<char *>(JemallocCacheAllocator().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
+    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size));
 }
 
 PageCacheCell::~PageCacheCell()
@@ -266,7 +243,7 @@ PageCacheCell::~PageCacheCell()
     std::optional<MemoryTrackerBlockerInThread> blocker;
     if (!m_temporary)
         blocker.emplace();
-    JemallocCacheAllocator().free(m_data, m_size, DEFAULT_AIO_FILE_BLOCK_SIZE);
+    Allocator<false>().free(m_data, m_size);
 }
 
 }

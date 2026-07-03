@@ -153,9 +153,6 @@ namespace
 
     size_t decryptBlocks(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, char * out)
     {
-        chassert(data != nullptr);
-        chassert(out != nullptr);
-        chassert(size != 0);
         const uint8_t * in = reinterpret_cast<const uint8_t *>(data);
         uint8_t * plaintext = reinterpret_cast<uint8_t *>(out);
         int plaintext_size = 0;
@@ -167,8 +164,6 @@ namespace
 
     size_t decryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, char * out)
     {
-        chassert(data != nullptr);
-        chassert(out != nullptr);
         assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
@@ -299,8 +294,6 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!evp_ctx_ptr)
-        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
@@ -342,15 +335,9 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     if (!size)
         return;
 
-    chassert(data != nullptr);
-    chassert(out != nullptr);
-    chassert(size != 0);
-
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
-    if (!evp_ctx_ptr)
-        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)

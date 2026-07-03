@@ -66,11 +66,6 @@ size_t SeekableReadBuffer::readBigAt(char * /*to*/, size_t /*n*/, size_t /*offse
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented");
 }
 
-std::vector<SeekableReadBuffer::CachedRegion> SeekableReadBuffer::readBigAtRetainCells(size_t /*n*/, size_t /*offset*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAtRetainCells() not implemented");
-}
-
 
 std::optional<off_t> SeekableReadBuffer::tryGetPosition()
 {
@@ -78,7 +73,7 @@ std::optional<off_t> SeekableReadBuffer::tryGetPosition()
     {
         return getPosition();
     }
-    catch (...) // Ok: tryGetPosition is a try-pattern
+    catch (...)
     {
         return std::nullopt;
     }

@@ -56,7 +56,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 };
 
-class BinaryWithNamesAndTypesSchemaReader final : public FormatWithNamesAndTypesSchemaReader
+class BinaryWithNamesAndTypesSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

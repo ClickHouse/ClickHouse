@@ -1,4 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Different output in system.data_skipping_indices
 DROP TABLE IF EXISTS data_01917;
 DROP TABLE IF EXISTS data_01917_2;
 
@@ -11,8 +10,7 @@ CREATE TABLE data_01917
     INDEX d1_null_idx assumeNotNull(d1_null) TYPE minmax GRANULARITY 1
 )
 Engine=MergeTree()
-ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns=0;
+ORDER BY key;
 
 CREATE TABLE data_01917_2
 (
@@ -23,8 +21,7 @@ CREATE TABLE data_01917_2
     INDEX sample_index2 (lower(name), name) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 )
 Engine=MergeTree()
-ORDER BY name
-SETTINGS add_minmax_index_for_numeric_columns=0;
+ORDER BY name;
 
 SELECT * FROM system.data_skipping_indices WHERE database = currentDatabase();
 

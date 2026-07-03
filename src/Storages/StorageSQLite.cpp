@@ -6,7 +6,6 @@
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -55,7 +54,7 @@ StorageSQLite::StorageSQLite(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_name(remote_table_name_)
     , database_path(database_path_)
@@ -74,17 +73,8 @@ StorageSQLite::StorageSQLite(
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageSQLite::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
+    storage_metadata.setComment(comment);
 }
 
 
@@ -137,7 +127,7 @@ Pipe StorageSQLite::read(
 }
 
 
-class SQLiteSink final : public SinkToStorage
+class SQLiteSink : public SinkToStorage
 {
 public:
     explicit SQLiteSink(

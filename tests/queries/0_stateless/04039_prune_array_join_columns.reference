@@ -26,7 +26,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 14, nodes: 1
       SORT id: 15, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION n.a
+        EXPRESSION
           FUNCTION id: 16, function_name: tupleElement, function_type: ordinary, result_type: Int64
             ARGUMENTS
               LIST id: 17, nodes: 2
@@ -79,7 +79,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 19, nodes: 1
       SORT id: 20, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION n.a
+        EXPRESSION
           FUNCTION id: 21, function_name: tupleElement, function_type: ordinary, result_type: Int64
             ARGUMENTS
               LIST id: 22, nodes: 2
@@ -127,7 +127,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 13, nodes: 1
       SORT id: 14, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION n.a
+        EXPRESSION
           FUNCTION id: 15, function_name: tupleElement, function_type: ordinary, result_type: Int64
             ARGUMENTS
               LIST id: 16, nodes: 2
@@ -226,7 +226,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 8, nodes: 1
       SORT id: 9, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION b
+        EXPRESSION
           COLUMN id: 10, column_name: __array_join_exp_2, result_type: Int64, source_id: 3
 Expression (Project names)
 Header: b Int64

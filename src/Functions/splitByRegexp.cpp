@@ -5,6 +5,8 @@
 #include <Functions/FunctionTokens.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
+#include <Common/StringUtils.h>
+#include <Common/assert_cast.h>
 
 #include <ranges>
 
@@ -150,17 +152,15 @@ public:
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
 /// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
-class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<SplitByRegexpOverloadResolver>(context); }
 
     explicit SplitByRegexpOverloadResolver(ContextPtr context_)
-        : split_by_char(FunctionFactory::instance().getImpl("splitByChar", context_))
-        , split_by_regexp(FunctionSplitByRegexp::create(context_))
-    {
-    }
+        : context(context_)
+        , split_by_regexp(FunctionSplitByRegexp::create(context)) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return SplitByRegexpImpl::getNumberOfArguments(); }
@@ -170,7 +170,7 @@ public:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (patternIsTrivialChar(arguments))
-            return split_by_char->build(arguments);
+            return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
             split_by_regexp,
             DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
@@ -205,7 +205,7 @@ private:
         return false;
     }
 
-    FunctionOverloadResolverPtr split_by_char;
+    ContextPtr context;
     FunctionPtr split_by_regexp;
 };
 }
@@ -255,7 +255,7 @@ Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/se
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<SplitByRegexpOverloadResolver>(documentation);
 }

@@ -5,19 +5,10 @@
 
 #include <filesystem>
 
-#include <Common/FailPoint.h>
-#include <Poco/URI.h>
-
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::FailPoints
-{
-    extern const char database_iceberg_gcs[];
 }
 
 namespace DataLake
@@ -45,7 +36,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     {
         auto result = Poco::toLower(s);
         if (!result.empty())
-            result[0] = static_cast<char>(std::toupper(result[0]));
+            result[0] = std::toupper(result[0]);
         return result;
     };
 
@@ -58,16 +49,9 @@ StorageType parseStorageTypeFromString(const std::string & type)
     }
     if (capitalize_first_letter(storage_type_str) == "File")
         storage_type_str = "Local";
-    else if (capitalize_first_letter(storage_type_str) == "S3a" || storage_type_str == "oss" || storage_type_str == "gs")
-    {
-        fiu_do_on(DB::FailPoints::database_iceberg_gcs,
-        {
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Google cloud storage converts to S3");
-        });
+
+    if (capitalize_first_letter(storage_type_str) == "S3a")
         storage_type_str = "S3";
-    }
-    else if (storage_type_str == "abfss") /// Azure Blob File System Secure
-        storage_type_str = "Azure";
 
     auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
@@ -90,9 +74,6 @@ void TableMetadata::setLocation(const std::string & location_)
     /// s3://<bucket>/path/to/table/data.
     /// We want to split s3://<bucket> and path/to/table/data.
 
-    /// For Azure ABFSS: abfss://<container>@<account>.dfs.core.windows.net/path/to/table/data
-    /// We want to split the bucket/container and path.
-
     auto pos = location_.find("://");
     if (pos == std::string::npos)
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
@@ -109,29 +90,11 @@ void TableMetadata::setLocation(const std::string & location_)
 
     location_without_path = location_.substr(0, pos_to_path);
     path = location_.substr(pos_to_path + 1);
+    bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
 
-    /// For Azure ABFSS format: abfss://container@account.dfs.core.windows.net/path
-    /// The bucket (container) is the part before '@', not the whole string before '/'
-    String bucket_part = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
-    auto at_pos = bucket_part.find('@');
-    if (at_pos != std::string::npos)
-    {
-        /// Azure ABFSS format: extract container (before @) and account (after @)
-        bucket = bucket_part.substr(0, at_pos);
-        azure_account_with_suffix = bucket_part.substr(at_pos + 1);
-
-        LOG_TEST(getLogger("TableMetadata"),
-                 "Parsed Azure location - container: {}, account: {}, path: {}",
-                 bucket, azure_account_with_suffix, path);
-    }
-    else
-    {
-        /// Standard format (S3, GCS, etc.)
-        bucket = bucket_part;
-        LOG_TEST(getLogger("TableMetadata"),
-                 "Parsed location without path: {}, path: {}",
-                 location_without_path, path);
-    }
+    LOG_TEST(getLogger("TableMetadata"),
+             "Parsed location without path: {}, path: {}",
+             location_without_path, path);
 }
 
 std::string TableMetadata::getLocation() const
@@ -140,12 +103,12 @@ std::string TableMetadata::getLocation() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
-        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
+        return constructLocation(endpoint);
 
     return std::filesystem::path(location_without_path) / path;
 }
 
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -153,52 +116,16 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
-    return constructLocation(endpoint_, uri_style);
+    return constructLocation(endpoint_);
 }
 
-std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_) const
 {
     std::string location = endpoint_;
     if (location.ends_with('/'))
         location.pop_back();
 
-    /// For Azure storage, the endpoint format is: https://<account>.dfs.core.windows.net
-    /// We need to construct: https://<account>.dfs.core.windows.net/<container>/<path>
-    /// The bucket variable contains the container name for Azure.
-    if (!azure_account_with_suffix.empty())
-    {
-        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
-            return std::filesystem::path(location) / path / "";
-        return std::filesystem::path(location) / bucket / path / "";
-    }
-
-    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
-    {
-        /// Virtual-hosted style: embed the bucket name in the hostname.
-        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
-        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
-        Poco::URI endpoint_uri(location);
-        const std::string & host = endpoint_uri.getHost();
-        if (!host.starts_with(bucket + "."))
-            endpoint_uri.setHost(bucket + "." + host);
-        std::string vhosted_base = endpoint_uri.toString();
-        if (vhosted_base.ends_with('/'))
-            vhosted_base.pop_back();
-        return std::filesystem::path(vhosted_base) / path / "";
-    }
-
-    if (uri_style == DB::S3UriStyle::PATH)
-    {
-        Poco::URI endpoint_uri(location);
-        if (endpoint_uri.getHost().starts_with(bucket + "."))
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Cannot use PATH addressing style with endpoint '{}': "
-                "the hostname already embeds bucket '{}' in virtual-hosted form",
-                endpoint_uri.getHost(), bucket);
-    }
-
-    if (!force_add_bucket && location.ends_with(bucket))
+    if (location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
     return std::filesystem::path(location) / bucket / path / "";
 }
@@ -289,7 +216,7 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
 
         if (metadata_location.starts_with(data_location))
         {
-            size_t remove_slash = (metadata_location.size() > data_location.size() && metadata_location[data_location.size()] == '/') ? 1 : 0;
+            size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
             metadata_location = metadata_location.substr(data_location.size() + remove_slash);
         }
     }
@@ -303,8 +230,6 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
     changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
     changes.emplace_back("region", region);
-    changes.emplace_back("aws_role_arn", aws_role_arn);
-    changes.emplace_back("aws_role_session_name", aws_role_session_name);
 
     return changes;
 }

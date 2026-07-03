@@ -24,8 +24,8 @@ timestamp = 1753199684.626
 
 def send_preset_to_prometheus_receiver():
     send_protobuf_to_remote_write(
-        cluster.prometheus_ip["receiver"],
-        cluster.prometheus_port["receiver"],
+        cluster.prometheus_receiver_ip,
+        cluster.prometheus_receiver_port,
         "api/v1/write",
         preset,
     )
@@ -53,7 +53,7 @@ test_queries = [
         '{"resultType": "vector", "result": [{"metric": {"code": "200", "handler": "/api/v1/query", "instance": "prometheus:9090", "job": "prometheus"}, "value": [1753199684.626, "0.2"]}]}',
         [
             [
-                "[('code','200'),('handler','/api/v1/query'),('instance','prometheus:9090'),('job','prometheus')]",
+                "[('__name__','prometheus_http_requests_total'),('code','200'),('handler','/api/v1/query'),('instance','prometheus:9090'),('job','prometheus')]",
                 "2025-07-22 15:54:44.626",
                 "0.2",
             ]
@@ -68,8 +68,8 @@ def check_queries_in_prometheus_receiver():
     for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
-                cluster.prometheus_ip["receiver"],
-                cluster.prometheus_port["receiver"],
+                cluster.prometheus_receiver_ip,
+                cluster.prometheus_receiver_port,
                 "/api/v1/query",
                 query,
                 timestamp,
@@ -85,8 +85,8 @@ def check_queries_in_prometheus_reader():
     for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
-                cluster.prometheus_ip["reader"],
-                cluster.prometheus_port["reader"],
+                cluster.prometheus_reader_ip,
+                cluster.prometheus_reader_port,
                 "/api/v1/query",
                 query,
                 timestamp,

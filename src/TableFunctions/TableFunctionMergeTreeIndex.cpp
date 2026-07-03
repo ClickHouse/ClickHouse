@@ -1,5 +1,4 @@
 #include <Storages/StorageMergeTreeIndex.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -41,11 +40,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's MergeTreeIndex but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "MergeTreeIndex"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
@@ -110,8 +105,7 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
 
 static NameSet getAllPossibleStreamNames(
     const NameAndTypePair & column,
-    const MergeTreeDataPartsVector & data_parts,
-    const MergeTreeSettingsPtr & storage_settings)
+    const MergeTreeDataPartsVector & data_parts)
 {
     NameSet all_streams;
 
@@ -123,7 +117,7 @@ static NameSet getAllPossibleStreamNames(
 
     auto callback = [&](const auto & substream_path)
     {
-        auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
         all_streams.insert(Nested::concatenateName(stream_name, "mark"));
     };
 
@@ -138,7 +132,7 @@ static NameSet getAllPossibleStreamNames(
     for (const auto & part : data_parts)
     {
         serialization = part->tryGetSerialization(column.name);
-        if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
+        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
         {
             serialization->enumerateStreams(callback);
             break;
@@ -151,11 +145,7 @@ static NameSet getAllPossibleStreamNames(
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
-
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
+    auto metadata_snapshot = source_table->getInMemoryMetadataPtr();
 
     ColumnsDescription columns;
     for (const auto & column : StorageMergeTreeIndex::virtuals_sample_block)
@@ -164,8 +154,11 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
     if (with_minmax)
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
-        for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
-            columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)})});
+        if (!partition_key.column_names.empty() && partition_key.expression)
+        {
+            for (const auto & column : partition_key.expression->getRequiredColumnsWithTypes())
+                columns.add({fmt::format("minmax_{}", column.name), std::make_shared<DataTypeTuple>(DataTypes{column.type, column.type})});
+        }
     }
 
     for (const auto & column : metadata_snapshot->getPrimaryKey().sample_block)
@@ -178,13 +171,16 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
             DataTypes{element_type, element_type},
             Names{"offset_in_compressed_file", "offset_in_decompressed_block"});
 
+        const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+        if (!merge_tree)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
+
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
         auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());
-        const auto & storage_settings = merge_tree->getSettings();
 
         for (const auto & column : columns_list)
         {
-            auto all_streams = getAllPossibleStreamNames(column, data_parts, storage_settings);
+            auto all_streams = getAllPossibleStreamNames(column, data_parts);
             for (const auto & stream_name : all_streams)
             {
                 /// There may be shared substreams of columns (e.g. for Nested type)
@@ -218,13 +214,15 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionMergeTreeIndex>(
+    {
+        .documentation =
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true, with_minmax = true)", ""}},
             .category = FunctionDocumentation::Category::TableFunction
         },
-        {.allow_readonly = true}
-    );
+        .allow_readonly = true,
+    });
 }
 
 }

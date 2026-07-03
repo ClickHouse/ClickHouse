@@ -12,7 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 namespace fs = std::filesystem;
 
@@ -323,12 +322,6 @@ UpdateAffectedColumns getUpdateAffectedColumns(const MutationCommands & commands
     }
 
     return res;
-}
-
-void LightweightUpdateHolderInKeeper::reset()
-{
-    partition_block_numbers.reset();
-    lock.reset();
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForLightweightUpdateInKeeper(

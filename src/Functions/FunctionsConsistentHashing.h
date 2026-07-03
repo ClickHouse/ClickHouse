@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 #include <base/IPv4andIPv6.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -18,7 +20,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionConsistentHashImpl final : public IFunction
+class FunctionConsistentHashImpl : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -66,10 +68,6 @@ public:
     {
         return true;
     }
-
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {

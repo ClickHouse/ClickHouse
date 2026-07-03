@@ -6,8 +6,9 @@ sidebar_position: 51
 sidebar_label: 'ALTER DATABASE ... MODIFY COMMENT'
 title: 'ALTER DATABASE ... MODIFY COMMENT Statements'
 keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
-doc_type: 'reference'
 ---
+
+# ALTER DATABASE ... MODIFY COMMENT
 
 Adds, modifies, or removes a database comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.databases`](/operations/system-tables/databases.md) 
@@ -23,26 +24,26 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 To create a `DATABASE` with a comment:
 
-``` sql title="Query"
+``` sql
 CREATE DATABASE database_with_comment ENGINE = Memory COMMENT 'The temporary database';
 ```
 
 To modify the comment:
 
-``` sql title="Query"
+``` sql
 ALTER DATABASE database_with_comment 
 MODIFY COMMENT 'new comment on a database';
 ```
 
 To view the modified comment:
 
-```sql title="Query"
+```sql
 SELECT comment 
 FROM system.databases 
 WHERE name = 'database_with_comment';
 ```
 
-```text title="Response"
+```text
 ┌─comment─────────────────┐
 │ new comment on database │
 └─────────────────────────┘
@@ -50,7 +51,7 @@ WHERE name = 'database_with_comment';
 
 To remove the database comment:
 
-``` sql title="Query"
+``` sql
 ALTER DATABASE database_with_comment 
 MODIFY COMMENT '';
 ```

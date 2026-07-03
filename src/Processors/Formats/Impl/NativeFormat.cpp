@@ -98,7 +98,7 @@ private:
     NativeWriter writer;
 };
 
-class NativeSchemaReader final : public ISchemaReader
+class NativeSchemaReader : public ISchemaReader
 {
 public:
     explicit NativeSchemaReader(ReadBuffer & in_, const FormatSettings & settings_) : ISchemaReader(in_), settings(settings_) {}

@@ -13,7 +13,6 @@
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context_fwd.h>
 #include <Functions/IsOperation.h>
 #include <Functions/castTypeToEither.h>
 
@@ -43,7 +42,7 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ArrayA & a, ArrayC & c) /// NOLINT
     {
         size_t size = a.size();
@@ -54,15 +53,27 @@ struct UnaryOperationImpl
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            vectorImpl_x86_64_v4(a, c);
+            vectorImplAVX512BW(a, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            vectorImpl_x86_64_v3(a, c);
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
             return;
         }
 #endif
@@ -80,12 +91,11 @@ struct UnaryOperationImpl
 template <typename Op>
 struct FixedStringUnaryOperationImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const ColumnFixedString::Chars & a, /// NOLINT
         ColumnFixedString::Chars & c)
     {
         size_t size = a.size();
-
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }))
@@ -93,15 +103,27 @@ struct FixedStringUnaryOperationImpl
     static void NO_INLINE vector(const ColumnFixedString::Chars & a, ColumnFixedString::Chars & c)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            vectorImpl_x86_64_v4(a, c);
+            vectorImplAVX512BW(a, c);
             return;
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            vectorImpl_x86_64_v3(a, c);
+            vectorImplAVX512F(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            vectorImplAVX2(a, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            vectorImplSSE42(a, c);
             return;
         }
 #endif
@@ -113,7 +135,7 @@ struct FixedStringUnaryOperationImpl
 template <typename Op>
 struct StringUnaryOperationReduceImpl
 {
-    MULTITARGET_FUNCTION_X86_V4_V3(
+    MULTITARGET_FUNCTION_AVX512BW_AVX512F_AVX2_SSE42(
         MULTITARGET_FUNCTION_HEADER(static UInt64 NO_INLINE),
         vectorImpl,
         MULTITARGET_FUNCTION_BODY((const UInt8 * start, const UInt8 * end) /// NOLINT
@@ -127,14 +149,24 @@ struct StringUnaryOperationReduceImpl
     static UInt64 NO_INLINE vector(const UInt8 * start, const UInt8 * end)
     {
 #if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            return vectorImpl_x86_64_v4(start, end);
+            return vectorImplAVX512BW(start, end);
         }
 
-        if (isArchSupported(TargetArch::x86_64_v3))
+        if (isArchSupported(TargetArch::AVX512F))
         {
-            return vectorImpl_x86_64_v3(start, end);
+            return vectorImplAVX512F(start, end);
+        }
+
+        if (isArchSupported(TargetArch::AVX2))
+        {
+            return vectorImplAVX2(start, end);
+        }
+
+        if (isArchSupported(TargetArch::SSE42))
+        {
+            return vectorImplSSE42(start, end);
         }
 #endif
 
@@ -187,11 +219,8 @@ class FunctionUnaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context_)
+    getFunctionForTupleArithmetic(const DataTypePtr & type, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         if (!isTuple(type))
             return {};
 
@@ -201,12 +230,14 @@ class FunctionUnaryArithmetic : public IFunction
         if constexpr (!IsUnaryOperation<Op>::negate)
             return {};
 
-        return FunctionFactory::instance().get("tupleNegate", context_);
+        return FunctionFactory::instance().get("tupleNegate", context);
     }
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionUnaryArithmetic>(context_); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionUnaryArithmetic>(); }
+
+    FunctionUnaryArithmetic() = default;
 
     explicit FunctionUnaryArithmetic(ContextPtr context_) : context(context_) {}
 
@@ -229,10 +260,10 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when the function is negate, argument is tuple.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context_))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], context))
         {
             ColumnsWithTypeAndName new_arguments(1);
 
@@ -334,8 +365,8 @@ public:
                             auto n = col->getN();
                             for (size_t i = 0; i < size; ++i)
                             {
-                                vec_res[i] = static_cast<UInt16>(
-                                    StringUnaryOperationReduceImpl<Op<UInt8>>::vector(chars.data() + n * i, chars.data() + n * (i + 1)));
+                                vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
+                                    chars.data() + n * i, chars.data() + n * (i + 1));
                             }
                             result_column = std::move(col_res);
                             return true;
@@ -458,7 +489,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -480,7 +513,9 @@ public:
         {
             using DataType = std::decay_t<decltype(type)>;
             if constexpr (std::is_same_v<DataTypeFixedString, DataType> || std::is_same_v<DataTypeString, DataType>)
+            {
                 return false;
+            }
             else
             {
                 using T0 = typename DataType::FieldType;
@@ -488,20 +523,8 @@ public:
                 if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
                 {
                     auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-                    if constexpr (std::is_same_v<Op<T0>, AbsImpl<T0>>
-                               || std::is_same_v<Op<T0>, BitCountImpl<T0>>
-                               || std::is_same_v<Op<T0>, SignImpl<T0>>
-                               || std::is_same_v<Op<T0>, IntExp2Impl<T0>>)
-                    {
-                        /// Skip the result-type cast for ops that need to inspect the original
-                        /// argument and its signedness (abs/bitcount/sign/intExp2).
-                        result = Op<T0>::compile(b, arguments[0].value, is_signed_v<T0>);
-                    }
-                    else
-                    {
-                        auto * v = nativeCast(b, arguments[0], result_type);
-                        result = Op<T0>::compile(b, v, is_signed_v<T1>);
-                    }
+                    auto * v = nativeCast(b, arguments[0], result_type);
+                    result = Op<T0>::compile(b, v, is_signed_v<T1>);
 
                     return true;
                 }
@@ -529,12 +552,8 @@ public:
 struct PositiveMonotonicity
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        if (!type.isValueRepresentedByNumber())
-            return {};
-        if (isNaNField(left) || isNaNField(right))
-            return {};
         return { .is_monotonic = true };
     }
 };

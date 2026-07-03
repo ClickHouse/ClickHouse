@@ -1,43 +1,27 @@
 #pragma once
 
-#include <Common/Logger.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
 /// Represents a storage for table function timeSeriesSelector().
-class StorageTimeSeriesSelector : public StorageWithCommonVirtualColumns
+class StorageTimeSeriesSelector : public IStorage
 {
 public:
-    struct Configuration
-    {
-        StorageID time_series_storage_id = StorageID::createEmpty();
-
-        /// Data types of the corresponding columns in the TimeSeries table.
-        /// We use these data types for the columns we read from table function timeSeriesSelector().
-        DataTypePtr id_data_type;
-        DataTypePtr timestamp_data_type;
-        DataTypePtr scalar_data_type;
-
-        PrometheusQueryTree selector;
-
-        /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
-        DateTime64 min_time;
-        DateTime64 max_time;
-    };
-
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
-
-    StorageTimeSeriesSelector(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
+    StorageTimeSeriesSelector(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const StorageID & time_series_storage_id_,
+        const PrometheusQueryTree & instant_selector_,
+        const Field & min_time_,
+        const Field & max_time_);
 
     std::string getName() const override { return "TimeSeriesSelector"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -48,8 +32,10 @@ public:
         size_t num_streams) override;
 
 private:
-    Configuration config;
-    LoggerPtr log;
+    StorageID time_series_storage_id;
+    PrometheusQueryTree instant_selector;
+    Field min_time;
+    Field max_time;
 };
 
 }

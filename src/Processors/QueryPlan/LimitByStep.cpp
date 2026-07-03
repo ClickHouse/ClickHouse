@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/LimitByTransform.h>
@@ -45,13 +44,13 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
     });
 }
 
 void LimitByStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix << "Columns: ";
 
@@ -66,7 +65,7 @@ void LimitByStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
+            settings.out << column;
         }
         settings.out << '\n';
     }
@@ -97,7 +96,7 @@ void LimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
 {
     UInt64 group_length;
     UInt64 group_offset;
@@ -112,11 +111,6 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
         readStringBinary(column, ctx.in);
 
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
-}
-
-void LimitByStep::applyOrder(SortDescription sort_description)
-{
-    in_order = sort_description.hasPrefix(columns);
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)

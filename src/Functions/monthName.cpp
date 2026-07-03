@@ -2,23 +2,17 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/FunctionFactory.h>
-#include <DataTypes/IDataType.h>
-#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
 
-namespace
+namespace ErrorCodes
 {
-
-bool isDateOrDateTime(const IDataType & type)
-{
-    return isDate(type) || isDateTime(type) || isDateTime64(type);
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-}
-
-class FunctionMonthName final : public IFunction
+class FunctionMonthName : public IFunction
 {
 public:
     static constexpr auto name = "monthName";
@@ -41,11 +35,20 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"datetime", isDateOrDateTime, nullptr, "Date or DateTime"}
-        };
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1",
+                getName(),
+                arguments.size());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        WhichDataType argument_type(arguments[0].type);
+        if (!argument_type.isDate() && !argument_type.isDateTime() && !argument_type.isDateTime64())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type of argument of function {}, should be Date, DateTime or DateTime64",
+                getName());
+
         return std::make_shared<DataTypeString>();
     }
 
@@ -99,7 +102,7 @@ SELECT monthName(date_value)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMonthName>(documentation, FunctionFactory::Case::Insensitive);
 }

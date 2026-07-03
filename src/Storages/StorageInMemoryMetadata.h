@@ -3,14 +3,12 @@
 #include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
-#include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ConstraintsDescription.h>
-#include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/KeyDescription.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
 
@@ -29,17 +27,7 @@ struct StorageInMemoryMetadata
     /// Columns of table with their names, types,
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
-    /// Virtual columns description (e.g. _part, _table, _row_exists).
-    /// Not serialized to disk — recomputed by each storage engine.
-    VirtualColumnsDescription virtuals;
     /// Table indices. Currently supported for MergeTree only.
-    bool add_minmax_index_for_numeric_columns = false;
-    bool add_minmax_index_for_string_columns = false;
-    bool add_minmax_index_for_temporal_columns = false;
-    bool add_minmax_index_for_block_number_column = false;
-    bool add_minmax_index_for_block_offset_column = false;
-    /// Needed for compatibility
-    bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -56,15 +44,13 @@ struct StorageInMemoryMetadata
     KeyDescription sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
-    /// UNIQUE KEY expression. Supported for MergeTree only. Experimental.
-    KeyDescription unique_key;
     /// Separate ttl expressions for columns
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View.
+    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
@@ -83,9 +69,6 @@ struct StorageInMemoryMetadata
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
 
-    ///  Current state of a datalake table.
-    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
-
     StorageInMemoryMetadata() = default;
 
     StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
@@ -101,11 +84,8 @@ struct StorageInMemoryMetadata
     /// Sets a user-defined comment for a table
     void setComment(const String & comment_);
 
-    /// Sets only real columns.
+    /// Sets only real columns, possibly overwrites virtual ones.
     void setColumns(ColumnsDescription columns_);
-
-    /// Sets virtual columns
-    void setVirtuals(VirtualColumnsDescription virtuals_);
 
     /// Sets secondary indices
     void setSecondaryIndices(IndicesDescription secondary_indices_);
@@ -136,13 +116,9 @@ struct StorageInMemoryMetadata
     void setMetadataVersion(int32_t metadata_version_);
     /// Get copy of current metadata with metadata_version_
     StorageInMemoryMetadata withMetadataVersion(int32_t metadata_version_) const;
-    /// Get copy of current metadata with virtual columns
-    StorageInMemoryMetadata withVirtuals(VirtualColumnsDescription virtual_columns_) const;
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
-
-    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.
@@ -222,11 +198,10 @@ struct StorageInMemoryMetadata
     /// Block with ordinary columns.
     Block getSampleBlockNonMaterialized() const;
 
-    /// Block with ordinary + materialized + virtuals.
-    Block getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const;
-
-    /// Returns whether the column is virtual and not shadowed by a real column.
-    bool isVirtualColumn(const String & column_name) const;
+    /// Block with ordinary + materialized + virtuals. Virtuals have to be
+    /// explicitly specified, because they are part of Storage type, not
+    /// Storage metadata.
+    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
@@ -285,28 +260,13 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
-    /// Returns structure with unique key (UNIQUE KEY clause).
-    const KeyDescription & getUniqueKey() const;
-    /// Returns AST of unique key expression for storage or nullptr if there is none.
-    ASTPtr getUniqueKeyAST() const { return unique_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) unique key.
-    bool isUniqueKeyDefined() const;
-    /// Storage has unique key (at least one column).
-    bool hasUniqueKey() const;
-    /// Returns column names from UNIQUE KEY clause.
-    Names getUniqueKeyColumns() const;
-
     /// Storage settings
     ASTPtr getSettingsChanges() const;
-    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
     const SelectQueryDescription & getSelectQuery() const;
     bool hasSelectQuery() const;
-
-    /// If any of the columns has statistics.
-    bool hasStatistics() const;
 
     /// Get version of metadata
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -329,13 +289,7 @@ struct StorageInMemoryMetadata
     std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
-    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
-
-    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
-    void dropImplicitIndicesForColumn(const String & column_name);
-
-    void addImplicitIndicesForVirtualColumns(ContextPtr context);
-    void dropImplicitIndicesForVirtualColumns();
+    NameSet getColumnsWithoutDefaultExpressions() const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

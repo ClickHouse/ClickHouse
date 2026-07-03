@@ -31,7 +31,7 @@ void NO_INLINE test(const Key * data, size_t size, const std::string & name, std
     watch.stop();
     std::cerr << name
         << ":\nElapsed: " << watch.elapsedSeconds()
-        << " (" << static_cast<double>(size) / watch.elapsedSeconds() << " elem/sec.)"
+        << " (" << size / watch.elapsedSeconds() << " elem/sec.)"
         << ", map size: " << map.size() << "\n";
 }
 
@@ -191,7 +191,7 @@ static void NO_INLINE testForType(size_t method, size_t rows_size)
  * std::unordered_map: Elapsed: 0.585 (171059989.837 elem/sec.), map size: 19
  */
 
-int mainEntryExampleIntegerHashTablesBenchmark(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 4)
     {

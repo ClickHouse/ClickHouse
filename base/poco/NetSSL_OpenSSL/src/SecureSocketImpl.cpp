@@ -322,8 +322,6 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 
 		rc = handleError(rc);
 		if (rc == 0) throw SSLConnectionUnexpectedlyClosedException();
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL_write timed out");
 	}
 
 	_pSocket->useSendThrottlerBudget(rc);
@@ -366,10 +364,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
-		rc = handleError(rc);
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL_read timed out");
-		return rc;
+		return handleError(rc);
 	}
 
 	_pSocket->useRecvThrottlerBudget(rc);
@@ -403,10 +398,7 @@ int SecureSocketImpl::completeHandshake()
 	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
-		rc = handleError(rc);
-		if (rc < 0 && _pSocket->getBlocking())
-			throw Poco::TimeoutException("SSL handshake timed out");
-		return rc;
+		return handleError(rc);
 	}
 	_needHandshake = false;
 	return rc;
