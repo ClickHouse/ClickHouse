@@ -1,7 +1,6 @@
 import logging
 import socket
 import struct
-import sys
 import time
 
 import pymysql
