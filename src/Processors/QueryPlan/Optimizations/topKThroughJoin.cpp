@@ -97,6 +97,16 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// maps to an order-reordering join: `PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE`
 /// (`MergeJoin`), `FULL_SORTING_MERGE` (`FullSortingMergeJoin`), or `AUTO`
 /// (`JoinSwitcher`).
+///
+/// `PARALLEL_HASH` (`ConcurrentHashJoin`) is a special case: it preserves the left order
+/// only with a shared two-level map, and scatters it with single-level maps (key8 / key16,
+/// or a single non-nullable LowCardinality key). The map type is not known at the logical
+/// stage. We only treat it as non-order-preserving when it is forced without a `HASH`
+/// fallback: when `HASH` is also enabled the planner picks plain `HashJoin` (which preserves
+/// order) unless the right side is large enough to switch to `ConcurrentHashJoin`, and in
+/// that switched case the second pass's precise physical `preservesLeftBlockOrder()` gate
+/// still refuses order propagation - so correctness holds either way, and we avoid disabling
+/// the deferral for the common `hash`-fallback path.
 bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -106,13 +116,15 @@ bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
-        const auto & js = logical->getJoinSettings();
-        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
+        const auto & algorithms = logical->getJoinSettings().join_algorithms;
+        const bool hash_fallback = TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::HASH);
+        return std::ranges::any_of(algorithms, [&](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
                 || a == JoinAlgorithm::FULL_SORTING_MERGE
-                || a == JoinAlgorithm::AUTO;
+                || a == JoinAlgorithm::AUTO
+                || (a == JoinAlgorithm::PARALLEL_HASH && !hash_fallback);
         });
     }
     /// Unknown step kind - be conservative.
@@ -366,8 +378,9 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Likewise, the join must preserve the left block order. `findReadingStep` also gates
     /// the second pass on `join->preservesLeftBlockOrder()`, which is `false` for
     /// `partial_merge` / `prefer_partial_merge` (`MergeJoin`), `full_sorting_merge`
-    /// (`FullSortingMergeJoin`), and `auto` (`JoinSwitcher`). Read-in-order was never going
-    /// to fire for those algorithms, so deferring to it would just disable both passes;
+    /// (`FullSortingMergeJoin`), `auto` (`JoinSwitcher`), and forced `parallel_hash` without
+    /// a `hash` fallback (`ConcurrentHashJoin` with single-level maps). Read-in-order was
+    /// never going to fire for those, so deferring to it would just disable both passes;
     /// instead let the sound `Sort + Limit` pushdown below run in this pass.
     const bool second_pass_can_apply
         = settings.read_in_order
