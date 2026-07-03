@@ -360,16 +360,9 @@ public:
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
 
-        prometheus::WriteRequest write_request;
-
-        {
-            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
-                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
-
-            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
-        }
-
+        /// Resolve and validate the target table before parsing the request body, so that requests targeting a
+        /// missing or non-`TimeSeries` table (or, with dynamic routing, a table that does not opt into it) are
+        /// rejected without first decompressing and materializing the whole protobuf payload.
         const bool is_dynamic_routing = config().enable_table_name_url_routing;
         auto table_id = is_dynamic_routing
             ? StorageID{resolveTableNameFromRequest(config(), request)}
@@ -388,6 +381,16 @@ public:
             }
         }
         PrometheusRemoteWriteProtocol protocol{time_series_storage, context};
+
+        prometheus::WriteRequest write_request;
+
+        {
+            ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
+                std::make_unique<SnappyReadBuffer>(wrapReadBufferPointer(request.getStream()))};
+
+            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+        }
 
         if (write_request.timeseries_size())
             protocol.writeTimeSeries(write_request.timeseries());
