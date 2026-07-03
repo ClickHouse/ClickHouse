@@ -102,7 +102,7 @@ public:
 
         /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
-            const String & current_database,
+            const CurrentDatabaseInfo & current_database,
             const Settings & settings,
             SharedHeader header_,
             const String & query_id_,
@@ -115,7 +115,7 @@ public:
 
         /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
-            const String & current_database,
+            const CurrentDatabaseInfo & current_database,
             const Settings & settings,
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,

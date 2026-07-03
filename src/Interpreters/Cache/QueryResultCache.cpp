@@ -413,7 +413,7 @@ ASTPtr removeTableAliases(ASTPtr ast)
 /// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
 /// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
 /// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
+IASTHash calculateASTHash(ASTPtr ast, const CurrentDatabaseInfo & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
 {
     if (!pre_cleaned)
     {
@@ -429,7 +429,13 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
 
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
-    hash.update(current_database);
+    hash.update(current_database.database);
+
+    /// Same for the namespace prefix selected via `USE db.namespace` (DataLakeCatalog databases):
+    /// the same unqualified table name resolves to different tables under different prefixes.
+    /// Hash the size first to keep (database, prefix) pairs unambiguous.
+    hash.update(current_database.table_prefix.size());
+    hash.update(current_database.table_prefix);
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
@@ -477,7 +483,7 @@ String queryStringFromAST(ASTPtr ast)
 /// For subqueries, clones the AST once, strips aliases, and returns both hash and query string from the cleaned AST.
 /// For non-subqueries, computes hash (which clones internally) and query string from the original AST.
 std::pair<IASTHash, String> calculateASTHashAndQueryString(
-    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery)
+    ASTPtr ast, const CurrentDatabaseInfo & current_database, const Settings & settings, bool is_subquery)
 {
     if (is_subquery)
     {
@@ -496,7 +502,7 @@ std::pair<IASTHash, String> calculateASTHashAndQueryString(
 
 QueryResultCache::Key::Key(
     ASTPtr ast_,
-    const String & current_database,
+    const CurrentDatabaseInfo & current_database,
     const Settings & settings,
     SharedHeader header_,
     const String & query_id_,
@@ -527,7 +533,7 @@ QueryResultCache::Key::Key(
 
 QueryResultCache::Key::Key(
     ASTPtr ast_,
-    const String & current_database,
+    const CurrentDatabaseInfo & current_database,
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
