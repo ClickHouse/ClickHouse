@@ -207,7 +207,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         NodePtr result = std::make_shared<AllocationLimit>(
             event_queue_,
             SchedulerNodeInfo{},
-            settings_.getAllocationLimit(unit));
+            settings_.getAllocationLimit(unit),
+            settings_.getSoftAllocationLimit(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -216,6 +217,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void updateSemaphore(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
         static_cast<AllocationLimit &>(*node).updateLimit(settings_.getAllocationLimit(unit));
+        static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
     }
 
     static bool hasThrottler(const WorkloadSettings &, CostUnit)

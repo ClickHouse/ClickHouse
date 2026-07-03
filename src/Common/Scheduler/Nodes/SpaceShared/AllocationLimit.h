@@ -11,7 +11,8 @@ class AllocationLimit final : public ISpaceSharedNode
 {
     static constexpr ResourceCost default_max_allocated = std::numeric_limits<ResourceCost>::max();
 public:
-    AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_);
+    AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
+        ResourceCost soft_limit_ = default_max_allocated);
     ~AllocationLimit() override;
     void updateLimit(UInt64 new_max_allocated);
     ResourceCost getLimit() const;

@@ -12,9 +12,11 @@ namespace ErrorCodes
     extern const int RESOURCE_LIMIT_EXCEEDED;
 }
 
-AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_)
+AllocationLimit::AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_,
+    ResourceCost soft_limit_)
     : ISpaceSharedNode(event_queue_, info_)
     , max_allocated(max_allocated_)
+    , soft_limit(soft_limit_)
 {}
 
 AllocationLimit::~AllocationLimit()
