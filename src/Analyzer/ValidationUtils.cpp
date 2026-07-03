@@ -209,7 +209,7 @@ public:
             return;
 
         auto column_node_source = column_node->getColumnSource();
-        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+        if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
             return;
         if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
             return;

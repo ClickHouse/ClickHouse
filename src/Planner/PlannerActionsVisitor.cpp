@@ -834,11 +834,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
 
         auto column_source = column_node.getColumnSourceOrNull();
-        if (column_source &&
-            column_source->getNodeType() == QueryTreeNodeType::LAMBDA &&
-            actions_stack[i].getScopeNode().get() == column_source.get())
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
         {
-            return {column_node_name, Levels(i)};
+            /// Lambda argument columns are sourced from the lambda's arguments node,
+            /// while the scope node on the actions stack is the owning lambda itself.
+            const auto & scope_node = actions_stack[i].getScopeNode();
+            if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA &&
+                &scope_node->as<LambdaNode &>().getArguments() == column_source.get())
+            {
+                return {column_node_name, Levels(i)};
+            }
         }
 
         /// When a table column's name collides with a lambda argument name (possible

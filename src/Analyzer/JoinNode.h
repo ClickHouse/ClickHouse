@@ -220,7 +220,7 @@ using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 /** CrossJoin node represents cross/comma join in query tree.
   * Example: SELECT * FROM t1, t2, t3
   */
-class CrossJoinNode final : public IQueryTreeNode
+class CrossJoinNode final : public ITableExpressionNode
 {
 public:
     struct JoinType
