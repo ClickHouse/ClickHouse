@@ -230,6 +230,12 @@ def test_implicit_index_upgrade_alter_replay(started_cluster):
 
     wait_for_active_replica(node2, "test_alter_replay")
 
+    # wait_for_active_replica only waits for is_readonly = 0, not for the freshly-joined
+    # replica to finish fetching parts. SYSTEM SYNC REPLICA blocks until node2 has fetched
+    # all parts; otherwise the count assertion below races with the background fetch and can
+    # observe only the small VALUES part (1 row) before the 10000-row part arrives.
+    node2.query("SYSTEM SYNC REPLICA test_alter_replay;")
+
     # Verify node2 has the ALTER-added column and all data.
     assert node2.query("SELECT count() FROM test_alter_replay;").strip() == "10001"
     assert (

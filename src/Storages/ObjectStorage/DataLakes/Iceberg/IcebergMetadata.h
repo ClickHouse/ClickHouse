@@ -30,6 +30,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+
 namespace DB
 {
 
@@ -108,9 +109,6 @@ public:
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
-
     /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
     IcebergFiles getFilesForManifest(
         const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
@@ -186,6 +184,8 @@ public:
         const ContextPtr & local_context,
         ReadBuffer & in);
 
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
+
     const DB::Iceberg::PersistentTableComponents & getPersistentComponents() const
     {
         return persistent_components;
@@ -209,6 +209,7 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
+    StorageObjectStorageConfigurationPtr getConfiguration() const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;

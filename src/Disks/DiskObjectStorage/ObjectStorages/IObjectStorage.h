@@ -106,6 +106,9 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
+    /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
+    /// False only for the skip_object_metadata placeholder.
+    bool is_fetched = true;
     Poco::Timestamp last_modified;
     /// Whether `last_modified` carries a real modification time. Some object storages (e.g. a web server
     /// whose HTTP response has no `Last-Modified` header) cannot report it; leaving `last_modified` at the

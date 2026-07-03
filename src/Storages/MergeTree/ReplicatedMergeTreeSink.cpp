@@ -1041,7 +1041,25 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             /// `/blocks/`, and it can not be inserted again.
             new_retry_controller.actionAfterLastFailedRetry([&]
             {
-                transaction.commit();
+                {
+                    /// While we could not verify in keeper whether the part was committed, the failed-quorum
+                    /// cleanup (ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts) could have concurrently
+                    /// moved the still PreActive part to detached and removed it from the working set, changing its
+                    /// state away from PreActive. Committing it then would raise a "Part doesn't exist" logical error,
+                    /// so we check the state under the parts lock to make the decision free of a race with the cleanup.
+                    auto parts_lock = storage.lockParts();
+                    if (part->getState() == MergeTreeDataPartState::PreActive)
+                        transaction.commit(parts_lock);
+                    else
+                    {
+                        /// The cleanup already committed the part storage transaction and moved the part
+                        /// to detached (see forcefullyMovePartToDetachedAndRemoveFromMemory). The part state
+                        /// can only leave PreActive after that commit succeeded, so there is nothing left
+                        /// to materialize here; just drop the part from the precommitted set.
+                        LOG_DEBUG(log, "Part {} was already discarded by the failed-quorum cleanup, nothing to commit", part->name);
+                        transaction.clear();
+                    }
+                }
                 storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
                 throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
                         "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. "
