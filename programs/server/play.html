@@ -1163,10 +1163,8 @@
             z-index: 1000;
             max-width: 50vw;
             max-height: 50vh;
-            padding: 0.25rem;
             background: var(--element-background-color);
             border: 1px solid var(--border-color);
-            border-radius: 0.25rem;
             box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.5);
             pointer-events: none;
             display: none;
@@ -4028,21 +4026,29 @@ let menu_elem = document.getElementById('menu');
 /// cell whose value is an image URL. Its size is capped to half the viewport by CSS;
 /// smaller images keep their natural size.
 let image_preview = null;
+/// Latest cursor position, so a deferred `load` handler can place the preview at where
+/// the cursor is now rather than where it was when the hover started.
+let image_preview_x = 0;
+let image_preview_y = 0;
+/// URL the cursor is currently over (null when not over any image link). A load that
+/// finishes after the cursor has left, or after a different image link was entered,
+/// must not reveal the preview - the `load` handler checks this before showing.
+let image_preview_hovered_url = null;
 
 /// Place the preview near the cursor, flipping to the opposite side/edge when it would
 /// otherwise overflow the viewport, so the whole image stays visible.
-function positionImagePreview(event) {
+function positionImagePreview() {
     if (!image_preview) return;
     const margin = 16;
     const rect = image_preview.getBoundingClientRect();
-    let left = event.clientX + margin;
-    let top = event.clientY + margin;
+    let left = image_preview_x + margin;
+    let top = image_preview_y + margin;
     if (left + rect.width > window.innerWidth - margin) {
-        left = event.clientX - margin - rect.width;
+        left = image_preview_x - margin - rect.width;
     }
     if (left < margin) { left = margin; }
     if (top + rect.height > window.innerHeight - margin) {
-        top = event.clientY - margin - rect.height;
+        top = image_preview_y - margin - rect.height;
     }
     if (top < margin) { top = margin; }
     image_preview.style.left = left + 'px';
@@ -4053,21 +4059,44 @@ function positionImagePreview(event) {
 /// moves, and hide it when the cursor leaves.
 function attachImagePreview(link, url) {
     link.addEventListener('mouseenter', (event) => {
+        image_preview_x = event.clientX;
+        image_preview_y = event.clientY;
+        image_preview_hovered_url = url;
         if (!image_preview) {
             image_preview = document.createElement('img');
             image_preview.id = 'image-preview';
             image_preview.alt = '';
             document.body.appendChild(image_preview);
         }
-        /// Hide again if the image fails to load, so a broken image icon is not shown.
+        /// This exact image is already loaded (e.g. re-entering the same link): show it
+        /// immediately, since no `load` event will fire for an unchanged `src`.
+        if (image_preview.dataset.url === url && image_preview.complete && image_preview.naturalWidth)
+        {
+            image_preview.style.display = 'block';
+            positionImagePreview();
+            return;
+        }
+        /// A different image: keep the preview hidden until the new one finishes loading,
+        /// otherwise the previously shown image would stay visible during the load.
+        image_preview.dataset.url = url;
+        image_preview.style.display = 'none';
+        image_preview.onload = () => {
+            /// Ignore a load the cursor has already moved away from or superseded.
+            if (image_preview_hovered_url !== url) { return; }
+            image_preview.style.display = 'block';
+            positionImagePreview();
+        };
+        /// Keep it hidden if the image fails to load, so a broken image icon is not shown.
         image_preview.onerror = () => { image_preview.style.display = 'none'; };
-        image_preview.onload = () => { positionImagePreview(event); };
         image_preview.src = url;
-        image_preview.style.display = 'block';
-        positionImagePreview(event);
     });
-    link.addEventListener('mousemove', positionImagePreview);
+    link.addEventListener('mousemove', (event) => {
+        image_preview_x = event.clientX;
+        image_preview_y = event.clientY;
+        positionImagePreview();
+    });
     link.addEventListener('mouseleave', () => {
+        image_preview_hovered_url = null;
         if (image_preview) { image_preview.style.display = 'none'; }
     });
 }
