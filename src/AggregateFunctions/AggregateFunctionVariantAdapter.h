@@ -141,7 +141,7 @@ public:
         size_t place_offset,
         const IColumn ** columns,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         auto converted = castArguments(columns, numColumns(if_argument_pos));
         nested_function->addBatch(row_begin, row_end, places, place_offset, converted.data(), arena, if_argument_pos);
@@ -153,7 +153,7 @@ public:
         AggregateDataPtr __restrict place,
         const IColumn ** columns,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         auto converted = castArguments(columns, numColumns(if_argument_pos));
         nested_function->addBatchSinglePlace(row_begin, row_end, place, converted.data(), arena, if_argument_pos);
@@ -166,7 +166,7 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena * arena,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         auto converted = castArguments(columns, numColumns(if_argument_pos));
         nested_function->addBatchSinglePlaceNotNull(row_begin, row_end, place, converted.data(), null_map, arena, if_argument_pos);

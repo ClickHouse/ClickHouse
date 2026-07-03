@@ -110,11 +110,11 @@ private:
         AggregateFunctionStateVariant state_variant) const;
 
     /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
-    /// Variant fallback. `argument_types` must already have LowCardinality removed.
+    /// Variant fallback. `types_without_low_cardinality` must already have LowCardinality removed.
     AggregateFunctionPtr getWithoutVariantAdapter(
         const String & name,
         NullsAction action,
-        const DataTypes & argument_types,
+        const DataTypes & types_without_low_cardinality,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant) const;
