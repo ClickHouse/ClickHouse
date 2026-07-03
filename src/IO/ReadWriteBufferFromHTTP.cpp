@@ -189,7 +189,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
     HTTPHeaderEntries http_header_entries_,
     bool delay_initialization,
     std::optional<HTTPFileInfo> file_info_,
-    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_)
+    std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors_) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     : SeekableReadBuffer(nullptr, 0)
     , connection_group(connection_group_)
     , initial_uri(uri_)
