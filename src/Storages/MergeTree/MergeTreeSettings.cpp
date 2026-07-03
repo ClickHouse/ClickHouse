@@ -1912,10 +1912,10 @@ Disable DETACH PARTITION query for zero copy replication.
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
 Disable FETCH PARTITION query for zero copy replication.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, true, R"(
 Enable persisting column _block_number for each row.
 )", 0, allow_experimental_block_number_column) \
-    DECLARE(Bool, enable_block_offset_column, false, R"(
+    DECLARE(Bool, enable_block_offset_column, true, R"(
 Persists virtual column `_block_offset` on merges.
 )", 0) \
     DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET, R"(

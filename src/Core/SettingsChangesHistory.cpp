@@ -1279,6 +1279,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
+            {"enable_block_number_column", false, true, "Enable by default."},
+            {"enable_block_offset_column", false, true, "Enable by default."},
             {"part_minmax_index_columns", "partition_key_only", "with_block_number_offset", "Enable virtual min-max index by default."},
             {"allow_experimental_text_index_positions", false, false, "New setting"},
         });
