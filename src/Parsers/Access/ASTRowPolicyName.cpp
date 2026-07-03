@@ -30,6 +30,17 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
         full_name.database = current_database;
 }
 
+void ASTRowPolicyName::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
+{
+    if (full_name.database.empty())
+    {
+        full_name.database = current_database.database;
+        /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
+        if (!current_database.table_prefix.empty() && !full_name.table_name.empty())
+            full_name.table_name = current_database.table_prefix + "." + full_name.table_name;
+    }
+}
+
 String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
 {
     return table_name == RowPolicyName::ANY_TABLE_MARK ? "*" : backQuoteIfNeed(table_name);
@@ -136,6 +147,20 @@ void ASTRowPolicyNames::replaceEmptyDatabase(const String & current_database)
     for (auto & full_name : full_names)
         if (full_name.database.empty())
             full_name.database = current_database;
+}
+
+void ASTRowPolicyNames::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
+{
+    for (auto & full_name : full_names)
+    {
+        if (full_name.database.empty())
+        {
+            full_name.database = current_database.database;
+            /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
+            if (!current_database.table_prefix.empty() && !full_name.table_name.empty())
+                full_name.table_name = current_database.table_prefix + "." + full_name.table_name;
+        }
+    }
 }
 
 }

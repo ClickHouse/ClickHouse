@@ -195,4 +195,10 @@ void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_databa
     if (names)
         names->replaceEmptyDatabase(current_database);
 }
+
+void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
+{
+    if (names)
+        names->replaceEmptyDatabase(current_database);
+}
 }

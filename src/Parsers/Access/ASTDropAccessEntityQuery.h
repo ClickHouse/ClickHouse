@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Common/AccessEntityType.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -32,6 +33,7 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database) const;
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 

@@ -88,4 +88,23 @@ void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const String & current
     }
 }
 
+void ASTShowCreateAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database)
+{
+    if (row_policy_names)
+        row_policy_names->replaceEmptyDatabase(current_database);
+
+    if (database_and_table_name)
+    {
+        String & database = database_and_table_name->first;
+        String & table = database_and_table_name->second;
+        if (database.empty())
+        {
+            database = current_database.database;
+            /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
+            if (!current_database.table_prefix.empty() && !table.empty())
+                table = current_database.table_prefix + "." + table;
+        }
+    }
+}
+
 }

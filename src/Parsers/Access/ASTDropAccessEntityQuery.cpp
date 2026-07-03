@@ -78,4 +78,18 @@ void ASTDropAccessEntityQuery::replaceEmptyDatabase(const String & current_datab
     if (masking_policy_name && masking_policy_name->database.empty())
         masking_policy_name->database = current_database;
 }
+
+void ASTDropAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
+{
+    if (row_policy_names)
+        row_policy_names->replaceEmptyDatabase(current_database);
+
+    if (masking_policy_name && masking_policy_name->database.empty())
+    {
+        masking_policy_name->database = current_database.database;
+        /// USE db.namespace: an unqualified policy target is the namespace-qualified table.
+        if (!current_database.table_prefix.empty() && !masking_policy_name->table_name.empty())
+            masking_policy_name->table_name = current_database.table_prefix + "." + masking_policy_name->table_name;
+    }
+}
 }

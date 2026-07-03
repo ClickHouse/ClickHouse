@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Access/Common/AccessEntityType.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -41,6 +42,7 @@ public:
     ASTPtr clone() const override;
 
     void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 

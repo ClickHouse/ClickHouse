@@ -61,4 +61,10 @@ void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const String & current_datab
     if (row_policy_names)
         row_policy_names->replaceEmptyDatabase(current_database);
 }
+
+void ASTMoveAccessEntityQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
+{
+    if (row_policy_names)
+        row_policy_names->replaceEmptyDatabase(current_database);
+}
 }
