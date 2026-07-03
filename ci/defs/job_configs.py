@@ -1116,27 +1116,6 @@ class JobConfigs:
         timeout=24 * 3600,
         post_hooks=["python3 ./ci/jobs/scripts/ingest_keeper_metrics.py"],
     )
-    compatibility_test_jobs = Job.Config(
-        name=JobNames.COMPATIBILITY,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/compatibility_check.py",
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/compatibility_check.py",
-            ],
-        ),
-    ).parametrize(
-        Job.ParamSet(
-            parameter="amd_release",
-            runs_on=RunnerLabels.STYLE_CHECK_AMD,
-            requires=[ArtifactNames.DEB_AMD_RELEASE],
-        ),
-        Job.ParamSet(
-            parameter="arm_release",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            requires=[ArtifactNames.DEB_ARM_RELEASE],
-        ),
-    )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()

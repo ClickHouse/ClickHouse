@@ -505,6 +505,20 @@ def main():
         )
         res = results[-1].is_ok()
 
+    if res and build_type in (BuildTypes.AMD_RELEASE, BuildTypes.ARM_RELEASE):
+        # Release binaries must be fully static: no dynamic loader (PT_INTERP)
+        # and no shared library dependencies (DT_NEEDED).
+        results.append(
+            Result.from_commands_run(
+                name="not dynamically linked",
+                command=[
+                    f'test "$(readelf -l {build_dir_normalized}/programs/clickhouse | grep -c INTERP)" = 0',
+                    f"test \"$(readelf -d {build_dir_normalized}/programs/clickhouse 2>/dev/null | grep -c '(NEEDED)')\" = 0",
+                ],
+            )
+        )
+        res = results[-1].is_ok()
+
     Result.create_from(results=results, files=files).complete_job()
 
 

@@ -45,7 +45,6 @@ class JobTypes:
     FORMATTER = "Formatter"
     BUZZ_FUZZER = "Buzz"
     DOCKER = "Docker"
-    COMPATIBILITY = "Compatibility"
     INSTALL = "Install"
     STRESS = "Stress"
     UPGRADE = "Upgrade"

@@ -40,7 +40,6 @@ workflow = Workflow.Config(
         JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
-        *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs,
         *JobConfigs.functional_test_llvm_coverage_jobs,
         *JobConfigs.functional_test_excluded_from_llvm_job,
