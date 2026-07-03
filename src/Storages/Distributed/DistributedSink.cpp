@@ -30,7 +30,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -684,7 +683,7 @@ Blocks DistributedSink::splitBlock(const Block & block)
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        auto split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
             split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
@@ -831,7 +830,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     };
 
     auto sleep_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms].totalMilliseconds();
-    size_t file_size = 0;
+    size_t file_size;
 
     auto it = dir_names.begin();
     /// on first iteration write block to a temporary directory for subsequent
@@ -865,19 +864,16 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             writeStringBinary(query_string, header_buf);
             context->getSettingsRef().write(header_buf);
 
-            /// `client_agent` is intentionally excluded from the embedded `ClientInfo` here and written
-            /// as a trailing header field below, so that older binaries draining these queue files read
-            /// the embedded `ClientInfo` in the old, append-compatible layout.
             if (OpenTelemetry::CurrentContext().isTraceEnabled())
             {
                 // if the distributed tracing is enabled, use the trace context in current thread as parent of next span
                 auto client_info = context->getClientInfo();
                 client_info.client_trace_context = OpenTelemetry::CurrentContext();
-                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_client_agent=*/ false);
+                client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             }
             else
             {
-                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_client_agent=*/ false);
+                context->getClientInfo().write(header_buf, DBMS_TCP_PROTOCOL_VERSION);
             }
 
             writeVarUInt(block.rows(), header_buf);
@@ -894,11 +890,6 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
             writeStringBinary(storage.cluster_name, header_buf);
             writeStringBinary(storage.getStorageID().getFullNameNotQuoted(), header_buf);
             writeStringBinary(storage.getRemoteDatabaseName() + "." + storage.getRemoteTableName(), header_buf);
-
-            /// Trailing field: the detected AI coding agent of the initiating client.
-            /// Kept here (rather than inside the embedded `ClientInfo` above) so older binaries can
-            /// safely ignore it when draining queue files written by a newer binary.
-            writeStringBinary(context->getClientInfo().client_agent, header_buf);
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);
