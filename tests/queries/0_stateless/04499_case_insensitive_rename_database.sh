@@ -22,5 +22,5 @@ ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${DB_FOO}.t (x Int32) ENGINE = Memory
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${DB_FOO}.t VALUES (7)"
 ${CLICKHOUSE_CLIENT} --query "RENAME DATABASE ${DB_FOO} TO ${DB_BAR}"
 ${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_BAR_FOLDED}.t SETTINGS case_insensitive_names = 'standard'"
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_FOO_FOLDED}.t SETTINGS case_insensitive_names = 'standard'" 2>&1 | grep -oF "UNKNOWN_DATABASE"
+${CLICKHOUSE_CLIENT} --query "SELECT x FROM ${DB_FOO_FOLDED}.t SETTINGS case_insensitive_names = 'standard'" 2>&1 | grep -oF "UNKNOWN_DATABASE" | uniq
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${DB_BAR}"
