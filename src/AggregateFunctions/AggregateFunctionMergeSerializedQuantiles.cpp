@@ -53,7 +53,7 @@ public:
         this->data(place).insertSerialized(serialized_data, base64_encoded);
     }
 
-    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED ALWAYS_INLINE mergeImpl(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
