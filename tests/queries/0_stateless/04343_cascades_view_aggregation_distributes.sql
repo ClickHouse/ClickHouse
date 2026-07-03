@@ -25,6 +25,7 @@ SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;
+SET query_plan_optimize_join_order_randomize = 0;
 
 -- Simulate a 20 node cluster and weight the cost model towards parallelism.
 SET param__internal_cascades_cluster_node_count = 20;

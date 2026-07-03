@@ -13,6 +13,7 @@ SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_asof_small;
 DROP TABLE IF EXISTS t_asof_big;
