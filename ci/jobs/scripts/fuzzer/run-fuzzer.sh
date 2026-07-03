@@ -286,8 +286,17 @@ function fuzz
 
     # Default: the loop leaves this unset if it exhausts all retries via the
     # "alive but busy" branches (TOO_MANY_SIMULTANEOUS_QUERIES /
-    # MEMORY_LIMIT_EXCEEDED); a dead server sets server_died=1 and breaks.
+    # MEMORY_LIMIT_EXCEEDED / probe timeout); a dead server sets server_died=1
+    # and breaks. A receive/socket timeout means the server is alive but slow to
+    # answer (common right after a 30m ASAN fuzz run), not dead -- a dead server
+    # returns "Connection refused"/EOF instead -- so count repeated timeouts and
+    # only declare a hang once they persist, otherwise a single transient timeout
+    # turns a clean (exit 143) run into a bogus "server died" FAIL.
+    # BEGIN: server-liveness probe loop (exercised verbatim by
+    # ci/tests/test_fuzzer_liveness_loop.py)
     server_died=0
+    timeouts=0
+    timeouts_max=12
 
     for _ in {1..100}
     do
@@ -305,10 +314,26 @@ function fuzz
                 # it, do not abort the script (that would skip the status.tsv
                 # write below and surface as a missing-status job ERROR).
                 clickhouse-client --query "SHOW PROCESSLIST" ||:
+                timeouts=0
                 sleep 1
             elif grep -F 'MEMORY_LIMIT_EXCEEDED' err
             then
                 # Server is alive but at memory limit, give it time to reclaim
+                timeouts=0
+                sleep 1
+            elif grep -F 'Timeout exceeded while' err
+            then
+                # Alive but slow to answer: retry, and only treat it as a real
+                # hang once the timeouts persist (a dead server hits the branch
+                # below with "Connection refused"/EOF, not a timeout).
+                timeouts=$((timeouts + 1))
+                if [[ "$timeouts" -ge "$timeouts_max" ]]
+                then
+                    echo "Server live check: probe timed out $timeouts times, treating server as hung"
+                    cat err
+                    server_died=1
+                    break
+                fi
                 sleep 1
             else
                 echo "Server live check returns $?"
@@ -318,6 +343,7 @@ function fuzz
             fi
         fi
     done
+    # END: server-liveness probe loop
 
     # Stop the server in background so we can wait for the subshell to
     # finish in the foreground. We wait on server_bg_pid (the subshell running
