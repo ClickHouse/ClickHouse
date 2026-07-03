@@ -141,6 +141,12 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
+    /// Experimental pipeline read executor (`use_reader_executor`). When set,
+    /// `ReadPipeline::build` routes supported reads through `ReaderExecutor`
+    /// instead of the legacy matryoshka of read buffers. The executor reads in
+    /// blocks of `buffer_size` bytes.
+    bool use_reader_executor = false;
+
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;

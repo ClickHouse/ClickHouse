@@ -41,7 +41,8 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
     const AnalysisTableExpressionData & table_expression_data,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    for (const auto & [column_name, column_node] : table_expression_data.column_name_to_column_node)
+    /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
+    for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
         Identifier column_identifier(column_name);
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
@@ -212,9 +213,9 @@ void TypoCorrection::collectScopeWithParentScopesValidIdentifiers(
     }
 }
 
-std::vector<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
+VectorWithMemoryTracking<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
 {
-    std::vector<String> prompting_strings;
+    VectorWithMemoryTracking<String> prompting_strings;
     prompting_strings.reserve(valid_identifiers.size());
 
     for (const auto & valid_identifier : valid_identifiers)

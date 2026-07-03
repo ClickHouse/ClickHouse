@@ -173,6 +173,26 @@ if (OS_LINUX)
 endif ()
 
 if (OS_DARWIN)
+    # Same reasoning as `--no-export-dynamic` on Linux: the main clickhouse binary does not
+    # use dlopen, so it does not need to export any dynamic symbols. By default the Mach-O
+    # linker puts every global symbol into the export trie (hundreds of thousands of them for
+    # clickhouse), which dyld walks for weak-symbol coalescing on every launch, adding ~0.15s
+    # of startup latency. An empty `-exported_symbols_list` suppresses the export trie while
+    # keeping the LC_SYMTAB used for backtraces intact. We use it instead of the simpler
+    # `-no_exported_symbols` because the latter is not understood by the cctools `ld` used for
+    # cross-compilation in CI, while `-exported_symbols_list` is supported by both it and lld.
+    #
+    # Skip this for sanitizer builds: on Darwin we rely on Apple's bundled sanitizer runtime,
+    # which resolves hooks such as `__asan_default_options` / `__lsan_default_suppressions`
+    # (see base/base/sanitizer_options.h) by symbol name via dyld weak-symbol coalescing.
+    # Hiding the executable's exports would silently drop those options. Sanitizer builds are
+    # for testing and do not need the startup optimization anyway.
+    if (NOT SANITIZE)
+        set (EMPTY_EXPORTED_SYMBOLS_LIST "${CMAKE_BINARY_DIR}/empty_exported_symbols.txt")
+        file (WRITE "${EMPTY_EXPORTED_SYMBOLS_LIST}" "")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-exported_symbols_list,${EMPTY_EXPORTED_SYMBOLS_LIST}")
+    endif ()
+
     # Remove unreachable functions/data (Darwin equivalent of --gc-sections).
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-dead_strip")
 
@@ -331,6 +351,32 @@ endif()
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
+# Do not maintain `errno` for math functions (`sqrt`, `log`, `pow`, ...). This changes no
+# computed result - `errno` is the only observable difference and ClickHouse never reads it
+# after a libm call - but it lets the compiler emit math instructions directly instead of
+# guarding each call with a branch to a libm wrapper, which also unblocks vectorization.
+# Clang's default on Linux is `-fmath-errno` (errno-setting), so this is not already implied.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
+
+# `-fno-math-errno` lets the compiler fold, hoist, and eliminate libm calls. That can remove the
+# last `src/`-side references to a libm function, leaving its only references in contrib objects
+# (e.g. usearch, arrow) that are linked after our in-tree `glibc-compatibility` math archive. Since
+# an archive member is pulled only to satisfy an already-undefined symbol, the in-tree object is
+# never extracted and the reference binds to shared glibc's newer symbol version, which the
+# compatibility check rejects (max allowed GLIBC version is 2.4 on amd64, 2.18 on aarch64). Force
+# our in-tree `musl` implementations to be pulled from the static archive so they preempt glibc,
+# in the same spirit as the explicit `memcpy` interposition in `clickhouse_add_executable` below.
+#
+# Both the single-precision functions (new glibc version `@GLIBC_2.27`) and the double-precision
+# ones (`@GLIBC_2.29`) are pinned. The doubles matter when `ENABLE_LLVM_LIBC_MATH=OFF`: in that
+# configuration llvm-libc does not provide them, so `exp`/`log`/`pow`/`exp2`/`log2` are available
+# only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
+# bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
+# from it, so the extra `-u` requests are harmless no-ops.
+if (GLIBC_COMPATIBILITY)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
+endif ()
+
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
@@ -421,9 +467,12 @@ include(cmake/limit_jobs.cmake)
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+# Increase stack size on Musl. We need big stack for our recursive-descend parser
+# and for analyzer passes that recurse on deeply-nested join trees (e.g.
+# 1000-join queries). Match glibc's 8 MiB default; musl reads this from
+# PT_GNU_STACK and clamps it to DEFAULT_STACK_MAX (also 8 MiB).
 if (USE_MUSL)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=8388608")
 endif ()
 
 include(cmake/dbms_glob_sources.cmake)
@@ -545,12 +594,7 @@ endif ()
 macro (clickhouse_add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
-    # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
-    else ()
-        add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
-    endif ()
+    add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
