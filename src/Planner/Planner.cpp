@@ -707,7 +707,7 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 /// initiator's final sort+limit discards it.  Requires a real ORDER BY — the
 /// no-ORDER-BY promotion cannot help here, since the verifying sort would have
 /// to sit above the initiator's MergingAggregatedStep.
-static void applyTopKPushdownToPartialAggregation(
+void applyTopKPushdownToPartialAggregation(
     AggregatingStep & aggregating_step,
     const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
