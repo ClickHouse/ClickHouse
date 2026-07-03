@@ -6,7 +6,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -58,7 +57,7 @@ public:
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntryPtr & entry) const;
+    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
 };
 
 }

@@ -107,7 +107,7 @@ bool ParserSampleRatio::parseImpl(Pos & pos, ASTPtr & node, Expected &)
         res = numerator;
     }
 
-    node = make_intrusive<ASTSampleRatio>(res);
+    node = std::make_shared<ASTSampleRatio>(res);
     return true;
 }
 

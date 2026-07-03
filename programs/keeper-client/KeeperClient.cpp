@@ -1,4 +1,5 @@
 #include <KeeperClient.h>
+#include <Commands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
 #include <Common/VersionNumber.h>
@@ -7,19 +8,10 @@
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ErrnoException.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
-
-#if USE_SSL
-#include <Poco/Net/Context.h>
-#include <Poco/Net/SSLManager.h>
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
-#endif
 
 
 namespace DB
@@ -51,6 +43,90 @@ String KeeperClient::executeFourLetterCommand(const String & command)
     readStringUntilEOF(result, in);
     in.next();
     return result;
+}
+
+std::vector<String> KeeperClient::getCompletions(const String & prefix) const
+{
+    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+
+    if (pos->type != TokenType::BareWord)
+        return registered_commands_and_four_letter_words;
+
+    ++pos;
+    if (pos->isEnd())
+        return registered_commands_and_four_letter_words;
+
+    ParserToken{TokenType::Whitespace}.ignore(pos);
+
+    std::vector<String> result;
+    String string_path;
+    Expected expected;
+    if (!parseKeeperPath(pos, expected, string_path))
+        string_path = cwd;
+
+    if (!pos->isEnd())
+        return result;
+
+    fs::path path = string_path;
+    String parent_path;
+    if (string_path.ends_with("/"))
+        parent_path = getAbsolutePath(string_path);
+    else
+        parent_path = getAbsolutePath(path.parent_path());
+
+    try
+    {
+        for (const auto & child : zookeeper->getChildren(parent_path))
+            result.push_back(child);
+    }
+    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
+
+    std::sort(result.begin(), result.end());
+
+    return result;
+}
+
+void KeeperClient::askConfirmation(const String & prompt, std::function<void()> && callback)
+{
+    if (!ask_confirmation)
+    {
+        callback();
+        return;
+    }
+
+    std::cout << prompt << " Continue?\n";
+    waiting_confirmation = true;
+    confirmation_callback = callback;
+}
+
+fs::path KeeperClient::getAbsolutePath(const String & relative) const
+{
+    String result;
+    if (relative.starts_with('/'))
+        result = fs::weakly_canonical(relative);
+    else
+        result = fs::weakly_canonical(cwd / relative);
+
+    if (result.ends_with('/') && result.size() > 1)
+        result.pop_back();
+
+    return result;
+}
+
+void KeeperClient::loadCommands(std::vector<Command> && new_commands)
+{
+    for (const auto & command : new_commands)
+    {
+        String name = command->getName();
+        commands.insert({name, command});
+        registered_commands_and_four_letter_words.push_back(std::move(name));
+    }
+
+    for (const auto & command : four_letter_word_commands)
+        registered_commands_and_four_letter_words.push_back(command);
+
+    std::sort(registered_commands_and_four_letter_words.begin(), registered_commands_and_four_letter_words.end());
 }
 
 void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
@@ -127,35 +203,37 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
             .argument("<identity>")
             .binding("identity"));
-
-    options.addOption(
-        Poco::Util::Option("secure", "s", "use secure connection (adds secure:// prefix to host). default false")
-            .binding("secure"));
-
-    options.addOption(
-        Poco::Util::Option("tls-cert-file", "", "path to TLS certificate file for secure connection")
-            .argument("<file>")
-            .binding("tls-cert-file"));
-
-    options.addOption(
-        Poco::Util::Option("tls-key-file", "", "path to TLS private key file for secure connection")
-            .argument("<file>")
-            .binding("tls-key-file"));
-
-    options.addOption(
-        Poco::Util::Option("tls-ca-file", "", "path to TLS CA certificate file for secure connection")
-            .argument("<file>")
-            .binding("tls-ca-file"));
-
-    options.addOption(
-        Poco::Util::Option("accept-invalid-certificate", "", "accept invalid TLS certificates (bypasses verification). default false")
-            .binding("accept-invalid-certificate"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
+
+    loadCommands({
+        std::make_shared<LSCommand>(),
+        std::make_shared<CDCommand>(),
+        std::make_shared<SetCommand>(),
+        std::make_shared<CreateCommand>(),
+        std::make_shared<TouchCommand>(),
+        std::make_shared<GetCommand>(),
+        std::make_shared<ExistsCommand>(),
+        std::make_shared<GetStatCommand>(),
+        std::make_shared<FindSuperNodes>(),
+        std::make_shared<DeleteStaleBackups>(),
+        std::make_shared<FindBigFamily>(),
+        std::make_shared<RMCommand>(),
+        std::make_shared<RMRCommand>(),
+        std::make_shared<ReconfigCommand>(),
+        std::make_shared<SyncCommand>(),
+        std::make_shared<HelpCommand>(),
+        std::make_shared<FourLetterWordCommand>(),
+        std::make_shared<GetDirectChildrenNumberCommand>(),
+        std::make_shared<GetAllChildrenNumberCommand>(),
+        std::make_shared<CPCommand>(),
+        std::make_shared<MVCommand>(),
+        std::make_shared<GetAclCommand>(),
+    });
 
     String home_path;
     const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
@@ -194,48 +272,6 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     EventNotifier::init();
 }
 
-std::vector<String> KeeperClient::getCompletions(const String & prefix) const
-{
-    Tokens tokens(prefix.data(), prefix.data() + prefix.size(), 0, false);
-    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (pos->type != TokenType::BareWord)
-        return registered_commands_and_four_letter_words;
-
-    ++pos;
-    if (pos->isEnd())
-        return registered_commands_and_four_letter_words;
-
-    ParserToken{TokenType::Whitespace}.ignore(pos);
-
-    std::vector<String> result;
-    String string_path;
-    Expected expected;
-    if (!parseKeeperPath(pos, expected, string_path))
-        string_path = cwd;
-
-    if (!pos->isEnd())
-        return result;
-
-    fs::path path = string_path;
-    String parent_path;
-    if (string_path.ends_with("/"))
-        parent_path = getAbsolutePath(string_path);
-    else
-        parent_path = getAbsolutePath(path.parent_path());
-
-    try
-    {
-        for (const auto & child : zookeeper->getChildren(parent_path))
-            result.push_back(child);
-    }
-    catch (Coordination::Exception &) {} // NOLINT(bugprone-empty-catch)
-
-    std::sort(result.begin(), result.end());
-
-    return result;
-}
-
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
 {
     if (exit_strings.contains(text))
@@ -245,7 +281,6 @@ bool KeeperClient::processQueryText(const String & text, bool is_interactive)
     std::chrono::milliseconds current_sleep{100};
     size_t i = 0;
 
-    auto component_guard = Coordination::setCurrentComponent("KeeperClient::processQueryText");
     while (true)
     {
         try
@@ -355,15 +390,9 @@ void KeeperClient::runInteractiveReplxx()
             break;
     }
 
-    cout << std::endl;
+    std::cout << std::endl;
 }
 
-/// In tests-mode, commands are read line by line from stdin.
-/// After each command, a separator (four BEL characters + newline) is written
-/// to stdout so the test harness can detect where one command's output ends.
-/// Errors from failed commands go to stderr.
-/// We must flush stderr before writing the separator to stdout, otherwise
-/// the test harness may see the separator first and miss the error.
 void KeeperClient::runInteractiveInputStream()
 {
     for (String input; std::getline(std::cin, input);)
@@ -371,8 +400,8 @@ void KeeperClient::runInteractiveInputStream()
         if (!processQueryText(input, /*is_interactive=*/true))
             break;
 
-        cerr << std::flush;
-        cout << "\a\a\a\a" << std::endl;
+        std::cout << "\a\a\a\a" << std::endl;
+        std::cerr << std::flush;
     }
 }
 
@@ -386,42 +415,6 @@ void KeeperClient::runInteractive()
 
 void KeeperClient::connectToKeeper()
 {
-#if USE_SSL
-    /// Configure SSL context if TLS options are provided
-    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
-    {
-        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
-
-        if (config().has("accept-invalid-certificate"))
-        {
-            verification_mode = Poco::Net::Context::VERIFY_NONE;
-        }
-
-        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
-            Poco::Net::Context::TLSV1_2_CLIENT_USE,
-            config().getString("tls-key-file", ""),
-            config().getString("tls-cert-file", ""),
-            config().getString("tls-ca-file", ""),
-            verification_mode,
-            9,
-            true,
-            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
-        ));
-
-        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
-        if (config().has("accept-invalid-certificate"))
-        {
-            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
-        }
-        else
-        {
-            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
-        }
-
-        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
-    }
-#endif
-
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
@@ -446,7 +439,7 @@ void KeeperClient::connectToKeeper()
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
+            if (clickhouse_config.configuration->has(prefix + ".secure"))
                 host = "secure://" + host;
 
             new_zk_args.hosts.push_back(host + ":" + port);
@@ -456,9 +449,6 @@ void KeeperClient::connectToKeeper()
     {
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
-
-        if (config().has("secure"))
-            host = "secure://" + host;
 
         new_zk_args.hosts.push_back(host + ":" + port);
     }
@@ -473,8 +463,7 @@ void KeeperClient::connectToKeeper()
     if (!new_zk_args.identity.empty())
         new_zk_args.auth_scheme = "digest";
     zk_args = new_zk_args;
-    auto component_guard = Coordination::setCurrentComponent("KeeperClient::connectToKeeper");
-    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(new_zk_args));
+    zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 }
 
 int KeeperClient::main(const std::vector<String> & /* args */)

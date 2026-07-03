@@ -6,7 +6,6 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/levenshteinDistance.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>

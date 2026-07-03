@@ -11,12 +11,7 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
-
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace DB
 {
@@ -84,13 +79,6 @@ BlockIO InterpreterCreateIndexQuery::execute()
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, current_context, {}, std::move(guard));
     }
-
-#if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
-    {
-        return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
-    }
-#endif
 
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, current_context);
     if (table->isStaticStorage())

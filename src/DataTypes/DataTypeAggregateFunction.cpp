@@ -248,7 +248,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected level of parameters to aggregate function");
 
         function_name = parametric->name;
-        action = parametric->getNullsAction();
+        action = parametric->nulls_action;
 
         if (parametric->arguments)
         {

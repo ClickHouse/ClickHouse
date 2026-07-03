@@ -40,11 +40,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's MergeTreeIndex but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "MergeTreeIndex"; }
 
     StorageID source_table_id{StorageID::createEmpty()};
     bool with_marks = false;
@@ -109,8 +105,7 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
 
 static NameSet getAllPossibleStreamNames(
     const NameAndTypePair & column,
-    const MergeTreeDataPartsVector & data_parts,
-    const MergeTreeSettingsPtr & storage_settings)
+    const MergeTreeDataPartsVector & data_parts)
 {
     NameSet all_streams;
 
@@ -122,7 +117,7 @@ static NameSet getAllPossibleStreamNames(
 
     auto callback = [&](const auto & substream_path)
     {
-        auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
         all_streams.insert(Nested::concatenateName(stream_name, "mark"));
     };
 
@@ -137,7 +132,7 @@ static NameSet getAllPossibleStreamNames(
     for (const auto & part : data_parts)
     {
         serialization = part->tryGetSerialization(column.name);
-        if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
+        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
         {
             serialization->enumerateStreams(callback);
             break;
@@ -182,11 +177,10 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
 
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
         auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());
-        const auto & storage_settings = merge_tree->getSettings();
 
         for (const auto & column : columns_list)
         {
-            auto all_streams = getAllPossibleStreamNames(column, data_parts, storage_settings);
+            auto all_streams = getAllPossibleStreamNames(column, data_parts);
             for (const auto & stream_name : all_streams)
             {
                 /// There may be shared substreams of columns (e.g. for Nested type)

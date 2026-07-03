@@ -26,7 +26,7 @@ SELECT name FROM test SETTINGS force_optimize_projection_name='projection_name';
 INSERT INTO test SELECT number, 'test' FROM numbers(1, 100) SETTINGS force_optimize_projection_name='projection_name';
 SELECT 1 SETTINGS force_optimize_projection_name='projection_name';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT read_rows FROM system.query_log
 WHERE current_database = currentDatabase()

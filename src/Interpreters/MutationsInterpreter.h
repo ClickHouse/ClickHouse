@@ -23,16 +23,13 @@ struct IsStorageTouched
     bool all_rows_affected = false;
 };
 
-ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
-
 /// Return false if the data isn't going to be changed by mutations.
 IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled
+    ContextPtr context
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -102,8 +99,6 @@ public:
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
 
-    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
-
     NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
 
     NameSet grabMaterializedProjections() { return std::move(materialized_projections); }
@@ -142,7 +137,7 @@ public:
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
+        bool hasSecondaryIndex(const String & name) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
@@ -255,7 +250,6 @@ private:
     NameSet materialized_indices;
     NameSet materialized_projections;
     NameSet materialized_statistics;
-    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

@@ -282,10 +282,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, IAcquiredSlot * cp
     auto & context = tasks.getThreadContext(thread_num);
     LOG_TEST(log,
               "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.",
-              static_cast<double>(context.total_time_ns) / 1e9,
-              static_cast<double>(context.execution_time_ns) / 1e9,
-              static_cast<double>(context.processing_time_ns) / 1e9,
-              static_cast<double>(context.wait_time_ns) / 1e9);
+              context.total_time_ns / 1e9,
+              context.execution_time_ns / 1e9,
+              context.processing_time_ns / 1e9,
+              context.wait_time_ns / 1e9);
 #endif
 }
 
@@ -558,7 +558,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
+            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
 
             try
             {
@@ -623,8 +623,8 @@ String PipelineExecutor::dumpPipeline() const
             buffer << "(" << node->num_executed_jobs << " jobs";
 
 #ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node->execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node->preparation_time_ns) / 1e9 << " sec.";
+            buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
+            buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
 #endif
 
             buffer << ")";

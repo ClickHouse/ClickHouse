@@ -1,5 +1,3 @@
--- add_minmax_index_for_numeric_columns=0: Different plan
-SET use_statistics = 0;
 SELECT * FROM (SELECT col1, col2 FROM (select '1' as col1, '2' as col2) GROUP by col1, col2) AS expr_qry WHERE col2 != '';
 SELECT * FROM (SELECT materialize('1') AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';
 SELECT * FROM (SELECT materialize([1]) AS s1, materialize('2') AS s2 GROUP BY s1, s2) WHERE s2 = '2';
@@ -11,7 +9,7 @@ CREATE TABLE Test
 ENGINE = MergeTree()
 PRIMARY KEY (String1,String2)
 ORDER BY (String1,String2)
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'
 AS
 SELECT
    'String1_' || toString(number) as String1,
@@ -49,8 +47,8 @@ DROP TABLE IF EXISTS t;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
-CREATE TABLE t1 (id Int64, create_time DateTime) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;
-CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;
+CREATE TABLE t1 (id Int64, create_time DateTime) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+CREATE TABLE t2 (delete_time DateTime) ENGINE = MergeTree ORDER BY delete_time SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 
 insert into t1 values (101, '2023-05-28 00:00:00'), (102, '2023-05-28 00:00:00');
 insert into t2 values ('2023-05-31 00:00:00');

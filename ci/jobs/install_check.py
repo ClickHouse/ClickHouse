@@ -18,19 +18,7 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-# Note, clickhouse-server service notify systemd only when it is ready to
-# accept connections, so we do not need to wait until it will open the port for
-# listening manually here.
 systemctl restart clickhouse-server
-clickhouse-client -q 'SELECT version()'
-grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
-    initd_via_systemd_test = r"""#!/bin/bash
-set -e
-trap "bash -ex /packages/preserve_logs.sh" ERR
-test_env='TEST_THE_DEFAULT_PARAMETER=15'
-echo "$test_env" >> /etc/default/clickhouse
-# Note, this should use systemctl
-/etc/init.d/clickhouse-server start
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     initd_test = r"""#!/bin/bash
@@ -38,11 +26,7 @@ set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR
 test_env='TEST_THE_DEFAULT_PARAMETER=15'
 echo "$test_env" >> /etc/default/clickhouse
-# Do not use systemd, and hence we need to wait until the server will be ready below
-SYSTEMCTL_SKIP_REDIRECT=1 /etc/init.d/clickhouse-server start
-for i in {1..5}; do
-    clickhouse-client -q 'SELECT version()' && break || sleep 1
-done
+/etc/init.d/clickhouse-server start
 clickhouse-client -q 'SELECT version()'
 grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
     keeper_test = r"""#!/bin/bash
@@ -87,17 +71,14 @@ for i in {1..5}; do
 done
 exec 13>&-"""
     preserve_logs = r"""#!/bin/bash
-journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
-journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
+journalctl -u clickhouse-server > /packages/clickhouse-server.service || :
+journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service || :
 cp /var/log/clickhouse-server/clickhouse-server.* /packages/ || :
 cp /var/log/clickhouse-keeper/clickhouse-keeper.* /packages/ || :
 chmod a+rw -R /packages
 exit 1
 """
     (TEMP_PATH / "server_test.sh").write_text(server_test, encoding="utf-8")
-    (TEMP_PATH / "initd_via_systemd_test.sh").write_text(
-        initd_via_systemd_test, encoding="utf-8"
-    )
     (TEMP_PATH / "initd_test.sh").write_text(initd_test, encoding="utf-8")
     (TEMP_PATH / "keeper_test.sh").write_text(keeper_test, encoding="utf-8")
     (TEMP_PATH / "binary_test.sh").write_text(binary_test, encoding="utf-8")
@@ -107,16 +88,13 @@ exit 1
 def test_install_deb(image: DockerImage) -> List[Result]:
     tests = {
         "Install server deb": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/server_test.sh""",
-        "Run server init.d (proxy to systemd)": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
-bash -ex /packages/initd_via_systemd_test.sh""",
         "Run server init.d": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-{server,client,common}*deb -y
+apt-get install /packages/clickhouse-{server,client,common}*deb
 bash -ex /packages/initd_test.sh""",
         "Install keeper deb": r"""#!/bin/bash -ex
-apt-get install /packages/clickhouse-keeper*deb -y
+apt-get install /packages/clickhouse-keeper*deb
 bash -ex /packages/keeper_test.sh""",
         "Install clickhouse binary in deb": r"bash -ex /packages/binary_test.sh",
     }
@@ -250,9 +228,6 @@ def main():
     Result.create_from(
         results=test_results,
         stopwatch=stopwatch,
-        files=[
-            f for f in TEMP_PATH.iterdir() if f.is_file() and f.name.endswith(".log")
-        ],
     ).complete_job()
 
 

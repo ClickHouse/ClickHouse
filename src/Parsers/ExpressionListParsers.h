@@ -317,7 +317,7 @@ protected:
 class ParserTTLExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "ttl expression list"; }
+    const char * getName() const override { return "ttl expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

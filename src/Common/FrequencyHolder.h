@@ -4,6 +4,7 @@
 
 #if USE_NLP
 
+#include <base/StringRef.h>
 #include <Common/logger_useful.h>
 
 #include <string_view>
@@ -36,7 +37,7 @@ public:
     struct Language
     {
         String name;
-        HashMap<std::string_view, Float64> map;
+        HashMap<StringRef, Float64> map;
     };
 
     struct Encoding
@@ -46,7 +47,7 @@ public:
         HashMap<UInt16, Float64> map;
     };
 
-    using Map = HashMap<std::string_view, Float64>;
+    using Map = HashMap<StringRef, Float64>;
     using Container = std::vector<Language>;
 
     using EncodingMap = HashMap<UInt16, Float64>;

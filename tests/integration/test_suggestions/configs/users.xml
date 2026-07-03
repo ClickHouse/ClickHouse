@@ -1,9 +1,0 @@
-<clickhouse>
-    <users>
-        <default>
-        </default>      
-        <test_user>
-            <password>123</password>
-        </test_user>
-    </users>
-</clickhouse>

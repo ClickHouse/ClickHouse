@@ -3,7 +3,6 @@ description: 'Documentation for the JSONStringsEachRowWithProgress format'
 keywords: ['JSONStringsEachRowWithProgress']
 slug: /interfaces/formats/JSONStringsEachRowWithProgress
 title: 'JSONStringsEachRowWithProgress'
-doc_type: 'reference'
 ---
 
 ## Description {#description}

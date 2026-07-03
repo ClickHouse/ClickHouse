@@ -26,7 +26,7 @@ SELECT max(i1)
 FROM remote('localhost', currentDatabase(), test_view)
 SETTINGS log_comment = 'THIS IS A COMMENT TO MARK THE INITIAL QUERY';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT columns
 FROM system.query_log

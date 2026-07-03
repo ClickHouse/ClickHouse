@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Logger.h>
-
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 

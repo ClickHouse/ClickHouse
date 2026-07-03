@@ -20,8 +20,6 @@ class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombin
 public:
     String getName() const override { return "ForEach"; }
 
-    bool transformsArgumentTypes() const override { return true; }
-
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         DataTypes nested_arguments;

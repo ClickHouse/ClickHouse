@@ -11,26 +11,13 @@ namespace DB
 class StorageTimeSeriesSelector : public IStorage
 {
 public:
-    struct Configuration
-    {
-        StorageID time_series_storage_id = StorageID::createEmpty();
-
-        /// Data types of the corresponding columns in the TimeSeries table.
-        /// We use these data types for the columns we read from table function timeSeriesSelector().
-        DataTypePtr id_data_type;
-        DataTypePtr timestamp_data_type;
-        DataTypePtr scalar_data_type;
-
-        PrometheusQueryTree selector;
-
-        /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
-        DateTime64 min_time;
-        DateTime64 max_time;
-    };
-
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context);
-
-    StorageTimeSeriesSelector(const StorageID & table_id_, const ColumnsDescription & columns_, const Configuration & config_);
+    StorageTimeSeriesSelector(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const StorageID & time_series_storage_id_,
+        const PrometheusQueryTree & instant_selector_,
+        const Field & min_time_,
+        const Field & max_time_);
 
     std::string getName() const override { return "TimeSeriesSelector"; }
 
@@ -45,7 +32,10 @@ public:
         size_t num_streams) override;
 
 private:
-    Configuration config;
+    StorageID time_series_storage_id;
+    PrometheusQueryTree instant_selector;
+    Field min_time;
+    Field max_time;
 };
 
 }

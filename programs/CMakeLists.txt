@@ -78,7 +78,7 @@ macro(clickhouse_program_add_library name)
 
     set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
     if(_link)
-        target_link_libraries(clickhouse-${name}-lib PRIVATE ${CLICKHOUSE_${name_uc}_LINK})
+        target_link_libraries(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_LINK})
     endif()
 
     target_include_directories (clickhouse-${name}-lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -101,6 +101,7 @@ add_subdirectory (compressor)
 add_subdirectory (disks)
 add_subdirectory (extract-from-config)
 add_subdirectory (format)
+add_subdirectory (fst-dump-tree)
 add_subdirectory (git-import)
 add_subdirectory (install)
 add_subdirectory (keeper-bench)
@@ -113,6 +114,7 @@ add_subdirectory (static-files-disk-uploader)
 add_subdirectory (su)
 add_subdirectory (zookeeper-dump-tree)
 add_subdirectory (zookeeper-remove-by-list)
+
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_subdirectory (keeper-converter)
 endif()
@@ -171,6 +173,22 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
+if (TARGET ch_rust::chdig)
+    clickhouse_program_alias(clickhouse-chdig)
+    clickhouse_program_alias(chdig)
+else()
+    message(STATUS "Adding dummy chdig targets (for nfpm)")
+    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
+        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
+        install(FILES ${chdig_path}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                        GROUP_READ GROUP_EXECUTE
+                        WORLD_READ WORLD_EXECUTE
+        )
+    endforeach()
+endif ()
+
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-check-marks check-marks)
 clickhouse_program_install(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
@@ -179,6 +197,7 @@ clickhouse_program_install(clickhouse-compressor compressor)
 clickhouse_program_install(clickhouse-disks disks)
 clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
+clickhouse_program_install(clickhouse-fst-dump-tree fst-dump-tree)
 clickhouse_program_install(clickhouse-git-import git-import)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
@@ -223,30 +242,7 @@ endif ()
 add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
 if (USE_BINARY_HASH)
-    add_dependencies(clickhouse hash-binary)
-
-    # When cross-compiling, use the native-built hash-binary; otherwise use the regular build output
-    if (CMAKE_CROSSCOMPILING)
-        set(HASH_BINARY_PATH "${PROJECT_BINARY_DIR}/native/utils/hash-binary/hash-binary")
-    else()
-        set(HASH_BINARY_PATH "$<TARGET_FILE:hash-binary>")
-    endif()
-
-    add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND ${HASH_BINARY_PATH} clickhouse > hash 2> /dev/null
-        COMMENT "Computing hash of clickhouse binary" VERBATIM)
-
-    if (NOT CMAKE_CROSSCOMPILING)
-        add_custom_command(TARGET clickhouse POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E echo "Verifying hash-binary utility matches clickhouse hash-binary..."
-            COMMAND sh -c "./clickhouse hash-binary > hash.verify && diff -u hash hash.verify || (echo 'ERROR: hash-binary utility output does not match clickhouse hash-binary' && exit 1)"
-            COMMAND ${CMAKE_COMMAND} -E rm hash.verify
-            COMMENT "Verifying hash-binary output matches clickhouse hash-binary" VERBATIM)
-    endif()
-
-    add_custom_command(TARGET clickhouse POST_BUILD
-        COMMAND ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse
-        COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
+    add_custom_command(TARGET clickhouse POST_BUILD COMMAND ./clickhouse hash-binary > hash && ${OBJCOPY_PATH} --add-section .clickhouse.hash=hash clickhouse COMMENT "Adding section '.clickhouse.hash' to clickhouse binary" VERBATIM)
 endif()
 
 if (CHECK_LARGE_OBJECT_SIZES)
@@ -278,25 +274,5 @@ if (TARGET ch_contrib::protobuf)
     get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)
     foreach (proto_file IN LISTS google_proto_files)
         install(FILES ${proto_file} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse/protos/google/protobuf)
-    endforeach()
-endif ()
-
-# FIXME: This should be at the end, to avoid using symbols from chdig if there
-# are the same in one of contribs (the problem was with lz4)
-if (TARGET ch_rust::chdig)
-    target_link_libraries (clickhouse PRIVATE ch_rust::chdig)
-
-    clickhouse_program_alias(clickhouse-chdig)
-    clickhouse_program_alias(chdig)
-else()
-    message(STATUS "Adding dummy chdig targets (for nfpm)")
-    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
-        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
-        install(FILES ${chdig_path}
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                        GROUP_READ GROUP_EXECUTE
-                        WORLD_READ WORLD_EXECUTE
-        )
     endforeach()
 endif ()

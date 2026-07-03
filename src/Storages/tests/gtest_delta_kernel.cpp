@@ -5,7 +5,6 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <base/scope_guard.h>
-#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
@@ -25,7 +24,6 @@
 
 #include "delta_kernel_ffi.hpp"
 
-namespace DB { namespace ErrorCodes { extern const int NOT_IMPLEMENTED; } }
 
 class DeltaKernelTest : public testing::Test
 {
@@ -47,19 +45,18 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * predicate = ffi::get_testing_kernel_predicate();
-    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
+    auto * expression = ffi::get_testing_kernel_expression();
+    SCOPE_EXIT(ffi::free_kernel_expression(expression));
     try
     {
         auto dag = DeltaLake::visitExpression(
-            predicate,
-            DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}),
+            expression,
             DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}));
     }
     catch (DB::Exception & e)
     {
         const std::string & message = e.message();
-        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method IN not implemented")
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method OpaqueExpr not implemented")
         {
             /// Implementation is not full at this moment, but
             /// there is a lot of staff before we get to IN method,

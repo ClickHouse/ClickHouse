@@ -13,25 +13,24 @@ namespace ErrorCodes
 
 PlanSquashingTransform::PlanSquashingTransform(
     SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : ExceptionKeepingTransform(header_, header_, false)
+    : IInflatingTransform(header_, header_)
     , squashing(header_, min_block_size_rows, min_block_size_bytes)
 {
 }
 
-void PlanSquashingTransform::onConsume(Chunk chunk)
+void PlanSquashingTransform::consume(Chunk chunk)
 {
     squashed_chunk = squashing.add(std::move(chunk));
 }
 
-PlanSquashingTransform::GenerateResult PlanSquashingTransform::onGenerate()
+Chunk PlanSquashingTransform::generate()
 {
     if (!squashed_chunk)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
-    GenerateResult res;
-    res.chunk.swap(squashed_chunk);
-    res.is_done = true;
-    return res;
+    Chunk result_chunk;
+    result_chunk.swap(squashed_chunk);
+    return result_chunk;
 }
 
 bool PlanSquashingTransform::canGenerate()
@@ -39,11 +38,8 @@ bool PlanSquashingTransform::canGenerate()
     return bool(squashed_chunk);
 }
 
-PlanSquashingTransform::GenerateResult PlanSquashingTransform::getRemaining()
+Chunk PlanSquashingTransform::getRemaining()
 {
-    GenerateResult res;
-    res.chunk = squashing.flush();
-    res.is_done = true;
-    return res;
+    return squashing.flush();
 }
 }

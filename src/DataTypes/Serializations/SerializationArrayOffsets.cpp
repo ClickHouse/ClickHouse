@@ -33,7 +33,7 @@ void SerializationArrayOffsets::deserializeBinaryBulkWithMultipleStreams(
         auto mutable_column = column->assumeMutable();
         size_t prev_size = mutable_column->size();
         /// Deserialize rows_offset + limit rows, we will apply rows_offset later.
-        deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, 0);
+        deserializeBinaryBulk(*mutable_column, *stream, 0, rows_offset + limit, settings.avg_value_size_hint);
         num_read_rows = mutable_column->size() - prev_size;
 
         if (cache)

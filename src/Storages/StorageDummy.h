@@ -29,6 +29,7 @@ public:
     }
 
     bool supportsSubcolumns() const override { return true; }
+    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
     {
@@ -42,7 +43,7 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -64,6 +65,8 @@ public:
     bool supportsReplication() const override { return supports_replication; }
 
 private:
+    const ColumnsDescription object_columns;
+
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
     const bool supports_replication;

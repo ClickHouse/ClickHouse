@@ -1,25 +1,15 @@
 #pragma once
 
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
 
 /// Just a stub - reads nothing from nowhere.
-class EmptyReadBuffer : public SeekableReadBuffer
+class EmptyReadBuffer : public ReadBuffer
 {
 public:
-    EmptyReadBuffer() : SeekableReadBuffer(nullptr, 0) {}
-
-    off_t seek(off_t, int) override
-    {
-        return 0;
-    }
-
-    off_t getPosition() override
-    {
-        return 0;
-    }
+    EmptyReadBuffer() : ReadBuffer(nullptr, 0) {}
 
 private:
     bool nextImpl() override { return false; }

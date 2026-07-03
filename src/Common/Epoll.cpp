@@ -2,7 +2,6 @@
 
 #include <Common/Epoll.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 #include <unistd.h>

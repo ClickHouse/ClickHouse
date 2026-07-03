@@ -4,7 +4,6 @@ description: 'System table containing information about async inserts. Each entr
 keywords: ['system table', 'asynchronous_insert_log']
 slug: /operations/system-tables/asynchronous_insert_log
 title: 'system.asynchronous_insert_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

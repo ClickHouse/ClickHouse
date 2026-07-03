@@ -5,7 +5,6 @@ sidebar_position: 15
 slug: /development/build-osx
 title: 'Build on macOS for macOS'
 keywords: ['MacOS', 'Mac', 'build']
-doc_type: 'guide'
 ---
 
 # How to Build ClickHouse on macOS for macOS
@@ -28,7 +27,7 @@ Then run:
 
 ```bash
 brew update
-brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash
 ```
 
 :::note

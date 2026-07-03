@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <atomic>
 #include <exception>
 #include <memory>
 
@@ -52,7 +51,6 @@ public:
         try
         {
             nextImpl();
-            ++flush_count;
         }
         catch (CurrentBufferExhausted &)
         {
@@ -107,9 +105,6 @@ public:
     bool isFinalized() const { return finalized; }
     bool isCanceled() const { return canceled; }
 
-    /// Get number of times next() has been called (number of flushes)
-    size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
-
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
     virtual void sync()
@@ -151,9 +146,6 @@ private:
     }
 
     int exception_level = std::uncaught_exceptions();
-
-    /// Number of flushes for debugging/assertions
-    std::atomic<size_t> flush_count = 0;
 };
 
 
@@ -180,7 +172,7 @@ private:
 // AutoCanceledWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
 // AutoCanceledWriteBuffer could not be inherited.
 // Otherwise cancel method could not call proper cancelImpl ьуерщв because inheritor is destroyed already.
-// But the usage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
+// But the ussage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
 template<class Base>
 class AutoCanceledWriteBuffer final : public Base
 {

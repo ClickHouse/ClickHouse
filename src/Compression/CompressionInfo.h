@@ -46,9 +46,9 @@ enum class CompressionMethodByte : uint8_t
     AES_128_GCM_SIV = 0x96,
     AES_256_GCM_SIV = 0x97,
     FPC             = 0x98,
-    /// DeflateQpl      = 0x99, /// Removed, don't reuse for another codec
+    DeflateQpl      = 0x99,
     GCD             = 0x9a,
-    /// ZSTD_QPL        = 0x9b, /// Removed, don't reuse for another codec
+    ZSTD_QPL        = 0x9b,
 };
 
 }

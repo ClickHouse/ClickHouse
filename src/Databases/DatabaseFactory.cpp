@@ -3,11 +3,6 @@
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
-
-#if CLICKHOUSE_CLOUD
-#include <Databases/DatabaseShared.h>
-#endif
-
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>

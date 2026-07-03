@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import random
-import string
 import threading
 import time
 
@@ -112,29 +111,21 @@ def cluster():
             "node1",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node2",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node3",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node4",
             main_configs=[path],
             with_azurite=True,
-            # Breaks assertion for "using native copy" (because it will happen for database metadata not the Azure tests)
-            with_remote_database_disk=False,
         )
         cluster.start()
 
@@ -176,23 +167,15 @@ def azure_query(
                 node.query(query_on_retry)
             continue
 
-
-
 def test_backup_restore_on_merge_tree_same_container(cluster):
     node1 = cluster.instances["node1"]
-    azure_query(node1, f"DROP TABLE IF EXISTS test_simple_merge_tree SYNC")
-    azure_query(
-        node1,
-        "DROP TABLE IF EXISTS test_simple_merge_tree",
-    )
     azure_query(
         node1,
         f"CREATE TABLE test_simple_merge_tree(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node1, f"INSERT INTO test_simple_merge_tree VALUES (1, 'a')")
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_backup')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node1,
@@ -217,11 +200,6 @@ def test_backup_restore_on_merge_tree_same_container(cluster):
 
 def test_backup_restore_on_merge_tree_different_container(cluster):
     node2 = cluster.instances["node2"]
-    azure_query(node2, f"DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket SYNC")
-    azure_query(
-        node2,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_different_bucket",
-    )
     azure_query(
         node2,
         f"CREATE TABLE test_simple_merge_tree_different_bucket(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_other_bucket'",
@@ -230,8 +208,7 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
         node2, f"INSERT INTO test_simple_merge_tree_different_bucket VALUES (1, 'a')"
     )
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_different_bucket_backup_different_bucket')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_different_bucket_backup_different_bucket')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node2,
@@ -259,19 +236,13 @@ def test_backup_restore_on_merge_tree_different_container(cluster):
 
 def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     node3 = cluster.instances["node3"]
-    azure_query(node3, f"DROP TABLE IF EXISTS test_simple_merge_tree_async SYNC")
-    azure_query(
-        node3,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_async",
-    )
     azure_query(
         node3,
         f"CREATE TABLE test_simple_merge_tree_async(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure_cache'",
     )
     azure_query(node3, f"INSERT INTO test_simple_merge_tree_async VALUES (1, 'a')")
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_async_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_async_backup')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node3,
@@ -296,25 +267,17 @@ def test_backup_restore_on_merge_tree_native_copy_async(cluster):
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async")
     azure_query(node3, f"DROP TABLE test_simple_merge_tree_async_restored")
 
-
 def test_backup_restore_native_copy_disabled_in_query(cluster):
     node4 = cluster.instances["node4"]
-    azure_query(node4, f"DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query SYNC")
-    azure_query(
-        node4,
-        "DROP TABLE IF EXISTS test_simple_merge_tree_native_copy_disabled_in_query",
-    )
     azure_query(
         node4,
         f"CREATE TABLE test_simple_merge_tree_native_copy_disabled_in_query(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_azure'",
     )
     azure_query(
-        node4,
-        f"INSERT INTO test_simple_merge_tree_native_copy_disabled_in_query VALUES (1, 'a')",
+        node4, f"INSERT INTO test_simple_merge_tree_native_copy_disabled_in_query VALUES (1, 'a')"
     )
 
-    cont = 'cont'+str(time.time_ns())
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', 'test_simple_merge_tree_native_copy_disabled_in_query_backup')"
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_merge_tree_native_copy_disabled_in_query_backup')"
     print("BACKUP DEST", backup_destination)
     azure_query(
         node4,

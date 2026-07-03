@@ -34,7 +34,7 @@ public:
         return convertToFullColumn();
     }
 
-    ColumnPtr convertToFullColumnIfLowCardinality() const override;
+    ColumnPtr removeLowCardinality() const;
 
     std::string getName() const override
     {
@@ -71,12 +71,12 @@ public:
         data->get(0, res);
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        data->getValueNameImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
-    std::string_view getDataAt(size_t) const override
+    StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -122,12 +122,11 @@ public:
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
+    void insertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
 #else
-    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
+    void doInsertRangeFrom(const IColumn &, size_t /*start*/, size_t length) override
 #endif
     {
-        chassert(!typeid_cast<const ColumnConst *>(&src) || data->compareAt(0, 0, *typeid_cast<const ColumnConst &>(src).data, -1) == 0);
         s += length;
     }
 
@@ -170,9 +169,12 @@ public:
         ++s;
     }
 
-    void popBack(size_t n) override;
+    void popBack(size_t n) override
+    {
+        s -= n;
+    }
 
-    std::string_view
+    StringRef
     serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
         return data->serializeValueIntoArena(0, arena, begin, settings);
@@ -208,7 +210,6 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -249,14 +250,13 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 
-    void getExtremes(Field & min, Field & max, size_t /*start*/, size_t /*end*/) const override
+    void getExtremes(Field & min, Field & max) const override
     {
-        data->get(0, min);
-        max = min;
+        data->getExtremes(min, max);
     }
 
     void forEachSubcolumn(ColumnCallback callback) const override

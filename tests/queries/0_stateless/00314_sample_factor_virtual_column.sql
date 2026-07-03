@@ -1,5 +1,4 @@
--- Tags: no-msan, no-azure-blob-storage
--- no-azure-blob-storage: too slow
+-- Tags: no-msan
 --          ^
 --          makes SELECTs extremely slow sometimes for some reason: "Aggregated. 1000000 to 1 rows (from 7.63 MiB) in 242.829221645 sec."
 

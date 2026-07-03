@@ -10,6 +10,7 @@ if(NOT ENABLE_GRPC)
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use ArrowFlight without gRPC")
 endif()
 
+set(GRPC_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 set(GRPC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc/include)
 
 set(ARROW_FLIGHT_SRC_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow/flight)
@@ -37,6 +38,11 @@ add_custom_command(
 # protobuf-internal.cc
 set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_GENERATED_SRC_DIR}/Flight.pb.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_client.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_server.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/protocol_grpc_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/serialization_internal.cc
+        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/util_internal.cc
         ${ARROW_FLIGHT_SRC_DIR}/client.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_cookie_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/client_tracing_middleware.cc
@@ -45,14 +51,10 @@ set(ARROW_FLIGHT_SRCS
         ${ARROW_FLIGHT_SRC_DIR}/serialization_internal.cc
         ${ARROW_FLIGHT_SRC_DIR}/server.cc
         ${ARROW_FLIGHT_SRC_DIR}/server_auth.cc
+        ${ARROW_FLIGHT_SRC_DIR}/server_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/server_tracing_middleware.cc
         ${ARROW_FLIGHT_SRC_DIR}/transport.cc
         ${ARROW_FLIGHT_SRC_DIR}/transport_server.cc
-        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_client.cc
-        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/grpc_server.cc
-        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/protocol_grpc_internal.cc
-        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/serialization_internal.cc
-        ${ARROW_FLIGHT_SRC_DIR}/transport/grpc/util_internal.cc
         ${ARROW_FLIGHT_SRC_DIR}/types.cc
 )
 

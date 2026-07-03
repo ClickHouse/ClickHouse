@@ -14,7 +14,8 @@ except (ImportError, AssertionError):
     )
     from jwt import jwk_from_pem, JWT
 
-from praktika.utils import Shell
+from .info import Info
+from .utils import Shell
 
 
 class GHAuth:
@@ -31,7 +32,11 @@ class GHAuth:
         response.raise_for_status()
         data = response.json()
         for installation in data:
-            installation_id = installation["id"]
+            if installation["account"]["login"] == Info().repo_owner:
+                installation_id = installation["id"]
+                break
+        else:
+            raise KeyError("No installations found")
 
         return installation_id
 
@@ -92,8 +97,6 @@ class GHAuth:
 
 
 # if __name__ == "__main__":
-#     from ci.praktika.secret import Secret
-#
 #     pem = Secret.Config(
 #         name="woolenwolf_gh_app.clickhouse-app-key",
 #         type=Secret.Type.AWS_SSM_SECRET,
@@ -102,5 +105,4 @@ class GHAuth:
 #         name="woolenwolf_gh_app.clickhouse-app-id",
 #         type=Secret.Type.AWS_SSM_SECRET,
 #     ).get_value()
-#     print(app_id, pem)
 #     GHAuth.auth(app_id, pem)
