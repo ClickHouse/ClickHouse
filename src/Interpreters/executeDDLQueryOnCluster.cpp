@@ -138,7 +138,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
-    const String & current_database = context->getCurrentDatabase().database;
+    const auto current_database_info = context->getCurrentDatabase();
+    const String & current_database = current_database_info.database;
 
     if (need_replace_current_database)
     {
@@ -159,7 +160,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
         if (use_local_default_database)
         {
-            access_to_check.replaceEmptyDatabase(current_database);
+            access_to_check.replaceEmptyDatabase(current_database_info);
         }
         else
         {
@@ -179,7 +180,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
     }
 
-    AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
+    AddDefaultDatabaseVisitor visitor(
+        context, current_database, !use_local_default_database, /*only_replace_in_join*/ false, current_database_info.table_prefix);
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config

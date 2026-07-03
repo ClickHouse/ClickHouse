@@ -126,9 +126,11 @@ void IStorageCluster::read(
     data.remote_table.database = context->getCurrentDatabase().database;
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase().database,
+    const auto current_database_info = context->getCurrentDatabase();
+    AddDefaultDatabaseVisitor visitor(context, current_database_info.database,
                                       /* only_replace_current_database_function_= */false,
-                                      /* only_replace_in_join_= */true);
+                                      /* only_replace_in_join_= */true,
+                                      current_database_info.table_prefix);
     visitor.visit(query_to_send);
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
