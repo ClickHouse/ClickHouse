@@ -2432,7 +2432,7 @@ ColumnPtr probeFixedHashMap(
 
 /// Wrap a FixedHashMap as a ProbeFn for the runtime filter to invoke on the probe side.
 template <typename BuildKey, typename HashMapT>
-SharedFixedHashTableRuntimeFilter::ProbeFn buildSharedFilterProbeFn(
+SharedFixedHashTableRuntimeFilterImpl::ProbeFn buildSharedFilterProbeFn(
     std::shared_ptr<HashMapT> range_map_arg,
     std::make_unsigned_t<BuildKey> min_key,
     size_t range_size)
@@ -2495,9 +2495,9 @@ void HashJoin::publishSharedRuntimeFilters()
         return;
     const bool build_signed = !build_type->isValueRepresentedByUnsignedInteger();
 
-    auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilter::ProbeFn
+    auto build_probe_fn = [&]() -> SharedFixedHashTableRuntimeFilterImpl::ProbeFn
     {
-        SharedFixedHashTableRuntimeFilter::ProbeFn probe_fn;
+        SharedFixedHashTableRuntimeFilterImpl::ProbeFn probe_fn;
         std::visit(
             [&](auto & map)
             {
@@ -2622,6 +2622,7 @@ void HashJoin::publishSharedRuntimeFilters()
 
         /// When common_type is wide (e.g. Int64 = UInt64 promotes to Int128), per-row wide-integer
         /// arithmetic on the probe side can be slower than the existing BloomFilter; skip.
+        const auto & runtime_filter_config = existing->getConfig();
         const auto target_type = removeNullable(descriptor.common_type);
         WhichDataType target_which(target_type);
         if (!target_type->isValueRepresentedByInteger()
@@ -2631,11 +2632,10 @@ void HashJoin::publishSharedRuntimeFilters()
             || target_which.isLowCardinality())
             continue;
 
-        auto filter = std::make_unique<SharedFixedHashTableRuntimeFilter>(
-            existing->getFilterColumnTargetType(),
-            existing->getPassRatioThresholdForDisabling(),
-            existing->getBlocksToSkipBeforeReenabling(),
-            probe_fn);
+        auto filter = std::make_unique<RuntimeFilter>(
+            /*filters_to_merge_=*/0,
+            runtime_filter_config,
+            RuntimeFilter::SharedFixedHashTable(probe_fn));
         /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
         LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
         lookup->replace(filter_key, std::move(filter));

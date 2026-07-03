@@ -649,8 +649,8 @@ private:
 
     bool canConvertToFixedHashMap() const;
 
-    /// Publish a SharedFixedHashTableRuntimeFilter that replaces the Set/BloomFilter
-    /// installed by BuildRuntimeFilterStep, when the build side is a FixedHashMap.
+    /// Publish a runtime filter backed by `SharedFixedHashTableRuntimeFilterImpl` that replaces the
+    /// `Set`/`BloomFilter` installed by `BuildRuntimeFilterStep`, when the build side is a `FixedHashMap`.
     void publishSharedRuntimeFilters();
     void tryConvertToFixedHashMap();
 
