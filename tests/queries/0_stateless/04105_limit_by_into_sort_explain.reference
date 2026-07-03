@@ -42,19 +42,19 @@ SELECT number % 100 AS k, number AS v
 FROM numbers_mt(1000000)
 ORDER BY k, v LIMIT 2, 3 BY k;
 Expression (Project names)
-Actions: INPUT : 0 -> __table1.number UInt64 : 0
-         INPUT : 1 -> modulo(__table1.number, 100_UInt8) UInt8 : 1
-         ALIAS __table1.number :: 0 -> v UInt64 : 2
-         ALIAS modulo(__table1.number, 100_UInt8) :: 1 -> k UInt8 : 0
-Positions: 0 2
+Actions: INPUT : 0 -> modulo(__table1.number, 100_UInt8) UInt8 : 0
+         INPUT : 1 -> __table1.number UInt64 : 1
+         ALIAS modulo(__table1.number, 100_UInt8) :: 0 -> k UInt8 : 2
+         ALIAS __table1.number :: 1 -> v UInt64 : 0
+Positions: 2 0
   LimitBy
   Columns: modulo(__table1.number, 100_UInt8)
   Length 3
   Offset 2
     Expression (Before LIMIT BY)
-    Actions: INPUT :: 0 -> __table1.number UInt64 : 0
-             INPUT :: 1 -> modulo(__table1.number, 100_UInt8) UInt8 : 1
-    Positions: 1 0
+    Actions: INPUT :: 0 -> modulo(__table1.number, 100_UInt8) UInt8 : 0
+             INPUT :: 1 -> __table1.number UInt64 : 1
+    Positions: 0 1
       Sorting (Sorting for ORDER BY)
       Sort description: modulo(__table1.number, 100_UInt8) ASC, __table1.number ASC
       Per-stream LIMIT BY columns: modulo(__table1.number, 100_UInt8)

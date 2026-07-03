@@ -325,6 +325,10 @@ ProcessList::EntryPtr ProcessList::insert(
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
             configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
 
+            /// Reapply sampling
+            if (current_thread)
+                current_thread->resolveMemorySampleConfig();
+
             if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
             {
                 const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
@@ -529,8 +533,18 @@ QueryStatus::QueryStatus(
 
 void QueryStatus::releaseWorkloadResources()
 {
-    memory_reservation.reset();
+    releaseMemoryReservation();
+    releaseQuerySlot();
+}
+
+void QueryStatus::releaseQuerySlot()
+{
     query_slot.reset();
+}
+
+void QueryStatus::releaseMemoryReservation()
+{
+    memory_reservation.reset();
 }
 
 QueryStatus::~QueryStatus()
