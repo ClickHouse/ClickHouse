@@ -488,10 +488,19 @@ private:
     void extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out);
     void extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & func, RPN & out);
     void extractBinaryComparisonAtoms(
-        const RPNBuilderTreeNode & node,
         const RPNBuilderFunctionTreeNode & func,
         const BuildInfo & info,
         const std::string & func_name,
+        bool allow_constant_transformation,
+        RPN & out);
+    /// The shared core of comparison-atom extraction; the comparison is already in
+    /// `key_expr <op> const` form, and the constant is not NULL or NaN.
+    void extractComparisonAtomsForKeyArgument(
+        const RPNBuilderTreeNode & key_arg,
+        const BuildInfo & info,
+        const std::string & func_name,
+        const Field & const_value,
+        const DataTypePtr & const_type,
         bool allow_constant_transformation,
         RPN & out);
 

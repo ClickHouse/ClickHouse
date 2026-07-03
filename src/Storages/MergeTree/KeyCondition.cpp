@@ -3751,7 +3751,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
       *    condition `time >= '2023-10-14 00:00:00'` is analyzed by applying `toDate` to the constant
       *    once, here at build time, which produces the relaxed atom
       *    `toDate(time) >= toDate('2023-10-14 00:00:00')`. Nothing is stored in the atom in this case
-      *    (see the candidate sources in `extractBinaryComparisonAtoms`).
+      *    (see the candidate sources in `extractComparisonAtomsForKeyArgument`).
       *
       * 3. The predicate expression is an argument of a space-filling curve in the key. For example, if
       *    the table has `ORDER BY mortonEncode(x, y)`, conditions like `x > c` and `y <= c` are
@@ -3860,7 +3860,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     /// Binary comparisons of a key expression with a constant.
     else if (num_args == 2)
     {
-        extractBinaryComparisonAtoms(node, func, info, func_name, allow_constant_transformation, out);
+        extractBinaryComparisonAtoms(func, info, func_name, allow_constant_transformation, out);
     }
 }
 
@@ -3938,7 +3938,6 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
 }
 
 void KeyCondition::extractBinaryComparisonAtoms(
-    const RPNBuilderTreeNode & node,
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
     const std::string & func_name,
@@ -3992,6 +3991,28 @@ void KeyCondition::extractBinaryComparisonAtoms(
         return;
     }
 
+    /// Replace <const> <sign> <data> to <data> <-sign> <const>.
+    std::string key_side_func_name = func_name;
+    if (key_arg_pos == 1 && !mirrorComparisonForSwappedArguments(key_side_func_name))
+        return;
+
+    extractComparisonAtomsForKeyArgument(key_arg, info, key_side_func_name, const_value, const_type, allow_constant_transformation, out);
+}
+
+/// This is the shared core of comparison-atom extraction: the comparison is already in
+/// `key_expr <op> const` form (`func_name` is the key-side operator, the constant is not
+/// NULL or NaN). Besides `extractBinaryComparisonAtoms`, it also serves predicates that
+/// only imply a comparison, such as a bare boolean key column (`WHERE flag` implies
+/// `flag != 0`, see `extractBareKeyColumnAtom`).
+void KeyCondition::extractComparisonAtomsForKeyArgument(
+    const RPNBuilderTreeNode & key_arg,
+    const BuildInfo & info,
+    const std::string & func_name,
+    const Field & const_value,
+    const DataTypePtr & const_type,
+    bool allow_constant_transformation,
+    RPN & out)
+{
     /// A candidate describes one possible atom of this comparison: a key column to
     /// compare against, together with the constant in that column's key space.
     struct ComparisonAtomCandidate
@@ -4178,12 +4199,6 @@ void KeyCondition::extractBinaryComparisonAtoms(
     if (candidates.empty())
         return;
 
-    /// Replace <const> <sign> <data> to <data> <-sign> <const>.
-    /// This is shared between all candidates.
-    std::string base_func_name = func_name;
-    if (key_arg_pos == 1 && !mirrorComparisonForSwappedArguments(base_func_name))
-        return;
-
     /// A candidate brought into the key column's comparison space. It holds the
     /// (possibly relaxed) comparison function, the (possibly converted) constant from
     /// which the atom range is built, and the pre-filled element into which the atom is
@@ -4296,7 +4311,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
                             : common_type;
 
                         auto func_cast = createInternalCast(
-                            {key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            {key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, key_arg.getTreeContext().getQueryContext());
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -4343,7 +4358,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
             continue;
 
-        std::string candidate_func_name = base_func_name;
+        std::string candidate_func_name = func_name;
 
         auto normalized = normalize_candidate(candidate, std::move(candidate_func_name));
         if (!normalized)
@@ -4398,26 +4413,22 @@ void KeyCondition::extractAtomsFromConstant(const RPNBuilderTreeNode & node, RPN
 
 void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, const BuildInfo & info, RPN & out)
 {
-    /// A bare numeric key column used directly as a boolean condition, for example `WHERE id` or
+    /// A bare numeric column used directly as a boolean condition, for example `WHERE id` or
     /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
     /// constants are handled by `extractAtomsFromFunction` and `extractAtomsFromConstant`), so this
     /// matches exactly the boolean-predicate positions that `RPNBuilder::traverseTree` descends to
-    /// through `and` / `or` / `not` / `indexHint`. Treat the column as `key != 0`, so that
-    /// primary-key and skip-index analysis can prune on it. The negated form `WHERE NOT key` is
-    /// covered for free: the surrounding `not` inverts this atom into `key == 0`. `LowCardinality`
-    /// is handled through the nested type. See #89222.
-    size_t key_column_num = size_t(-1);
-    std::optional<size_t> argument_num_of_space_filling_curve;
-    DataTypePtr key_column_type;
-    MonotonicFunctionsChain chain;
-
-    if (!tryMatchKeyColumnThroughMonotonicChain(
-            node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
+    /// through `and` / `or` / `not` / `indexHint`. Treat the column as `key != 0` and hand it to the
+    /// shared comparison machinery, so that every key column the column can constrain produces an
+    /// atom, exactly as the explicit predicate `flag != 0` would (including multiple atoms per leaf).
+    /// The negated form `WHERE NOT key` is covered for free: the surrounding `not` inverts the atoms.
+    /// `LowCardinality` is handled through the nested type. See #89222.
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
         return;
 
-    auto key_type_not_low_cardinality = removeLowCardinality(key_column_type);
+    const DataTypePtr node_type = removeLowCardinality(dag_node->result_type);
 
-    /// Skip a `Nullable` (or `LowCardinality(Nullable)`) key. Primary-key analysis maps a NULL
+    /// Skip a `Nullable` (or `LowCardinality(Nullable)`) column. Primary-key analysis maps a NULL
     /// key value to `+Inf` (for `NULLS LAST` ordering), so a granule that holds only NULL looks
     /// definitely outside `[0, 0]` and the `key != 0` atom would report it as an exact, definite
     /// match. But `WHERE nullable_key` is NULL for those rows and filters them out. Ordinary
@@ -4425,17 +4436,19 @@ void KeyCondition::extractBareKeyColumnAtom(const RPNBuilderTreeNode & node, con
     /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
     /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
     /// reverts to reading and filtering those rows, which is correct.
-    if (key_type_not_low_cardinality->isNullable()
-        || !(isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+    if (node_type->isNullable() || !(isInteger(node_type) || isFloat(node_type)))
         return;
 
-    RPNElement element;
-    element.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-    element.range = Range(Field(UInt64(0)));
-    element.key_columns.push_back(key_column_num);
-    element.monotonic_functions_chain = std::move(chain);
-    element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
-    out.emplace_back(std::move(element));
+    /// `notEquals` is in `no_relaxed_atom_functions`, so the relaxed monotonic constant
+    /// transform must stay disabled, same as for the explicit predicate.
+    extractComparisonAtomsForKeyArgument(
+        node,
+        info,
+        "notEquals",
+        Field(UInt64(0)),
+        std::make_shared<DataTypeUInt8>(),
+        /*allow_constant_transformation=*/ false,
+        out);
 }
 
 
