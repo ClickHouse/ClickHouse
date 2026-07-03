@@ -6,6 +6,8 @@
 SET prefer_localhost_replica = 0;  -- both shards go over TCP and appear as secondary queries in query_log
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
+-- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
+SET query_plan_max_limit_for_top_k_optimization = 1000;
 
 -- Correctness: identical results with the optimization on and off.  Two
 -- "shards" read the same data, so every count doubles.

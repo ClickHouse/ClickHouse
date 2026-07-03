@@ -161,23 +161,26 @@ SELECT k_u32, k_u64, count()
 FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
 SETTINGS enable_group_by_top_k_optimization = 0;
 
+-- CI randomizes group_by_two_level_threshold (can exceed the row count below);
+-- pin it so the two-level conversion is deterministic, and keep the row count
+-- moderate so a debug-build flaky-check run fits the timeout.
 SELECT 'two_level';
 SELECT number, count()
-FROM numbers(2000000) GROUP BY number ORDER BY number ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
+FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000
 EXCEPT
 SELECT number, count()
-FROM numbers(2000000) GROUP BY number ORDER BY number ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 
 SELECT 'two_level_string';
 SELECT toString(number) AS k, count()
-FROM numbers(2000000) GROUP BY k ORDER BY k ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
+FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000
 EXCEPT
 SELECT toString(number) AS k, count()
-FROM numbers(2000000) GROUP BY k ORDER BY k ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
+SETTINGS enable_group_by_top_k_optimization = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 
 DROP TABLE t_gbylimit_edge;
 
