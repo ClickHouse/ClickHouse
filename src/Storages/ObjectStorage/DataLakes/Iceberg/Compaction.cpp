@@ -346,8 +346,10 @@ namespace
             return std::nullopt;
         case SnapshotSummaryOperation::OVERWRITE: {
             const auto & update = summary->getUpdate<Iceberg::SnapshotSummaryUpdateOverwrite>();
-            /// current compaction (OPTIME TABLE my_iceberg) supports only overwrites wich has only position delete files
-            if (update.added_files == 0 && (update.added_position_deletes == update.added_delete_files) && update.added_position_deletes != 0)
+            /// current compaction (OPTIMIZE TABLE my_iceberg) supports only overwrites which add delete files and no data files.
+            /// `added_delete_files` is a file count and `added_position_deletes` a row count, so they must not be compared to
+            /// each other: a single position-delete file with several rows is a valid, supported position-delete overwrite.
+            if (update.added_files == 0 && update.added_delete_files != 0)
                 return std::nullopt;
             [[fallthrough]];
         }
