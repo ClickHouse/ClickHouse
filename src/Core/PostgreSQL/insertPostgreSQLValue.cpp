@@ -1,7 +1,6 @@
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
-#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -40,7 +39,7 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         ExternalResultDescription::ValueType type, DataTypePtr data_type,
-        const UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
 {
     switch (type)
     {
@@ -145,7 +144,7 @@ void insertPostgreSQLValue(
             size_t max_dimension = 0;
             size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
-            VectorWithMemoryTracking<Row> dimensions(expected_dimensions + 1);
+            std::vector<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -190,7 +189,7 @@ void insertPostgreSQLValue(
 
 
 void preparePostgreSQLArrayInfo(
-        UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();

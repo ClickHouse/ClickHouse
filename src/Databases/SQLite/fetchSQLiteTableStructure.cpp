@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
 }
 
-DataTypePtr convertSQLiteDataType(String type)
+static DataTypePtr convertSQLiteDataType(String type)
 {
     DataTypePtr res;
     type = Poco::toLower(type);

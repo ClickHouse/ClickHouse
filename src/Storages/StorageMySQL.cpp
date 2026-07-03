@@ -6,24 +6,20 @@
 
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MySQL/MySQLHelpers.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
@@ -41,7 +37,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool external_table_functions_use_nulls;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsMySQLDataTypesSupport mysql_datatypes_support_level;
     extern const SettingsUInt64 mysql_max_rows_to_insert;
@@ -58,21 +53,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
-    extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-/// Infer the structure of a result of a user-provided query by executing it with a `LIMIT 0` on the MySQL side.
-ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_);
 }
 
 StorageMySQL::StorageMySQL(
     const StorageID & table_id_,
     mysqlxx::PoolWithFailover && pool_,
     const std::string & remote_database_name_,
-    const TableNameOrQuery & remote_table_or_query_,
+    const std::string & remote_table_name_,
     const bool replace_query_,
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
@@ -83,7 +70,7 @@ StorageMySQL::StorageMySQL(
     : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
-    , remote_table_or_query(remote_table_or_query_)
+    , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
@@ -94,7 +81,7 @@ StorageMySQL::StorageMySQL(
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_or_query, context_);
+        auto columns = getTableStructureFromData(*pool, remote_database_name, remote_table_name, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -117,13 +104,9 @@ VirtualColumnsDescription StorageMySQL::createVirtuals()
 ColumnsDescription StorageMySQL::getTableStructureFromData(
     mysqlxx::PoolWithFailover & pool_,
     const String & database,
-    const TableNameOrQuery & table_or_query,
+    const String & table,
     const ContextPtr & context_)
 {
-    if (table_or_query.isQuery())
-        return doQueryResultStructure(pool_, table_or_query.getQuery(), context_);
-
-    const auto & table = table_or_query.getTableName();
     const auto & settings = context_->getSettingsRef();
     const auto tables_and_columns = fetchTablesColumnsList(pool_, database, {table}, settings, settings[Setting::mysql_datatypes_support_level]);
 
@@ -146,24 +129,15 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    String query;
-    if (remote_table_or_query.isQuery())
-    {
-        /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
-        /// reject any outer filter under external_table_strict_query.
-        rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
-        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
-    }
-    else
-        query = transformQueryForExternalDatabase(
-            query_info,
-            column_names,
-            storage_snapshot->metadata->getColumns().getOrdinary(),
-            IdentifierQuotingStyle::BackticksMySQL,
-            LiteralEscapingStyle::Regular,
-            remote_database_name,
-            remote_table_or_query.getTableName(),
-            context_);
+    String query = transformQueryForExternalDatabase(
+        query_info,
+        column_names,
+        storage_snapshot->metadata->getColumns().getOrdinary(),
+        IdentifierQuotingStyle::BackticksMySQL,
+        LiteralEscapingStyle::Regular,
+        remote_database_name,
+        remote_table_name,
+        context_);
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
@@ -305,20 +279,17 @@ private:
 
 SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
-    if (remote_table_or_query.isQuery())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a MySQL table representing the result of a query");
-
     return std::make_shared<StorageMySQLSink>(
         *this,
         metadata_snapshot,
         remote_database_name,
-        remote_table_or_query.getTableName(),
+        remote_table_name,
         pool->get(),
         local_context->getSettingsRef()[Setting::mysql_max_rows_to_insert]);
 }
 
 StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
-    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table_or_query)
+    const NamedCollection & named_collection, MySQLSettings & storage_settings, ContextPtr context_, bool require_table)
 {
     StorageMySQL::Configuration configuration;
 
@@ -328,14 +299,8 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         optional_arguments.insert(name);
 
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
-    if (require_table_or_query)
-    {
-        /// The data source is either a remote table or a query passed to MySQL as is.
-        if (named_collection.has("query"))
-            required_arguments.insert("query");
-        else
-            required_arguments.insert("table");
-    }
+    if (require_table)
+        required_arguments.insert("table");
     validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
@@ -355,13 +320,8 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
     configuration.username = named_collection.getAny<String>({"username", "user"});
     configuration.password = named_collection.get<String>("password");
     configuration.database = named_collection.getAny<String>({"db", "database"});
-    if (require_table_or_query)
-    {
-        if (named_collection.has("query"))
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, named_collection.get<String>("query"));
-        else
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection.get<String>("table"));
-    }
+    if (require_table)
+        configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
     configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
@@ -384,28 +344,18 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     {
         if (engine_args.size() < 5 || engine_args.size() > 7)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Storage MySQL requires 5-7 parameters: "
-                            "MySQL('host:port' (or 'addresses_pattern'), database, table (or query), "
+                            "MySQL('host:port' (or 'addresses_pattern'), database, table, "
                             "'user', 'password'[, replace_query, 'on_duplicate_clause']).");
 
-        /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
-        auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
-        for (size_t i = 0; i < engine_args.size(); ++i)
-        {
-            if (i == 2 && maybe_query)
-                continue;
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], context_);
-        }
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context_);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
         size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 3306);
         configuration.database = checkAndGetLiteralArgument<String>(engine_args[1], "database");
-        if (maybe_query)
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
-        else
-            configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(engine_args[2], "table"));
+        configuration.table = checkAndGetLiteralArgument<String>(engine_args[2], "table");
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
         if (engine_args.size() >= 6)
@@ -463,7 +413,7 @@ void registerStorageMySQL(StorageFactory & factory)
             args.table_id,
             std::move(pool),
             configuration.database,
-            configuration.table_or_query,
+            configuration.table,
             configuration.replace_query,
             configuration.on_duplicate_clause,
             args.columns,
@@ -514,7 +464,7 @@ The table structure can differ from the original MySQL table structure:
 
 - `host:port` — MySQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name, or a query passed to MySQL as is (see [Passing a query instead of a table name](#passing-a-query)).
+- `table` — Remote table name.
 - `user` — MySQL user.
 - `password` — User password.
 - `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
@@ -527,23 +477,6 @@ Arguments also can be passed using [named collections](/operations/named-collect
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
-
-## Passing a query instead of a table name {#passing-a-query}
-
-Instead of a table name, the `table` argument can be a `SELECT` query that is passed to MySQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
-
-```sql
-CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
-CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
-```
-
-This is useful to push down joins, aggregations or any other processing to MySQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`mysql`](/sql-reference/table-functions/mysql) table function.
-
-:::note
-The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the MySQL dialect (backtick identifier quoting) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass MySQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to MySQL verbatim.
-
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from MySQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
-:::
 
 Supports multiple replicas that must be listed by `|`. For example:
 
@@ -718,43 +651,6 @@ SETTINGS enable_compression = 1;
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",
         .related = {"PostgreSQL", "SQLite", "MongoDB"}});
-}
-
-namespace
-{
-ColumnsDescription doQueryResultStructure(mysqlxx::PoolWithFailover & pool_, const String & select_query, const ContextPtr & context_)
-{
-    /// Wrap the query in a derived table and run it with `LIMIT 0` to obtain the result columns metadata
-    /// without fetching any rows. The wrapping mirrors how the data is read later (see buildQueryForExternalDatabaseSubquery),
-    /// so the inferred column names match the names referenced when reading.
-    const auto limited_select = "SELECT * FROM (" + select_query + ") AS __subquery LIMIT 0";
-    auto connection = pool_.get();
-    auto query = connection->query(limited_select);
-    auto query_result = query.use();
-
-    const auto num_fields = query_result.getNumFields();
-    if (num_fields == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "MySQL query returned no columns: {}", select_query);
-
-    const auto & settings = context_->getSettingsRef();
-    ColumnsDescription columns;
-    for (size_t i = 0; i < num_fields; ++i)
-    {
-        auto & field = query_result.getField(i);
-        columns.add(ColumnDescription(
-            query_result.getFieldName(i),
-            convertMySQLDataType(
-                settings[Setting::mysql_datatypes_support_level],
-                field,
-                settings[Setting::external_table_functions_use_nulls])));
-    }
-
-    /// Drain the (empty) result so that the connection is left in a consistent state for reuse.
-    while (query_result.fetch())
-        ;
-
-    return columns;
-}
 }
 
 }

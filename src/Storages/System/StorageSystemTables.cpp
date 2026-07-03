@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemTables.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
@@ -1055,6 +1054,3 @@ void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, c
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemTables) }
