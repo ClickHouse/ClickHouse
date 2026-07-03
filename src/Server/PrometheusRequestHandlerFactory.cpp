@@ -85,6 +85,8 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::Write;
         parseTableNameFromConfig(config, config_prefix, res);
+        if (config.has(config_prefix + ".enable_table_name_url_routing"))
+            res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
         parseCommonConfig(config, res);
         return res;
     }
