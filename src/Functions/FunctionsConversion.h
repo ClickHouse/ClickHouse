@@ -76,6 +76,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <base/int8_to_string.h>
+#include <base/wide_integer_to_string.h>
 
 
 namespace DB
@@ -156,6 +158,20 @@ struct FunctionConvertSettings
 
 namespace detail
 {
+
+/// Format the rejected source value for an out-of-range exception message.
+/// Floating sources are widened to double (never narrowed to an integer): narrowing a huge,
+/// Inf or NaN float to an integer is undefined behavior, and the newly-reachable throw paths
+/// for numeric -> Date/Date32 casts hit exactly those inputs. Integral sources keep their own
+/// type (wide ints and Int8 have fmt formatters), so the message shows the real value.
+template <typename FromType>
+static auto formatOutOfBoundsValue(const FromType & from)
+{
+    if constexpr (is_floating_point<FromType>)
+        return static_cast<double>(from);
+    else
+        return from;
+}
 
 /** Type conversion functions.
   * toType - conversion in "natural way";
@@ -301,19 +317,22 @@ struct ToDateTransformFromSecondsOrDays
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+        if constexpr (overflow_throw && is_floating_point<FromType>)
+            if (isNaN(from)) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", formatOutOfBoundsValue(from));
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
             /// Compare in the double domain: MAX_DATETIME_TIMESTAMP is exact as double but rounds when a
             /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
             if (static_cast<double>(from) > static_cast<double>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", formatOutOfBoundsValue(from));
         }
 
         if constexpr (is_signed_v<FromType>)
             if (from < 0)
             {
                 if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", formatOutOfBoundsValue(from));
                 else
                     return 0;
             }
@@ -349,7 +368,7 @@ struct ToDate32TransformFromSecondsOrDays
             if (is_nan || from < daynum_min_offset)
             {
                 if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", formatOutOfBoundsValue(from));
                 return daynum_min_offset;
             }
         }
@@ -358,7 +377,7 @@ struct ToDate32TransformFromSecondsOrDays
             /// Compare in the double domain: MAX_DATETIME64_TIMESTAMP is exact as double but rounds when a
             /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
             if (static_cast<double>(from) > static_cast<double>(MAX_DATETIME64_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", formatOutOfBoundsValue(from));
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -413,10 +432,15 @@ struct ToDateTimeTransform64Signed
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
+            /// NaN passes every range comparison (they are all false for NaN), so guard it explicitly
+            /// before it reaches the narrowing static_cast below, which would be undefined behavior.
+            if constexpr (is_floating_point<FromType>)
+                if (isNaN(from)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", formatOutOfBoundsValue(from));
             /// Compare in the double domain: MAX_DATETIME_TIMESTAMP is exact as double but rounds when a
             /// float FromType forces the constant into the float domain (-Wimplicit-const-int-float-conversion).
             if (from < 0 || static_cast<double>(from) > static_cast<double>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", formatOutOfBoundsValue(from));
         }
 
         if (from < 0)
@@ -510,8 +534,13 @@ struct ToTimeTransform64Signed
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
+            /// NaN passes every range comparison (they are all false for NaN), so guard it explicitly
+            /// before it reaches the narrowing static_cast below, which would be undefined behavior.
+            if constexpr (is_floating_point<FromType>)
+                if (isNaN(from)) [[unlikely]]
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", formatOutOfBoundsValue(from));
             if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", formatOutOfBoundsValue(from));
         }
         if (from > 0)
             return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));

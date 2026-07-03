@@ -1,4 +1,5 @@
 -- throw: out-of-range numeric casts must raise VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+-- throw: float extremes (huge / Inf / NaN) must raise a clean error, not narrow to garbage
 -- throw: in-range numeric casts must still succeed
 2023-11-14 22:13:20
 2024-10-04
