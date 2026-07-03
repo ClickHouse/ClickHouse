@@ -230,7 +230,7 @@ public:
         AggregateFunctionGroupPolygonIntersect::data(place).add(std::move(mp), getName().c_str());
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         AggregateFunctionGroupPolygonIntersect::data(place).merge(
             AggregateFunctionGroupPolygonIntersect::data(rhs), getName().c_str());
