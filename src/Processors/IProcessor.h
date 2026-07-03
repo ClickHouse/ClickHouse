@@ -215,7 +215,7 @@ public:
       * Note that file descriptor returned by schedule() will be polled for read (EPOLLIN event) and errors
       * but for ISink implementations that write data to network or to files it is necessary to poll for write (EPOLLOUT) events as well.
       */
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     virtual std::pair<int, uint32_t> scheduleForEvent();
 #endif
 

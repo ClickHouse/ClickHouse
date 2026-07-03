@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemWorkloads.h>
@@ -49,3 +50,6 @@ void StorageSystemWorkloads::restoreDataFromBackup(RestorerFromBackup & restorer
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWorkloads) }
