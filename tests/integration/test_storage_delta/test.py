@@ -4111,6 +4111,51 @@ def test_write_schema_mismatch_raises_user_error(started_cluster):
     ).strip()
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_write_failure_does_not_crash_server(started_cluster, partitioned):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/109311
+    # An INSERT that fails after the sink already opened its data-file write
+    # buffers must not leave those buffers unfinalized: before the fix the
+    # buffers reached ~WriteBuffer neither finalized nor canceled and the
+    # server aborted (SIGABRT on debug/sanitizer builds) while destroying the
+    # pipeline. `partitioned=True` exercises DeltaLakePartitionedSink,
+    # `partitioned=False` the plain DeltaLakeSink; both stored their inner
+    # StorageObjectStorageSinks as plain members that never received the
+    # pipeline-wide cancel.
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_write_failure")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}') "
+        f"SETTINGS output_format_parquet_compression_method = 'none'"
+    )
+
+    # max_block_size = 1 makes the source deliver single-row chunks, so the
+    # sink opens write buffers (for both partitions when partitioned) before
+    # throwIf fires on the last row.
+    error = instance.query_and_get_error(
+        f"INSERT INTO {table_name} "
+        f"SELECT throwIf(number = 9)::Int32 + number::Int32, number::Int32 % 2 "
+        f"FROM numbers(10) SETTINGS max_block_size = 1"
+    )
+    assert "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO" in error
+
+    # Server stays alive after the failed write (would have aborted before the fix).
+    assert "1" == instance.query("SELECT 1").strip()
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]

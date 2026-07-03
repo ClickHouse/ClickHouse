@@ -92,6 +92,28 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     delta_transaction->validateSchema(getHeader());
 }
 
+DeltaLakePartitionedSink::~DeltaLakePartitionedSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void DeltaLakePartitionedSink::cancelBuffers()
+{
+    /// The inner sinks are plain members, not pipeline processors, so the
+    /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
+    /// this flips its isCancelled(), so its destructor finalizes/cancels its
+    /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
+    for (auto & [_, partition_info] : partitions_data)
+        for (auto & data_file : partition_info->data_files)
+            data_file.sink->cancel();
+}
+
+void DeltaLakePartitionedSink::onException(std::exception_ptr)
+{
+    cancelBuffers();
+}
+
 void DeltaLakePartitionedSink::consume(Chunk & chunk)
 {
     const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(chunk);

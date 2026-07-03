@@ -39,6 +39,27 @@ DeltaLakeSink::DeltaLakeSink(
     delta_transaction->validateSchema(getHeader());
 }
 
+DeltaLakeSink::~DeltaLakeSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void DeltaLakeSink::cancelBuffers()
+{
+    /// The inner sinks are plain members, not pipeline processors, so the
+    /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
+    /// this flips its isCancelled(), so its destructor finalizes/cancels its
+    /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
+    for (auto & data_file : data_files)
+        data_file.sink->cancel();
+}
+
+void DeltaLakeSink::onException(std::exception_ptr)
+{
+    cancelBuffers();
+}
+
 DeltaLakeSink::StorageSinkPtr DeltaLakeSink::createStorageSink() const
 {
     return std::make_unique<StorageObjectStorageSink>(
