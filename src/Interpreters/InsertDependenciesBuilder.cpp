@@ -1074,12 +1074,22 @@ private:
 /// Placed at the beginning of the branch of a view that must observe the rows in the original
 /// insertion order. Applies the saved inverse permutation, which costs one column permute on
 /// this branch only - comparable to the sort the branch's own sink performs anyway.
+/// When `condition_description` is set, the restore runs only if the original row order is
+/// sorted with respect to it (checked through the permutation without materializing the rows).
+/// This is used for branches whose target sorting key cannot follow the source order: if the
+/// client data was naturally sorted for the target, the restore lets the target's sink keep its
+/// already-sorted fast path; otherwise the block is passed through as is and the check costs
+/// one comparison scan.
 class RestoreOriginalRowOrderTransform final : public ExceptionKeepingTransform
 {
 public:
-    explicit RestoreOriginalRowOrderTransform(SharedHeader header_)
+    RestoreOriginalRowOrderTransform(SharedHeader header_, SortDescription condition_description_ = {})
         : ExceptionKeepingTransform(header_, header_)
+        , condition_description(std::move(condition_description_))
     {
+        condition_positions.reserve(condition_description.size());
+        for (const auto & item : condition_description)
+            condition_positions.push_back(header_->getPositionByName(item.column_name));
     }
 
     String getName() const override { return "RestoreOriginalRowOrderTransform"; }
@@ -1089,12 +1099,15 @@ protected:
     {
         if (auto info = chunk.getChunkInfos().extract<OriginalRowOrderInfo>())
         {
-            const size_t num_rows = chunk.getNumRows();
-            Columns restored_columns;
-            restored_columns.reserve(chunk.getNumColumns());
-            for (const auto & column : chunk.getColumns())
-                restored_columns.push_back(column->permute(*info->inverse_permutation, 0));
-            chunk.setColumns(std::move(restored_columns), num_rows);
+            if (condition_description.empty() || originalOrderIsSortedByCondition(chunk, *info->inverse_permutation))
+            {
+                const size_t num_rows = chunk.getNumRows();
+                Columns restored_columns;
+                restored_columns.reserve(chunk.getNumColumns());
+                for (const auto & column : chunk.getColumns())
+                    restored_columns.push_back(column->permute(*info->inverse_permutation, 0));
+                chunk.setColumns(std::move(restored_columns), num_rows);
+            }
         }
         cur_chunk = std::move(chunk);
     }
@@ -1107,6 +1120,33 @@ protected:
     }
 
 private:
+    bool originalOrderIsSortedByCondition(const Chunk & chunk, const IColumn::Permutation & inverse_permutation) const
+    {
+        const auto & columns = chunk.getColumns();
+        const size_t num_rows = chunk.getNumRows();
+
+        for (size_t j = 0; j + 1 < num_rows; ++j)
+        {
+            /// Original row j is the sorted row inverse_permutation[j].
+            const size_t lhs = inverse_permutation[j];
+            const size_t rhs = inverse_permutation[j + 1];
+
+            for (size_t i = 0; i < condition_positions.size(); ++i)
+            {
+                const auto & column = *columns[condition_positions[i]];
+                int cmp = column.compareAt(lhs, rhs, column, condition_description[i].nulls_direction)
+                    * condition_description[i].direction;
+                if (cmp > 0)
+                    return false;
+                if (cmp < 0)
+                    break;
+            }
+        }
+        return true;
+    }
+
+    SortDescription condition_description;
+    std::vector<size_t> condition_positions;
     Chunk cur_chunk;
 };
 
@@ -1127,6 +1167,39 @@ bool isOrderSensitiveTarget(const IStorage * storage)
         || merging_params.mode == MergeTreeData::MergingParams::Coalescing
         || merging_params.mode == MergeTreeData::MergingParams::Graphite
         || (merging_params.mode == MergeTreeData::MergingParams::Replacing && merging_params.version_column.empty());
+}
+
+/// The table's sorting key as a sort description over the given header, or nothing when some
+/// element of the sorting key is an expression or is otherwise not a plain column of the header.
+std::optional<SortDescription> sortingKeyDescriptionForHeader(const StorageMetadataPtr & metadata, const Block & header)
+{
+    Names sort_columns = metadata->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata->getSortingKeyReverseFlags();
+    SortDescription description;
+    description.reserve(sort_columns.size());
+    for (size_t i = 0; i < sort_columns.size(); ++i)
+    {
+        if (!header.has(sort_columns[i]))
+            return std::nullopt;
+
+        if (!reverse_flags.empty() && reverse_flags[i])
+            description.emplace_back(sort_columns[i], -1, 1);
+        else
+            description.emplace_back(sort_columns[i], 1, 1);
+    }
+    return description;
+}
+
+bool isSortDescriptionPrefix(const SortDescription & maybe_prefix, const SortDescription & full)
+{
+    if (maybe_prefix.size() > full.size())
+        return false;
+    for (size_t i = 0; i < maybe_prefix.size(); ++i)
+    {
+        if (maybe_prefix[i].column_name != full[i].column_name || maybe_prefix[i].direction != full[i].direction)
+            return false;
+    }
+    return true;
 }
 
 }
@@ -1180,7 +1253,11 @@ Chain InsertDependenciesBuilder::createPresortChain() const
     bool any_branch_benefits = false;
     for (const auto & child_view_id : dependent_views.at(root_view))
     {
-        if (viewBranchNeedsOriginalRowOrder(child_view_id))
+        /// Branches with an unconditional restore (order-sensitive engines) or a conditional one
+        /// (incompatible target sorting key, see conditionalRestoreDescription) do not gain
+        /// anything from the presorted order, so they do not justify the presort by themselves.
+        /// Both kinds need the inverse permutation saved on the chunk.
+        if (viewBranchNeedsOriginalRowOrder(child_view_id) || conditionalRestoreDescription(child_view_id).has_value())
             keep_original_order = true;
         else
             any_branch_benefits = true;
@@ -1190,27 +1267,62 @@ Chain InsertDependenciesBuilder::createPresortChain() const
 
     const auto & header = output_headers.at(root_view);
 
-    Names sort_columns = inner_metadata->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = inner_metadata->getSortingKeyReverseFlags();
-    SortDescription description;
-    description.reserve(sort_columns.size());
-    for (size_t i = 0; i < sort_columns.size(); ++i)
-    {
-        /// Sorting key elements that are expressions are not present in the inserted block, the sink
-        /// computes them itself. Sorting upstream is possible only when every sorting key element
-        /// is a plain column of the block.
-        if (!header->has(sort_columns[i]))
-            return {};
-
-        if (!reverse_flags.empty() && reverse_flags[i])
-            description.emplace_back(sort_columns[i], -1, 1);
-        else
-            description.emplace_back(sort_columns[i], 1, 1);
-    }
+    /// Sorting key elements that are expressions are not present in the inserted block, the sink
+    /// computes them itself. Sorting upstream is possible only when every sorting key element
+    /// is a plain column of the block.
+    auto description = sortingKeyDescriptionForHeader(inner_metadata, *header);
+    if (!description)
+        return {};
 
     Chain chain;
-    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description), keep_original_order, deduplicate_blocks));
+    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(*description), keep_original_order, deduplicate_blocks));
     return chain;
+}
+
+
+std::optional<SortDescription> InsertDependenciesBuilder::conditionalRestoreDescription(const StorageIDMaybeEmpty & view_id) const
+{
+    /// A branch whose target sorting key is not a prefix of the destination table's sorting key
+    /// cannot use the presorted order: its sink has to sort anyway. Worse, the presort may have
+    /// destroyed a natural sortedness of the client data that the target's sink would have
+    /// benefited from. Such branches get a conditional restore: the original order is brought
+    /// back only when it actually is sorted with respect to the target's key.
+    const auto & root_inner_table_id = inner_tables.at(root_view);
+    if (!dynamic_cast<const MergeTreeData *>(storages.at(root_inner_table_id).get()))
+        return std::nullopt;
+
+    const auto & header = input_headers.at(view_id);
+
+    auto root_description = sortingKeyDescriptionForHeader(metadata_snapshots.at(root_inner_table_id), *header);
+    if (!root_description)
+    {
+        LOG_DEBUG(logger, "conditionalRestore {}: no root description, header {}", view_id, header->dumpNames());
+        return std::nullopt; /// The presort is not active in this case.
+    }
+
+    const auto & target_table_id = inner_tables.at(view_id);
+    if (!dynamic_cast<const MergeTreeData *>(storages.at(target_table_id).get()))
+        return std::nullopt; /// No sorting sink to save.
+
+    const auto & target_metadata = metadata_snapshots.at(target_table_id);
+    if (!target_metadata->hasSortingKey())
+        return std::nullopt;
+
+    /// The target's sorting key columns are resolved against the source-shaped header, which is
+    /// only meaningful for views that pass the columns through under the same names. When a key
+    /// column is renamed or computed by the view query, the check is impossible - do nothing.
+    auto target_description = sortingKeyDescriptionForHeader(target_metadata, *header);
+    if (!target_description)
+    {
+        LOG_DEBUG(logger, "conditionalRestore {}: no target description, header {}", view_id, header->dumpNames());
+        return std::nullopt;
+    }
+
+    if (isSortDescriptionPrefix(*target_description, *root_description))
+        return std::nullopt; /// Compatible: the branch benefits from the presorted order as is.
+
+    LOG_DEBUG(logger, "conditionalRestore {}: conditional restore on {}", view_id, target_description->front().column_name);
+    return target_description;
 }
 
 
@@ -1796,12 +1908,21 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 
         auto chain = Chain(std::make_shared<BeginingViewsTransform>(input_headers.at(child_view_id)));
 
-        /// This branch must observe the rows in the original insertion order: undo the presort.
-        /// A cheap no-op when the chunk carries no OriginalRowOrderInfo (the presort did not run
-        /// or the block was already sorted).
-        if (init_context->getSettingsRef()[Setting::presort_inserts_with_materialized_views]
-            && viewBranchNeedsOriginalRowOrder(child_view_id))
-            chain.addSink(std::make_shared<RestoreOriginalRowOrderTransform>(input_headers.at(child_view_id)));
+        /// These transforms are cheap no-ops when the chunk carries no OriginalRowOrderInfo
+        /// (the presort did not run or the block was already sorted).
+        if (init_context->getSettingsRef()[Setting::presort_inserts_with_materialized_views])
+        {
+            if (viewBranchNeedsOriginalRowOrder(child_view_id))
+            {
+                /// This branch must observe the rows in the original insertion order: undo the presort.
+                chain.addSink(std::make_shared<RestoreOriginalRowOrderTransform>(input_headers.at(child_view_id)));
+            }
+            else if (view_id == root_view)
+            {
+                if (auto condition = conditionalRestoreDescription(child_view_id))
+                    chain.addSink(std::make_shared<RestoreOriginalRowOrderTransform>(input_headers.at(child_view_id), std::move(*condition)));
+            }
+        }
 
         chain = Chain::concat(std::move(chain), createSelect(child_view_id));
         chain = Chain::concat(std::move(chain), createSink(child_view_id));

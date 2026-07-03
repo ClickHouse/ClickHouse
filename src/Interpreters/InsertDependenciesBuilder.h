@@ -2,6 +2,7 @@
 
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/StorageIDMaybeEmpty.h>
@@ -143,6 +144,7 @@ private:
     Chain createPresortChain() const;
     bool subtreeNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const;
     bool viewBranchNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const;
+    std::optional<SortDescription> conditionalRestoreDescription(const StorageIDMaybeEmpty & view_id) const;
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
     Chain createSink(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;
