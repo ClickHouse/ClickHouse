@@ -198,7 +198,7 @@ def main():
         ).stdout.splitlines()
         print(f"server up in {LIMIT_GB} GiB cgroup ({ram[0] if ram else ''})")
 
-        client(
+        create = client(
             "-q",
             "CREATE TABLE m (id UInt8, s AggregateFunction(groupArray, String)) "
             "ENGINE = AggregatingMergeTree ORDER BY id "
@@ -206,6 +206,11 @@ def main():
             "vertical_merge_algorithm_min_rows_to_activate = 1000000000, "
             "vertical_merge_algorithm_min_columns_to_activate = 1000000000",
         )
+        # Fail closed here too: if the table is not created, every churn worker below would just loop
+        # on a nonexistent table and the script would misreport "OOM did not fire", hiding the real
+        # setup failure as if the workload were merely too small.
+        if create.returncode != 0:
+            die(f"failed to create table m:\n{create.stdout}{create.stderr}")
 
         oom_before = oom_kill_count()
 
