@@ -50,6 +50,7 @@ class Git:
         dry_run: bool = False,
         strict: bool = False,
         retries: int = 1,
+        verbose: bool = True,
     ) -> bool:
         """Push `refspec` to `repo` over HTTPS authenticated as the GitHub App.
 
@@ -58,10 +59,30 @@ class Git:
         GITHUB_TOKEN — is what authenticates (only an App/PAT push re-triggers
         downstream workflows). The token expands at runtime, so its literal
         `${token}` stays out of the f-string and the URL is assembled by
-        concatenation; `repo`/`refspec` are passed shell-quoted. Kept out of the
-        logs (verbose=False). Retry helps past GitHub's push-time workflow-file
-        check timing out on a large repo.
+        concatenation; `repo`/`refspec` are passed shell-quoted. Retry helps past
+        GitHub's push-time workflow-file check timing out on a large repo.
+
+        `verbose` is safe to enable: the command carries only the literal
+        `${token}`/`$(gh auth token)` (expanded at runtime, and git redacts URL
+        credentials), so the token never reaches the log while the push command
+        and retry attempts stay visible.
         """
+        # Log the files changed by the pushed commit, so it is visible whether
+        # the push touches .github/workflows (the trigger for GitHub's
+        # workflows-scope check).
+        src_ref = refspec.split(":", 1)[0]
+        commit = Shell.get_output(
+            f"git rev-list -n1 {shlex.quote(src_ref)}", verbose=False
+        )
+        files = (
+            Shell.get_output(
+                f"git show --name-only --format= {shlex.quote(commit)}", verbose=False
+            )
+            if commit
+            else ""
+        )
+        print(f"Files in pushed commit [{src_ref} -> {commit}]:\n{files or '(none)'}")
+
         repo_url = (
             "https://x-access-token:${token}@github.com/" + shlex.quote(repo) + ".git"
         )
@@ -72,7 +93,45 @@ class Git:
             f"{force_flag}{repo_url} {shlex.quote(refspec)}"
         )
         return Shell.check(
-            push_cmd, dry_run=dry_run, strict=strict, verbose=False, retries=retries
+            push_cmd,
+            dry_run=dry_run,
+            strict=strict,
+            verbose=verbose,
+            retries=retries,
+        )
+
+    @staticmethod
+    def push_tag(
+        repo: str,
+        tag: str,
+        commit: str,
+        message: str,
+        user_name: str,
+        user_email: str,
+        dry_run: bool = False,
+        retries: int = 1,
+    ) -> None:
+        """Create an annotated tag at `commit` and push it to `repo` as the App.
+
+        Creates (force, so reruns are idempotent) the local annotated tag with
+        the given tagger identity and no GPG signing, then pushes it with
+        `Git.push` (App token) using the explicit `refs/tags/...` refspec.
+        """
+        Shell.check(
+            f"git -c user.name={shlex.quote(user_name)}"
+            f" -c user.email={shlex.quote(user_email)} -c commit.gpgsign=false"
+            f" tag -f -a -m {shlex.quote(message)}"
+            f" {shlex.quote(tag)} {shlex.quote(commit)}",
+            dry_run=dry_run,
+            strict=True,
+            verbose=True,
+        )
+        Git.push(
+            repo,
+            f"refs/tags/{tag}:refs/tags/{tag}",
+            dry_run=dry_run,
+            strict=True,
+            retries=retries,
         )
 
     def __init__(self):

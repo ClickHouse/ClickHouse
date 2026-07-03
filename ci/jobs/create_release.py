@@ -73,9 +73,12 @@ with tempfile.NamedTemporaryFile("w", delete=False) as _known_hosts_file:
     _GIT_KNOWN_HOSTS_FILE = _known_hosts_file.name
     atexit.register(os.remove, _known_hosts_file.name)
 
+ROBOT_GIT_USER_NAME = "robot-clickhouse"
+ROBOT_GIT_USER_EMAIL = "robot-clickhouse@users.noreply.github.com"
+
 GIT_PREFIX = (
-    "git -c user.email=robot-clickhouse@users.noreply.github.com "
-    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    f"git -c user.email={ROBOT_GIT_USER_EMAIL} "
+    f"-c user.name={ROBOT_GIT_USER_NAME} -c commit.gpgsign=false "
     f"-c core.sshCommand='ssh -o UserKnownHostsFile={_GIT_KNOWN_HOSTS_FILE} "
     "-o StrictHostKeyChecking=accept-new'"
 )
@@ -351,31 +354,22 @@ class ReleaseInfo:
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
-        if dry_run:
-            Shell.check(
-                f"{GIT_PREFIX} tag -l | grep -q {self.release_tag} && git tag -d {self.release_tag}"
-            )
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
-        tag_message = f"Release {self.release_tag}"
-        res = Shell.check(
-            f"{GIT_PREFIX} tag -a -m '{tag_message}' {self.release_tag} {self.commit_sha}",
-            verbose=True,
-        )
-        if not res:
-            print(f"WARNING: Tag [{self.release_tag}] already exists locally - ignore")
-        # Push as the App (Git.push) rather than via the checkout's default
-        # GITHUB_TOKEN. Retry: on a repo this size GitHub's push-time "does this
-        # ref touch .github/workflows" check can time out and fail closed with a
-        # spurious "remote rejected ... `workflows` scope may be required"; we push
-        # no workflow changes (the tag points at an existing commit), so retrying
-        # gives the check another chance to complete.
-        Git.push(
+        # Create the annotated tag and push it as the App. Retry: on a repo this
+        # size GitHub's push-time "does this ref touch .github/workflows" check
+        # can time out and fail closed with a spurious "remote rejected ...
+        # `workflows` scope may be required"; the tag points at an existing
+        # commit (no workflow changes), so retrying lets the check complete.
+        Git.push_tag(
             GITHUB_REPOSITORY,
-            f"{self.release_tag}:{self.release_tag}",
+            self.release_tag,
+            self.commit_sha,
+            f"Release {self.release_tag}",
+            user_name=ROBOT_GIT_USER_NAME,
+            user_email=ROBOT_GIT_USER_EMAIL,
             dry_run=dry_run,
-            strict=True,
             retries=3,
         )
 
