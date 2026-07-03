@@ -11,7 +11,7 @@ CREATE TABLE test_auto_stats_replacing
 ENGINE = ReplacingMergeTree
 ORDER BY id
 SETTINGS
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     auto_statistics_types = '';
 
@@ -52,7 +52,7 @@ CREATE TABLE test_auto_stats_replacing
 ENGINE = ReplacingMergeTree
 ORDER BY id
 SETTINGS
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     auto_statistics_types = 'uniq,minmax,tdigest';
 

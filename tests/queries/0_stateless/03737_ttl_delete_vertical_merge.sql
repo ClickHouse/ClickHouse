@@ -19,7 +19,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
@@ -70,7 +70,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
@@ -117,7 +117,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
@@ -165,7 +165,7 @@ TTL d + INTERVAL 1 DAY DELETE WHERE category = 1
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
@@ -214,7 +214,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
@@ -265,7 +265,7 @@ TTL d + INTERVAL 1 DAY DELETE WHERE category = 1
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,

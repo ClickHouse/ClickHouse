@@ -13,7 +13,7 @@ SETTINGS
     vertical_merge_algorithm_min_columns_to_activate = 1,
     allow_vertical_merges_from_compact_to_wide_parts = 1,
     min_bytes_for_wide_part = 0,
-    enable_block_number_column = 0,
+    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
     enable_block_offset_column = 0,
     -- packed_skip_index_max_bytes=0: the > 200 threshold below assumes per-substream
     -- uncompressed_bytes accounting; packed substreams are bundled and the per-substream

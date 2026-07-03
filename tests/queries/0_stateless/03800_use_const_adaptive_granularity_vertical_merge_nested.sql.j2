@@ -2,7 +2,7 @@
 {% for replace_long_file_name_to_hash in [0, 1] %}
 -- Merged columns: complex.key, Gathered columns: complex.value
 DROP TABLE IF EXISTS nested_no_pk;
-CREATE TABLE nested_no_pk (complex Nested (key String, value Int)) ENGINE = MergeTree ORDER BY tuple() SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0, use_const_adaptive_granularity = 1, enable_block_number_column = 0, enable_block_offset_column = 0, auto_statistics_types = '', string_serialization_version = 'single_stream', replace_long_file_name_to_hash = {{ replace_long_file_name_to_hash }}, compress_marks = {{ compress_marks }};
+CREATE TABLE nested_no_pk (complex Nested (key String, value Int)) ENGINE = MergeTree ORDER BY tuple() SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0, use_const_adaptive_granularity = 1, enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0, auto_statistics_types = '', string_serialization_version = 'single_stream', replace_long_file_name_to_hash = {{ replace_long_file_name_to_hash }}, compress_marks = {{ compress_marks }};
 INSERT INTO nested_no_pk VALUES (['GoodBye'], [1]);
 -- { echo }
 SELECT 'compress_marks={{ compress_marks }}, replace_long_file_name_to_hash = {{ replace_long_file_name_to_hash }}';
@@ -15,7 +15,7 @@ DROP TABLE nested_no_pk;
 
 -- Merged columns: key, Gathered columns: complex.key, complex.value
 DROP TABLE IF EXISTS nested_pk;
-CREATE TABLE nested_pk (key String, complex Nested (key String, value Int)) ENGINE = MergeTree ORDER BY key SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0, use_const_adaptive_granularity = 1, enable_block_number_column = 0, enable_block_offset_column = 0, auto_statistics_types = '', string_serialization_version = 'single_stream', replace_long_file_name_to_hash = {{ replace_long_file_name_to_hash }}, compress_marks = {{ compress_marks }};
+CREATE TABLE nested_pk (key String, complex Nested (key String, value Int)) ENGINE = MergeTree ORDER BY key SETTINGS vertical_merge_algorithm_min_rows_to_activate = 1, vertical_merge_algorithm_min_columns_to_activate = 1, min_bytes_for_wide_part = 0, use_const_adaptive_granularity = 1, enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0, auto_statistics_types = '', string_serialization_version = 'single_stream', replace_long_file_name_to_hash = {{ replace_long_file_name_to_hash }}, compress_marks = {{ compress_marks }};
 INSERT INTO nested_pk VALUES ('foo', ['GoodBye'], [1]);
 -- { echo }
 SELECT column, column_marks_bytes, subcolumns.names, subcolumns.marks_bytes FROM system.parts_columns WHERE database = currentDatabase() AND table = 'nested_pk' AND active ORDER BY column;
