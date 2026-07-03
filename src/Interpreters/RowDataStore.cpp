@@ -5,10 +5,16 @@
 #include <base/types.h>
 #include <base/getL2CacheSize.h>
 #include <Common/Exception.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 
 #include <algorithm>
 #include <cstring>
 
+
+namespace ProfileEvents
+{
+    extern const Event JoinBuildRowStoreMicroseconds;
+}
 
 namespace DB
 {
@@ -171,6 +177,8 @@ RowDataStore::RowDataStore(RowLayout && layout_)
 
 std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
 {
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildRowStoreMicroseconds);
+
     /// Columns are materialized to make sure all blocks have
     /// the same split of columnar and row store columns.
     Columns materialized_columns;
