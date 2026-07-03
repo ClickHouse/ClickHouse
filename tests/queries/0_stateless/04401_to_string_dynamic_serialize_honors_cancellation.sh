@@ -31,7 +31,7 @@ COMMON="max_threads = 1, max_memory_usage = 0, max_result_bytes = 0"
 
 # check that a query stopped near its limit rather than running to natural completion. Fails loudly in both
 # directions: below the lower bound (finished early - a randomized limit or unrelated failure) or above the
-# midpoint between the limit and the natural time (ran to the end - cancellation not observed).
+# upper bound (ran to the end - cancellation not observed).
 check_stopped_at_limit() {
     local query_id="$1" limit_s="$2" low_ms="$3" high_ms="$4" natural_ms="$5"
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
@@ -47,8 +47,8 @@ check_stopped_at_limit() {
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
-# measure the natural (unlimited) run time of one query, then rerun it with max_execution_time at ~45% of that in
-# both overflow modes and assert it stopped near the limit. $3 selects the shape:
+# measure the natural (unlimited) run time of one query, then rerun it with max_execution_time well below that (see
+# the limit computation below) in both overflow modes and assert it stopped near the limit. $3 selects the shape:
 #   many   - a big block of many rows; break mode returns the partial result (exit 0) without an error;
 #   single - one row holding a huge value; break mode has no useful partial result so it is a hard TIMEOUT_EXCEEDED.
 # $1: unique id prefix   $2: SELECT expression   $3: many|single   $4: number of rows
@@ -71,9 +71,18 @@ run_case() {
         WHERE current_database = currentDatabase() AND query_id = '$ref' AND type != 'QueryStart'
         ORDER BY event_time_microseconds DESC LIMIT 1")
 
-    local limit=$(( (natural_ms * 45 / 100 + 999) / 1000 ))   # max_execution_time is in seconds; round up
+    # max_execution_time is an integer number of seconds, so pick the largest whole second that stays safely below
+    # the natural time: floor(natural * 0.35). This keeps a wide margin (limit <= ~0.35 * natural) so run-to-run
+    # variance cannot push a single execution past the limit and skip the timeout, while still landing well past the
+    # cheap input-build phase. Floor (not round-up) is deliberate: rounding a ~1s intent up to 2s once left the
+    # single-value case with a razor-thin natural-limit margin and made it flaky on fast runners.
+    local limit=$(( natural_ms * 35 / 100 / 1000 ))
+    [ "$limit" -lt 1 ] && limit=1
     local low_ms=$(( limit * 500 ))                           # >= half the limit: guards against instant failure
-    local high_ms=$(( (limit * 1000 + natural_ms) / 2 ))      # < midpoint(limit, natural): stopped, did not finish
+    # < 70% of the natural time: the query stopped rather than running to completion. A fixed fraction of natural
+    # (not the midpoint to the limit) keeps the window wide enough to absorb the cancellation overshoot on slow
+    # builds while still failing loudly if the query ran anywhere near its natural end.
+    local high_ms=$(( natural_ms * 70 / 100 ))
 
     for mode in throw break; do
         local id="04401_${prefix}_${mode}_${CLICKHOUSE_DATABASE}"
