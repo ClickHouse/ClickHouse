@@ -43,6 +43,13 @@ struct CostConfig
     Float64 sequential_weight = 1000.0;   /// Single-threaded phases (hash build, merge).
     Float64 exchange_fixed_overhead = 100.0; /// Fixed per-exchange latency (connection setup, metadata).
 
+    /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
+    Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.
+    Float64 hash_table_build_factor = 2.0;   /// A hash table insert costs about two probes.
+    Float64 unknown_leaf_cost = 100500;      /// Source steps the model knows nothing about.
+    Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
+    Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
+
     String dump() const;
 };
 

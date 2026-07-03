@@ -44,16 +44,23 @@ CostConfig parseCostConfig(const String & json_str)
         auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
         if (!object)
             throw Poco::Exception("value is not a JSON object");
-        if (object->has("work_weight"))
-            config.work_weight = object->getValue<Float64>("work_weight");
-        else if (object->has("cpu_weight"))
-            config.work_weight = object->getValue<Float64>("cpu_weight");
-        if (object->has("network_weight"))
-            config.network_weight = object->getValue<Float64>("network_weight");
-        if (object->has("sequential_weight"))
-            config.sequential_weight = object->getValue<Float64>("sequential_weight");
-        if (object->has("exchange_fixed_overhead"))
-            config.exchange_fixed_overhead = object->getValue<Float64>("exchange_fixed_overhead");
+
+        auto read = [&](const char * name, Float64 & value)
+        {
+            if (object->has(name))
+                value = object->getValue<Float64>(name);
+        };
+        read("work_weight", config.work_weight);
+        if (!object->has("work_weight"))
+            read("cpu_weight", config.work_weight);
+        read("network_weight", config.network_weight);
+        read("sequential_weight", config.sequential_weight);
+        read("exchange_fixed_overhead", config.exchange_fixed_overhead);
+        read("expression_cost_per_row", config.expression_cost_per_row);
+        read("hash_table_build_factor", config.hash_table_build_factor);
+        read("unknown_leaf_cost", config.unknown_leaf_cost);
+        read("funnel_sequential_cost_per_row", config.funnel_sequential_cost_per_row);
+        read("merge_sequential_cost_per_row", config.merge_sequential_cost_per_row);
     }
     catch (const Poco::Exception & e)
     {
@@ -61,10 +68,10 @@ CostConfig parseCostConfig(const String & json_str)
             "Invalid Cascades cost config '{}': {}", json_str, e.displayText());
     }
 
-    /// Weights and the fixed overhead must be finite and non-negative. Zero is allowed (it lets a test
-    /// ignore a dimension, e.g. `{"network_weight":0}`). A negative value is rejected: it would make
-    /// more work look cheaper and can produce negative costs, which the optimizer's pruning relies on
-    /// never happening.
+    /// All values must be finite and non-negative. Zero is allowed (it lets a test ignore a
+    /// dimension, e.g. `{"network_weight":0}`). A negative value is rejected: it would make
+    /// more work look cheaper and can produce negative costs, which the optimizer's pruning
+    /// relies on never happening.
     auto require = [&](Float64 value, const char * name)
     {
         if (!std::isfinite(value) || value < 0)
@@ -75,6 +82,11 @@ CostConfig parseCostConfig(const String & json_str)
     require(config.network_weight, "network_weight");
     require(config.sequential_weight, "sequential_weight");
     require(config.exchange_fixed_overhead, "exchange_fixed_overhead");
+    require(config.expression_cost_per_row, "expression_cost_per_row");
+    require(config.hash_table_build_factor, "hash_table_build_factor");
+    require(config.unknown_leaf_cost, "unknown_leaf_cost");
+    require(config.funnel_sequential_cost_per_row, "funnel_sequential_cost_per_row");
+    require(config.merge_sequential_cost_per_row, "merge_sequential_cost_per_row");
     return config;
 }
 
@@ -85,6 +97,11 @@ String CostConfig::dump() const
     obj.set("network_weight", network_weight);
     obj.set("sequential_weight", sequential_weight);
     obj.set("exchange_fixed_overhead", exchange_fixed_overhead);
+    obj.set("expression_cost_per_row", expression_cost_per_row);
+    obj.set("hash_table_build_factor", hash_table_build_factor);
+    obj.set("unknown_leaf_cost", unknown_leaf_cost);
+    obj.set("funnel_sequential_cost_per_row", funnel_sequential_cost_per_row);
+    obj.set("merge_sequential_cost_per_row", merge_sequential_cost_per_row);
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     obj.stringify(oss);
     return oss.str();
@@ -94,29 +111,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-/// Fixed constants of the cost model, kept in one place. They describe the relative costs of
-/// the algorithms as implemented, so adjusting them is a code change, reviewed through its
-/// effect on the plan tests. Only the four `CostConfig` weights, which depend on the cluster
-/// rather than on the code, can be tuned at query time.
-
-/// Expressions and filters touch a row but do much less work per row than producing,
-/// aggregating or exchanging it.
-static constexpr Float64 expression_cost_per_row = 0.1;
-
-/// Building a hash table entry costs about twice a probe (allocation + insert).
-/// Used for both the parallel build work and the serial build phase.
-static constexpr Float64 hash_table_build_factor = 2.0;
-
-/// Source steps the model knows nothing about. Only ever compared against other unknowns,
-/// so the value just has to be non-zero and identical across alternatives.
-static constexpr Float64 unknown_leaf_cost = 100500;
-
-/// A gather (N->1) or scatter (1->N) funnels every row through a single stream endpoint.
-static constexpr Float64 funnel_sequential_cost_per_row = 1.0;
-
-/// N-way merge of sorted streams advances one cursor at a time.
-static constexpr Float64 merge_sequential_cost_per_row = 1.0;
 
 /// Reads the statistics of the given input, throwing if the input group had none derived.
 static const ExpressionStatistics & inputStats(const CostInputs & inputs, size_t input_index)
@@ -137,7 +131,7 @@ static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
 
     Cost cost;
     cost.work = (left_stats.estimated_row_count
-                 + hash_table_build_factor * right_stats.estimated_row_count
+                 + inputs.config.hash_table_build_factor * right_stats.estimated_row_count
                  + inputs.output_stats.estimated_row_count) / inputs.parallelism;
 
     /// Hash table materialization: memory allocation + cache pressure.
@@ -145,12 +139,12 @@ static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
     if (is_broadcast)
     {
         cost.work += ht_bytes;
-        cost.sequential += hash_table_build_factor * right_stats.estimated_row_count;
+        cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count;
     }
     else
     {
         cost.work += ht_bytes / inputs.parallelism;
-        cost.sequential += hash_table_build_factor * right_stats.estimated_row_count / inputs.parallelism;
+        cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count / inputs.parallelism;
     }
     return cost;
 }
@@ -236,7 +230,7 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     }
 
     if (typeid_cast<const FilterStep *>(step) || typeid_cast<const ExpressionStep *>(step))
-        return Cost{.work = expression_cost_per_row * inputStats(inputs, 0).estimated_row_count / inputs.parallelism};
+        return Cost{.work = inputs.config.expression_cost_per_row * inputStats(inputs, 0).estimated_row_count / inputs.parallelism};
 
     if (typeid_cast<const AggregatingStep *>(step))
     {
@@ -283,7 +277,7 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
         /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
         /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
         if (dynamic_cast<const GatherExchangeStep *>(step) || dynamic_cast<const ScatterExchangeStep *>(step))
-            cost.sequential += funnel_sequential_cost_per_row * rows;
+            cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
         return cost;
     }
 
@@ -301,12 +295,12 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
         Cost cost;
         cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
         /// N-way merge is single-threaded and sees only the rows the sort emits.
-        cost.sequential += merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
+        cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
         return cost;
     }
 
     if (inputs.input_stats.empty())
-        return Cost{.work = unknown_leaf_cost};
+        return Cost{.work = inputs.config.unknown_leaf_cost};
 
     /// Non-leaf steps without a specific model (e.g. `LimitStep`, `BuildRuntimeFilterStep`) get zero
     /// local cost: they are cheap per row and identical across the alternatives being compared.
