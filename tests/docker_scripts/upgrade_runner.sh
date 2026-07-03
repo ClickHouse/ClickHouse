@@ -107,8 +107,13 @@ configure_opts=(
     # Let's enable S3 storage by default
     --s3-storage
 )
+# Forward the encrypted-storage mode to the previous-release clickhouse-test run below.
+# clickhouse-test disables --encrypted-storage unless --s3-storage (or --azure) is also
+# set (an encrypted disk is layered on object storage); the server is always on --s3-storage.
+encrypted_test_opts=""
 if [ $((RANDOM % 2)) -eq 0 ]; then
     configure_opts+=(--encrypted-storage)
+    encrypted_test_opts="--s3-storage --encrypted-storage"
 fi
 
 # Start server from previous release
@@ -125,7 +130,7 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 mkdir tmp_stress_output
 
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
+stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" $encrypted_test_opts"  --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
