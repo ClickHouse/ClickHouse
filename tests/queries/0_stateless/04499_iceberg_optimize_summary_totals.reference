@@ -1,0 +1,13 @@
+--- count before OPTIMIZE ---
+6
+--- count after OPTIMIZE ---
+6
+--- rows after OPTIMIZE ---
+1	a
+2	b
+3	c
+4	d
+5	e
+6	f
+--- total-records of the current snapshot ---
+6
