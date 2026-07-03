@@ -645,6 +645,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
+    /// Snapshot of pending mutations for the source parts. Fetched once here (the expired-columns
+    /// check below needs it) and reused when building `alter_conversions` later, so both observe the
+    /// same set of mutations. On-fly `RENAME COLUMN` is carried by this snapshot.
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = !patch_parts.empty(),
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
@@ -669,12 +688,31 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_present_in_parts.emplace(col.name);
         }
 
+        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: the metadata
+        /// (and therefore `storage_columns`) already carries `new`, while the source parts still
+        /// physically store `old`. Treat `new` as present whenever a part holds the matching
+        /// `old` name, so the merge does not wrongly expire and drop a renamed-but-not-yet-
+        /// materialized column. Without this, a merge that races an `ALTER RENAME COLUMN` on a
+        /// column with no default (e.g. `Dynamic`) silently loses its data (see #80648).
+        NameSet renamed_column_targets;
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context);
+            for (const auto & rename : conversions->getRenameMap())
+            {
+                if (columns_present_in_parts.contains(rename.rename_from))
+                    renamed_column_targets.emplace(rename.rename_to);
+            }
+        }
+
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
+            if (!columns_present_in_parts.contains(storage_column.name)
+                && !renamed_column_targets.contains(storage_column.name)
+                && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
@@ -759,22 +797,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
 
-    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
-
-    MergeTreeData::IMutationsSnapshot::Params params
-    {
-        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = parts_info.min_metadata_version,
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
-        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-    };
-
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
-
+    /// `parts_info`, `params` and `mutations_snapshot` are computed once above (before the
+    /// expired-columns check) and reused here for patches and `alter_conversions`.
     if (!patch_parts.empty())
     {
         LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
