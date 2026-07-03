@@ -134,6 +134,10 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
+    /// Used to periodically check for query cancellation while serializing a large value to text
+    /// (the per-row loop in ConvertImplGenericToString is otherwise uninterruptible). May be null
+    /// when there is no query context (e.g. via castColumn()).
+    const QueryStatusPtr query_status;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -150,6 +154,7 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+        , query_status(context ? context->getProcessListElementSafe() : nullptr)
     {
     }
 };
@@ -851,12 +856,16 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 
 ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
 
+/// Throws QUERY_WAS_CANCELLED / TIMEOUT_EXCEEDED if the query has been cancelled; a no-op otherwise (and when
+/// query_status is null). Defined in the .cpp so the full QueryStatus definition stays out of this header.
+void throwIfQueryCancelled(const QueryStatusPtr & query_status);
+
 
 /// Generic conversion of any type to String or FixedString via serialization to text.
 template <typename StringColumnType>
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const FormatSettings & format_settings)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/, const FormatSettings & format_settings, const QueryStatusPtr & query_status = nullptr)
     {
         static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
                 "Can be used only to serialize to ColumnString or ColumnFixedString");
@@ -880,6 +889,12 @@ struct ConvertImplGenericToString
             auto serialization = type.getDefaultSerialization();
             for (size_t row = 0; row < size; ++row)
             {
+                /// A single row can hold a large composite value (Dynamic, Array, JSON, ...) that is expensive to
+                /// serialize; the query's time and cancellation limits are otherwise only checked between pipeline
+                /// blocks, so a big single block would keep serializing after KILL QUERY or max_execution_time and
+                /// trip the hung check. This is a cheap atomic check that throws once the query has been cancelled.
+                throwIfQueryCancelled(query_status);
+
                 serialization->serializeText(col_from, row, write_buffer, format_settings);
                 write_helper.finishRow();
             }
@@ -3520,7 +3535,7 @@ private:
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
         {
             if (from_type->getCustomSerialization())
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings, settings.query_status);
         }
 
         bool done = false;
@@ -3558,7 +3573,7 @@ private:
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {
-                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count, settings.format_settings, settings.query_status);
             }
             else
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",

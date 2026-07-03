@@ -1,4 +1,5 @@
 #include <Functions/FunctionsConversion.h>
+#include <Interpreters/ProcessList.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -49,6 +50,12 @@ ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col)
         null_map->insertRangeFrom(col_nullable->getNullMapColumn(), 0, col_nullable->size());
     }
     return null_map;
+}
+
+void throwIfQueryCancelled(const QueryStatusPtr & query_status)
+{
+    if (query_status)
+        query_status->throwIfKilled();
 }
 
 }
@@ -2634,7 +2641,7 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
             {
                 ret = [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
                 {
-                    return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count, settings.format_settings);
+                    return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count, settings.format_settings, settings.query_status);
                 };
                 return true;
             }
