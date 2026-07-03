@@ -1490,3 +1490,64 @@ def test_multi_level_namespace(started_cluster):
         assert False, "Should have raised exception for non-existent table"
     except Exception as e:
         assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+
+def test_namespace_prefix_in_non_select_queries(started_cluster):
+    """
+    Bare table names under USE db.namespace must work beyond SELECT:
+    EXISTS/DESCRIBE/SHOW CREATE resolve through Context::resolveStorageID.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_resolve_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "resolve_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    data = [generate_record() for _ in range(3)]
+    iceberg_table.append(pa.Table.from_pylist(data))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    use = f"USE {CATALOG_NAME}.{namespace}; "
+    assert node.query(use + f"EXISTS TABLE {table_name}").strip() == "1"
+
+    describe = node.query(use + f"DESCRIBE TABLE {table_name}")
+    assert "id" in describe and "data" in describe, f"DESCRIBE failed: {describe}"
+
+    show_create = node.query(use + f"SHOW CREATE TABLE {table_name}")
+    assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
+
+
+def test_namespace_prefix_query_cache_isolation(started_cluster):
+    """
+    The same unqualified query under different USE db.namespace prefixes must not
+    share query cache entries (the prefix is part of the cache key).
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_qcache_{uuid.uuid4().hex[:8]}"
+    ns_1 = f"ns1_{test_ref}"
+    ns_2 = f"ns2_{test_ref}"
+    table_name = "qcache_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns_1)
+    catalog.create_namespace(ns_2)
+
+    table_1 = create_table(catalog, ns_1, table_name)
+    table_2 = create_table(catalog, ns_2, table_name)
+
+    table_1.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+    table_2.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    query = f"SELECT count() FROM {table_name} SETTINGS use_query_cache = 1"
+    count_1 = int(node.query(f"USE {CATALOG_NAME}.{ns_1}; {query}"))
+    count_2 = int(node.query(f"USE {CATALOG_NAME}.{ns_2}; {query}"))
+    assert count_1 == 2, f"Expected 2 rows in {ns_1}, got {count_1}"
+    assert count_2 == 5, f"Expected 5 rows in {ns_2} (cache must not leak across namespaces), got {count_2}"
