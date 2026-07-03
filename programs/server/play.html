@@ -5098,6 +5098,17 @@ function closeTab(id) {
     const idx = tabs.findIndex(t => t.id === id);
     if (idx === -1) return;
     const wasActive = id === activeTabId;
+    /// Closing the active tab is a structural change, so fold its latest editor edit into its
+    /// own browser-history entry before removing it — exactly as `switchToTab`/`addTab` do for
+    /// the tab they leave. The `input` handler no longer refreshes that entry on every keystroke,
+    /// so without this its entry keeps the stale last-run/URL snapshot, and a later Back that
+    /// recreates the closed tab from `history.state` (`resolveTabForState`) would restore that
+    /// stale text over the newer unrun edit. `captureActiveTab` first, so the entry also carries
+    /// the tab's latest parameter values, not just its query.
+    if (wasActive) {
+        captureActiveTab();
+        refreshCurrentHistoryEntry(getActiveTab());
+    }
     tabs.splice(idx, 1);
     if (tabs.length === 0) {
         /// Never leave zero tabs: start a fresh default one.
