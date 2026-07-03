@@ -594,6 +594,9 @@ Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const
 
 void MergeTreeDataPartWriterOnDisk::prepareBlockForWriting(Block & block)
 {
+    for (auto & column : block)
+        column.column = column.column->convertToFullColumnIfConst();
+
     /// If block sample is empty, initialize it using current block (it will be the first block to write).
     if (block_sample.empty())
     {
