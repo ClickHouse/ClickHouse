@@ -23,7 +23,7 @@ ColumnsDescription StorageSystemHandlers::getColumnsDescription()
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Name of the handler."},
-        {"protocol", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Composable protocol the handler is restricted to, or NULL for all http/https protocols."},
+        {"protocol", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Composable protocol the handler is restricted to, or NULL if the handler is active on all HTTP endpoints (the built-in `http`/`https` ports and every HTTP-type composable protocol listener)."},
         {"url_match_type", std::make_shared<DataTypeString>(), "How the URL is matched: exact, prefix or regexp."},
         {"url", std::make_shared<DataTypeString>(), "The URL pattern that the handler matches."},
         {"methods", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Allowed HTTP methods."},
