@@ -33,13 +33,13 @@ using namespace DB;
 
 namespace
 {
-static std::string getStringAt(const ColumnString & col, size_t n)
+std::string getStringAt(const ColumnString & col, size_t n)
 {
     auto at = col.getDataAt(n);
     return std::string(at.data(), at.size());
 }
 
-static ColumnPtr makeColUInt64(const std::vector<UInt64> & data)
+ColumnPtr makeColUInt64(const std::vector<UInt64> & data)
 {
     auto col = ColumnUInt64::create();
     auto & d = col->getData();
@@ -49,7 +49,7 @@ static ColumnPtr makeColUInt64(const std::vector<UInt64> & data)
     return ColumnPtr(std::move(col));
 }
 
-static ColumnPtr makeArrayColumn(const ColumnPtr & data_col, const std::vector<UInt64> & offsets)
+ColumnPtr makeArrayColumn(const ColumnPtr & data_col, const std::vector<UInt64> & offsets)
 {
     auto offsets_col = ColumnVector<UInt64>::create();
     auto & od = offsets_col->getData();
@@ -57,10 +57,10 @@ static ColumnPtr makeArrayColumn(const ColumnPtr & data_col, const std::vector<U
     for (auto v : offsets)
         od.push_back(v);
     auto offsets_ptr = ColumnPtr(std::move(offsets_col));
-    return ColumnArray::create(data_col, std::move(offsets_ptr));
+    return ColumnArray::create(data_col, offsets_ptr);
 }
 
-static ColumnPtr makeConstArrayColumn(const ColumnPtr & data_col, const std::vector<UInt64> & offsets, size_t repeat)
+ColumnPtr makeConstArrayColumn(const ColumnPtr & data_col, const std::vector<UInt64> & offsets, size_t repeat)
 {
     auto offsets_col = ColumnVector<UInt64>::create();
     auto & od = offsets_col->getData();
@@ -68,7 +68,7 @@ static ColumnPtr makeConstArrayColumn(const ColumnPtr & data_col, const std::vec
     for (auto v : offsets)
         od.push_back(v);
     auto offsets_ptr = ColumnPtr(std::move(offsets_col));
-    auto arr = ColumnArray::create(data_col, std::move(offsets_ptr));
+    auto arr = ColumnArray::create(data_col, offsets_ptr);
     auto arr_ptr = ColumnPtr(std::move(arr));
     return ColumnConst::create(arr_ptr, repeat);
 }
@@ -138,7 +138,7 @@ TEST(ColumnBinary, Float64RoundTrip)
     DataTypes types = {std::make_shared<DataTypeFloat64>()};
     auto col = ColumnFloat64::create();
     auto & d = col->getData();
-    d.push_back(1.5); d.push_back(-2.5); d.push_back(0.0); d.push_back(3.14159);
+    d.push_back(1.5); d.push_back(-2.5); d.push_back(0.0); d.push_back(3.75);
     Block header;
     header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
 
@@ -159,7 +159,7 @@ TEST(ColumnBinary, Float64RoundTrip)
         EXPECT_DOUBLE_EQ(decoded.getData()[0], 1.5);
         EXPECT_DOUBLE_EQ(decoded.getData()[1], -2.5);
         EXPECT_DOUBLE_EQ(decoded.getData()[2], 0.0);
-        EXPECT_DOUBLE_EQ(decoded.getData()[3], 3.14159);
+        EXPECT_DOUBLE_EQ(decoded.getData()[3], 3.75);
     }
 }
 
@@ -265,9 +265,9 @@ TEST(ColumnBinary, ArrayRoundTrip)
 {
     DataTypes types = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())};
     auto data_col = makeColUInt64({1, 2, 3, 4, 5, 6});
-    auto col = makeArrayColumn(std::move(data_col), {1, 3, 6});
+    auto col = makeArrayColumn(data_col, {1, 3, 6});
     Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    header.insert(ColumnWithTypeAndName{col, types[0], "col0"});
 
     WriteBufferFromOwnString obuf;
     {
@@ -695,9 +695,9 @@ TEST(ColumnBinary, ArrayOfUInt64RoundTrip)
 {
     DataTypes types = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())};
     auto data_col = makeColUInt64({10, 20, 30, 40, 50});
-    auto col = makeArrayColumn(std::move(data_col), {1, 3, 4, 5});
+    auto col = makeArrayColumn(data_col, {1, 3, 4, 5});
     Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    header.insert(ColumnWithTypeAndName{col, types[0], "col0"});
 
     WriteBufferFromOwnString obuf;
     {
@@ -785,9 +785,9 @@ TEST(ColumnBinary, ConstArrayRoundTrip)
 {
     DataTypes types = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())};
     auto data_col = makeColUInt64({1, 2, 3});
-    auto col = makeConstArrayColumn(std::move(data_col), {3}, 2);
+    auto col = makeConstArrayColumn(data_col, {3}, 2);
     Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    header.insert(ColumnWithTypeAndName{col, types[0], "col0"});
 
     WriteBufferFromOwnString obuf;
     {
@@ -1209,9 +1209,9 @@ TEST(ColumnBinary, ArrayWithEmptyElementRoundTrip)
     DataTypes types = {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())};
     // 3 rows: [1, 2], [], [3]
     auto data_col = makeColUInt64({1, 2, 3});
-    auto col = makeArrayColumn(std::move(data_col), {2, 2, 3});
+    auto col = makeArrayColumn(data_col, {2, 2, 3});
     Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    header.insert(ColumnWithTypeAndName{col, types[0], "col0"});
 
     WriteBufferFromOwnString obuf;
     {
@@ -1268,7 +1268,7 @@ TEST(ColumnBinary, ArrayTupleRoundTrip)
 
     auto col = makeArrayColumn(std::move(tuple_col), {2, 3});
     Block header;
-    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    header.insert(ColumnWithTypeAndName{col, types[0], "col0"});
 
     WriteBufferFromOwnString obuf;
     {
