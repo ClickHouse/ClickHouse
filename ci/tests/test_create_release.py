@@ -375,13 +375,6 @@ def test_prepare_recovers_from_tag(tmp_path):
     os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
     os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
     script = str(repo / "ci" / "jobs" / "create_release.py")
-    commit_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
     bindir = tmp_path / "bin"
     bindir.mkdir()
