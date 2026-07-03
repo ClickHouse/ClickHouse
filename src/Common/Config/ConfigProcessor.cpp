@@ -437,7 +437,8 @@ void ConfigProcessor::doIncludesRecursive(
     Node * node,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const Coordination::EventPtr & zk_changed_event,
-    std::unordered_set<std::string> * contributing_zk_paths)
+    std::unordered_set<std::string> * contributing_zk_paths,
+    HashiCorpVault * vault)
 {
     if (node->nodeType() == Node::TEXT_NODE)
     {
@@ -629,7 +630,8 @@ void ConfigProcessor::doIncludesRecursive(
 
     if (attr_nodes["from_hashicorp_vault"])
     {
-        if (HashiCorpVault::instance().isLoaded())
+        HashiCorpVault * effective_vault = vault ? vault : &HashiCorpVault::instance();
+        if (effective_vault->isLoaded())
         {
             std::string hashicorp_vault_key_value;
             if (static_cast<Element *>(node)->hasAttribute("hashicorp_vault_key"))
@@ -644,7 +646,7 @@ void ConfigProcessor::doIncludesRecursive(
 
             auto get_vault_node = [&](const std::string & name) -> const Node *
             {
-                String vault_val = HashiCorpVault::instance().readSecret(name, hashicorp_vault_key_value);
+                String vault_val = effective_vault->readSecret(name, hashicorp_vault_key_value);
 
                 vault_document = dom_parser.parseString("<from_hashicorp_vault/>");
                 Node * root = getRootNode(vault_document.get());
@@ -668,7 +670,7 @@ void ConfigProcessor::doIncludesRecursive(
     if (included_something)
         doIncludesRecursive(
             config, include_from, substitutions, throw_on_bad_incl,
-            dom_parser, log, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
+            dom_parser, log, node, zk_node_cache, zk_changed_event, contributing_zk_paths, vault);
     else
     {
         NodeListPtr children = node->childNodes();
@@ -678,7 +680,7 @@ void ConfigProcessor::doIncludesRecursive(
             next_child = child->nextSibling();
             doIncludesRecursive(
                 config, include_from, substitutions, throw_on_bad_incl,
-                dom_parser, log, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
+                dom_parser, log, child, zk_node_cache, zk_changed_event, contributing_zk_paths, vault);
         }
     }
 }
@@ -768,7 +770,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const Coordination::EventPtr & zk_changed_event,
-    bool is_config_changed)
+    bool is_config_changed,
+    HashiCorpVault * vault)
 {
     if (is_config_changed)
         LOG_DEBUG(log, "Processing configuration file '{}'.", path);
@@ -837,7 +840,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             /// if we include_from env or zk.
             doIncludesRecursive(
                 config, nullptr, substitutions, throw_on_bad_incl, dom_parser, log,
-                node, zk_node_cache, zk_changed_event, &contributing_zk_paths);
+                node, zk_node_cache, zk_changed_event, &contributing_zk_paths, vault);
 
             include_from_path = node->innerText();
         }
@@ -868,7 +871,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             &contributing_zk_paths,
             &contributing_files,
             zk_node_cache,
-            zk_changed_event);
+            zk_changed_event,
+            vault);
     }
     catch (Exception & e)
     {
@@ -917,7 +921,8 @@ void ConfigProcessor::processIncludes(
     std::unordered_set<std::string> * contributing_zk_paths,
     std::vector<std::string> * contributing_files,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const Coordination::EventPtr & zk_changed_event)
+    const Coordination::EventPtr & zk_changed_event,
+    HashiCorpVault * vault)
 {
     XMLDocumentPtr include_from;
     if (!include_from_path.empty())
@@ -931,13 +936,13 @@ void ConfigProcessor::processIncludes(
 
     doIncludesRecursive(
         config, include_from, substitutions, throw_on_bad_incl, dom_parser, log,
-        getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
+        getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths, vault);
 }
 
-ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
+ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed, HashiCorpVault * vault)
 {
     bool has_zk_includes = false;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed, vault);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
@@ -951,7 +956,8 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const Coordination::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
-    bool is_config_changed)
+    bool is_config_changed,
+    HashiCorpVault * vault)
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes = false;
@@ -961,7 +967,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         auto component_guard = Coordination::setCurrentComponent("ConfigProcessor::loadConfigWithZooKeeperIncludes");
         if (zk_node_cache)
             zk_node_cache->sync();
-        config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed);
+        config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed, vault);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)

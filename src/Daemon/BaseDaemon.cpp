@@ -141,7 +141,7 @@ void BaseDaemon::loadConfiguration()
                 "Use a direct value instead.");
 
         HashiCorpVault::instance().load(config(), "hashicorp_vault");
-        loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+        loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, /* is_config_changed = */ true, &HashiCorpVault::instance());
         config().replace("default", loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 #endif

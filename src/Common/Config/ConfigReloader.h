@@ -13,6 +13,8 @@ namespace zkutil { class ZooKeeperNodeCache; }
 namespace DB
 {
 
+class HashiCorpVault;
+
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.
@@ -36,7 +38,8 @@ public:
         std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
         const Coordination::EventPtr & zk_changed_event,
         Updater && updater,
-        PreUpdateHook && pre_update_hook_ = {});
+        PreUpdateHook && pre_update_hook_ = {},
+        HashiCorpVault * vault_ = nullptr);
 
     ~ConfigReloader();
 
@@ -80,6 +83,7 @@ private:
 
     Updater updater;
     PreUpdateHook pre_update_hook;
+    HashiCorpVault * reload_vault = nullptr;
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;

@@ -38,6 +38,8 @@ using EventPtr = std::shared_ptr<Poco::Event>;
 namespace DB
 {
 
+class HashiCorpVault;
+
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 
@@ -72,7 +74,8 @@ public:
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const Coordination::EventPtr & zk_changed_event = nullptr,
-        bool is_config_changed = true);
+        bool is_config_changed = true,
+        HashiCorpVault * vault = nullptr);
 
     static void processIncludes(
         XMLDocumentPtr & config,
@@ -84,7 +87,8 @@ public:
         std::unordered_set<std::string> * contributing_zk_paths = {},
         std::vector<std::string> * contributing_files = {},
         zkutil::ZooKeeperNodeCache * zk_node_cache = {},
-        const Coordination::EventPtr & zk_changed_event = {});
+        const Coordination::EventPtr & zk_changed_event = {},
+        HashiCorpVault * vault = nullptr);
 
     static XMLDocumentPtr parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser);
 
@@ -109,7 +113,7 @@ public:
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
     /// If it is the case, set has_zk_includes to true and don't write config-preprocessed.xml,
     /// expecting that config would be reloaded with zookeeper later.
-    LoadedConfig loadConfig(bool allow_zk_includes = false, bool is_config_changed = true);
+    LoadedConfig loadConfig(bool allow_zk_includes = false, bool is_config_changed = true, HashiCorpVault * vault = nullptr);
 
     /// If fallback_to_preprocessed is true, then if KeeperException is thrown during config
     /// processing, load the configuration from the preprocessed file.
@@ -117,7 +121,8 @@ public:
         zkutil::ZooKeeperNodeCache * zk_node_cache,
         const Coordination::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false,
-        bool is_config_changed = true);
+        bool is_config_changed = true,
+        HashiCorpVault * vault = nullptr);
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
@@ -201,7 +206,8 @@ private:
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             const Coordination::EventPtr & zk_changed_event,
-            std::unordered_set<std::string> * contributing_zk_paths);
+            std::unordered_set<std::string> * contributing_zk_paths,
+            HashiCorpVault * vault = nullptr);
 };
 
 }

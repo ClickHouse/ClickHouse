@@ -2403,6 +2403,8 @@ try
 
     HashiCorpVault::instance().load(config(), "hashicorp_vault");
 
+    auto transient_vault = std::make_shared<HashiCorpVault>();
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2796,16 +2798,21 @@ try
 
             /// Must be the last.
             latest_config = loaded_config;
+
+            /// Commit the transient vault state to the singleton only after the
+            /// updater has succeeded — this ensures transactional atomicity: if
+            /// the updater throws, the singleton retains the previous consistent
+            /// state.
+            HashiCorpVault::instance().commit(*transient_vault);
         },
-        [](ConfigurationPtr new_config) -> bool
+        [transient_vault](ConfigurationPtr new_config) -> bool
         {
-            /// Always load vault — load() calls reset() first, so if
-            /// <hashicorp_vault> was removed the singleton is properly
-            /// cleared.  Returns true only when the section is present
-            /// to trigger a second config-processing pass.
-            HashiCorpVault::instance().load(*new_config, "hashicorp_vault");
+            /// Load vault into the transient instance — the result is committed
+            /// to the singleton only after the updater succeeds.
+            transient_vault->load(*new_config, "hashicorp_vault");
             return new_config->has("hashicorp_vault");
-        });
+        },
+        transient_vault.get());
 
     const auto listen_hosts = getListenHosts(config());
     const auto interserver_listen_hosts = getInterserverListenHosts(config());

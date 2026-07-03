@@ -27,7 +27,8 @@ ConfigReloader::ConfigReloader(
         std::unique_ptr<zkutil::ZooKeeperNodeCache> && zk_node_cache_,
         const Coordination::EventPtr & zk_changed_event_,
         Updater && updater_,
-        PreUpdateHook && pre_update_hook_)
+        PreUpdateHook && pre_update_hook_,
+        HashiCorpVault * vault_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
@@ -35,6 +36,7 @@ ConfigReloader::ConfigReloader(
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
     , pre_update_hook(std::move(pre_update_hook_))
+    , reload_vault(vault_)
 {
     auto config = reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 
@@ -130,10 +132,10 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
 
         try
         {
-            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
+            loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed, reload_vault);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed, reload_vault);
         }
         catch (const Coordination::Exception & e)
         {
@@ -160,7 +162,6 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             LOG_ERROR(log, "Error loading config from '{}': {}", config_path, getExceptionMessageForLogging(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
             return std::nullopt;
         }
-        config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
         /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:
@@ -183,12 +184,16 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         {
             LOG_DEBUG(log, "Pre-updater hook triggered re-processing of config '{}'", config_path);
             ConfigProcessor second_processor(config_path);
-            loaded_config = second_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
+            loaded_config = second_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed, reload_vault);
             if (loaded_config.has_zk_includes)
                 loaded_config = second_processor.loadConfigWithZooKeeperIncludes(
-                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
+                    zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed, reload_vault);
             second_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
             LOG_DEBUG(log, "Re-processed config '{}'", config_path);
+        }
+        else
+        {
+            config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performing update on configuration", config_path);

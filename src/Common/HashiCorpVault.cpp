@@ -6,9 +6,9 @@
 #include <Poco/Net/HTTPResponse.h>
 
 #if USE_SSL
-#    include <Poco/Delegate.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/HTTPSClientSession.h>
+#    include <openssl/ssl.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/Utility.h>
 #    include <Poco/StringTokenizer.h>
@@ -34,6 +34,27 @@ HashiCorpVault & HashiCorpVault::instance()
 {
     static HashiCorpVault ret;
     return ret;
+}
+
+void HashiCorpVault::commit(const HashiCorpVault & candidate)
+{
+    std::lock_guard lock(mutex);
+    loaded = candidate.loaded;
+    url = candidate.url;
+    token = candidate.token;
+    username = candidate.username;
+    password = candidate.password;
+    cert_name = candidate.cert_name;
+    scheme = candidate.scheme;
+    host = candidate.host;
+    port = candidate.port;
+    secret_path = candidate.secret_path;
+    kv_api_version = candidate.kv_api_version;
+    auth_method = candidate.auth_method;
+#if USE_SSL
+    request_context = candidate.request_context;
+    certificate_handler_type = candidate.certificate_handler_type;
+#endif
 }
 
 #if USE_SSL
@@ -133,17 +154,23 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown invalidCertificateHandler name for vault: {}.", cert_handler_name);
     }
-}
-#endif
 
-#if USE_SSL
-void HashiCorpVault::onInvalidCertificate(const void *, Poco::Net::VerificationErrorArgs & errorCert)
-{
     if (certificate_handler_type == CertificateHandlerType::Accept)
-        errorCert.setIgnoreError(true);
+    {
+        SSL_CTX_set_verify(
+            request_context->sslContext(),
+            request_context->verificationMode(),
+            [](int, X509_STORE_CTX *) -> int { return 1; });
+    }
+    else if (certificate_handler_type == CertificateHandlerType::Reject)
+    {
+        SSL_CTX_set_verify(
+            request_context->sslContext(),
+            request_context->verificationMode(),
+            [](int ok, X509_STORE_CTX *) -> int { return ok; });
+    }
 }
 #endif
-
 
 void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
@@ -257,33 +284,6 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
     }
     else
         session = std::make_unique<Poco::Net::HTTPClientSession>(host, port);
-
-    /// Subscribe a per-connection certificate handler so vault SSL connections use
-    /// the handler configured specifically for vault rather than the global one.
-#if USE_SSL
-    struct VaultCertificateGuard
-    {
-        Poco::Net::SSLManager & mgr;
-        HashiCorpVault & vault;
-        bool active;
-
-        explicit VaultCertificateGuard(HashiCorpVault & v)
-            : mgr(Poco::Net::SSLManager::instance()), vault(v)
-        {
-            active = vault.certificate_handler_type != CertificateHandlerType::Default;
-            if (active)
-                mgr.ClientVerificationError += Poco::Delegate<HashiCorpVault, Poco::Net::VerificationErrorArgs>(
-                    &vault, &HashiCorpVault::onInvalidCertificate);
-        }
-
-        ~VaultCertificateGuard()
-        {
-            if (active)
-                mgr.ClientVerificationError -= Poco::Delegate<HashiCorpVault, Poco::Net::VerificationErrorArgs>(
-                    &vault, &HashiCorpVault::onInvalidCertificate);
-        }
-    } cert_guard(*this);
-#endif
 
     session->setTimeout(Poco::Timespan(30, 0));
 

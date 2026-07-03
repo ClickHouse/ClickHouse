@@ -4,7 +4,6 @@
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
-#    include <Poco/Net/VerificationErrorArgs.h>
 #endif
 
 #include <mutex>
@@ -42,6 +41,8 @@ public:
         return loaded;
     }
 
+    void commit(const HashiCorpVault & candidate);
+
 private:
     void reset()
     {
@@ -71,7 +72,6 @@ private:
 #endif
 #if USE_SSL
     void initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-    void onInvalidCertificate(const void * pSender, Poco::Net::VerificationErrorArgs & errorCert);
 #endif
     String makeRequest(const String & method, const String & path, const String & request_token, const String & body);
     String login();
