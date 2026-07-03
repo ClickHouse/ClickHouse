@@ -12,14 +12,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# `thread_cancel` below kills every process whose /proc/*/cmdline contains
-# $TEST_MARK. LSan's at-exit leak scan forks a `ptrace` probe child that
-# inherits the client's argv (so its cmdline matches $TEST_MARK too); the
-# kill loop catches that probe mid-ptrace, and LSan then prints a
-# fatal-looking "ptrace appears to be blocked" warning to stderr. This test
-# does not check for leaks, so skip the at-exit scan.
-export LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}detect_leaks=0"
-
 export DATA_FILE="$CLICKHOUSE_TMP/deduptest.tsv"
 export TEST_MARK="02435_insert_${CLICKHOUSE_DATABASE}_"
 export SESSION="02435_session_${CLICKHOUSE_DATABASE}"
@@ -76,6 +68,14 @@ $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
 function thread_insert
 {
+    # Only clients started here carry $TEST_MARK in their argv and run while
+    # thread_cancel is killing every /proc/*/cmdline match. LSan's at-exit leak
+    # scan forks a ptrace probe child that inherits that argv, so the kill loop
+    # catches the probe mid-ptrace and LSan prints a fatal-looking "ptrace
+    # appears to be blocked" warning to stderr. This test does not check for
+    # leaks, so skip the at-exit scan for these clients only; the setup, select
+    # and final verification clients keep full leak detection.
+    export LSAN_OPTIONS="${LSAN_OPTIONS:+$LSAN_OPTIONS:}detect_leaks=0"
     # supress "Killed" messages from bash
     i=2
     local TIMELIMIT=$((SECONDS+TIMEOUT))
