@@ -163,6 +163,7 @@ namespace Setting
     extern const SettingsBool distributed_background_insert_split_batch_on_failure;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsBool distributed_foreground_insert;
+    extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 distributed_push_down_limit;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
@@ -556,6 +557,12 @@ bool StorageDistributed::useDistributedPlanForReading(
     return settings[Setting::make_distributed_plan]
         && settings[Setting::allow_experimental_analyzer]
         && !settings[Setting::distributed_group_by_no_merge]
+        /// The plan path evaluates IN/JOIN subqueries over Distributed tables once on the initiator
+        /// (`GLOBAL IN`-like semantics). `distributed_product_mode = 'local'` instead demands
+        /// per-shard subquery rewriting to local tables, which the plan path does not implement, so
+        /// fall back to the legacy path. Coarse: applied regardless of whether the query has such
+        /// subqueries.
+        && settings[Setting::distributed_product_mode] != DistributedProductMode::LOCAL
         && !local_context->canUseParallelReplicasCustomKeyForCluster(*cluster)
         && !local_context->canUseTaskBasedParallelReplicas()
         /// Phase 1: plain remote tables only, no remote table functions.

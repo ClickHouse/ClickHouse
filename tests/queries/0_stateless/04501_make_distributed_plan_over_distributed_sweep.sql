@@ -46,11 +46,23 @@ SELECT '-- IN with a subquery over a local table (set is built on the initiator)
 SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dim);
 SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dim) SETTINGS make_distributed_plan = 0;
 
--- distributed_product_mode = 'local' makes the legacy path comparable: without it the legacy
--- path rejects the double-distributed subquery (the plan path builds the set on the initiator).
+-- distributed_product_mode = 'local' lets the legacy path accept the double-distributed subquery
+-- (without it the legacy path rejects it, while the plan path builds the set on the initiator).
+-- The two paths return equal results only because both shards of this localhost cluster read the
+-- same underlying table, so the per-shard local-subquery rewrite sees identical data.
 SELECT '-- IN with a subquery over the distributed table itself';
 SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS distributed_product_mode = 'local';
 SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS distributed_product_mode = 'local', make_distributed_plan = 0;
+
+-- With SET distributed_product_mode = 'local' the plan path falls back to the legacy execution
+-- path (the plan path cannot implement per-shard subquery rewriting), so make_distributed_plan = 1
+-- and = 0 must agree. As above, the values match the classic per-shard local rewrite only because
+-- both localhost shards read the same table.
+SELECT '-- IN subquery over the Distributed table with SET distributed_product_mode = local (plan path falls back to legacy)';
+SET distributed_product_mode = 'local';
+SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10);
+SELECT count(), sum(v) FROM sweep_dist WHERE k IN (SELECT k FROM sweep_dist WHERE v < 10) SETTINGS make_distributed_plan = 0;
+SET distributed_product_mode = 'deny';
 
 SELECT '-- GLOBAL IN with a subquery over the distributed table';
 SELECT count(), sum(v) FROM sweep_dist WHERE k GLOBAL IN (SELECT k FROM sweep_dist WHERE v < 10);

@@ -179,10 +179,16 @@ static bool dagReferencesOnlyInlineSets(const ActionsDAG & dag)
 {
     for (const auto & dag_node : dag.getNodes())
     {
-        if (dag_node.type != ActionsDAG::ActionType::COLUMN || !dag_node.column)
+        /// Scan any node carrying a column (matching what `ActionsDAG::serialize` serializes), not
+        /// just `COLUMN` nodes, unwrapping `ColumnConst` to reach the underlying column.
+        if (!dag_node.column)
             continue;
 
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&dag_node.column->getDataColumn());
+        const IColumn * inner = dag_node.column.get();
+        if (const auto * column_const = checkAndGetColumn<const ColumnConst>(inner))
+            inner = &column_const->getDataColumn();
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(inner);
         if (!column_set)
             continue;
 
