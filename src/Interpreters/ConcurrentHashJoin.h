@@ -66,13 +66,16 @@ public:
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
-    /// Left order is preserved only when a shared two-level map is used: then `joinBlock`
-    /// passes the left block through unscattered. With single-level maps (key8 / key16, or a
-    /// single non-nullable LowCardinality key) `joinBlock` scatters the left block across slots
-    /// and `ConcurrentHashJoinResult` emits slot 0, then 1, ..., so equal left-key values stop
-    /// being contiguous. The map type is fixed at build time, so this is stable when the
-    /// read-in-order optimization queries it during plan optimization.
-    bool preservesLeftBlockOrder() const override { return hash_joins[0]->data->twoLevelMapIsUsed(); }
+    /// Left order is preserved with a single slot, or when a shared two-level map is used.
+    /// With one slot `dispatchBlock` short-circuits and `joinBlock` passes the left block
+    /// through unscattered, so there is nothing to reorder regardless of the map type. With
+    /// several slots a shared two-level map also passes the block through unscattered; but a
+    /// single-level map (key8 / key16, or a single non-nullable LowCardinality key) makes
+    /// `joinBlock` scatter the left block across slots and `ConcurrentHashJoinResult` emit
+    /// slot 0, then 1, ..., so equal left-key values stop being contiguous. Both `slots` and
+    /// the map type are fixed at build time, so this is stable when the read-in-order
+    /// optimization queries it during plan optimization.
+    bool preservesLeftBlockOrder() const override { return slots == 1 || hash_joins[0]->data->twoLevelMapIsUsed(); }
 
     /// Number of internal hash join slots.
     size_t getNumSlots() const { return slots; }

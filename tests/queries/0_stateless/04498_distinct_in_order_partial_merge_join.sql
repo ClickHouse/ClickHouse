@@ -88,6 +88,21 @@ SELECT count() FROM (
     SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
 ) WHERE explain ILIKE '%Read type: InOrder%';
 
+-- Single-slot fast path: with max_threads = 1 the join has one slot, so dispatchBlock
+-- short-circuits and joinBlock passes the left block through unscattered even for a
+-- single-level (key8) map. Order IS preserved, so read-in-order must fire again (InOrder
+-- assertion result >= 1) and aggregation-in-order on top of it must still be correct
+-- (8 per group). Before the single-slot fix preservesLeftBlockOrder() returned false here,
+-- disabling the optimization even though the join preserves order.
+SELECT a, count() FROM t3_04498 LEFT ALL JOIN t4_04498 ON t3_04498.j = t4_04498.j GROUP BY a ORDER BY a
+SETTINGS max_threads = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN
+    SELECT a, count() FROM t3_04498 LEFT ALL JOIN t4_04498 ON t3_04498.j = t4_04498.j GROUP BY a ORDER BY a
+    SETTINGS max_threads = 1, optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1
+) WHERE explain ILIKE '%Read type: InOrder%';
+
 -- With a wide (UInt64 -> two-level) key the map is shared and joinBlock does NOT scatter, so
 -- left order is preserved and read-in-order legitimately still fires (assertion result >= 1).
 -- This proves the fix is precise (order preservation keyed on the map type), not a blanket disable.
