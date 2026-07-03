@@ -7,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
 #include <base/sort.h>
 
 
@@ -71,7 +70,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     {
         if (ast.id_mode)
             return parse<UUID>(name);
-        assert(access_control);
+        chassert(access_control);
         if (ast.allow_users && ast.allow_roles)
         {
             auto id = access_control->find<User>(name);
@@ -84,7 +83,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
             return access_control->getID<User>(name);
         }
 
-        assert(ast.allow_roles);
+        chassert(ast.allow_roles);
         return access_control->getID<Role>(name);
     };
 
@@ -97,7 +96,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 
     if (ast.current_user && !all)
     {
-        assert(current_user_id);
+        chassert(current_user_id);
         ids.insert(*current_user_id);
     }
 
@@ -110,7 +109,7 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 
     if (ast.except_current_user)
     {
-        assert(current_user_id);
+        chassert(current_user_id);
         except_ids.insert(*current_user_id);
     }
 
@@ -119,9 +118,9 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
+boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 {
-    auto ast = std::make_shared<ASTRolesOrUsersSet>();
+    auto ast = make_intrusive<ASTRolesOrUsersSet>();
     ast->id_mode = true;
     ast->all = all;
 
@@ -145,9 +144,9 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
+boost::intrusive_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = std::make_shared<ASTRolesOrUsersSet>();
+    auto ast = make_intrusive<ASTRolesOrUsersSet>();
     ast->all = all;
 
     if (!ids.empty() && !all)

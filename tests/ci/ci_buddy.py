@@ -6,11 +6,8 @@ from typing import Dict, List, Union
 import requests
 from botocore.exceptions import ClientError
 
-from ci_config import CI
-from ci_utils import WithIter
-from commit_status_helper import get_commit_filtered_statuses, get_repo
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-from github_helper import GitHub
+from ci_utils import GH, Envs, Shell, WithIter
+from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 
 
@@ -58,31 +55,11 @@ class CIBuddy:
         self.sha = self.sha_full[:10]
 
     def check_workflow(self):
-        CI.GH.print_workflow_results()
-        if CI.Envs.GITHUB_WORKFLOW == CI.WorkFlowNames.CreateRelease:
-            if not CI.GH.is_workflow_ok():
-                self.post_job_error(
-                    f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
-                )
-            return
-
-        res = CI.GH.get_workflow_job_result(CI.GH.ActionsNames.RunConfig)
-        if res == CI.GH.ActionStatuses.SUCCESS:
-            # the normal case
-            return
-
-        gh = GitHub(get_best_robot_token())
-        commit = get_repo(gh).get_commit(self.sha_full)
-        statuses = get_commit_filtered_statuses(commit)
-        if any(True for st in statuses if st.context == CI.StatusNames.PR_CHECK):
-            print(
-                f"INFO: RunConfig status is [{res}], but it "
-                f'contains "{CI.StatusNames.PR_CHECK}" status, do not report error'
+        GH.print_workflow_results()
+        if not GH.is_workflow_ok():
+            self.post_job_error(
+                f"{Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True
             )
-            return
-
-        print(f"ERROR: RunConfig status is [{res}] - post report to slack")
-        self.post_job_error(f"{CI.Envs.GITHUB_WORKFLOW} Workflow Failed", critical=True)
 
     @staticmethod
     def _get_webhooks():
@@ -196,10 +173,10 @@ class CIBuddy:
         instance_id, instance_type = "unknown", "unknown"
         if with_instance_info:
             instance_id = (
-                CI.Shell.get_output("ec2metadata --instance-id") or instance_id
+                Shell.get_output("ec2metadata --instance-id") or instance_id
             )
             instance_type = (
-                CI.Shell.get_output("ec2metadata --instance-type") or instance_type
+                Shell.get_output("ec2metadata --instance-type") or instance_type
             )
         if not job_name:
             job_name = os.getenv("CHECK_NAME", "unknown")

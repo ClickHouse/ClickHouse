@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Settings.h>
 #include <Functions/IFunctionCustomWeek.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace ErrorCodes
 }
 
 template <typename Transform>
-class FunctionCustomWeekToDateOrDate32 : public IFunctionCustomWeek<Transform>
+class FunctionCustomWeekToDateOrDate32 final : public IFunctionCustomWeek<Transform>
 {
 private:
     const bool enable_extended_results_for_datetime_functions = false;

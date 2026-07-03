@@ -1,8 +1,8 @@
 -- Tags: stateful
-DROP TABLE IF EXISTS test.basic;
-DROP TABLE IF EXISTS test.visits_null;
+DROP TABLE IF EXISTS basic;
+DROP TABLE IF EXISTS visits_null;
 
-CREATE TABLE test.visits_null
+CREATE TABLE visits_null
 (
     CounterID UInt32,
     StartDate Date,
@@ -11,17 +11,17 @@ CREATE TABLE test.visits_null
 ) ENGINE = Null;
 
 set allow_deprecated_syntax_for_merge_tree=1;
-CREATE MATERIALIZED VIEW test.basic
+CREATE MATERIALIZED VIEW basic
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 AS SELECT
     CounterID,
     StartDate,
     sumState(Sign)                  AS Visits,
     uniqState(UserID)               AS Users
-FROM test.visits_null
+FROM visits_null
 GROUP BY CounterID, StartDate;
 
-INSERT INTO test.visits_null
+INSERT INTO visits_null
 SELECT
     CounterID,
     StartDate,
@@ -34,7 +34,7 @@ SELECT
     StartDate,
     sumMerge(Visits)                AS Visits,
     uniqMerge(Users)                AS Users
-FROM test.basic
+FROM basic
 GROUP BY StartDate
 ORDER BY StartDate;
 
@@ -43,7 +43,7 @@ SELECT
     StartDate,
     sumMerge(Visits)                AS Visits,
     uniqMerge(Users)                AS Users
-FROM test.basic
+FROM basic
 WHERE CounterID = 942285
 GROUP BY StartDate
 ORDER BY StartDate;
@@ -59,17 +59,17 @@ GROUP BY StartDate
 ORDER BY StartDate;
 
 
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
-OPTIMIZE TABLE test.basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
+OPTIMIZE TABLE basic;
 
 
-DROP TABLE test.visits_null;
-DROP TABLE test.basic;
+DROP TABLE visits_null;
+DROP TABLE basic;

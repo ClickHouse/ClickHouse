@@ -1,14 +1,4 @@
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
-#pragma clang diagnostic ignored "-Wnested-anon-types"
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wshadow-field-in-constructor"
-#pragma clang diagnostic ignored "-Wdtor-name"
-#include <re2/re2.h>
-#include <re2/regexp.h>
-#include <re2/walker-inl.h>
-#pragma clang diagnostic pop
+#include <Common/re2.h>
 
 #ifdef LOG_INFO
 #undef LOG_INFO
@@ -17,7 +7,7 @@
 #undef LOG_FATAL
 #endif
 
-#include "MatchGenerator.h"
+#include <Common/MatchGenerator.h>
 
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
@@ -468,6 +458,14 @@ RandomStringGeneratorByRegexp::RandomStringGeneratorByRegexp(const String & re_s
                             re_str, status.Text());
 
     regexp.reset(regexp->Simplify());
+
+    /// Simplify() returns null when the pattern is too complex for re2 to simplify
+    /// (its internal node-visit budget is exceeded). Walking a null regexp would crash,
+    /// so surface a normal error instead. Report only the size, not the huge pattern.
+    if (!regexp)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                            "Regexp of size {} bytes is too complex to be simplified for random string generation",
+                            re_str.size());
 
     auto walker = re2::RandomStringPrepareWalker();
     walker.Walk(regexp.get(), {});

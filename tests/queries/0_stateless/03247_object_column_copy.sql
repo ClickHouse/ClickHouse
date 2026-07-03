@@ -5,5 +5,4 @@ CREATE TABLE t0 (c0 Int) ENGINE = Memory();
 INSERT INTO t0 (c0) VALUES (1);
 ALTER TABLE t0 (ADD COLUMN c1 JSON(c1 Variant(Int,JSON(c1 Int))));
 INSERT INTO t0 (c0, c1) VALUES (2, '{"c1":1}'::JSON(c1 Int));
-SELECT kafkaMurmurHash(c1) FROM t0; -- {serverError NOT_IMPLEMENTED}
 DROP TABLE t0;

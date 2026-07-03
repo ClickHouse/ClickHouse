@@ -1,5 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -20,7 +21,9 @@ namespace ErrorCodes
     DECLARE(Bool, fsync_after_insert, false, "Do fsync for every inserted. Will decreases performance of inserts (only for background INSERT, i.e. distributed_foreground_insert=false)", 0) \
     DECLARE(Bool, fsync_directories, false, "Do fsync for temporary directory (that is used for background INSERT only) after all part operations (writes, renames, etc.).", 0) \
     /** This is the distributed version of the skip_unavailable_shards setting available in src/Core/Settings.cpp */ \
-    DECLARE(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard.", 0) \
+    DECLARE(Bool, skip_unavailable_shards, false, "If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.", 0) \
+    /** This is the distributed version of the skip_unavailable_shards_mode setting available in src/Core/Settings.cpp */ \
+    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING, "Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors, `unavailable_or_table_missing` (the default, matching the historical behavior) also ignores a missing table or database, `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data.", 0) \
     /** Inserts settings. */ \
     DECLARE(UInt64, bytes_to_throw_insert, 0, "If more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw.", 0) \
     DECLARE(UInt64, bytes_to_delay_insert, 0, "If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.", 0) \
@@ -32,21 +35,8 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
-DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS)
-
-struct DistributedSettingsImpl : public BaseSettings<DistributedSettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) DistributedSettings##TYPE NAME = &DistributedSettingsImpl ::NAME;
-
-namespace DistributedSetting
-{
-LIST_OF_DISTRIBUTED_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
 
 DistributedSettings::DistributedSettings() : impl(std::make_unique<DistributedSettingsImpl>())
 {
@@ -57,10 +47,7 @@ DistributedSettings::DistributedSettings(const DistributedSettings & settings)
 {
 }
 
-DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept
-    : impl(std::make_unique<DistributedSettingsImpl>(std::move(*settings.impl)))
-{
-}
+DistributedSettings::DistributedSettings(DistributedSettings && settings) noexcept = default;
 
 DistributedSettings::~DistributedSettings() = default;
 
@@ -104,7 +91,7 @@ void DistributedSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

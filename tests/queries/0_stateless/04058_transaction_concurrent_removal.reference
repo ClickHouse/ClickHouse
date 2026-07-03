@@ -1,0 +1,4 @@
+SERIALIZATION_ERROR
+restored_after_rollback	1	1
+part_removed_by_second_txn	0
+noconflict_active_count	0

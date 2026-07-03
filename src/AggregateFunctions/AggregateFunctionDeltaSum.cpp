@@ -70,7 +70,7 @@ public:
         }
     }
 
-    void NO_SANITIZE_UNDEFINED merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void NO_SANITIZE_UNDEFINED mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto place_data = &this->data(place);
         auto rhs_data = &this->data(rhs);
@@ -153,11 +153,68 @@ AggregateFunctionPtr createAggregateFunctionDeltaSum(
 }
 }
 
+void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDeltaSum(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description = R"(
+Sums the arithmetic difference between consecutive rows.
+If the difference is negative, it is ignored.
+
+:::tip
+The underlying data must be sorted for this function to work properly.
+If you would like to use this function in a [materialized view](/sql-reference/statements/create/view#materialized-view), you most likely want to use the [`deltaSumTimestamp`](/sql-reference/aggregate-functions/reference/deltasumtimestamp) function instead.
+:::
+
+See also:
+- [`runningDifference`](/sql-reference/functions/other-functions#runningDifference)
+    )";
+    FunctionDocumentation::Syntax syntax = "deltaSum(x1[, x2, ...])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x1[, x2, ...]", "One or more input values.", {"Integer", "Float"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a gained arithmetic difference of the input values.", {"(U)Int*", "Float*"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage with positive differences",
+        R"(
+SELECT deltaSum(arrayJoin([1, 2, 3]))
+        )",
+        R"(
+┌─deltaSum(arrayJoin([1, 2, 3]))─┐
+│                              2 │
+└────────────────────────────────┘
+        )"
+    },
+    {
+        "Mixed values with negative differences ignored",
+        R"(
+SELECT deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]))
+        )",
+        R"(
+┌─deltaSum(arrayJoin([1, 2, 3, 0, 3, 4, 2, 3]))─┐
+│                                             7 │
+└───────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Float values",
+        R"(
+SELECT deltaSum(arrayJoin([2.25, 3, 4.5]))
+        )",
+        R"(
+┌─deltaSum(arrayJoin([2.25, 3, 4.5]))─┐
+│                                2.25 │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
-    factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, properties });
+    factory.registerFunction("deltaSum", { createAggregateFunctionDeltaSum, documentation, properties });
 }
 
 }

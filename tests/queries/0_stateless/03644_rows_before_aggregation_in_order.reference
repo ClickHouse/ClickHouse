@@ -1,0 +1,18 @@
+{
+	"meta":
+	[
+		{
+			"name": "i",
+			"type": "UInt32"
+		}
+	],
+
+	"data":
+	[
+
+	],
+
+	"rows": 0,
+
+	"rows_before_aggregation": 10000
+}

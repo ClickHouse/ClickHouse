@@ -1,0 +1,10 @@
+-- infer read schema in create as select
+0
+5
+10
+-- infer read schema in insert-select into table function
+0
+5
+10
+-- infer read schema in explain pipeline insert
+digraph

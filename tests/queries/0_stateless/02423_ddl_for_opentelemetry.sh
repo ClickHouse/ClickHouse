@@ -53,8 +53,8 @@ function check_span()
         echo 1
     else
         echo "[operation_name like '${3}' ${extra_condition}]=$ret, expected: ${1}"
-        
-        # echo the span logs to help analyze        
+
+        # echo the span logs to help analyze
         ${CLICKHOUSE_CLIENT} -q "
             SELECT operation_name, attribute
             FROM system.opentelemetry_span_log

@@ -24,12 +24,22 @@
   (str "/" n))
 
 (defn zk-connect
-  [host port timeout]
-  (zk/connect (str host ":" port) :timeout-msec timeout))
+  [host port timeout with-auth]
+  (let [conn (zk/connect (str host ":" port) :timeout-msec timeout)]
+    (if with-auth
+      (do
+        (zk/add-auth-info conn "digest" "clickhouse:withauth")
+        conn)
+      conn)))
 
 (defn zk-create-range
-  [conn n]
-  (dorun (map (fn [v] (zk/create-all conn v :persistent? true)) (take n (zk-range)))))
+  [conn n & {:keys [with-acl] :or {with-acl false}}]
+  (dorun (map (fn [v] (zk/create-all conn v
+                                   :persistent? true
+                                   :acl (if with-acl
+                                         [(zk/auth-acl :read :create :delete :admin :write)]
+                                         [(zk/world-acl :read :create :delete :write :admin)])))
+               (take n (zk-range)))))
 
 (defn zk-set
   ([conn path value]
@@ -69,25 +79,40 @@
     (zk-set conn path (pr-str new-set) (:version (:stat current-value)))))
 
 (defn zk-create
-  [conn path data]
-  (zk/create conn path :data (data/to-bytes (str data)) :persistent? true))
+  [conn path data & {:keys [with-acl] :or {with-acl false}}]
+  (zk/create conn path
+             :data (data/to-bytes (str data))
+             :persistent? true
+             :acl (if with-acl
+                   [(zk/auth-acl :read :create :delete :admin :write)]
+                   [(zk/world-acl :read :create :delete :write :admin)])))
 
 (defn zk-create-if-not-exists
-  [conn path data]
-  (if-not (zk/exists conn path) (zk-create conn path data)))
+  [conn path data & {:keys [with-acl] :or {with-acl false}}]
+  (if-not (zk/exists conn path)
+    (zk-create conn path data :with-acl with-acl)))
 
 (defn zk-create-sequential
-  [conn path-prefix data]
-  (zk/create conn path-prefix :data (data/to-bytes (str data)) :persistent? true :sequential? true))
+  [conn path-prefix data & {:keys [with-acl] :or {with-acl false}}]
+  (zk/create conn path-prefix
+             :data (data/to-bytes (str data))
+             :persistent? true
+             :sequential? true
+             :acl (if with-acl
+                   [(zk/auth-acl :read :create :delete :admin :write)]
+                   [(zk/world-acl :read :create :delete :write :admin)])))
 
 (defn zk-multi-create-many-seq-nodes
-  [conn path-prefix num]
-  (let [txn (.transaction conn)]
+  [conn path-prefix num & {:keys [with-acl] :or {with-acl false}}]
+  (let [txn (.transaction conn)
+        acls (if with-acl
+               [(zk/auth-acl :read :create :delete :admin :write)]
+               [(zk/world-acl :read :create :delete :write :admin)])]
     (loop [i 0]
       (cond (>= i num) (.commit txn)
             :else (do (.create txn path-prefix
                                (data/to-bytes "")
-                               (zi/acls :open-acl-unsafe)
+                               acls
                                CreateMode/PERSISTENT_SEQUENTIAL)
                       (recur (inc i)))))))
 
@@ -131,7 +156,7 @@
   [node test]
   (info "Checking Keeper alive on" node)
   (try
-    (zk-connect (name node) 9181 30000)
+    (zk-connect (name node) 9181 30000 false)
     (catch Exception _ false)))
 
 (defn start-clickhouse!

@@ -1,5 +1,8 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Common/checkStackSize.h>
+#include <Core/CaseAwareBlockNameMap.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
@@ -27,6 +30,9 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 
 
 namespace DB
@@ -39,6 +45,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -46,45 +53,45 @@ namespace
     enum
     {
         UNKNOWN_FIELD = size_t(-1),
+        NOT_INITIALIZED = size_t(-2)
     };
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_.columns())
-    , types(header_.getDataTypes())
+    , name_map(format_settings_.input_format_column_matching_case_sensitivity)
+    , prev_positions(header_->columns(), {std::string_view{}, NOT_INITIALIZED})
+    , types(header_->getDataTypes())
 {
-    name_map = getNamesToIndexesMap(getPort().getHeader());
+    name_map.initFromBlock(getPort().getHeader());
 }
 
-inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
+inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    if (prev_positions.size() > key_index
-        && prev_positions[key_index] != BlockNameMap::const_iterator{}
-        && name == prev_positions[key_index]->first)
+    if (prev_positions.size() > key_index && prev_positions[key_index].second != NOT_INITIALIZED
+        && name_map.equal(name, prev_positions[key_index].first))
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index].second;
     }
 
-    const auto it = name_map.find(name);
-
-    if (it != name_map.end())
+    auto position = name_map.get(name);
+    if (position != CaseAwareBlockNameMap::NOT_FOUND)
     {
-        if (key_index < prev_positions.size())
-            prev_positions[key_index] = it;
+        if (key_index < prev_positions.size() && position < getPort().getHeader().columns())
+            prev_positions[key_index] = {getPort().getHeader().getByPosition(position).name, position};
 
-        return it->second;
+        return position;
     }
     return UNKNOWN_FIELD;
 }
 
-/// Read the field name. Resulting StringRef is valid only before next read from buf.
-static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
+/// Read the field name. Resulting std::string_view is valid only before next read from buf.
+static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
 {
     // This is just an optimization: try to avoid copying the name into key_holder
 
@@ -94,7 +101,7 @@ static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
 
         if (next_pos != in.buffer().end())
         {
-            StringRef res(in.position(), next_pos - in.position());
+            std::string_view res(in.position(), next_pos - in.position());
             in.position() = next_pos + 1;
             return res;
         }
@@ -107,14 +114,14 @@ static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
 
 static UInt8 readBSONType(ReadBuffer & in)
 {
-    UInt8 type;
+    UInt8 type = 0;
     readBinary(type, in);
     return type;
 }
 
 static size_t readBSONSize(ReadBuffer & in)
 {
-    BSONSizeT size;
+    BSONSizeT size = 0;
     readBinaryLittleEndian(size, in);
     return size;
 }
@@ -127,19 +134,19 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
 
     if (bson_type == BSONType::INT32)
     {
-        UInt32 value;
+        UInt32 value = 0;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::INT64)
     {
-        UInt64 value;
+        UInt64 value = 0;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::BOOL)
     {
-        UInt8 value;
+        UInt8 value = 0;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
@@ -156,7 +163,7 @@ static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_t
     if (bson_type != BSONType::INT32)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Int32 into column with type IPv4");
 
-    UInt32 value;
+    UInt32 value = 0;
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
 }
@@ -168,7 +175,7 @@ static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTyp
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
                         getBSONTypeName(bson_type), data_type->getName());
 
-    Float64 value;
+    Float64 value = 0;
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
 }
@@ -180,7 +187,7 @@ static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const D
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
                         getBSONTypeName(bson_type), data_type->getName());
 
-    DecimalType value;
+    DecimalType value{};
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
 }
@@ -256,14 +263,13 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size + 1;
+        size_t offset = old_chars_size + size;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
-            data.back() = 0;
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
         }
         catch (...)
         {
@@ -358,6 +364,11 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    /// Nested Array/Tuple/Map recurse through readField; the depth is bounded by the declared column
+    /// type, but guard the native stack here (on container entry, not on every primitive field)
+    /// against a pathologically deep declared type.
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Array column", getBSONTypeName(bson_type));
 
@@ -367,24 +378,31 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     auto & nested_column = array_column.getData();
 
     size_t document_start = in->count();
-    BSONSizeT document_size;
+    BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+    auto read_array = [&]()
     {
-        auto nested_bson_type = getBSONType(readBSONType(*in));
-        readBSONKeyName(*in, current_key_name);
-        readField(nested_column, nested_type, nested_bson_type);
-    }
+        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+        {
+            auto nested_bson_type = getBSONType(readBSONType(*in));
+            readBSONKeyName(*in, current_key_name);
+            readField(nested_column, nested_type, nested_bson_type);
+        }
 
-    assertChar(BSON_DOCUMENT_END, *in);
-    array_column.getOffsets().push_back(array_column.getData().size());
+        assertChar(BSON_DOCUMENT_END, *in);
+        array_column.getOffsets().push_back(array_column.getData().size());
+    };
+
+    SerializationArray::readArraySafe(column, read_array);
 }
 
 void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY && bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Tuple column", getBSONTypeName(bson_type));
 
@@ -397,55 +415,63 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     size_t read_nested_columns = 0;
 
     size_t document_start = in->count();
-    BSONSizeT document_size;
+    BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+    auto read_tuple = [&]()
     {
-        auto nested_bson_type = getBSONType(readBSONType(*in));
-        auto name = readBSONKeyName(*in, current_key_name);
-
-        size_t index = read_nested_columns;
-        if (use_key_names)
+        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
         {
-            auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
-            if (!try_get_index)
+            auto nested_bson_type = getBSONType(readBSONType(*in));
+            auto name = readBSONKeyName(*in, current_key_name);
+
+            size_t index = read_nested_columns;
+            if (use_key_names)
+            {
+                auto try_get_index = data_type_tuple->tryGetPositionByName(name);
+                if (!try_get_index)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                        "tuple doesn't have element with name \"{}\"",
+                        data_type->getName(),
+                        name);
+                index = *try_get_index;
+            }
+
+            if (index >= data_type_tuple->getElements().size())
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                    "tuple doesn't have element with name \"{}\"",
-                    data_type->getName(),
-                    name.toView());
-            index = *try_get_index;
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                                "the number of fields BSON document exceeds the number of fields in tuple",
+                                data_type->getName());
+
+            readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
+            ++read_nested_columns;
         }
 
-        if (index >= data_type_tuple->getElements().size())
+        assertChar(BSON_DOCUMENT_END, *in);
+
+        const auto elements_size = data_type_tuple->getElements().size();
+        if (read_nested_columns != elements_size)
             throw Exception(
                             ErrorCodes::INCORRECT_DATA,
-                            "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                            "the number of fields BSON document exceeds the number of fields in tuple",
-                            data_type->getName());
+                            "Cannot parse tuple column with type {} from BSON array/embedded document field, "
+                            "the number of fields in tuple and BSON document doesn't match: {} != {}",
+                            data_type->getName(),
+                            elements_size,
+                            read_nested_columns);
+    };
 
-        readField(tuple_column.getColumn(index), data_type_tuple->getElement(index), nested_bson_type);
-        ++read_nested_columns;
-    }
-
-    assertChar(BSON_DOCUMENT_END, *in);
-
-    if (read_nested_columns != data_type_tuple->getElements().size())
-        throw Exception(
-                        ErrorCodes::INCORRECT_DATA,
-                        "Cannot parse tuple column with type {} from BSON array/embedded document field, "
-                        "the number of fields in tuple and BSON document doesn't match: {} != {}",
-                        data_type->getName(),
-                        data_type_tuple->getElements().size(),
-                        read_nested_columns);
+    SerializationTuple::readElementsSafe(column, read_tuple);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Map column", getBSONTypeName(bson_type));
 
@@ -458,22 +484,27 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     auto & offsets = column_map.getNestedColumn().getOffsets();
 
     size_t document_start = in->count();
-    BSONSizeT document_size;
+    BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
 
-    while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+    auto read_map = [&]()
     {
-        auto nested_bson_type = getBSONType(readBSONType(*in));
-        auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data, name.size);
-        key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
-        readField(value_column, value_data_type, nested_bson_type);
-    }
+        while (in->count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
+        {
+            auto nested_bson_type = getBSONType(readBSONType(*in));
+            auto name = readBSONKeyName(*in, current_key_name);
+            ReadBufferFromMemory buf(name);
+            key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
+            readField(value_column, value_data_type, nested_bson_type);
+        }
 
-    assertChar(BSON_DOCUMENT_END, *in);
-    offsets.push_back(key_column.size());
+        assertChar(BSON_DOCUMENT_END, *in);
+        offsets.push_back(key_column.size());
+    };
+
+    SerializationMap::readMapSafe(column, read_map);
 }
 
 
@@ -503,8 +534,14 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             auto & nullable_column = assert_cast<ColumnNullable &>(column);
             auto & nested_column = nullable_column.getNestedColumn();
             const auto & nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+            /// Read into the nested column first. If `readField` throws, we must not leave
+            /// the `null_map` out of sync with the nested column — otherwise subsequent
+            /// rollback (e.g. `SerializationArray::readArraySafe` calling
+            /// `ColumnNullable::popBack`) would trip an assertion because
+            /// `ColumnNullable::size()` reflects `null_map.size()`.
+            auto result = readField(nested_column, nested_type, bson_type);
             nullable_column.getNullMapColumn().insertValue(0);
-            return readField(nested_column, nested_type, bson_type);
+            return result;
         }
         case TypeIndex::LowCardinality:
         {
@@ -692,7 +729,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             in.ignore(size);
             break;
@@ -700,7 +737,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::DOCUMENT: [[fallthrough]];
         case BSONType::ARRAY:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
@@ -709,7 +746,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::BINARY:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             in.ignore(size + 1);
             break;
@@ -734,14 +771,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::DB_POINTER:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             in.ignore(size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
@@ -796,13 +833,13 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
         if (index == UNKNOWN_FIELD)
         {
-            current_key_name.assign(name.data, name.size);
+            current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
@@ -843,7 +880,7 @@ void BSONEachRowRowInputFormat::resetParser()
 size_t BSONEachRowRowInputFormat::countRows(size_t max_block_size)
 {
     size_t num_rows = 0;
-    BSONSizeT document_size;
+    BSONSizeT document_size = 0;
     while (!in->eof() && num_rows < max_block_size)
     {
         readBinaryLittleEndian(document_size, *in);
@@ -861,7 +898,7 @@ BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatS
 {
 }
 
-DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip)
+DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip, size_t depth)
 {
     switch (type)
     {
@@ -894,7 +931,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             in.ignore(size);
             return std::make_shared<DataTypeString>();
@@ -906,7 +943,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::DOCUMENT:
         {
-            auto nested_names_and_types = getDataTypesFromBSONDocument(false);
+            auto nested_names_and_types = getDataTypesFromBSONDocument(false, depth + 1);
             auto nested_types = nested_names_and_types.getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
@@ -928,7 +965,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::ARRAY:
         {
-            auto nested_types = getDataTypesFromBSONDocument(false).getTypes();
+            auto nested_types = getDataTypesFromBSONDocument(false, depth + 1).getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
                 return nullptr;
@@ -948,7 +985,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::BINARY:
         {
-            BSONSizeT size;
+            BSONSizeT size = 0;
             readBinaryLittleEndian(size, in);
             auto subtype = getBSONBinarySubtype(readBSONType(in));
             in.ignore(size);
@@ -980,10 +1017,23 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
     }
 }
 
-NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types)
+NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types, size_t depth)
 {
+    /// BSON documents and arrays can be nested arbitrarily deep. Reject deep nesting early (before
+    /// building the type) with an explicit limit, so inference stays cheap and interruptible instead
+    /// of overflowing the native stack in this recursive descent. checkStackSize is a last-resort
+    /// backstop for when max_parser_depth is raised above the default.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the BSON schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     size_t document_start = in.count();
-    BSONSizeT document_size;
+    BSONSizeT document_size = 0;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
@@ -992,7 +1042,7 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
         String name;
         readNullTerminated(name, in);
         bool skip = false;
-        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip);
+        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)
             names_and_types.emplace_back(name, type);
     }
@@ -1010,7 +1060,7 @@ NamesAndTypesList BSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference);
+    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference, 1);
 }
 
 void BSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
@@ -1029,7 +1079,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
     while (!in.eof() && memory.size() < min_bytes && number_of_rows < max_rows)
     {
-        BSONSizeT document_size;
+        BSONSizeT document_size = 0;
         readBinaryLittleEndian(document_size, in);
 
         if (document_size < sizeof(document_size))
@@ -1055,20 +1105,152 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     return {!in.eof(), number_of_rows};
 }
 
+void registerInputFormatBSONEachRow(FormatFactory & factory);
 void registerInputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
     factory.registerFileExtension("bson", "BSONEachRow");
+
+    factory.setDocumentation("BSONEachRow", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
+Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
+
+## Data types matching {#data-types-matching}
+
+For output it uses the following correspondence between ClickHouse types and BSON types:
+
+| ClickHouse type                                                                                                       | BSON Type                                                                                                     |
+|-----------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| [Bool](/sql-reference/data-types/boolean.md)                                                                  | `\x08` boolean                                                                                                |
+| [Int8/UInt8](/sql-reference/data-types/int-uint.md)/[Enum8](/sql-reference/data-types/enum.md)        | `\x10` int32                                                                                                  |
+| [Int16/UInt16](/sql-reference/data-types/int-uint.md)/[Enum16](/sql-reference/data-types/enum.md)      | `\x10` int32                                                                                                  |
+| [Int32](/sql-reference/data-types/int-uint.md)                                                                | `\x10` int32                                                                                                  |
+| [UInt32](/sql-reference/data-types/int-uint.md)                                                               | `\x12` int64                                                                                                  |
+| [Int64/UInt64](/sql-reference/data-types/int-uint.md)                                                         | `\x12` int64                                                                                                  |
+| [Float32/Float64](/sql-reference/data-types/float.md)                                                         | `\x01` double                                                                                                 |
+| [Date](/sql-reference/data-types/date.md)/[Date32](/sql-reference/data-types/date32.md)               | `\x10` int32                                                                                                  |
+| [DateTime](/sql-reference/data-types/datetime.md)                                                             | `\x12` int64                                                                                                  |
+| [DateTime64](/sql-reference/data-types/datetime64.md)                                                         | `\x09` datetime                                                                                               |
+| [Decimal32](/sql-reference/data-types/decimal.md)                                                             | `\x10` int32                                                                                                  |
+| [Decimal64](/sql-reference/data-types/decimal.md)                                                             | `\x12` int64                                                                                                  |
+| [Decimal128](/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
+| [Decimal256](/sql-reference/data-types/decimal.md)                                                            | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
+| [Int128/UInt128](/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 16                                                               |
+| [Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                       | `\x05` binary, `\x00` binary subtype, size = 32                                                               |
+| [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md) | `\x05` binary, `\x00` binary subtype or \x02 string if setting output_format_bson_string_as_string is enabled |
+| [UUID](/sql-reference/data-types/uuid.md)                                                                     | `\x05` binary, `\x04` uuid subtype, size = 16                                                                 |
+| [Array](/sql-reference/data-types/array.md)                                                                   | `\x04` array                                                                                                  |
+| [Tuple](/sql-reference/data-types/tuple.md)                                                                   | `\x04` array                                                                                                  |
+| [Named Tuple](/sql-reference/data-types/tuple.md)                                                             | `\x03` document                                                                                               |
+| [Map](/sql-reference/data-types/map.md)                                                                       | `\x03` document                                                                                               |
+| [IPv4](/sql-reference/data-types/ipv4.md)                                                                     | `\x10` int32                                                                                                  |
+| [IPv6](/sql-reference/data-types/ipv6.md)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
+
+For input it uses the following correspondence between BSON types and ClickHouse types:
+
+| BSON Type                                | ClickHouse Type                                                                                                                                                                                                                             |
+|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `\x01` double                            | [Float32/Float64](/sql-reference/data-types/float.md)                                                                                                                                                                               |
+| `\x02` string                            | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
+| `\x03` document                          | [Map](/sql-reference/data-types/map.md)/[Named Tuple](/sql-reference/data-types/tuple.md)                                                                                                                                   |
+| `\x04` array                             | [Array](/sql-reference/data-types/array.md)/[Tuple](/sql-reference/data-types/tuple.md)                                                                                                                                     |
+| `\x05` binary, `\x00` binary subtype     | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)/[IPv6](/sql-reference/data-types/ipv6.md)                                                             |
+| `\x05` binary, `\x02` old binary subtype | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
+| `\x05` binary, `\x03` old uuid subtype   | [UUID](/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
+| `\x05` binary, `\x04` uuid subtype       | [UUID](/sql-reference/data-types/uuid.md)                                                                                                                                                                                           |
+| `\x07` ObjectId                          | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
+| `\x08` boolean                           | [Bool](/sql-reference/data-types/boolean.md)                                                                                                                                                                                        |
+| `\x09` datetime                          | [DateTime64](/sql-reference/data-types/datetime64.md)                                                                                                                                                                               |
+| `\x0A` null value                        | [NULL](/sql-reference/data-types/nullable.md)                                                                                                                                                                                       |
+| `\x0D` JavaScript code                   | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
+| `\x0E` symbol                            | [String](/sql-reference/data-types/string.md)/[FixedString](/sql-reference/data-types/fixedstring.md)                                                                                                                       |
+| `\x10` int32                             | [Int32/UInt32](/sql-reference/data-types/int-uint.md)/[Decimal32](/sql-reference/data-types/decimal.md)/[IPv4](/sql-reference/data-types/ipv4.md)/[Enum8/Enum16](/sql-reference/data-types/enum.md) |
+| `\x12` int64                             | [Int64/UInt64](/sql-reference/data-types/int-uint.md)/[Decimal64](/sql-reference/data-types/decimal.md)/[DateTime64](/sql-reference/data-types/datetime64.md)                                                       |
+
+Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
+For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](../../sql-reference/data-types/int-uint.md).
+
+Big integers and decimals such as `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` can be parsed from a BSON Binary value with the `\x00` binary subtype. 
+In this case, the format will validate that the size of the binary data equals the size of the expected value.
+
+:::note
+This format does not work properly on Big-Endian platforms.
+:::
+
+## Example usage {#example-usage}
+
+### Inserting data {#inserting-data}
+
+Using a BSON file with the following data, named as `football.bson`:
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+Insert the data:
+
+```sql
+INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
+```
+
+### Reading data {#reading-data}
+
+Read data using the `BSONEachRow` format:
+
+```sql
+SELECT *
+FROM football INTO OUTFILE 'docs_data/bson/football.bson'
+FORMAT BSONEachRow
+```
+
+:::tip
+BSON is a binary format that does not display in a human-readable form on the terminal. Use the `INTO OUTFILE` to output BSON files.
+:::
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
+| [`output_format_bson_string_as_string`](../../operations/settings/settings-formats.md/#output_format_bson_string_as_string)                                                                           | Use BSON String type instead of Binary for String columns.                                   | `false`  |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](../../operations/settings/settings-formats.md/#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for format BSONEachRow. | `false`  |
+)DOCS_MD"});
 }
 
+void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("BSONEachRow", &fileSegmentationEngineBSONEachRow);
 }
 
+void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("BSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)

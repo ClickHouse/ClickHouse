@@ -1,16 +1,23 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
 
+#include <Interpreters/TemporaryDataOnDisk.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/MemorySettings.h>
-#include <DataTypes/ObjectUtils.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 #include <IO/WriteHelpers.h>
 #include <QueryPipeline/Pipe.h>
@@ -23,11 +30,6 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 
-#include <Common/FileChecker.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromMemory.h>
@@ -35,9 +37,16 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntriesLazyBatch.h>
 #include <Backups/RestorerFromBackup.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/copyData.h>
+#include <Common/FailPoint.h>
+#include <Common/FileChecker.h>
+
 
 namespace DB
 {
@@ -60,16 +69,25 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int BACKUP_ENTRY_NOT_FOUND;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
-class MemorySink : public SinkToStorage
+namespace FailPoints
+{
+    extern const char backup_add_empty_memory_table[];
+}
+
+class MemorySink final : public SinkToStorage
 {
 public:
     MemorySink(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage(storage_)
         , storage_snapshot(storage_.getStorageSnapshot(metadata_snapshot_, context))
     {
@@ -81,14 +99,6 @@ public:
     {
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
         storage_snapshot->metadata->check(block, true);
-        if (!storage_snapshot->object_columns.empty())
-        {
-            auto extended_storage_columns = storage_snapshot->getColumns(
-                GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects());
-
-            convertDynamicColumnsToTuples(block, storage_snapshot);
-        }
-
         if (storage.getMemorySettingsRef()[MemorySetting::compress])
         {
             Block compressed_block;
@@ -159,7 +169,7 @@ StorageMemory::StorageMemory(
     ConstraintsDescription constraints_,
     const String & comment,
     const MemorySettings & memory_settings_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , data(std::make_unique<const Blocks>())
     , memory_settings(std::make_unique<MemorySettings>(memory_settings_))
 {
@@ -168,7 +178,16 @@ StorageMemory::StorageMemory(
     storage_metadata.setConstraints(std::move(constraints_));
     storage_metadata.setComment(comment);
     storage_metadata.setSettingsChanges(memory_settings->getSettingsChangesQuery());
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageMemory::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 StorageMemory::~StorageMemory() = default;
@@ -180,20 +199,10 @@ StorageSnapshotPtr StorageMemory::getStorageSnapshot(const StorageMetadataPtr & 
     /// Not guaranteed to match `blocks`, but that's ok. It would probably be better to move
     /// rows and bytes counters into the MultiVersion-ed struct, then everything would be consistent.
     snapshot_data->rows_approx = total_size_rows.load(std::memory_order_relaxed);
-
-    if (!hasDynamicSubcolumnsDeprecated(metadata_snapshot->getColumns()))
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, ColumnsDescription{}, std::move(snapshot_data));
-
-    auto object_columns = getConcreteObjectColumns(
-        snapshot_data->blocks->begin(),
-        snapshot_data->blocks->end(),
-        metadata_snapshot->getColumns(),
-        [](const auto & block) -> const auto & { return block.getColumnsWithTypeAndName(); });
-
-    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns), std::move(snapshot_data));
+    return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(snapshot_data));
 }
 
-void StorageMemory::read(
+void StorageMemory::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -239,7 +248,45 @@ void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*
 void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context)
 {
     std::lock_guard lock(mutex);
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    /// Filter mutation commands that have no per-row data effect on a `Memory` engine.
+    /// `Memory` keeps raw column blocks in RAM and has no on-storage analog of skip
+    /// indices, projections, statistics, patch parts, the `_row_exists` deletion mask,
+    /// or rewritten parts. Reaching `MutationsInterpreter` with such a command set
+    /// produces a pipeline that returns one zero-row block per input block, after which
+    /// the partial-column path below fails the per-block row-count invariant with
+    /// `Mutation of \`Memory\` table produced incomplete output: block 0 has 0 rows, expected N`.
+    /// A real `UPDATE` / `DELETE` / `MATERIALIZE COLUMN` mixed into the same `ALTER` still
+    /// executes normally.
+    ///
+    /// Only the kinds that can actually reach this method are filtered:
+    ///   - `DROP INDEX` / `DROP PROJECTION` / `DROP STATISTICS` are rejected earlier by
+    ///     `StorageMemory::checkAlterIsPossible`, never reach `mutate`.
+    ///   - `MATERIALIZE TTL` is rejected by `MutationsInterpreter::prepare` during
+    ///     pre-mutation validation when there is no TTL on the table, never reaches `mutate`.
+    MutationCommands commands_to_run;
+    commands_to_run.reserve(commands.size());
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            case MutationCommand::APPLY_PATCHES:
+            case MutationCommand::APPLY_DELETED_MASK:
+            case MutationCommand::MATERIALIZE_INDEX:
+            case MutationCommand::MATERIALIZE_PROJECTION:
+            case MutationCommand::MATERIALIZE_STATISTICS:
+            case MutationCommand::REWRITE_PARTS:
+                continue;
+            default:
+                commands_to_run.push_back(command);
+                break;
+        }
+    }
+
+    if (commands_to_run.empty())
+        return;
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context);
 
@@ -250,7 +297,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     MutationsInterpreter::Settings settings(true);
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands_to_run, new_context, settings);
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
 
@@ -265,31 +312,79 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
         out.push_back(block);
     }
 
+    /// `pull` returns `false` either on normal end-of-stream or on cancellation (including soft timeout
+    /// with `timeout_overflow_mode = 'break'`). On true cancellation the pipeline may not have produced
+    /// all expected blocks, and a partial result must not be swapped into a `Memory` table.
+    const auto final_status = executor.getExecutionStatus();
+    const bool cancelled
+        = final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || final_status == PipelineExecutor::ExecutionStatus::CancelledByUser;
+
+    auto throw_on_cancellation = [&]
+    {
+        if (final_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while mutating `Memory` table");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while mutating `Memory` table");
+    };
+
     std::unique_ptr<Blocks> new_data;
 
     // all column affected
     if (interpreter->isAffectingAllColumns())
     {
+        /// Replacing the entire data set: we cannot validate completeness precisely (some mutations
+        /// legitimately change the block count). Fail-close on cancellation rather than silently
+        /// swap in a possibly-truncated result.
+        if (cancelled)
+            throw_on_cancellation();
         new_data = std::make_unique<Blocks>(out);
     }
     else
     {
         /// just some of the column affected, we need update it with new column
-        new_data = std::make_unique<Blocks>(*(data.get()));
+        const auto & old_data = *(data.get());
+        /// Partial-column mutations preserve the input block count *and* per-block row counts.
+        /// Both shape checks are required before suppressing a late cancellation flag, because
+        /// `PullingPipelineExecutor::pull(Block)` can return `true` with an empty block on
+        /// timeout. A block-count match alone would let that empty trailing block slip past:
+        /// `updateBlockData` no-ops on a block with no columns, silently keeping the
+        /// un-mutated old block.
+        auto reject_incomplete = [&](const String & reason)
+        {
+            if (cancelled)
+                throw_on_cancellation();
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Mutation of `Memory` table produced incomplete output: {}",
+                reason);
+        };
+
+        if (out.size() != old_data.size())
+            reject_incomplete(fmt::format(
+                "got {} blocks, expected {}", out.size(), old_data.size()));
+
+        for (size_t i = 0; i < out.size(); ++i)
+        {
+            if (out[i].rows() != old_data[i].rows())
+                reject_incomplete(fmt::format(
+                    "block {} has {} rows, expected {}", i, out[i].rows(), old_data[i].rows()));
+        }
+
+        new_data = std::make_unique<Blocks>(old_data);
         auto data_it = new_data->begin();
         auto out_it = out.begin();
 
         while (data_it != new_data->end())
         {
             /// Mutation does not change the number of blocks
-            assert(out_it != out.end());
+            chassert(out_it != out.end());
 
             updateBlockData(*data_it, *out_it);
             ++data_it;
             ++out_it;
         }
 
-        assert(out_it == out.end());
+        chassert(out_it == out.end());
     }
 
     size_t rows = 0;
@@ -316,7 +411,8 @@ void StorageMemory::truncate(
 void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr context, DB::IStorage::AlterLockHolder & /*alter_lock_holder*/)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
     if (params.isSettingsAlter())
@@ -362,7 +458,7 @@ void StorageMemory::alter(const DB::AlterCommands & params, DB::ContextPtr conte
         *memory_settings = std::move(changed_settings);
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -377,15 +473,13 @@ namespace
             const StorageMetadataPtr & metadata_snapshot_,
             const std::shared_ptr<const Blocks> blocks_,
             const String & data_path_in_backup,
-            const DiskPtr & temp_disk_,
-            const ReadSettings & read_settings_,
-            UInt64 max_compress_block_size_)
+            const TemporaryDataOnDiskScopePtr & tmp_data_,
+            const ReadSettings & read_settings_)
             : context(context_)
             , metadata_snapshot(metadata_snapshot_)
             , blocks(blocks_)
-            , temp_disk(temp_disk_)
+            , tmp_data(tmp_data_)
             , read_settings(read_settings_)
-            , max_compress_block_size(max_compress_block_size_)
         {
             fs::path data_path_in_backup_fs = data_path_in_backup;
             data_bin_pos = file_paths.size();
@@ -416,37 +510,25 @@ namespace
             BackupEntries backup_entries;
             backup_entries.resize(file_paths.size());
 
-            temp_dir_owner.emplace(temp_disk);
-            fs::path temp_dir = temp_dir_owner->getRelativePath();
-            temp_disk->createDirectories(temp_dir);
-
             /// Writing data.bin
             IndexForNativeFormat index;
             {
-                auto data_file_path = temp_dir / fs::path{file_paths[data_bin_pos]}.filename();
-                auto data_out_compressed = temp_disk->writeFile(data_file_path);
-                auto data_out = std::make_unique<CompressedWriteBuffer>(*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
-                NativeWriter block_out{*data_out, 0, metadata_snapshot->getSampleBlock(), std::nullopt, false, &index};
+                auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
+                NativeWriter block_out{data_out->getCompressedWriteBuffer(), 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), std::nullopt, false, &index};
                 for (const auto & block : *blocks)
                     block_out.write(block);
-                data_out->finalize();
-                data_out.reset();
-                data_out_compressed->finalize();
-                data_out_compressed.reset();
-                backup_entries[data_bin_pos] = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)};
+                data_out->finishWriting();
+                backup_entries[data_bin_pos]
+                    = {file_paths[data_bin_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))};
             }
 
             /// Writing index.mrk
             {
-                auto index_mrk_path = temp_dir / fs::path{file_paths[index_mrk_pos]}.filename();
-                auto index_mrk_out_compressed = temp_disk->writeFile(index_mrk_path);
-                auto index_mrk_out = std::make_unique<CompressedWriteBuffer>(*index_mrk_out_compressed);
+                auto index_mrk_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
                 index.write(*index_mrk_out);
-                index_mrk_out->finalize();
-                index_mrk_out.reset();
-                index_mrk_out_compressed->finalize();
-                index_mrk_out_compressed.reset();
-                backup_entries[index_mrk_pos] = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, index_mrk_path)};
+                index_mrk_out->finishWriting();
+                backup_entries[index_mrk_pos]
+                    = {file_paths[index_mrk_pos], std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(index_mrk_out))};
             }
 
             /// Writing columns.txt
@@ -465,16 +547,17 @@ namespace
 
             /// Writing sizes.json
             {
-                auto sizes_json_path = temp_dir / fs::path{file_paths[sizes_json_pos]}.filename();
-                FileChecker file_checker{temp_disk, sizes_json_path};
+                FileChecker file_checker{"tmp_sizes_json"};
                 for (size_t i = 0; i != file_paths.size(); ++i)
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(temp_dir / fs::path{file_paths[i]}.filename());
+                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
                 }
-                file_checker.save();
-                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromSmallFile>(temp_disk, sizes_json_path, read_settings)};
+
+                WriteBufferFromOwnString write_buffer;
+                file_checker.save(write_buffer);
+                backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromMemory>(std::move(write_buffer.str()))};
             }
 
             /// We don't need to keep `blocks` any longer.
@@ -487,10 +570,8 @@ namespace
         ContextPtr context;
         StorageMetadataPtr metadata_snapshot;
         std::shared_ptr<const Blocks> blocks;
-        DiskPtr temp_disk;
-        std::optional<TemporaryFileOnDisk> temp_dir_owner;
+        TemporaryDataOnDiskScopePtr tmp_data;
         ReadSettings read_settings;
-        UInt64 max_compress_block_size;
         Strings file_paths;
         size_t data_bin_pos, index_mrk_pos, columns_txt_pos, count_txt_pos, sizes_json_pos;
     };
@@ -498,18 +579,28 @@ namespace
 
 void StorageMemory::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
 {
-    auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-    const auto & read_settings = backup_entries_collector.getReadSettings();
-    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    if (totalBytes(backup_entries_collector.getContext()) == 0)
+    {
+        bool skip_empty_entry = true;
+        fiu_do_on(FailPoints::backup_add_empty_memory_table, { skip_empty_entry = false; });
+        if (skip_empty_entry)
+            return;
+    }
 
+    TemporaryDataOnDiskSettings tmp_data_settings;
+    auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+    tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
+    auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+    const auto & read_settings = backup_entries_collector.getReadSettings();
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     backup_entries_collector.addBackupEntries(std::make_shared<MemoryBackup>(
         backup_entries_collector.getContext(),
-        getInMemoryMetadataPtr(),
+        metadata_snapshot,
         data.get(),
         data_path_in_backup,
-        temp_disk,
-        read_settings,
-        max_compress_block_size)->getBackupEntries());
+        tmp_data,
+        read_settings)->getBackupEntries());
 }
 
 void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
@@ -521,14 +612,12 @@ void StorageMemory::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!restorer.isNonEmptyTableAllowed() && total_size_bytes)
         RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
 
-    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-
     restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup, temp_disk]
-        { storage->restoreDataImpl(backup, data_path_in_backup, temp_disk); });
+        [storage = std::static_pointer_cast<StorageMemory>(shared_from_this()), backup, data_path_in_backup]
+        { storage->restoreDataImpl(backup, data_path_in_backup); });
 }
 
-void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup, const DiskPtr & temporary_disk)
+void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
 {
     /// Our data are in the StripeLog format.
 
@@ -541,7 +630,25 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
         if (!backup->fileExists(index_file_path))
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_file_path);
 
-        auto in = backup->readFile(index_file_path);
+        auto file_size = backup->getFileSize(index_file_path);
+        std::unique_ptr<ReadBufferFromFileBase> in = nullptr;
+        try
+        {
+            in = backup->readFile(index_file_path);
+        }
+        catch (const DB::Exception & e)
+        {
+            if (e.code() == ErrorCodes::BACKUP_ENTRY_NOT_FOUND && file_size == 0)
+            {
+                LOG_ERROR(
+                    getLogger("StorageMemory"),
+                    "File '{}' with size 0 is listed in backup metadata but is not found in the backup, skipping",
+                    index_file_path);
+                return;
+            }
+            else
+                throw;
+        }
         CompressedReadBuffer compressed_in{*in};
         index.read(compressed_in);
     }
@@ -556,20 +663,11 @@ void StorageMemory::restoreDataImpl(const BackupPtr & backup, const String & dat
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file_path);
 
         auto in = backup->readFile(data_file_path);
-        std::optional<TemporaryFileOnDisk> temp_data_file;
-        if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
-        {
-            temp_data_file.emplace(temporary_disk);
-            auto out = std::make_unique<WriteBufferFromFile>(temp_data_file->getAbsolutePath());
-            copyData(*in, *out);
-            out->finalize();
-            in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
-        }
         std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
         CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
         NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
 
-        while (auto block = block_in.read())
+        for (auto block = block_in.read(); !block.empty(); block = block_in.read())
         {
             if ((*memory_settings)[MemorySetting::compress])
             {
@@ -625,6 +723,7 @@ std::optional<UInt64> StorageMemory::totalBytes(ContextPtr) const
     return total_size_bytes.load(std::memory_order_relaxed);
 }
 
+void registerStorageMemory(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory)
 {
     factory.registerStorage("Memory", [](const StorageFactory::Arguments & args)
@@ -647,7 +746,108 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
-    });
+    },
+    Documentation{
+        .description = R"DOCS_MD(
+:::note
+When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
+- Execute all operations in the same session
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/client)
+:::
+
+The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
+Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
+Indexes are not supported. Reading is parallelized.
+
+Maximal productivity (over 10 GB/sec) is reached on simple queries, because there is no reading from the disk, decompressing, or deserializing data. (We should note that in many cases, the productivity of the MergeTree engine is almost as high.)
+When restarting a server, data disappears from the table and the table becomes empty.
+Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
+
+The Memory engine is used by the system for temporary tables with external query data (see the section "External data for processing a query"), and for implementing `GLOBAL IN` (see the section "IN operators").
+
+Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular buffer (see [Engine Parameters](#engine-parameters)).
+
+## Engine parameters {#engine-parameters}
+
+- `min_bytes_to_keep` — Minimum bytes to keep when memory table is size-capped.
+  - Default value: `0`
+  - Requires `max_bytes_to_keep`
+- `max_bytes_to_keep` — Maximum bytes to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max bytes can exceed the stated limit if the oldest batch of rows to remove falls under the `min_bytes_to_keep` limit when adding a large block.
+  - Default value: `0`
+- `min_rows_to_keep` — Minimum rows to keep when memory table is size-capped.
+  - Default value: `0`
+  - Requires `max_rows_to_keep`
+- `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
+  - Default value: `0`
+- `compress` - Whether to compress data in memory.
+  - Default value: `false`
+
+## Usage {#usage}
+
+**Initialize settings**
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**Modify settings**
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
+
+## Examples {#examples}
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 8'192 bytes
+
+/* 2. adding block that doesn't get deleted */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 1'024 bytes
+
+/* 3. testing oldest block gets deleted - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
+
+/* 4. checking a very large block overrides all */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+
+also, for rows:
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
+
+/* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 1'600 rows
+
+/* 2. adding block that doesn't get deleted */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 100 rows
+
+/* 3. testing oldest block gets deleted - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 rows
+
+/* 4. checking a very large block overrides all */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 rows
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Memory"});
 }
 
 }

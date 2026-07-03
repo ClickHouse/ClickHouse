@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -29,12 +30,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 FillingStep::FillingStep(
-    const Header & input_header_,
+    SharedHeader input_header_,
     SortDescription sort_description_,
     SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
-    : ITransformingStep(input_header_, FillingTransform::transformHeader(input_header_, sort_description_), getTraits())
+    : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
     , sort_description(std::move(sort_description_))
     , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
@@ -47,7 +48,7 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return std::make_shared<FillingNoopTransform>(header, fill_description);
@@ -59,14 +60,15 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
 void FillingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix;
-    dumpSortDescription(sort_description, settings.out);
+    dumpSortDescription(sort_description, settings);
     settings.out << '\n';
     if (interpolate_description)
     {
         auto expression = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
-        expression->describeActions(settings.out, prefix);
+        if (!settings.compact)
+            expression->describeActions(settings.out, prefix);
     }
 }
 
@@ -82,6 +84,6 @@ void FillingStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void FillingStep::updateOutputHeader()
 {
-    output_header = FillingTransform::transformHeader(input_headers.front(), sort_description);
+    output_header = std::make_shared<const Block>(FillingTransform::transformHeader(*input_headers.front(), sort_description));
 }
 }

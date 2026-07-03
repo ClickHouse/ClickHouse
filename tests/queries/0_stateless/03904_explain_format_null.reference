@@ -1,0 +1,23 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromSystemNumbers
+------------------
+SELECT number
+FROM numbers_mt(1000)
+GROUP BY number
+------------------
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + Change column names to column identifiers))
+      ReadFromSystemNumbers
+------------------
+(Expression)
+ExpressionTransform × 2
+  (Aggregating)
+  Resize 1 → 2
+    AggregatingTransform
+      (Expression)
+      ExpressionTransform
+        (ReadFromSystemNumbers)
+        NumbersRange 0 → 1

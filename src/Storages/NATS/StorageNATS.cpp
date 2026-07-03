@@ -1,5 +1,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
-#include <Storages/NATS/NATSProducer.h>
+#include <Storages/NATS/NATSJetStreamConsumer.h>
+#include <Storages/NATS/NATSCoreConsumer.h>
+#include <Storages/NATS/NATSJetStreamProducer.h>
+#include <Storages/NATS/NATSCoreProducer.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -37,7 +41,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsString stream_like_engine_insert_queue;
@@ -52,6 +56,7 @@ namespace NATSSetting
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
+    extern const NATSSettingsString nats_consumer_name;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
     extern const NATSSettingsString nats_queue_group;
@@ -64,6 +69,7 @@ namespace NATSSetting
     extern const NATSSettingsString nats_subjects;
     extern const NATSSettingsString nats_token;
     extern const NATSSettingsString nats_url;
+    extern const NATSSettingsString nats_stream;
     extern const NATSSettingsString nats_username;
 }
 
@@ -123,8 +129,8 @@ StorageNATS::StorageNATS(
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals((*nats_settings)[NATSSetting::nats_handle_error_mode]));
 
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
@@ -146,10 +152,10 @@ StorageNATS::StorageNATS(
         tryLogCurrentException(log);
     }
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSStreamingTask", [this] { streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSStreamingTask", [this] { streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask("NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
+    initialize_consumers_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "NATSInitializeConsumersTask", [this] { initializeConsumersFunc(); });
     initialize_consumers_task->deactivate();
 }
 StorageNATS::~StorageNATS()
@@ -160,12 +166,13 @@ StorageNATS::~StorageNATS()
 VirtualColumnsDescription StorageNATS::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "");
+    desc.addEphemeral("_subject", std::make_shared<DataTypeString>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     if (handle_error_mode == StreamingHandleErrorMode::STREAM)
     {
-        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
-        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "");
+        desc.addEphemeral("_raw_message", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral("_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
     }
 
     return desc;
@@ -199,6 +206,8 @@ ContextMutablePtr StorageNATS::addSettings(ContextPtr local_context) const
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     if ((*nats_settings)[NATSSetting::nats_handle_error_mode] == StreamingHandleErrorMode::DEFAULT)
         modified_context->setSetting("input_format_allow_errors_num", (*nats_settings)[NATSSetting::nats_skip_broken_messages].value);
+    else if ((*nats_settings)[NATSSetting::nats_handle_error_mode] == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
     else
         modified_context->setSetting("input_format_allow_errors_num", Field{0});
 
@@ -249,6 +258,7 @@ void StorageNATS::initializeConsumersFunc()
     }
     catch (...)
     {
+        LOG_WARNING(log, "Cannot initialize consumers: {}", getCurrentExceptionMessage(false));
         initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
         return;
     }
@@ -366,10 +376,13 @@ void StorageNATS::read(
 
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+            ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`. Be aware that usually the read data is removed from the queue.");
 
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
+
+    if (!getStreamName().empty() && getConsumerName().empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "To read from NATS jet stream, you must specify `nats_consumer_name` setting");
 
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
     auto modified_context = addSettings(local_context);
@@ -387,10 +400,11 @@ void StorageNATS::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getHeader(), std::move(converting));
+        auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
 
         pipes.emplace_back(std::move(nats_source));
         pipes.back().addTransform(std::move(converting_transform));
@@ -439,15 +453,12 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
     if (!isSubjectInSubscriptions(subject))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Selected subject is not among engine subjects");
 
-    auto connection_future = event_handler.createConnection(configuration);
-
-    auto producer = std::make_unique<NATSProducer>(connection_future.get(), subject, shutdown_called, log);
     size_t max_rows = max_rows_per_message;
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
     return std::make_shared<MessageQueueSink>(
-        metadata_snapshot->getSampleBlockNonMaterialized(), getFormatName(), max_rows, std::move(producer), getName(), modified_context);}
+        std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized()), getFormatName(), max_rows, createProducer(std::move(subject)), getName(), modified_context);}
 
 
 void StorageNATS::startup()
@@ -470,8 +481,7 @@ void StorageNATS::shutdown(bool /* is_drop */)
     /// Just a paranoid try catch, it is not actually needed.
     try
     {
-        if (drop_table)
-            unsubscribeConsumers();
+        unsubscribeConsumers();
 
         if (consumers_connection)
         {
@@ -492,20 +502,20 @@ void StorageNATS::shutdown(bool /* is_drop */)
     stopEventLoop();
 }
 
-void StorageNATS::pushConsumer(NATSConsumerPtr consumer)
+void StorageNATS::pushConsumer(INATSConsumerPtr consumer)
 {
     std::lock_guard lock(consumers_mutex);
     consumers.push_back(consumer);
     semaphore.set();
 }
 
-NATSConsumerPtr StorageNATS::popConsumer()
+INATSConsumerPtr StorageNATS::popConsumer()
 {
     return popConsumer(std::chrono::milliseconds::zero());
 }
 
 
-NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
+INATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 {
     // Wait for the first free consumer
     if (timeout == std::chrono::milliseconds::zero())
@@ -525,12 +535,28 @@ NATSConsumerPtr StorageNATS::popConsumer(std::chrono::milliseconds timeout)
 }
 
 
-NATSConsumerPtr StorageNATS::createConsumer()
+INATSConsumerPtr StorageNATS::createConsumer()
 {
-    return std::make_shared<NATSConsumer>(
-        consumers_connection, subjects,
-        (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName(),
-        log, queue_size, shutdown_called);
+    auto stream_name = getStreamName();
+    if (stream_name.empty())
+    {
+        auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group].changed ? (*nats_settings)[NATSSetting::nats_queue_group].value : getStorageID().getFullTableName();
+        return std::make_shared<NATSCoreConsumer>(consumers_connection, subjects, queue_name, log, queue_size, shutdown_called);
+    }
+
+    auto queue_name = (*nats_settings)[NATSSetting::nats_queue_group];
+
+    return std::make_shared<NATSJetStreamConsumer>(consumers_connection, std::move(stream_name), getConsumerName(), subjects, queue_name, log, queue_size, shutdown_called);
+}
+
+INATSProducerPtr StorageNATS::createProducer(String subject)
+{
+    auto connection_future = event_handler.createConnection(configuration);
+
+    if (!getStreamName().empty())
+        return std::make_unique<NATSJetStreamProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
+    else
+        return std::make_unique<NATSCoreProducer>(connection_future.get(), std::move(subject), shutdown_called, log);
 }
 
 bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
@@ -576,29 +602,7 @@ bool StorageNATS::isSubjectInSubscriptions(const std::string & subject)
 
 bool StorageNATS::checkDependencies(const StorageID & table_id)
 {
-    // Check if all dependencies are attached
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
-    if (view_ids.empty())
-        return true;
-
-    // Check the dependencies are ready?
-    for (const auto & view_id : view_ids)
-    {
-        auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
-        if (!view)
-            return false;
-
-        // If it materialized view, check it's target table
-        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-        if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
-            return false;
-    }
-
-    return true;
+    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, getContext()).empty();
 }
 
 void StorageNATS::streamingToViewsFunc()
@@ -619,7 +623,10 @@ void StorageNATS::streamingToViewsFunc()
             while (!shutdown_called && num_created_consumers > 0)
             {
                 if (!checkDependencies(table_id))
+                {
+                    consumers_queues_are_empty = true;
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to attached views");
 
@@ -650,6 +657,7 @@ void StorageNATS::streamingToViewsFunc()
         return;
 
     size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+
     if (num_views != 0)
     {
         if (consumers_queues_are_empty)
@@ -681,20 +689,27 @@ bool StorageNATS::streamToViews()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
 
     // Create an INSERT query for streaming data
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = table_id;
+
+    auto new_context = Context::createCopy(nats_context);
+
+    /// Create a fresh query context from nats_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        nats_context,
+        new_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
+    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto column_names = block_io.pipeline.getHeader().getNames();
     auto sample_block = storage_snapshot->getSampleBlockForColumns(column_names);
 
@@ -708,7 +723,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 
@@ -750,13 +765,22 @@ bool StorageNATS::streamToViews()
     return false;
 }
 
+String StorageNATS::getStreamName() const
+{
+    return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_stream]);
+}
+String StorageNATS::getConsumerName() const
+{
+    return getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_consumer_name]);
+}
 
+void registerStorageNATS(StorageFactory & factory);
 void registerStorageNATS(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         auto nats_settings = std::make_unique<NATSSettings>();
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
         {
             nats_settings->loadFromNamedCollection(named_collection);
         }
@@ -774,6 +798,9 @@ void registerStorageNATS(StorageFactory & factory)
         if (!(*nats_settings)[NATSSetting::nats_subjects].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `nats_subjects` setting");
 
+        if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
+
         return std::make_shared<StorageNATS>(args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
     };
 
@@ -782,9 +809,308 @@ void registerStorageNATS(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::NATS,
+            .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
-        });
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+This engine allows integrating ClickHouse with [NATS](https://nats.io/).
+
+`NATS` lets you:
+
+- Publish or subscribe to message subjects.
+- Process new messages as they become available.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = NATS SETTINGS
+    nats_url = 'host:port',
+    nats_subjects = 'subject1,subject2,...',
+    nats_format = 'data_format'[,]
+    [nats_schema = '',]
+    [nats_num_consumers = N,]
+    [nats_queue_group = 'group_name',]
+    [nats_secure = false,]
+    [nats_max_reconnect = N,]
+    [nats_reconnect_wait = N,]
+    [nats_server_list = 'host1:port1,host2:port2,...',]
+    [nats_skip_broken_messages = N,]
+    [nats_max_block_size = N,]
+    [nats_flush_interval_ms = N,]
+    [nats_username = 'user',]
+    [nats_password = 'password',]
+    [nats_token = 'clickhouse',]
+    [nats_credential_file = '/var/nats_credentials',]
+    [nats_startup_connect_tries = 5,]
+    [nats_max_rows_per_message = 1,]
+    [nats_handle_error_mode = 'default']
+```
+
+Required parameters:
+
+- `nats_url` – host:port (for example, `localhost:4222`)..
+- `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
+- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+
+Optional parameters:
+
+- `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `nats_stream` – The name of an existing stream in NATS JetStream.
+- `nats_consumer_name` – The name of an existing durable pull consumer in NATS JetStream.
+- `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
+- `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
+- `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
+- `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `2000`.
+- `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
+- `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
+- `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
+- `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
+- `nats_username` - NATS username.
+- `nats_password` - NATS password.
+- `nats_token` - NATS auth token.
+- `nats_credential_file` - Path to a NATS credentials file.
+- `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
+- `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
+- `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
+
+SSL connection:
+
+For secure connection use `nats_secure = 1`.
+Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
+If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
+
+Writing to NATS table:
+
+If table reads only from one subject, any insert will publish to the same subject.
+However, if table reads from multiple subjects, we need to specify which subject we want to publish to.
+That is why whenever inserting into table with multiple subjects, setting `stream_like_engine_insert_queue` is needed.
+You can select one of the subjects the table reads from and publish your data there. For example:
+
+```sql
+CREATE TABLE queue (
+    key UInt64,
+    value UInt64
+  ) ENGINE = NATS
+    SETTINGS nats_url = 'localhost:4444',
+             nats_subjects = 'subject1,subject2',
+             nats_format = 'JSONEachRow';
+
+INSERT INTO queue
+SETTINGS stream_like_engine_insert_queue = 'subject2'
+VALUES (1, 1);
+```
+
+Also format settings can be added along with nats-related settings.
+
+Example:
+
+```sql
+CREATE TABLE queue (
+    key UInt64,
+    value UInt64,
+    date DateTime
+  ) ENGINE = NATS
+    SETTINGS nats_url = 'localhost:4444',
+             nats_subjects = 'subject1',
+             nats_format = 'JSONEachRow',
+             date_time_input_format = 'best_effort';
+```
+
+The NATS server configuration can be added using the ClickHouse config file.
+More specifically you can add your password for the NATS engine:
+
+```xml
+<nats>
+    <user>click</user>
+    <password>house</password>
+    <token>clickhouse</token>
+</nats>
+```
+
+## Description {#description}
+
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
+
+1.  Use the engine to create a NATS consumer and consider it a data stream.
+2.  Create a table with the desired structure.
+3.  Create a materialized view that converts data from the engine and puts it into a previously created table.
+
+When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from NATS and convert them to the required format using `SELECT`.
+One NATS table can have as many materialized views as you like, they do not read data from the table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).
+
+Example:
+
+```sql
+CREATE TABLE queue (
+    key UInt64,
+    value UInt64
+  ) ENGINE = NATS
+    SETTINGS nats_url = 'localhost:4444',
+             nats_subjects = 'subject1',
+             nats_format = 'JSONEachRow',
+             date_time_input_format = 'best_effort';
+
+CREATE TABLE daily (key UInt64, value UInt64)
+    ENGINE = MergeTree() ORDER BY key;
+
+CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT key, value FROM queue;
+
+SELECT key, value FROM daily ORDER BY key;
+```
+
+To stop receiving streams data or to change the conversion logic, detach the materialized view:
+
+```sql
+DETACH TABLE consumer;
+ATTACH TABLE consumer;
+```
+
+If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+
+## Virtual columns {#virtual-columns}
+
+- `_subject` - NATS message subject. Data type: `String`.
+
+Additional virtual columns when `nats_handle_error_mode='stream'`:
+
+- `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
+- `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
+
+Note: `_raw_message` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
+
+## Data formats support {#data-formats-support}
+
+NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
+The number of rows in one NATS message depends on whether the format is row-based or block-based:
+
+- For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
+
+## Using JetStream {#using-jetstream}
+
+Before using NATS engine with NATS JetStream, you must create a NATS stream and a durable pull consumer. For this, you can use, for example, the nats utility from the [NATS CLI](https://github.com/nats-io/natscli) package:
+<details>
+<summary>creating stream</summary>
+
+```bash
+$ nats stream add
+? Stream Name stream_name
+? Subjects stream_subject
+? Storage file
+? Replication 1
+? Retention Policy Limits
+? Discard Policy Old
+? Stream Messages Limit -1
+? Per Subject Messages Limit -1
+? Total Stream Size -1
+? Message TTL -1
+? Max Message Size -1
+? Duplicate tracking time window 2m0s
+? Allow message Roll-ups No
+? Allow message deletion Yes
+? Allow purging subjects or the entire stream Yes
+Stream stream_name was created
+
+Information for Stream stream_name created 2025-10-03 14:12:51
+
+                Subjects: stream_subject
+                Replicas: 1
+                 Storage: File
+
+Options:
+
+               Retention: Limits
+         Acknowledgments: true
+          Discard Policy: Old
+        Duplicate Window: 2m0s
+              Direct Get: true
+       Allows Msg Delete: true
+            Allows Purge: true
+Allows Per-Message TTL: false
+          Allows Rollups: false
+
+Limits:
+
+        Maximum Messages: unlimited
+     Maximum Per Subject: unlimited
+           Maximum Bytes: unlimited
+             Maximum Age: unlimited
+    Maximum Message Size: unlimited
+       Maximum Consumers: unlimited
+
+State:
+
+                Messages: 0
+                   Bytes: 0 B
+          First Sequence: 0
+           Last Sequence: 0
+        Active Consumers: 0
+```
+</details>
+
+<details>
+<summary>creating durable pull consumer</summary>
+
+```bash
+$ nats consumer add
+? Select a Stream stream_name
+? Consumer name consumer_name
+? Delivery target (empty for Pull Consumers)
+? Start policy (all, new, last, subject, 1h, msg sequence) all
+? Acknowledgment policy explicit
+? Replay policy instant
+? Filter Stream by subjects (blank for all)
+? Maximum Allowed Deliveries -1
+? Maximum Acknowledgments Pending 0
+? Deliver headers only without bodies No
+? Add a Retry Backoff Policy No
+Information for Consumer stream_name > consumer_name created 2025-10-03T14:13:51+03:00
+
+Configuration:
+
+                    Name: consumer_name
+               Pull Mode: true
+          Deliver Policy: All
+              Ack Policy: Explicit
+                Ack Wait: 30.00s
+           Replay Policy: Instant
+         Max Ack Pending: 1,000
+       Max Waiting Pulls: 512
+
+State:
+
+Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+    Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
+        Outstanding Acks: 0 out of maximum 1,000
+    Redelivered Messages: 0
+    Unprocessed Messages: 0
+           Waiting Pulls: 0 of maximum 512
+```
+</details>
+
+After creating stream and durable pull consumer, we can create a table with NATS engine. To do this, you need to initialize: nats_stream, nats_consumer_name, and nats_subjects:
+
+```SQL
+CREATE TABLE nats_jet_stream (
+    key UInt64,
+    value UInt64
+  ) ENGINE NATS
+    SETTINGS  nats_url = 'localhost:4222',
+              nats_stream = 'stream_name',
+              nats_consumer_name = 'consumer_name',
+              nats_subjects = 'stream_subject',
+              nats_format = 'JSONEachRow';
+```
+)DOCS_MD",
+            .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
+            .related = {"Kafka", "RabbitMQ", "FileLog"}});
 }
 
 }

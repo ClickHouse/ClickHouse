@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -7,9 +8,9 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
+#include <Columns/IColumn.h>
 
 #include <base/find_symbols.h>
 #include <base/scope_guard.h>
@@ -280,6 +281,12 @@ namespace JSONUtils
                 String str;
                 readJSONString(str, in, format_settings.json);
 
+                if (format_settings.json.empty_as_default && str.empty())
+                {
+                    column.insertDefault();
+                    return false;
+                }
+
                 ReadBufferFromString buf(str);
 
                 if (as_nullable)
@@ -317,7 +324,7 @@ namespace JSONUtils
 
     void writeFieldCompactDelimiter(WriteBuffer & out) { writeCString(", ", out); }
 
-    void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
+    static void writeTitle(const char * title, WriteBuffer & out, size_t indent, const char * after_delimiter)
     {
         writeChar('\t', indent, out);
         writeChar('"', out);
@@ -326,7 +333,7 @@ namespace JSONUtils
         writeCString(after_delimiter, out);
     }
 
-    void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
+    static void writeTitlePretty(const char * title, WriteBuffer & out, const FormatSettings & settings, size_t indent, const char * after_delimiter)
     {
         writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, out);
         writeChar('"', out);
@@ -573,7 +580,7 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
     }
 
-    bool checkAndSkipColon(ReadBuffer & in)
+    static bool checkAndSkipColon(ReadBuffer & in)
     {
         skipWhitespaceIfAny(in);
         if (!checkChar(':', in))
@@ -591,13 +598,13 @@ namespace JSONUtils
         return field;
     }
 
-    bool tryReadFieldName(ReadBuffer & in, String & field, const FormatSettings::JSON & settings)
+    static bool tryReadFieldName(ReadBuffer & in, String & field, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         return tryReadJSONStringInto(field, in, settings) && checkAndSkipColon(in);
     }
 
-    String readStringField(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static String readStringField(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         String value;
@@ -606,7 +613,7 @@ namespace JSONUtils
         return value;
     }
 
-    bool tryReadStringField(ReadBuffer & in, String & value, const FormatSettings::JSON & settings)
+    static bool tryReadStringField(ReadBuffer & in, String & value, const FormatSettings::JSON & settings)
     {
         skipWhitespaceIfAny(in);
         if (!tryReadJSONStringInto(value, in, settings))
@@ -695,19 +702,19 @@ namespace JSONUtils
         return true;
     }
 
-    std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static std::pair<String, String> readStringFieldNameAndValue(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         auto field_name = readFieldName(in, settings);
         auto field_value = readStringField(in, settings);
         return {field_name, field_value};
     }
 
-    bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value, const FormatSettings::JSON & settings)
+    static bool tryReadStringFieldNameAndValue(ReadBuffer & in, std::pair<String, String> & field_and_value, const FormatSettings::JSON & settings)
     {
         return tryReadFieldName(in, field_and_value.first, settings) && tryReadStringField(in, field_and_value.second, settings);
     }
 
-    NameAndTypePair readObjectWithNameAndType(ReadBuffer & in, const FormatSettings::JSON & settings)
+    static NameAndTypePair readObjectWithNameAndType(ReadBuffer & in, const FormatSettings::JSON & settings)
     {
         skipObjectStart(in);
         auto [first_field_name, first_field_value] = readStringFieldNameAndValue(in, settings);
@@ -729,7 +736,7 @@ namespace JSONUtils
         return name_and_type;
     }
 
-    bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type, const FormatSettings::JSON & settings)
+    static bool tryReadObjectWithNameAndType(ReadBuffer & in, NameAndTypePair & name_and_type, const FormatSettings::JSON & settings)
     {
         if (!checkAndSkipObjectStart(in))
             return false;

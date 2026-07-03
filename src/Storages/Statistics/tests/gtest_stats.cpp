@@ -1,10 +1,35 @@
 #include <gtest/gtest.h>
 
-#include <Storages/Statistics/StatisticsTDigest.h>
-#include <Interpreters/convertFieldToType.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
+
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/IColumn.h>
+#include <Common/Exception.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/StatisticsTDigest.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 TEST(Statistics, TDigestLessThan)
 {
@@ -44,3 +69,527 @@ TEST(Statistics, TDigestLessThan)
     std::reverse(data.begin(), data.end());
     test_less_than(data, {-1, 1e9, 50000.0, 3000.0, 30.0}, {0, 100000, 50000, 3000, 30}, {0, 0, 0.001, 0.001, 0.001});
 }
+
+TEST(Statistics, Estimator)
+{
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
+    /// column a, distribution 1,2...,10000
+    /// column b, distribution 500,600,500,600...
+    /// column c, distribution -10000, -1000, -100, -10, -1, 1, 10, 100, 1008, 1009, 1010, ...
+    MutableColumnPtr a = DataTypeInt32().createColumn();
+    MutableColumnPtr b = DataTypeInt32().createColumn();
+    MutableColumnPtr c = DataTypeInt32().createColumn();
+    Int32 c_value[] = {-100000, -1000, -100, -10, -1, 1, 10, 100};
+    for (Int32 i = 0; i < 10000; i++)
+    {
+        a->insert(i+1);
+        b->insert(i % 2 == 0 ? 500 : 600);
+        c->insert(i < 8 ? c_value[i]: 1000+i);
+    }
+
+    auto mock_statistics = [&](const String & column_name)
+    {
+        ColumnStatisticsDescription mock_description;
+        mock_description.data_type = data_type;
+        std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
+        for (auto stats_type : stats_type_to_create)
+        {
+            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
+        }
+        ColumnDescription column_desc;
+        column_desc.name = column_name;
+        column_desc.type = data_type;
+        column_desc.statistics = mock_description;
+        return MergeTreeStatisticsFactory::instance().get(column_desc);
+    };
+    ColumnStatisticsPtr stats_a = mock_statistics("a");
+    stats_a->build(std::move(a));
+    ColumnStatisticsPtr stats_b = mock_statistics("b");
+    stats_b->build(std::move(b));
+    ColumnStatisticsPtr stats_c = mock_statistics("c");
+    stats_c->build(std::move(c));
+
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addStatistics("a", stats_a);
+    estimator_builder.addStatistics("b", stats_b);
+    estimator_builder.addStatistics("c", stats_c);
+    estimator_builder.incrementRowCount(10000);
+
+    auto estimator = estimator_builder.getEstimator();
+
+    auto test_impl = [&](const String & expression, Int64 real_result, Float64 eps)
+    {
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
+        std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
+        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
+    };
+
+    auto test_f = [&](const String & expression, Int64 real_result, Float64 eps = 0.001)
+    {
+        test_impl(expression, real_result, eps);
+        /// Let's test 'not expression'
+        test_impl("not(" + expression + ")", 10000-real_result, eps);
+    };
+    ///
+    test_f("a in (1,2,3,4,5)", 5);
+    test_f("a not in (1,2,3,4,5)", 10000-5);
+    test_f("b in (2, 500, 500)", 5000);
+    test_f("a < 3 and b = 500", 1);
+    test_f("a < 3 and b = 500 and a < b", 1); /// unknown condition 'a < b' assumes 100% selectivity
+    test_f("a < 3 or b = 600", 5001);
+    test_f("not (a < 3 and b = 500)", 10000-1);
+    test_f("c between -1000 and -10", 3);
+    test_f("b != 500 and b != 600", 0);
+    test_f("not (b != 500 and b != 600)", 10000);
+    test_f("b != 500 or b != 600", 10000);
+    test_f("not (b != 500 or b != 600)", 0);
+    test_f("a < 3 and b != 600", 1);
+    test_f("a > 3 and b != 600", 4998);
+    test_f("(a > 3 or a < 10) and b != 600", 5000);
+    test_f("(a > 3 and a < 10) and b != 600", 3);
+    test_f("(a > 3 and a < 10) or (b != 600 and b != 500)", 6);
+    test_f("(a > 3 and a < 10) or not (b != 600 and b != 500)", 10000);
+    test_f("((a > 3 and a < 10) or (a > 900 and a < 1000) or (a > 9050 and a < 9060))", 114);
+    test_f("(a > 3 and a < 1000) or (a > 3 and a < 1011) or (a > 3 and a < 2012)", 2008);
+    test_f("(a > 3 and a < 1000) or (a > 3 and a < 1011) or (b = 500)", 5503);
+    test_f("(a > 3 and a < 1000) or ((a > 3 and a < 1011) and (b = 500))", 1001, 0.05); /// 5% error
+    test_f("((a > 3 and a < 1000) or (a > 3 and a < 1011)) and (b = 500)", 503);
+    test_f("a = 5 and a != 6", 1);
+}
+
+TEST(Statistics, MinMaxEstimateLess)
+{
+    auto test_minmax = [](Field min_val, Field max_val, UInt64 row_count, Field val, Float64 expected)
+    {
+        StatisticsMinMax stats(min_val, max_val, row_count);
+        auto result = stats.estimateLess(val);
+        ASSERT_TRUE(result.has_value()) << "estimateLess returned nullopt";
+        EXPECT_DOUBLE_EQ(*result, expected);
+    };
+
+    /// UInt64: interpolation over [0, 9] with 10 rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(0),  0.0);           /// at min    → (0/9)*10 = 0
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(9),  10.0);          /// at max    → (9/9)*10 = 10
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(10), 10.0);          /// above max → all rows
+    test_minmax(UInt64(0), UInt64(9), 10, UInt64(5),  5.0/9.0*10.0); /// midpoint
+
+    /// Int64: negative range [-100, 100] with 201 rows
+    test_minmax(Int64(-100), Int64(100), 201, Int64(-200), 0.0);               /// below min
+    test_minmax(Int64(-100), Int64(100), 201, Int64(200),  201.0);             /// above max
+    test_minmax(Int64(-100), Int64(100), 201, Int64(0),    100.0/200.0*201.0); /// midpoint
+
+    /// All rows have the same value: min == max
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(42), 50.0); /// v == min == max → all rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(43), 50.0); /// v > max         → all rows
+    test_minmax(UInt64(42), UInt64(42), 50, UInt64(41), 0.0);  /// v < min         → 0 rows
+
+    /// Precision: UInt64 values near 2^53 where Float64 loses consecutive integers.
+    /// Float64(2^53 + 1) rounds to Float64(2^53), so naive conversion gives numerator = 0.
+    /// interpolateLinear must use UInt128 internally to recover the correct result.
+    const UInt64 base = (1ULL << 53); /// = 9007199254740992
+    test_minmax(UInt64(base), UInt64(base + 2), 3, UInt64(base + 1), 1.5); /// (1/2)*3 = 1.5
+
+    /// estimateLess returns nullopt when row_count = 0
+    StatisticsMinMax empty(Field{}, Field{}, 0);
+    EXPECT_FALSE(empty.estimateLess(Field(UInt64(42))).has_value());
+}
+
+namespace
+{
+
+/// Build a `ColumnStatistics` carrying the requested types over `data_type`.
+ColumnStatisticsPtr createTestStats(
+    const std::vector<StatisticsType> & types,
+    const DataTypePtr & data_type)
+{
+    ColumnStatisticsDescription desc;
+    desc.data_type = data_type;
+    for (auto type : types)
+        desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+    return MergeTreeStatisticsFactory::instance().get(desc);
+}
+
+/// Build a `Nullable(Int32)` column with `total` rows where every `null_every`-th row is NULL.
+/// Non-NULL row `i` carries value `static_cast<Int32>(i)`. Returns built statistics.
+ColumnStatisticsPtr buildNullableInt32Stats(
+    const std::vector<StatisticsType> & types,
+    size_t total,
+    size_t null_every)
+{
+    auto data_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+    MutableColumnPtr col = data_type->createColumn();
+    auto * nullable_col = assert_cast<ColumnNullable *>(col.get());
+    for (size_t i = 0; i < total; ++i)
+    {
+        if (i % null_every == 0)
+            nullable_col->insertDefault();
+        else
+            nullable_col->insert(static_cast<Int32>(i));
+    }
+    auto stats = createTestStats(types, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
+/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    ParserExpressionWithOptionalAlias exp_parser(false);
+    ContextPtr context = getContext().context;
+    RPNBuilderTreeContext tree_context(
+        context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+    RPNBuilderTreeNode node(ast.get(), tree_context);
+    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+}
+
+}
+
+TEST(Statistics, NullableEstimatorWithBasic)
+{
+    /// Two Nullable(Int32) columns with three-valued logic exercised across ranges and IS [NOT] NULL.
+    ///
+    /// column a: Nullable(Int32), 1000 rows, every 5th NULL  → 200 NULLs, 800 non-NULLs in [1, 999]
+    /// column b: Nullable(Int32), 1000 rows, every 10th NULL → 100 NULLs, 900 non-NULLs in [1, 999]
+    ///
+    /// `basic` populates numeric min/max (1 .. 999) plus null_count, so:
+    ///   estimateLess(500) = (500-1)/(999-1) * non_null = 0.5 * non_null
+    ///   → 400 for column a, 450 for column b
+    tryRegisterFunctions();
+
+    auto stats_a = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/5);
+    auto stats_b = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/1000, /*null_every=*/10);
+    ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
+    ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats_a);
+    builder.addStatistics("b", stats_b);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Single column — plain ranges (NULL rows are excluded).
+    check("a > 500",       400.0, 1.0);
+    check("a < 500",       400.0, 1.0);
+    check("b > 500",       450.0, 1.0);
+    check("b < 500",       450.0, 1.0);
+
+    /// Single column — IS NULL / IS NOT NULL.
+    check("a IS NULL",     200.0, 1e-6);
+    check("a IS NOT NULL", 800.0, 1e-6);
+    check("b IS NULL",     100.0, 1e-6);
+    check("b IS NOT NULL", 900.0, 1e-6);
+
+    /// Single column — IS NULL AND range → contradiction (the range is FALSE on NULL rows).
+    check("a IS NULL AND a > 500", 0.0, 1e-6);
+    check("b IS NULL AND b < 500", 0.0, 1e-6);
+
+    /// Single column — IS NULL OR range → null rows ∪ matching range rows.
+    check("a IS NULL OR a > 500", 600.0, 1.0);   /// 200 + 400
+    check("b IS NULL OR b < 500", 550.0, 1.0);   /// 100 + 450
+
+    /// Single column — IS NOT NULL AND range → equals the range (NULL filtering is implicit).
+    check("a IS NOT NULL AND a > 500", 400.0, 1.0);
+    check("b IS NOT NULL AND b < 500", 450.0, 1.0);
+
+    /// Single column — IS NOT NULL OR range → IS NOT NULL dominates.
+    check("a IS NOT NULL OR a > 500", 800.0, 1.0);
+    check("b IS NOT NULL OR b < 500", 900.0, 1.0);
+
+    /// Cross-column — range AND range, independent: 0.4 * 0.45 = 0.18.
+    check("a > 500 AND b > 500", 180.0, 2.0);
+
+    /// Cross-column — range OR range: 1 - (1-0.4)*(1-0.45) = 0.67.
+    check("a > 500 OR b > 500", 670.0, 2.0);
+
+    /// Cross-column — IS NULL AND range, independent columns: 0.2 * 0.45 = 0.09.
+    check("a IS NULL AND b > 500", 90.0, 2.0);
+
+    /// Cross-column — IS NULL OR range: 1 - P(a IS NOT NULL) * P(b <= 500) = 1 - 0.8 * 0.55 = 0.56.
+    check("a IS NULL OR b > 500", 560.0, 2.0);
+
+    /// Cross-column — IS NULL AND IS NULL: 0.2 * 0.1 = 0.02.
+    check("a IS NULL AND b IS NULL", 20.0, 2.0);
+
+    /// Cross-column — IS NULL OR IS NULL: 1 - 0.8 * 0.9 = 0.28.
+    check("a IS NULL OR b IS NULL", 280.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NOT NULL: 0.8 * 0.9 = 0.72.
+    check("a IS NOT NULL AND b IS NOT NULL", 720.0, 2.0);
+
+    /// Cross-column — IS NOT NULL AND IS NULL (different columns): 0.8 * 0.1 = 0.08.
+    check("a IS NOT NULL AND b IS NULL", 80.0, 2.0);
+
+    /// Cross-column — range AND IS NULL (different columns): 0.4 * 0.1 = 0.04.
+    check("a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// `a IS NOT NULL AND a > 500` collapses to `a > 500` (P = 0.4); then AND `b IS NULL` (P = 0.1).
+    check("a IS NOT NULL AND a > 500 AND b IS NULL", 40.0, 2.0);
+
+    /// Contradictions spanning two columns.
+    check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
+    check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
+}
+
+TEST(Statistics, LikeSelectivity)
+{
+    /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
+    /// selectivity defaults and their complement behavior under NOT.
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
+
+    MutableColumnPtr col = DataTypeInt32().createColumn();
+    for (Int32 i = 0; i < 10000; i++)
+        col->insert(i + 1);
+
+    ColumnStatisticsDescription mock_description;
+    mock_description.data_type = data_type;
+    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
+
+    ColumnDescription column_desc;
+    column_desc.name = "a";
+    column_desc.type = data_type;
+    column_desc.statistics = mock_description;
+    auto stats = MergeTreeStatisticsFactory::instance().get(column_desc);
+    stats->build(std::move(col));
+
+    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    estimator_builder.addStatistics("a", stats);
+    estimator_builder.incrementRowCount(10000);
+    auto estimator = estimator_builder.getEstimator();
+
+    /// Helper: estimate rows for a condition string.
+    auto estimate = [&](const String & expression) -> UInt64
+    {
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        return estimator->estimateRelationProfile(nullptr, node).rows;
+    };
+
+    /// default_like_factor = 0.1, total_rows = 10000.
+    /// LIKE: 0.1 * 10000 = 1000 rows.
+    UInt64 like_rows = estimate("a like '%pattern%'");
+    EXPECT_EQ(like_rows, 1000u);
+
+    /// NOT LIKE: (1 - 0.1) * 10000 = 9000 rows.
+    UInt64 not_like_rows = estimate("not(a like '%pattern%')");
+    EXPECT_EQ(not_like_rows, 9000u);
+
+    /// Complement: LIKE + NOT LIKE = total rows.
+    EXPECT_EQ(like_rows + not_like_rows, 10000u);
+
+    /// ILIKE: same as LIKE.
+    UInt64 ilike_rows = estimate("a ilike '%pattern%'");
+    EXPECT_EQ(ilike_rows, 1000u);
+
+    /// NOT ILIKE: same as NOT LIKE.
+    UInt64 not_ilike_rows = estimate("not(a ilike '%pattern%')");
+    EXPECT_EQ(not_ilike_rows, 9000u);
+
+    /// notLike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notlike_direct_rows = estimate("a not like '%pattern%'");
+    EXPECT_EQ(notlike_direct_rows, 9000u);
+
+    /// notILike function directly: 0.9 * 10000 = 9000 rows.
+    UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
+    EXPECT_EQ(notilike_direct_rows, 9000u);
+}
+
+/// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared
+/// on one column type, then the block column reaching `build` has a different type (a pending MODIFY
+/// COLUMN mutation, or an asymmetric merge where `structureEquals` only compares statistics types and
+/// misses a type-only change). Feeding the mismatched column to the collector previously mis-cast
+/// inside the aggregate function and aborted: `Bad cast ... ColumnNullable` for `uniq` on a Nullable
+/// type (3524-3a4b), and `Bad cast ColumnDecimal<Decimal256> to ColumnVector<long>` for `uniq` whose
+/// `<long>` (Int64) specialization was fed a Decimal256 block during mutation statistics rebuild
+/// (2404-35eb). The central `ColumnsStatistics::build` / `buildIfExists` now detects the mismatch via
+/// `column_type->equals(stats_data_type)` and throws a diagnostic LOGICAL_ERROR naming the column, the
+/// expected type and the actual type, instead of silently adapting the column. The `equals` check
+/// covers both the nullability dimension and the value-type dimension, and protects all statistics
+/// types, not just `uniq`.
+TEST(Statistics, BuildTypeMismatchThrows)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_stats = [](const String & column_name, const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        ColumnsStatistics result;
+        result.emplace(column_name, MergeTreeStatisticsFactory::instance().get(desc));
+        return result;
+    };
+
+    auto int_block = [](const String & column_name)
+    {
+        MutableColumnPtr col = DataTypeInt32().createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            col->insert(i);
+        return Block{ColumnWithTypeAndName(std::move(col), std::make_shared<DataTypeInt32>(), column_name)};
+    };
+
+    /// A Decimal256 block, to reproduce STID 2404-35eb: an `Int64`-declared `uniq` collector
+    /// (`AggregateFunctionUniq<long>`, column type `ColumnVector<long>`) fed a `ColumnDecimal<Decimal256>`.
+    auto decimal256_type = std::make_shared<DataTypeDecimal256>(20, 0);
+    auto decimal256_block = [&](const String & column_name)
+    {
+        MutableColumnPtr col = decimal256_type->createColumn();
+        for (Int32 i = 0; i < 100; ++i)
+            col->insert(DecimalField<Decimal256>(Decimal256(static_cast<Int256>(i)), 0));
+        return Block{ColumnWithTypeAndName(std::move(col), decimal256_type, column_name)};
+    };
+
+    /// In debug and sanitizer builds constructing a LOGICAL_ERROR aborts the process (it is treated
+    /// as a failed assertion), so the throw cannot be caught here. Assert the throw only in release
+    /// builds; the positive-path checks below run everywhere. This mirrors gtest_memory_resize.cpp.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    /// Statistics declared Nullable(Int32); block column is plain Int32 -> mismatch -> throws.
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.build(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// Same mismatch via `buildIfExists` (the mutation-rebuild entry point).
+    {
+        auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+        auto stats = make_stats("a", nullable_type);
+        try
+        {
+            stats.buildIfExists(int_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on nullability mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// STID 2404-35eb (value-type dimension): statistics declared Int64; block column is Decimal256.
+    /// The `uniq` collector built for Int64 is `AggregateFunctionUniq<long>`, whose column type is
+    /// `ColumnVector<long>`; feeding a `ColumnDecimal<Decimal256>` previously aborted with
+    /// `Bad cast ... ColumnDecimal<Decimal256> to ColumnVector<long>` inside `addBatchSinglePlaceNotNull`.
+    /// `equals` rejects the type difference, so the guard throws the diagnostic before the cast.
+    {
+        auto int64_type = std::make_shared<DataTypeInt64>();
+        auto stats = make_stats("a", int64_type);
+        try
+        {
+            stats.buildIfExists(decimal256_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on Int64/Decimal256 value-type mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+
+    /// And via `build` (the merge / full-recalc entry point) for the same value-type mismatch.
+    {
+        auto int64_type = std::make_shared<DataTypeInt64>();
+        auto stats = make_stats("a", int64_type);
+        try
+        {
+            stats.build(decimal256_block("a"));
+            FAIL() << "expected LOGICAL_ERROR on Int64/Decimal256 value-type mismatch";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+            EXPECT_NE(e.message().find("Type mismatch when building statistics for column 'a'"), std::string::npos);
+        }
+    }
+#endif
+
+    /// Matching Decimal256 type builds normally (positive path, runs in all build types):
+    /// a `uniq` collector declared on Decimal256 is `AggregateFunctionUniq<Decimal256>` and its column
+    /// type matches, so no cast error and the cardinality is computed.
+    {
+        auto stats = make_stats("a", decimal256_type);
+        EXPECT_NO_THROW(stats.build(decimal256_block("a")));
+        EXPECT_EQ(stats.at("a")->estimateCardinality(), 100u);
+    }
+
+    /// Matching type still builds normally (100 distinct values).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = make_stats("a", plain_type);
+        EXPECT_NO_THROW(stats.build(int_block("a")));
+        EXPECT_EQ(stats.at("a")->estimateCardinality(), 100u);
+    }
+
+    /// `buildIfExists` ignores columns absent from the block (no throw).
+    {
+        auto plain_type = std::make_shared<DataTypeInt32>();
+        auto stats = make_stats("missing", plain_type);
+        EXPECT_NO_THROW(stats.buildIfExists(int_block("a")));
+    }
+}
+
+/// The build-time guard above only fires when statistics are rebuilt from a block. The merge path in
+/// MergeTask takes a different route: when `ColumnStatistics::structureEquals` returns true it merges an
+/// already-loaded part statistic into the result collector instead of rebuilding it, so the mismatched
+/// loaded statistic never reaches the build guard. `structureEquals` must therefore also reject a
+/// different declared type, so a nullability-only change forces a rebuild rather than merging
+/// incompatible aggregate-state layouts.
+TEST(Statistics, StructureEqualsConsidersDataType)
+{
+    tryRegisterAggregateFunctions();
+
+    auto make_stat = [](const DataTypePtr & declared_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = declared_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        return MergeTreeStatisticsFactory::instance().get(desc);
+    };
+
+    auto plain_type = std::make_shared<DataTypeInt32>();
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
+
+    /// Same kinds and same declared type -> equal structure (the common case keeps merging, no rebuild).
+    EXPECT_TRUE(make_stat(plain_type)->structureEquals(*make_stat(plain_type)));
+    EXPECT_TRUE(make_stat(nullable_type)->structureEquals(*make_stat(nullable_type)));
+
+    /// Same kinds but different declared type (nullability flip) -> not equal, both directions.
+    EXPECT_FALSE(make_stat(plain_type)->structureEquals(*make_stat(nullable_type)));
+    EXPECT_FALSE(make_stat(nullable_type)->structureEquals(*make_stat(plain_type)));
+
+    /// Custom-named types must be told apart by name, not by equals(): Bool is stored as UInt8 and shares
+    /// its typeid, so Bool->equals(UInt8) is true even though the serialized statistics layouts differ.
+    /// Comparing getName() keeps Bool and UInt8 distinct so a Bool<->UInt8 change forces a rebuild.
+    auto bool_type = DataTypeFactory::instance().get("Bool");
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    EXPECT_TRUE(make_stat(bool_type)->structureEquals(*make_stat(bool_type)));
+    EXPECT_FALSE(make_stat(bool_type)->structureEquals(*make_stat(uint8_type)));
+    EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
+}
+

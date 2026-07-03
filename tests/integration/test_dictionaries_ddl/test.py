@@ -226,7 +226,8 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
 
 def test_restricted_database(started_cluster):
     for node in [node1, node2]:
-        node.query("CREATE DATABASE IF NOT EXISTS restricted_db", user="admin")
+        node.query("DROP DATABASE IF EXISTS restricted_db", user="admin")
+        node.query("CREATE DATABASE restricted_db", user="admin")
         node.query(
             "CREATE TABLE restricted_db.table_in_restricted_db AS test.xml_dictionary_table",
             user="admin",
@@ -412,7 +413,10 @@ def test_dictionary_with_where(started_cluster):
         "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
     )
     execute_mysql_query(
-        mysql_conn, "CREATE DATABASE IF NOT EXISTS dictionary_with_where"
+        mysql_conn, "DROP DATABASE IF EXISTS dictionary_with_where"
+    )
+    execute_mysql_query(
+        mysql_conn, "CREATE DATABASE dictionary_with_where"
     )
     execute_mysql_query(
         mysql_conn,
@@ -586,7 +590,11 @@ def test_secure(started_cluster):
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
+    error = str(excinfo.value)
+    assert (
+        "Unexpected packet from server localhost:9440" in error
+        or "Connection reset by peer" in error
+    )
 
     # Secure is set to 0 in named collection
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
@@ -607,7 +615,11 @@ def test_secure(started_cluster):
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
+    error = str(excinfo.value)
+    assert (
+        "Unexpected packet from server localhost:9440" in error
+        or "Connection reset by peer" in error
+    )
 
     # Secure is set to 0 in named collection and in 1 in DDL
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")

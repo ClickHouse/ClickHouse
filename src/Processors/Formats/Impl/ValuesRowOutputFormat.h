@@ -15,9 +15,11 @@ class WriteBuffer;
 class ValuesRowOutputFormat final : public IRowOutputFormat
 {
 public:
-    ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ValuesRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ValuesRowOutputFormat"; }
+
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

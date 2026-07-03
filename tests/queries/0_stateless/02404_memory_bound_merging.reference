@@ -113,12 +113,11 @@ ExpressionTransform
             (Expression)
             ExpressionTransform × 4
               (MergingAggregated)
-              Resize 1 → 4
-                SortingAggregatedTransform 4 → 1
-                  MergingAggregatedBucketTransform × 4
-                    Resize 1 → 4
-                      GroupingAggregatedTransform 3 → 1
-                        (ReadFromRemoteParallelReplicas)
+              Resize 4 → 4
+                MergingAggregatedBucketTransform × 4
+                  Resize 1 → 4
+                    GroupingAggregatedTransform 3 → 1
+                      (ReadFromRemoteParallelReplicas)
 explain pipeline select a from pr_t group by a order by a limit 5 offset 500 SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1;
 (Expression)
 ExpressionTransform
@@ -137,12 +136,15 @@ ExpressionTransform
                   FinishAggregatingInOrderTransform 3 → 1
                     (Union)
                       (Aggregating)
-                      FinalizeAggregatedTransform
-                        AggregatingInOrderTransform
-                          (Expression)
-                          ExpressionTransform
-                            (ReadFromMergeTree)
-                            MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) 0 → 1
+                      SortingAggregatedForMemoryBoundMergingTransform 4 → 1
+                        MergingAggregatedBucketTransform × 4
+                          Resize 1 → 4
+                            FinishAggregatingInOrderTransform 4 → 1
+                              AggregatingInOrderTransform × 4
+                                (Expression)
+                                ExpressionTransform × 4
+                                  (ReadFromMergeTree)
+                                  MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) × 4 0 → 1
                       (ReadFromRemoteParallelReplicas)
 select a, count() from pr_t group by a order by a limit 5 offset 500;
 500	1000

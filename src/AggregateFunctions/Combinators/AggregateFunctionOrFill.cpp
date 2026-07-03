@@ -1,5 +1,5 @@
-#include "AggregateFunctionOrFill.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionOrFill.h>
 
 namespace DB
 {
@@ -43,10 +43,17 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrNull));
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrDefault));
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrNull), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumOrNull`), it returns NULL instead of the default value when there is nothing to aggregate.",
+        .syntax = "<aggregate_function>OrNull",
+        .related = {"OrDefault"}});
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorOrFill>(Kind::OrDefault), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumOrDefault`), it returns the return type's default value when there is nothing to aggregate.",
+        .syntax = "<aggregate_function>OrDefault",
+        .related = {"OrNull"}});
 }
 
 }

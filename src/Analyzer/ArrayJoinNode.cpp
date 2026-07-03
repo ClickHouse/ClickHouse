@@ -54,10 +54,10 @@ QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
 
 ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto array_join_ast = std::make_shared<ASTArrayJoin>();
+    auto array_join_ast = make_intrusive<ASTArrayJoin>();
     array_join_ast->kind = is_left ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
 
-    auto array_join_expressions_ast = std::make_shared<ASTExpressionList>();
+    auto array_join_expressions_ast = make_intrusive<ASTExpressionList>();
     const auto & array_join_expressions = getJoinExpressions().getNodes();
 
     for (const auto & array_join_expression : array_join_expressions)
@@ -81,10 +81,10 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
     array_join_ast->children.push_back(std::move(array_join_expressions_ast));
     array_join_ast->expression_list = array_join_ast->children.back();
 
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[table_expression_child_index], options);
 
-    auto array_join_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto array_join_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
     array_join_query_element_ast->children.push_back(std::move(array_join_ast));
     array_join_query_element_ast->array_join = array_join_query_element_ast->children.back();
 

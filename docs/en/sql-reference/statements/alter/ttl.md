@@ -4,9 +4,8 @@ sidebar_label: 'TTL'
 sidebar_position: 44
 slug: /sql-reference/statements/alter/ttl
 title: 'Manipulations with Table TTL'
+doc_type: 'reference'
 ---
-
-# Manipulations with Table TTL
 
 :::note
 If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.

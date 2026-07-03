@@ -17,17 +17,17 @@ optimize_move_to_prewhere_if_final = 1
     Prewhere info
       Prewhere filter
       Prewhere filter column: greater(plus(x, y), 100) (removed)
-  Filter
+  Filter ((WHERE + Change column names to column identifiers))
   Filter column: and(greater(y, 100), greater(z, 400)) (removed)
     Prewhere info
       Prewhere filter
       Prewhere filter column: greater(y, 100)
-  Filter
+  Filter ((WHERE + Change column names to column identifiers))
   Filter column: and(greater(x, 50), greater(z, 400)) (removed)
     Prewhere info
       Prewhere filter
       Prewhere filter column: greater(x, 50)
-  Filter
+  Filter ((WHERE + Change column names to column identifiers))
   Filter column: and(greater(plus(x, y), 50), greater(z, 400)) (removed)
     Prewhere info
       Prewhere filter

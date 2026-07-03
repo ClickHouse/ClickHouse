@@ -1,0 +1,18 @@
+Expression ((Project names + Projection))
+  Aggregating
+    Expression
+      Join (JOIN FillRightFirst)
+        Expression (Left Pre Join Actions)
+          ReadFromMerge
+            Filter
+              ReadFromMergeTree (default.foo)
+            Filter
+              ReadFromMergeTree (default.foo1)
+        Expression (Right Pre Join Actions)
+          BuildRuntimeFilter (Build runtime join filter on __table2.Val)
+            Expression (Change column names to column identifiers)
+              ReadFromMemoryStorage
+=================================================
+200
+=================================================
+200

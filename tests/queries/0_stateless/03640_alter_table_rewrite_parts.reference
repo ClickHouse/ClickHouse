@@ -1,0 +1,19 @@
+-- { echo }
+-- 25 is the size of marks in case constant index granularity
+select count() from test_materialize;
+10000
+select partition_id, rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
+0	5000	1
+1	5000	1
+alter table test_materialize modify setting use_const_adaptive_granularity;
+alter table test_materialize rewrite parts in partition 1 settings mutations_sync=2;
+select partition_id, rows, index_granularity_bytes_in_memory_allocated>25 from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
+0	5000	1
+1	5000	0
+alter table test_materialize rewrite parts settings mutations_sync=2;
+select partition_id, rows, index_granularity_bytes_in_memory_allocated from system.parts where database = currentDatabase() and table = 'test_materialize' and active order by 1;
+0	5000	25
+1	5000	25
+select count() from test_materialize;
+10000
+select * from system.mutations where database = currentDatabase() and not is_done format Vertical;

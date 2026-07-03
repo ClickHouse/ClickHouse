@@ -15,3 +15,9 @@ openssl x509 -req -in server-req.pem -days 3600 -CA ca.pem -CAkey ca-key.pem -se
 openssl req -newkey rsa:2048 -days 3600 -nodes -keyout client-key.pem -out client-req.pem -subj "/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client"
 openssl rsa -in client-key.pem -out client-key.pem
 openssl x509 -req -in client-req.pem -days 3600 -CA ca.pem -CAkey ca-key.pem -set_serial 01 -out client-cert.pem
+
+# Create RSA key pair for MySQL sha256_password/caching_sha2_password authentication.
+# Pre-generating these avoids sporadic "Could not generate RSA Private/Public key pair"
+# errors during MySQL initialization in resource-constrained CI environments.
+openssl genrsa -out private_key.pem 2048
+openssl rsa -in private_key.pem -pubout -out public_key.pem

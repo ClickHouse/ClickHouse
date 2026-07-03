@@ -1,4 +1,4 @@
-// Copyright 2014-2020 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2014-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -92,7 +92,8 @@ sha256_block_data_order:
 	ldp	w24,w25,[x0,#4*4]
 	add	x2,x1,x2,lsl#6	// end of input
 	ldp	w26,w27,[x0,#6*4]
-	adr	x30,.LK256
+	adrp	x30,.LK256
+	add	x30,x30,#:lo12:.LK256
 	stp	x0,x2,[x29,#96]
 
 .Loop:
@@ -1040,6 +1041,8 @@ sha256_block_data_order:
 	ret
 .size	sha256_block_data_order,.-sha256_block_data_order
 
+.section	.rodata
+
 .align	6
 .type	.LK256,%object
 .LK256:
@@ -1064,6 +1067,8 @@ sha256_block_data_order:
 .byte	83,72,65,50,53,54,32,98,108,111,99,107,32,116,114,97,110,115,102,111,114,109,32,102,111,114,32,65,82,77,118,56,44,32,67,82,89,80,84,79,71,65,77,83,32,98,121,32,60,97,112,112,114,111,64,111,112,101,110,115,115,108,46,111,114,103,62,0
 .align	2
 .align	2
+
+.text
 #ifndef	__KERNEL__
 .type	sha256_block_armv8,%function
 .align	6
@@ -1074,7 +1079,8 @@ sha256_block_armv8:
 	add	x29,sp,#0
 
 	ld1	{v0.4s,v1.4s},[x0]
-	adr	x3,.LK256
+	adrp	x3,.LK256
+	add	x3,x3,#:lo12:.LK256
 
 .Loop_hw:
 	ld1	{v4.16b,v5.16b,v6.16b,v7.16b},[x1],#64
@@ -1218,7 +1224,8 @@ sha256_block_neon:
 	mov	x29, sp
 	sub	sp,sp,#16*4
 
-	adr	x16,.LK256
+	adrp	x16,.LK256
+	add	x16,x16,#:lo12:.LK256
 	add	x2,x1,x2,lsl#6	// len to point at the end of inp
 
 	ld1	{v0.16b},[x1], #16

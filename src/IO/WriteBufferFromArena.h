@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <base/StringRef.h>
 #include <IO/WriteBuffer.h>
 
 #include <algorithm>
@@ -26,7 +25,7 @@ public:
         pos = working_buffer.begin();
     }
 
-    StringRef complete()
+    std::string_view complete()
     {
         /// Return over-allocated memory back into arena.
         arena.rollback(buffer().end() - position());

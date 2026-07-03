@@ -1,7 +1,10 @@
+#include <memory>
 #include <Backups/BackupEntryFromAppendOnlyFile.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Disks/IDisk.h>
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
@@ -37,12 +40,21 @@ BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(
 {
 }
 
+BackupEntryFromAppendOnlyFile::BackupEntryFromAppendOnlyFile(TemporaryDataBufferPtr tmp_file_)
+    : tmp_file(std::move(tmp_file_))
+    , file_path(tmp_file->describeFilePath())
+    , size(tmp_file->getStat().compressed_size)
+{
+}
+
 BackupEntryFromAppendOnlyFile::~BackupEntryFromAppendOnlyFile() = default;
 
 std::unique_ptr<SeekableReadBuffer> BackupEntryFromAppendOnlyFile::getReadBuffer(const ReadSettings & read_settings) const
 {
     std::unique_ptr<SeekableReadBuffer> buf;
-    if (copy_encrypted)
+    if (tmp_file)
+        buf = tmp_file->readRaw();
+    else if (copy_encrypted)
         buf = disk->readEncryptedFile(file_path, read_settings.adjustBufferSize(size));
     else
         buf = disk->readFile(file_path, read_settings.adjustBufferSize(size));

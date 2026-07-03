@@ -1,7 +1,8 @@
 #pragma once
 
+#include <string>
+#include <string_view>
 #include <base/types.h>
-#include <Core/ProtocolDefines.h>
 
 
 namespace DB
@@ -87,7 +88,7 @@ namespace Protocol
             TablesStatusResponse = 9,       /// A response to TablesStatus request.
             Log = 10,                       /// System logs of the query execution
             TableColumns = 11,              /// Columns' description for default values calculation
-            PartUUIDs = 12,                 /// List of unique parts ids.
+            PartUUIDs = 12,                 /// Obsolete: was used for query deduplication based on part UUIDs (allow_experimental_query_deduplication). Kept for protocol compatibility.
             ReadTaskRequest = 13,           /// String (UUID) describes a request for which next task is needed
                                             /// This is such an inverted logic, where server sends requests
                                             /// And client returns back response
@@ -100,49 +101,13 @@ namespace Protocol
 
         };
 
+        /// Returns the packet name, or the numeric value itself when it is out of range
+        /// (a desynced or fuzzed wire byte), so error messages stay debuggeable.
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
         /// would always be true because of compiler optimization. That would lead to out-of-bounds error
         /// if the packet is invalid.
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
-        inline const char * toString(UInt64 packet)
-        {
-            static const char * data[] = {
-                "Hello",
-                "Data",
-                "Exception",
-                "Progress",
-                "Pong",
-                "EndOfStream",
-                "ProfileInfo",
-                "Totals",
-                "Extremes",
-                "TablesStatusResponse",
-                "Log",
-                "TableColumns",
-                "PartUUIDs",
-                "ReadTaskRequest",
-                "ProfileEvents",
-                "MergeTreeAllRangesAnnouncement",
-                "MergeTreeReadTaskRequest",
-                "TimezoneUpdate",
-                "SSHChallenge",
-            };
-            return packet <= MAX
-                ? data[packet]
-                : "Unknown packet";
-        }
-
-        inline size_t stringsInMessage(UInt64 msg_type)
-        {
-            switch (msg_type)
-            {
-                case TableColumns:
-                    return 2;
-                default:
-                    break;
-            }
-            return 0;
-        }
+        std::string toString(UInt64 packet);
     }
 
     /// Packet types that client transmits.
@@ -160,7 +125,7 @@ namespace Protocol
             TablesStatusRequest = 5,        /// Check status of tables on the server.
             KeepAlive = 6,                  /// Keep the connection alive
             Scalar = 7,                     /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
+            IgnoredPartUUIDs = 8,           /// Obsolete: was used for query deduplication based on part UUIDs (allow_experimental_query_deduplication). Kept for protocol compatibility.
             ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
             MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
 
@@ -169,30 +134,15 @@ namespace Protocol
 
             QueryPlan = 13,                 /// Query plan
 
-            MAX = QueryPlan,
+            MergeTreeAllRangesAnnouncementResponse = 14,
+                                            /// Initiator's reply to a follower's announcement,
+                                            /// carrying the authoritative parts list for the stream.
+
+            MAX = MergeTreeAllRangesAnnouncementResponse,
         };
 
-        inline const char * toString(UInt64 packet)
-        {
-            static const char * data[] = {
-                "Hello",
-                "Query",
-                "Data",
-                "Cancel",
-                "Ping",
-                "TablesStatusRequest",
-                "KeepAlive",
-                "Scalar",
-                "IgnoredPartUUIDs",
-                "ReadTaskResponse",
-                "MergeTreeReadTaskResponse",
-                "SSHChallengeRequest",
-                "SSHChallengeResponse"
-            };
-            return packet <= MAX
-                ? data[packet]
-                : "Unknown packet";
-        }
+        /// See the note on Server::toString: returns the numeric value for out-of-range packets.
+        std::string toString(UInt64 packet);
     }
 
     /// Whether the compression must be used.

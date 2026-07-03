@@ -17,9 +17,8 @@ class CreatingSetStep : public ITransformingStep
 {
 public:
     CreatingSetStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         SetAndKeyPtr set_and_key_,
-        StoragePtr external_table_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
 
@@ -34,7 +33,6 @@ private:
     void updateOutputHeader() override;
 
     SetAndKeyPtr set_and_key;
-    StoragePtr external_table;
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
 };
@@ -42,7 +40,7 @@ private:
 class CreatingSetsStep : public IQueryPlanStep
 {
 public:
-    explicit CreatingSetsStep(Headers input_headers_);
+    explicit CreatingSetsStep(SharedHeaders input_headers_);
 
     String getName() const override { return "CreatingSets"; }
 
@@ -60,7 +58,7 @@ class DelayedCreatingSetsStep final : public IQueryPlanStep
 {
 public:
     DelayedCreatingSetsStep(
-        Header input_header,
+        SharedHeader input_header,
         PreparedSets::Subqueries subqueries_,
         SizeLimits network_transfer_limits_,
         PreparedSetsCachePtr prepared_sets_cache_);
@@ -92,7 +90,7 @@ private:
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
+void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 
 QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context);
 

@@ -22,6 +22,7 @@ enum class QuotaType : uint8_t
     EXECUTION_TIME,                         /// Total amount of query execution time in nanoseconds.
     WRITTEN_BYTES,                          /// Number of bytes written to tables.
     FAILED_SEQUENTIAL_AUTHENTICATIONS,      /// Number of recent failed authentications.
+    QUERIES_PER_NORMALIZED_HASH,            /// Max executions of any single normalized query.
 
     MAX
 };
@@ -43,6 +44,9 @@ struct QuotaTypeInfo
     static const QuotaTypeInfo & get(QuotaType type);
 };
 
+/// Number of prefix bits used for IP address masking.
+using MaskBits = UInt8;
+
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.
 enum class QuotaKeyType : uint8_t
@@ -54,6 +58,7 @@ enum class QuotaKeyType : uint8_t
     CLIENT_KEY, /// Client should explicitly supply a key to use.
     CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
     CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+    NORMALIZED_QUERY_HASH,    /// Each distinct normalized query gets its own quota bucket.
 
     MAX
 };

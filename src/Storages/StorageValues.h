@@ -19,7 +19,7 @@ public:
     StorageValues(
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
-        const Block & res_block_,
+        Block res_block_,
         VirtualColumnsDescription virtuals_ = {});
 
     StorageValues(
@@ -44,7 +44,7 @@ public:
     bool supportsTransactions() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 

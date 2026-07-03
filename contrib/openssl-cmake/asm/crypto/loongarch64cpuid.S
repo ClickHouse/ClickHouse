@@ -65,5 +65,5 @@ OPENSSL_cleanse:
 .globl OPENSSL_rdtsc
 .type   OPENSSL_rdtsc,@function
 OPENSSL_rdtsc:
-    move    $r4,$r0
-    jr      $r1
+    rdtimel.w $r4,$r0
+    jr        $r1

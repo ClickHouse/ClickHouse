@@ -10,7 +10,7 @@ class DistinctStep : public ITransformingStep
 {
 public:
     DistinctStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
@@ -36,9 +36,9 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx, bool pre_distinct_);
-    static std::unique_ptr<IQueryPlanStep> deserializeNormal(Deserialization & ctx);
-    static std::unique_ptr<IQueryPlanStep> deserializePre(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx, bool pre_distinct_);
+    static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
+    static QueryPlanStepPtr deserializePre(Deserialization & ctx);
 
     const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
 

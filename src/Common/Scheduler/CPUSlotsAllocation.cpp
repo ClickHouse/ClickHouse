@@ -47,8 +47,9 @@ void CPUSlotRequest::failed(const std::exception_ptr & ptr)
     allocation->failed(ptr);
 }
 
-AcquiredCPUSlot::AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_)
-    : allocation(std::move(allocation_))
+AcquiredCPUSlot::AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_, size_t slot_id_)
+    : IAcquiredSlot(slot_id_)
+    , allocation(std::move(allocation_))
     , request(request_)
     , acquired_slot_increment(request ? CurrentMetrics::ConcurrencyControlAcquired : CurrentMetrics::ConcurrencyControlAcquiredNonCompeting)
 {}
@@ -129,7 +130,7 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
         if (noncompeting.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
-            return AcquiredSlotPtr(new AcquiredCPUSlot({}, nullptr));
+            return AcquiredSlotPtr(new AcquiredCPUSlot({}, nullptr, last_slot_id.fetch_add(1, std::memory_order_relaxed)));
         }
     }
 
@@ -150,7 +151,7 @@ CPUSlotsAllocation::~CPUSlotsAllocation()
             // Make and return acquired slot
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             size_t index = last_acquire_index.fetch_add(1, std::memory_order_relaxed);
-            return AcquiredSlotPtr(new AcquiredCPUSlot(shared_from_this(), &requests[index]));
+            return AcquiredSlotPtr(new AcquiredCPUSlot(shared_from_this(), &requests[index], last_slot_id.fetch_add(1, std::memory_order_relaxed)));
         }
     }
 
@@ -219,7 +220,7 @@ bool CPUSlotsAllocation::isRequesting() const
     std::unique_lock lock{schedule_mutex};
     if (allocated < total_slots && getCurrentQueue(lock))
         // Caller should make sure that request will not be dequeued by the scheduler thread. Otherwise, it will be a race condition.
-        return current_request->is_linked();
+        return current_request->enqueued_hook.is_linked();
     else
         return false;
 }

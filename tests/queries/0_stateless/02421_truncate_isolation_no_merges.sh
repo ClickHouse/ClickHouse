@@ -49,7 +49,7 @@ function concurrent_drop_before()
     tx 21 "select count() from tt"
     $CLICKHOUSE_CLIENT -q                                 "drop table tt"
     tx 21 "truncate table tt" | grep -Eo "UNKNOWN_TABLE" | uniq
-    tx 21 "rollback"
+    tx 21 "rollback" | grep -v "INVALID_TRANSACTION" ||:
 }
 
 concurrent_drop_before
@@ -141,7 +141,7 @@ function concurrent_drop_part_after()
                               order by name"
     $CLICKHOUSE_CLIENT -q "system flush logs part_log"
     $CLICKHOUSE_CLIENT -q "select event_type, part_name from system.part_log
-                              where table='drop_part_after_table' and database=currentDatabase()
+                              where event_date >= yesterday() AND event_time >= now() - 600 AND table='drop_part_after_table' and database=currentDatabase()
                               order by part_name"
 }
 

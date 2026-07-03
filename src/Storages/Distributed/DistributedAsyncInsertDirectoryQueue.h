@@ -101,7 +101,6 @@ private:
 
     bool hasPendingFiles() const;
 
-    void addFile(const std::string & file_path);
     void initializeFilesFromDisk();
     /// Set `force = true` if processing of files must be finished fully despite cancellation flag being set
     void processFiles(bool force, const SettingsChanges & settings_changes = {});

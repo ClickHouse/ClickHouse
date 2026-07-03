@@ -1,16 +1,22 @@
+#include <optional>
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
-#include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace ProfileEvents
 {
+    extern const Event JoinBuildPostProcessingMicroseconds;
     extern const Event JoinBuildTableRowCount;
     extern const Event JoinProbeTableRowCount;
     extern const Event JoinResultRowCount;
+    extern const Event JoinNonJoinedTransformBlockCount;
+    extern const Event JoinNonJoinedTransformRowCount;
+    extern const Event JoinDelayedJoinedTransformBlockCount;
+    extern const Event JoinDelayedJoinedTransformRowCount;
 }
 
 namespace DB
@@ -23,19 +29,18 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_TRACE(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
-    ExtraBlockPtr tmp;
-    join->joinBlock(header, tmp);
+    header = join->joinBlock(std::move(header))->next().block;
     materializeBlockInplace(header);
-    LOG_TRACE(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 
 JoiningTransform::JoiningTransform(
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader input_header,
+    SharedHeader output_header,
     JoinPtr join_,
     size_t max_block_size_,
     bool on_totals_,
@@ -56,12 +61,20 @@ JoiningTransform::~JoiningTransform() = default;
 
 OutputPort & JoiningTransform::getFinishedSignal()
 {
-    assert(outputs.size() == 2);
+    chassert(outputs.size() == 2);
     return outputs.back();
 }
 
 IProcessor::Status JoiningTransform::prepare()
 {
+    /// Check if we can fully skip reading left side when right side is empty
+    if (inputs.size() > 1)
+    {
+        auto & last_in = inputs.back();
+        if (last_in.isFinished() && join->alwaysReturnsEmptySet() && !on_totals)
+            stop_reading = true;
+    }
+
     auto & output = outputs.front();
     auto & on_finish_output = outputs.back();
 
@@ -83,11 +96,10 @@ IProcessor::Status JoiningTransform::prepare()
     }
 
     /// Output if has data.
-    if (has_output)
+    if (output_chunk)
     {
-        output.push(std::move(output_chunks.front()));
-        output_chunks.pop_front();
-        has_output = !output_chunks.empty();
+        output.push(std::move(*(output_chunk)));
+        output_chunk.reset();
 
         return Status::PortFull;
     }
@@ -111,7 +123,10 @@ IProcessor::Status JoiningTransform::prepare()
     auto & input = inputs.front();
     if (input.isFinished())
     {
-        if (process_non_joined)
+        /// There is a big assumption here: if join supports parallel non-joined block processing, then it is
+        /// assumed the query pipeline contains the appropriate `NonJoinedBlocksTransform` processors and we can
+        /// safely skip processing non-joined blocks depending on `isParallelNonJoinedProcessingEnabled()`.
+        if (process_non_joined && !(join->supportParallelNonJoinedBlocksProcessing() && join->isParallelNonJoinedProcessingEnabled()))
             return Status::Ready;
 
         output.finish();
@@ -125,7 +140,9 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::NeedData;
 
     input_chunk = input.pull(true);
-    has_input = input_chunk.hasRows() || on_totals;
+
+    has_virtual_row = isVirtualRow(input_chunk);
+    has_input = input_chunk.hasRows() || on_totals || has_virtual_row;
     return Status::Ready;
 }
 
@@ -133,10 +150,9 @@ void JoiningTransform::work()
 {
     if (has_input)
     {
-        chassert(output_chunks.empty());
+        chassert(!output_chunk.has_value());
         transform(input_chunk);
-        has_input = not_processed != nullptr;
-        has_output = !output_chunks.empty();
+        has_input = input_chunk.hasRows() || join_result != nullptr;
     }
     else
     {
@@ -150,6 +166,7 @@ void JoiningTransform::work()
 
             non_joined_blocks = join->getNonJoinedBlocks(
                 inputs.front().getHeader(), outputs.front().getHeader(), max_block_size);
+
             if (!non_joined_blocks)
             {
                 process_non_joined = false;
@@ -158,7 +175,7 @@ void JoiningTransform::work()
         }
 
         Block block = non_joined_blocks->next();
-        if (!block)
+        if (block.empty())
         {
             process_non_joined = false;
             return;
@@ -167,12 +184,13 @@ void JoiningTransform::work()
         if (block.rows())
         {
             ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-            has_output = true;
+            output_chunk = Chunk(block.getColumns(), block.rows());
         }
     }
 }
 
+/// transform should consume the input chunk and set the output chunk
+/// if not all data is consumed it may be set to the chunk and transform will be called again
 void JoiningTransform::transform(Chunk & chunk)
 {
     if (!initialized)
@@ -187,7 +205,7 @@ void JoiningTransform::transform(Chunk & chunk)
         }
     }
 
-    Blocks res;
+    Block res;
     if (on_totals)
     {
         const auto & left_totals = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
@@ -195,77 +213,54 @@ void JoiningTransform::transform(Chunk & chunk)
 
         /// Drop totals if both out stream and joined stream doesn't have ones.
         /// See comment in ExpressionTransform.h
-        if (default_totals && !right_totals)
+        if (default_totals && right_totals.empty())
             return;
 
-        res.emplace_back();
-        res.back() = outputs.front().getHeader().cloneEmpty();
-        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
+        res = outputs.front().getHeader().cloneEmpty();
+        JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res);
+    }
+    else if (has_virtual_row)
+    {
+        res = outputs.front().getHeader().cloneEmpty();
+        output_chunk = Chunk(res.getColumns(), res.rows());
+        output_chunk->setChunkInfos(std::move(chunk.getChunkInfos()));
     }
     else
     {
         res = readExecute(chunk);
     }
 
-    for (const auto & block : res)
+    if (res.rows())
     {
-        if (block.rows())
-        {
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-        }
+        ProfileEvents::increment(ProfileEvents::JoinResultRowCount, res.rows());
+        output_chunk = Chunk(res.getColumns(), res.rows());
     }
 }
 
-Blocks JoiningTransform::readExecute(Chunk & chunk)
+Block JoiningTransform::readExecute(Chunk & chunk)
 {
-    Blocks res;
-    Block block;
-
-    auto join_block = [&]()
+    if (!join_result)
     {
+        Block block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
         ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
-        if (join->isScatteredJoin())
-        {
-            join->joinBlock(block, remaining_blocks, res);
-            if (remaining_blocks.rows())
-                not_processed = std::make_shared<ExtraBlock>();
-            else
-                not_processed.reset();
-        }
-        else
-        {
-            join->joinBlock(block, not_processed);
-            res.push_back(std::move(block));
-        }
-    };
-
-    if (!not_processed)
-    {
-        if (chunk.hasColumns())
-            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-
-        if (block)
-            join_block();
-    }
-    else if (not_processed->empty()) /// There's not processed data inside expression.
-    {
-        if (chunk.hasColumns())
-            block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-
-        not_processed.reset();
-        join_block();
-    }
-    else
-    {
-        block = std::move(not_processed->block);
-        join_block();
+        join_result = join->joinBlock(std::move(block));
     }
 
-    return res;
+    auto data = join_result->next();
+    if (data.is_last && data.next_block)
+    {
+        data.next_block->filterBySelector();
+        auto next_block = std::move(*data.next_block).getSourceBlock();
+        chunk.setColumns(next_block.getColumns(), next_block.rows());
+    }
+
+    if (data.is_last)
+        join_result.reset();
+
+    return std::move(data.block);
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
     : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
 {
     spillable = typeid_cast<GraceHashJoin *>(join.get());
@@ -282,6 +277,12 @@ InputPort * FillingRightJoinSideTransform::addTotalsPort()
 IProcessor::Status FillingRightJoinSideTransform::prepare()
 {
     auto & output = outputs.front();
+
+    if (post_build_phase)
+    {
+        output.finish();
+        return Status::Finished;
+    }
 
     /// Check can output.
     if (output.isFinished())
@@ -338,7 +339,14 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
     }
 
     if (finish_counter->isLast())
+    {
         join->onBuildPhaseFinish();
+        if (join->hasPostBuildPhase())
+        {
+            post_build_phase = true;
+            return Status::Ready;
+        }
+    }
 
     output.finish();
     return Status::Finished;
@@ -346,19 +354,24 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
 
 void FillingRightJoinSideTransform::work()
 {
+    if (post_build_phase)
+    {
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinBuildPostProcessingMicroseconds);
+        join->runPostBuildPhase();
+        return;
+    }
+
     auto & input = inputs.front();
+    auto num_rows = chunk.getNumRows();
     auto block = input.getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (for_totals)
         join->setTotals(block);
     else
     {
-        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
-        stop_reading = !join->addBlockToJoin(block);
+        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+        stop_reading = !join->addBlockToJoin(block, num_rows, true);
     }
-
-    if (input.isFinished() && !join->supportParallelJoin())
-        join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
@@ -392,7 +405,7 @@ bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
 }
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
-    Block output_header_,
+    SharedHeader output_header_,
     NonJoinedStreamBuilder non_joined_stream_builder_)
     : IProcessor(InputPorts{Block()}, OutputPorts{output_header_})
     , non_joined_stream_builder(std::move(non_joined_stream_builder_))
@@ -476,21 +489,23 @@ void DelayedJoinedBlocksWorkerTransform::work()
     if (!task->delayed_blocks->isFinished())
     {
         block = task->delayed_blocks->next();
-        if (!block)
+        if (block.empty())
             block = nextNonJoinedBlock();
     }
     else
     {
         block = nextNonJoinedBlock();
     }
-    if (!block)
+    if (block.empty())
     {
         resetTask();
         return;
     }
 
     // Add block to the output
-    auto rows = block.rows();
+    const auto rows = block.rows();
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinDelayedJoinedTransformRowCount, rows);
     output_chunk.setColumns(block.getColumns(), rows);
 }
 
@@ -584,6 +599,48 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     }
 
     return Status::Ready;
+}
+
+NonJoinedBlocksTransform::NonJoinedBlocksTransform(
+    SharedHeader output_header,
+    JoinPtr join_,
+    Block left_sample_block_,
+    UInt64 max_block_size_,
+    size_t stream_index_,
+    size_t num_streams_)
+    : ISource(output_header)
+    , join(std::move(join_))
+    , left_sample_block(std::move(left_sample_block_))
+    , result_sample_block(*output_header)
+    , max_block_size(max_block_size_)
+    , stream_index(stream_index_)
+    , num_streams(num_streams_)
+{
+}
+
+Chunk NonJoinedBlocksTransform::generate()
+{
+    if (!join->isParallelNonJoinedProcessingEnabled())
+        return {};
+
+    if (!non_joined_blocks)
+    {
+        non_joined_blocks = join->getNonJoinedBlocks(
+            left_sample_block, result_sample_block, max_block_size, stream_index, num_streams);
+
+        if (!non_joined_blocks)
+            return {};
+    }
+
+    Block block = non_joined_blocks->next();
+    if (block.empty())
+        return {};
+
+    const auto rows = block.rows();
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, rows);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformBlockCount);
+    ProfileEvents::increment(ProfileEvents::JoinNonJoinedTransformRowCount, rows);
+    return Chunk(block.getColumns(), rows);
 }
 
 }

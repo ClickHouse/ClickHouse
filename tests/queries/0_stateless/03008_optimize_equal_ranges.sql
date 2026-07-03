@@ -24,7 +24,7 @@ SELECT
     Settings['max_threads'] AS threads,
     ProfileEvents['AggregationOptimizedEqualRangesOfKeys'] > 0
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query LIKE '%SELECT%FROM%t_optimize_equal_ranges%'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query LIKE '%SELECT%FROM%t_optimize_equal_ranges%'
 ORDER BY func, threads;
 
 DROP TABLE t_optimize_equal_ranges;

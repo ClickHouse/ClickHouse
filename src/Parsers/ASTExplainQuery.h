@@ -25,6 +25,7 @@ public:
         QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
         TableOverride, /// 'EXPLAIN TABLE OVERRIDE ...'
         CurrentTransaction, /// 'EXPLAIN CURRENT TRANSACTION'
+        WhatIf, /// 'EXPLAIN WHATIF SELECT ...'
     };
 
     static String toString(ExplainKind kind)
@@ -39,6 +40,7 @@ public:
             case QueryEstimates: return "EXPLAIN ESTIMATE";
             case TableOverride: return "EXPLAIN TABLE OVERRIDE";
             case CurrentTransaction: return "EXPLAIN CURRENT TRANSACTION";
+            case WhatIf: return "EXPLAIN WHATIF";
         }
     }
 
@@ -60,6 +62,8 @@ public:
             return TableOverride;
         if (str == "EXPLAIN CURRENT TRANSACTION")
             return CurrentTransaction;
+        if (str == "EXPLAIN WHATIF")
+            return WhatIf;
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown explain kind '{}'", str);
     }
@@ -70,10 +74,28 @@ public:
     ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExplainQuery>(*this);
+        auto res = make_intrusive<ASTExplainQuery>(*this);
+
+        /// Re-add the named children explicitly, in the same order `ParserExplainQuery`
+        /// produces them, so that the clone has the same `getTreeHash` as a freshly parsed
+        /// AST. The parser parses the EXPLAIN-level settings before the explained query
+        /// (e.g. `EXPLAIN header = 1 SELECT 1` is parsed as `children = [ast_settings, query]`),
+        /// so `ast_settings` must come before `query`.
         res->children.clear();
-        if (!children.empty())
-            res->children.push_back(children[0]->clone());
+        res->query = nullptr;
+        res->ast_settings = nullptr;
+        res->table_function = nullptr;
+        res->table_override = nullptr;
+
+        if (ast_settings)
+            res->setSettings(ast_settings->clone());
+        if (query)
+            res->setExplainedQuery(query->clone());
+        if (table_function)
+            res->setTableFunction(table_function->clone());
+        if (table_override)
+            res->setTableOverride(table_override->clone());
+
         cloneOutputOptions(*res);
         return res;
     }
@@ -114,7 +136,7 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << toString(kind) << (settings.hilite ? hilite_none : "");
+        ostr << toString(kind);
 
         if (ast_settings)
         {
@@ -125,7 +147,24 @@ protected:
         if (query)
         {
             ostr << settings.nl_or_ws;
+
+            /// When trailing output options (SETTINGS, FORMAT, etc.) follow the EXPLAIN body,
+            /// and the inner query is not an ASTQueryWithOutput (e.g. a bare SELECT or UNION),
+            /// we must wrap it in parentheses. Otherwise the trailing SETTINGS clause would be
+            /// consumed by the inner SELECT during re-parsing.
+            /// For inner ASTQueryWithOutput queries (like CREATE TABLE), the flag propagates
+            /// through the frame and is handled by each query's own `formatQueryImpl`.
+            /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
+            /// produce `(INSERT ...)` which cannot be parsed back.
+            bool need_parens = frame.has_trailing_output_options
+                && !dynamic_cast<const ASTQueryWithOutput *>(query.get())
+                && query->getQueryKind() != QueryKind::Insert
+                && query->getQueryKind() != QueryKind::AsyncInsertFlush;
+            if (need_parens)
+                ostr << "(";
             query->format(ostr, settings, state, frame);
+            if (need_parens)
+                ostr << ")";
         }
         if (table_function)
         {

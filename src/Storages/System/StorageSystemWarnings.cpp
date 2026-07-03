@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
@@ -27,4 +28,13 @@ void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr co
     }
 }
 
+
+void StorageSystemWarnings::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
+{
+    Context::getGlobalContextInstance()->removeAllWarnings();
 }
+
+}
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemWarnings) }

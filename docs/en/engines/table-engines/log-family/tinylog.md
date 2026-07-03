@@ -1,12 +1,17 @@
 ---
-description: 'Documentation for TinyLog'
+description: 'Documentation for the TinyLog table engine'
 slug: /engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: 'TinyLog'
-title: 'TinyLog'
+title: 'TinyLog table engine'
+doc_type: 'reference'
 ---
 
-# TinyLog
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# TinyLog table engine
+
+<CloudNotSupportedBadge/>
 
 The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
 
@@ -22,7 +27,7 @@ Queries are executed in a single stream. In other words, this engine is intended
 
 Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for larger datasets.
 
-## Creating a Table {#table_engines-tinylog-creating-a-table}
+## Creating a table {#table_engines-tinylog-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -35,7 +40,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
-## Writing the Data {#table_engines-tinylog-writing-the-data}
+## Writing the data {#table_engines-tinylog-writing-the-data}
 
 The `TinyLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
 
@@ -45,7 +50,7 @@ For each table ClickHouse writes the files:
 
 The `TinyLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
-## Example of Use {#table_engines-tinylog-example-of-use}
+## Example of use {#table_engines-tinylog-example-of-use}
 
 Creating a table:
 

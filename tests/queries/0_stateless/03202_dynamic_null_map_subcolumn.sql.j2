@@ -35,11 +35,11 @@ select count() from test where not empty(d.`Array(Array(Dynamic))`);
 select count() from test where d is NULL;
 select count() from test where not empty(d.`Tuple(a Array(Dynamic))`.a.String);
 
-select d, d.UInt64.null, d.String.null, d.`Array(Variant(String, UInt64))`.null from test format Null;
-select d.UInt64.null, d.String.null, d.`Array(Variant(String, UInt64))`.null from test format Null;
-select d.Int8.null, d.Date.null, d.`Array(String)`.null from test format Null;
-select d, d.UInt64.null, d.Date.null, d.`Array(Variant(String, UInt64))`.null, d.`Array(Variant(String, UInt64))`.size0, d.`Array(Variant(String, UInt64))`.UInt64.null from test format Null;
-select d.UInt64.null, d.Date.null, d.`Array(Variant(String, UInt64))`.null, d.`Array(Variant(String, UInt64))`.size0, d.`Array(Variant(String, UInt64))`.UInt64.null, d.`Array(Variant(String, UInt64))`.String.null from test format Null;
+select d, d.UInt64.null, d.String.null from test format Null;
+select d.UInt64.null, d.String.null from test format Null;
+select d.Int8.null, d.Date.null from test format Null;
+select d, d.UInt64.null, d.Date.null, d.`Array(Variant(String, UInt64))`.size0, d.`Array(Variant(String, UInt64))`.UInt64.null from test format Null;
+select d.UInt64.null, d.Date.null, d.`Array(Variant(String, UInt64))`.size0, d.`Array(Variant(String, UInt64))`.UInt64.null, d.`Array(Variant(String, UInt64))`.String.null from test format Null;
 select d, d.`Tuple(a UInt64, b String)`.a, d.`Array(Dynamic)`.`Variant(String, UInt64)`.UInt64.null, d.`Array(Variant(String, UInt64))`.UInt64.null from test format Null;
 select d.`Array(Dynamic)`.`Variant(String, UInt64)`.UInt64.null, d.`Array(Dynamic)`.size0, d.`Array(Variant(String, UInt64))`.UInt64.null from test format Null;
 select d.`Array(Array(Dynamic))`.size1, d.`Array(Array(Dynamic))`.UInt64.null, d.`Array(Array(Dynamic))`.`Map(String, Tuple(a UInt64))`.values.a from test format Null;

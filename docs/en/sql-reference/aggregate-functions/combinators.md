@@ -4,9 +4,8 @@ sidebar_label: 'Combinators'
 sidebar_position: 37
 slug: /sql-reference/aggregate-functions/combinators
 title: 'Aggregate Function Combinators'
+doc_type: 'reference'
 ---
-
-# Aggregate Function Combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
@@ -39,7 +38,8 @@ CREATE TABLE map_map(
     date Date,
     timeslot DateTime,
     status Map(String, UInt64)
-) ENGINE = Log;
+) ENGINE = MergeTree
+ORDER BY ();
 
 INSERT INTO map_map VALUES
     ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
@@ -81,15 +81,11 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─toTypeName(c)────────────────────────┬─c─┐
 │ SimpleAggregateFunction(any, UInt64) │ 0 │
 └──────────────────────────────────────┴───┘
@@ -106,8 +102,8 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
-- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeAggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningAccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
 
@@ -154,15 +150,11 @@ Type depends on the aggregate function used.
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avg(number)─┬─avgOrDefault(number)─┐
 │         nan │                    0 │
 └─────────────┴──────────────────────┘
@@ -170,9 +162,7 @@ Result:
 
 Also `-OrDefault` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -180,9 +170,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrDefaultIf(x, greater(x, 10))─┐
 │                              0.00 │
 └───────────────────────────────────┘
@@ -217,15 +205,11 @@ Type: `Nullable(aggregate function return type)`.
 
 Add `-orNull` to the end of aggregate function.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
 │              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
 └───────────────────┴───────────────────────────────┘
@@ -233,9 +217,7 @@ Result:
 
 Also `-OrNull` can be used with another combinators. It is useful when the aggregate function does not accept the empty input.
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (
@@ -243,9 +225,7 @@ FROM
 )
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─avgOrNullIf(x, greater(x, 10))─┐
 │                           ᴺᵁᴸᴸ │
 └────────────────────────────────┘

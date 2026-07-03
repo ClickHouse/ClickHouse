@@ -124,6 +124,18 @@ void HTTPSession::setTimeout(const Poco::Timespan& connectionTimeout, const Poco
 }
 
 
+void HTTPSession::setReceiveThrottler(const ThrottlerPtr& throttler)
+{
+	_receiveThrottler = throttler;
+	_socket.setReceiveThrottler(throttler);
+}
+
+void HTTPSession::setSendThrottler(const ThrottlerPtr& throttler)
+{
+	_sendThrottler = throttler;
+	_socket.setSendThrottler(throttler);
+}
+
 int HTTPSession::get()
 {
 	if (_pCurrent == _pEnd)
@@ -227,6 +239,8 @@ void HTTPSession::connect(const SocketAddress& address)
 	_socket.connect(address, _connectionTimeout);
 	_socket.setReceiveTimeout(_receiveTimeout);
 	_socket.setSendTimeout(_sendTimeout);
+	_socket.setReceiveThrottler(_receiveThrottler);
+	_socket.setSendThrottler(_sendThrottler);
 	_socket.setNoDelay(true);
 	// There may be leftover data from a previous (failed) request in the buffer,
 	// so we clear it.
@@ -273,6 +287,8 @@ StreamSocket HTTPSession::detachSocket()
 void HTTPSession::attachSocket(const StreamSocket& socket)
 {
 	_socket = socket;
+	_socket.setReceiveThrottler(_receiveThrottler);
+	_socket.setSendThrottler(_sendThrottler);
 }
 
 

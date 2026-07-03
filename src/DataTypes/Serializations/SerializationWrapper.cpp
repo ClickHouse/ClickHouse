@@ -88,6 +88,11 @@ void SerializationWrapper::deserializeBinary(IColumn & column, ReadBuffer & istr
     nested_serialization->deserializeBinary(column, istr, settings);
 }
 
+void SerializationWrapper::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    nested_serialization->serializeForHashCalculation(column, row_num, ostr);
+}
+
 void SerializationWrapper::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     nested_serialization->serializeTextEscaped(column, row_num, ostr, settings);

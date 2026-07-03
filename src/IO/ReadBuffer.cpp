@@ -1,6 +1,14 @@
-#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
+
+#include <Common/Logger.h>
+#include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Core/LogsLevel.h>
+
+#include <exception>
+
 
 namespace DB
 {
@@ -24,6 +32,15 @@ namespace
 
         const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
+        bool poll(size_t timeout_microseconds) override
+        {
+            if (hasPendingData())
+                return true;
+
+            in.position() = position();
+            return in.poll(timeout_microseconds);
+        }
+
     private:
         ReadBuffer & in;
         CustomData custom_data;
@@ -44,10 +61,18 @@ namespace
 
 void ReadBuffer::readStrict(char * to, size_t n)
 {
-    auto read_bytes = read(to, n);
+    size_t read_bytes = read(to, n);
     if (n != read_bytes)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
                         "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
+}
+
+void ReadBuffer::readBigStrict(char * to, size_t n)
+{
+    size_t read_bytes = readBig(to, n);
+    if (n != read_bytes)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data with readBig. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
 }
 
 void ReadBuffer::throwReadAfterEOF()
@@ -65,4 +90,56 @@ std::unique_ptr<ReadBuffer> wrapReadBufferPointer(ReadBufferPtr ptr)
     return std::make_unique<ReadBufferWrapper<ReadBufferPtr>>(*ptr, ReadBufferPtr{ptr});
 }
 
+void ReadBuffer::cancel()
+{
+    if (std::current_exception())
+        tryLogCurrentException(getLogger("ReadBuffer"), "ReadBuffer is canceled by the exception", LogsLevel::debug);
+    else
+        LOG_DEBUG(getLogger("ReadBuffer"), "ReadBuffer is canceled at {}", StackTrace().toString());
+
+    canceled = true;
+}
+
+bool ReadBuffer::next()
+{
+    chassert(!hasPendingData());
+    chassert(position() <= working_buffer.end());
+    chassert(!isCanceled(), "ReadBuffer is canceled. Can't read from it.");
+
+    bytes += offset();
+    bool res = false;
+    try
+    {
+        res = nextImpl();
+    }
+    catch (...)
+    {
+        cancel();
+        throw;
+    }
+
+    if (!res)
+    {
+        working_buffer = Buffer(pos, pos);
+    }
+    else
+    {
+        /// It might happen that we need to skip all data in the buffer,
+        /// in this case we should call next() one more time to load new data.
+        if (nextimpl_working_buffer_offset == working_buffer.size())
+        {
+            pos = working_buffer.end();
+            nextimpl_working_buffer_offset = 0;
+            return next();
+        }
+
+        pos = working_buffer.begin() + std::min(nextimpl_working_buffer_offset, working_buffer.size());
+        chassert(position() < working_buffer.end());
+    }
+    nextimpl_working_buffer_offset = 0;
+
+    chassert(position() <= working_buffer.end());
+
+    return res;
+}
 }

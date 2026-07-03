@@ -4,6 +4,7 @@ sidebar_label: 'Quotas'
 sidebar_position: 51
 slug: /operations/quotas
 title: 'Quotas'
+doc_type: 'guide'
 ---
 
 :::note Quotas in ClickHouse Cloud
@@ -57,10 +58,12 @@ The resource consumption calculated for each interval is output to the server lo
         <queries>1000</queries>
         <query_selects>100</query_selects>
         <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
         <errors>100</errors>
         <result_rows>1000000000</result_rows>
         <read_rows>100000000000</read_rows>
         <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
     </interval>
 
     <interval>
@@ -71,7 +74,9 @@ The resource consumption calculated for each interval is output to the server lo
         <query_inserts>10000</query_inserts>
         <errors>1000</errors>
         <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
         <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
         <execution_time>7200</execution_time>
     </interval>
 </statbox>
@@ -93,9 +98,19 @@ Here are the amounts that can be restricted:
 
 `result_rows` – The total number of rows given as a result.
 
+`result_bytes` - The total size of rows given as a result.
+
 `read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
+`read_bytes` - The total size read from tables for running the query on all remote servers.
+
+`written_bytes` - The total size of a writing operation. 
+
 `execution_time` – The total query execution time, in seconds (wall time).
+
+`failed_sequential_authentications` - The total number of sequential authentication errors.
+
+`queries_per_normalized_hash` – The maximum number of executions of any single normalized query. Normalized queries are queries with literals replaced by placeholders, so `SELECT 1` and `SELECT 2` are considered the same normalized query. This limit is tracked per distinct normalized query pattern independently.
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
@@ -112,9 +127,40 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
 
         You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
     -->
     <keyed />
 ```
+
+You can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket. In the XML configuration this is written as `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+The same can be expressed with the DDL syntax:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+In this example, the user can execute up to 100 instances of each distinct normalized query per hour. `SELECT number FROM numbers(1)` and `SELECT number FROM numbers(2)` share the same bucket (because they have the same normalized form), but `SELECT number, number FROM numbers(1)` uses a separate bucket.
 
 The quota is assigned to users in the 'users' section of the config. See the section "Access rights".
 

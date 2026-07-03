@@ -61,7 +61,7 @@ struct KeysStorageFetchResult
 };
 
 using SimpleKeysStorageFetchResult = KeysStorageFetchResult<UInt64>;
-using ComplexKeysStorageFetchResult = KeysStorageFetchResult<StringRef>;
+using ComplexKeysStorageFetchResult = KeysStorageFetchResult<std::string_view>;
 
 class ICacheDictionaryStorage
 {
@@ -98,19 +98,19 @@ public:
 
     /// Fetch columns for keys, this method is not write thread safe
     virtual ComplexKeysStorageFetchResult fetchColumnsForKeys(
-        const PaddedPODArray<StringRef> & keys,
+        const PaddedPODArray<std::string_view> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests,
         IColumn::Filter * default_mask) = 0;
 
     /// Fetch columns for keys, this method is not write thread safe
-    virtual void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) = 0;
+    virtual void insertColumnsForKeys(const PaddedPODArray<std::string_view> & keys, Columns columns) = 0;
 
     /// Insert default keys
-    virtual void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) = 0;
+    virtual void insertDefaultKeys(const PaddedPODArray<std::string_view> & keys) = 0;
 
     /// Return cached complex keys.
     /// It is client responsibility to ensure keys proper lifetime.
-    virtual PaddedPODArray<StringRef> getCachedComplexKeys() const = 0;
+    virtual PaddedPODArray<std::string_view> getCachedComplexKeys() const = 0;
 
     /// Return size of keys in storage
     virtual size_t getSize() const = 0;

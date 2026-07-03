@@ -5,16 +5,27 @@
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <string>
 #include <memory>
 #include <hdfs/hdfs.h>
 #include <base/types.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 
+namespace Poco
+{
+namespace Util
+{
+class AbstractConfiguration;
+}
+}
 
 namespace DB
 {
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
+struct ReadSettings;
+
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
@@ -30,7 +41,8 @@ public:
         const ReadSettings & read_settings_,
         size_t read_until_position_ = 0,
         bool use_external_buffer = false,
-        std::optional<size_t> file_size = std::nullopt);
+        std::optional<size_t> file_size = std::nullopt,
+        BlobStorageLogWriterPtr blob_storage_log_ = {});
 
     ~ReadBufferFromHDFS() override;
 
@@ -53,6 +65,15 @@ public:
 private:
     std::unique_ptr<ReadBufferFromHDFSImpl> impl;
     bool use_external_buffer;
+
+    String hdfs_uri;
+    String hdfs_file_path;
+    BlobStorageLogWriterPtr blob_storage_log;
+    /// `mutable` because they are updated from `readBigAt`, which is a `const` override.
+    mutable std::atomic<size_t> total_bytes_read = 0;
+    mutable std::atomic<size_t> total_read_microseconds = 0;
+    mutable std::atomic<bool> read_attempted = false;
+    mutable std::atomic<bool> read_failed = false;
 };
 }
 

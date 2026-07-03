@@ -1,5 +1,5 @@
-#include "DNSPTRResolverProvider.h"
-#include "CaresPTRResolver.h"
+#include <Common/DNSPTRResolverProvider.h>
+#include <Common/CaresPTRResolver.h>
 
 namespace DB
 {

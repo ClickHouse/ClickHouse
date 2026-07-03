@@ -1,6 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Processors/Formats/Impl/FormRowInputFormat.h>
-#include "Formats/EscapingRuleUtils.h"
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 
 #include <Poco/URI.h>
@@ -24,7 +24,7 @@ namespace
     }
 }
 
-FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
+FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     size_t num_columns = header.columns();
@@ -65,20 +65,20 @@ void FormRowInputFormat::readField(size_t index, MutableColumns & columns)
 void FormRowInputFormat::readFormData(MutableColumns & columns)
 {
     size_t index = 0;
-    StringRef name_ref;
+    std::string_view name_ref;
     while (true)
     {
         if (in->eof())
             break;
 
         auto tmp = readFieldName(*in);
-        name_ref = StringRef(tmp);
+        name_ref = std::string_view(tmp);
         auto * it = name_map.find(name_ref);
 
         if (!it)
         {
             if (!format_settings.skip_unknown_fields)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing Form format: {}", name_ref);
 
             /// Skip the value if key is not found.
             String encoded_str;
@@ -132,7 +132,7 @@ FormSchemaReader::FormSchemaReader(ReadBuffer & in_, const FormatSettings & form
 {
 }
 
-NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
+static NamesAndTypesList readRowAndGetNamesAndDataTypesForFormRow(ReadBuffer & in, const FormatSettings & settings)
 {
     NamesAndTypesList names_and_types;
     String value;
@@ -159,6 +159,7 @@ NamesAndTypesList FormSchemaReader::readRowAndGetNamesAndDataTypes(bool & eof)
     return readRowAndGetNamesAndDataTypesForFormRow(in, format_settings);
 }
 
+void registerInputFormatForm(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory)
 {
     factory.registerInputFormat("Form", [](
@@ -167,10 +168,47 @@ void registerInputFormatForm(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<FormRowInputFormat>(buf, sample, std::move(params),settings);
+        return std::make_shared<FormRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params),settings);
     });
+
+    factory.setDocumentation("Form", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✗      |       |
+
+## Description {#description}
+
+The `Form` format can be used to read a single record in the application/x-www-form-urlencoded format 
+in which data is formatted as `key1=value1&key2=value2`.
+
+## Example usage {#example-usage}
+
+Given a file `data.tmp` placed in the `user_files` path with some URL encoded data:
+
+```text title="data.tmp"
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql title="Query"
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
+void registerFormSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Form", [](ReadBuffer & buffer, const FormatSettings & settings)

@@ -1,9 +1,10 @@
 ---
-description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
-sidebar_label: 'Usage Recommendations'
+description: 'Page describing usage recommendations for open-source ClickHouse'
+sidebar_label: 'OSS usage recommendations'
 sidebar_position: 58
 slug: /operations/tips
-title: 'Usage Recommendations'
+title: 'OSS usage recommendations'
+doc_type: 'guide'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
@@ -51,6 +52,7 @@ When using ClickHouse with less than 16GB of RAM, we recommend the following:
 - Lower the `max_block_size` to `8192`. Values as low as `1024` can still be practical.
 - Lower `max_download_threads` to `1`.
 - Set `input_format_parallel_parsing` and `output_format_parallel_formatting` to `0`.
+- disable writing in log tables, as it keeps the background merge task reserving RAM to perform merges of log tables. Disable `asynchronous_metric_log`, `metric_log`, `text_log`, `trace_log`.
 
 Additional notes:
 - To flush the memory cached by the memory allocator, you can run the `SYSTEM JEMALLOC PURGE`
@@ -121,8 +123,7 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 
 ## Huge Pages {#huge-pages}
 
-If you are using old Linux kernel, disable transparent huge pages. It interferes with memory allocator, which leads to significant performance degradation.
-On newer Linux kernels transparent huge pages are alright.
+Always set transparent huge pages to `madvise`. On older kernels (before 5.9), THP set to `always` can cause significant performance degradation — the kernel spends excessive time on memory defragmentation, especially on systems with 64 GB+ of RAM. Kernel 5.9 introduced proactive compaction, which handles THP much better, but ClickHouse still warns at startup if THP is set to `always`, so `madvise` is the recommended setting regardless of kernel version.
 
 ```bash
 $ echo 'madvise' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled

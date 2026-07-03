@@ -5,6 +5,8 @@
 
 #include <benchmark/benchmark.h>
 
+#include <unordered_map>
+
 class OldSortedStringDictionary
 {
 public:

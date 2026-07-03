@@ -7,6 +7,7 @@ create table t (i int, j int, k int, projection p (select * order by j)) engine 
 insert into t select number, number, number from numbers(10);
 
 set optimize_use_projections = 1, max_rows_to_read = 3;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 select * from t where i < 5 and j in (1, 2);
 

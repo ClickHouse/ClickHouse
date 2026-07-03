@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 SELECT [3,4,5][1]::Int32;
 EXPLAIN SYNTAX SELECT [3,4,5][1]::Int32;
 

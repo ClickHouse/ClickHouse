@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
+#include <base/FnTraits.h>
 
 namespace DB
 {
@@ -13,7 +17,6 @@ struct ColumnWithTypeAndName;
 class TableJoin;
 class IColumn;
 
-using ColumnRawPtrs = std::vector<const IColumn *>;
 using ColumnPtrMap = std::unordered_map<String, ColumnPtr>;
 using ColumnRawPtrMap = std::unordered_map<String, const IColumn *>;
 using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
@@ -25,37 +28,47 @@ namespace JoinCommon
 class JoinMask
 {
 public:
+    enum class Kind
+    {
+        AllTrue,
+        AllFalse,
+        Unknown,
+    };
+
     explicit JoinMask()
         : column(nullptr)
+        , size(0)
+        , kind(Kind::Unknown)
     {}
 
-    explicit JoinMask(bool value, size_t size)
-        : column(ColumnUInt8::create(size, value))
+    JoinMask(bool value, size_t size_)
+        : column(nullptr)
+        , size(size_)
+        , kind(value ? Kind::AllTrue : Kind::AllFalse)
     {}
 
     explicit JoinMask(ColumnPtr col)
         : column(col)
+        , size(col ? col->size() : 0)
+        , kind(Kind::Unknown)
     {}
 
-    bool hasData()
-    {
-        return column != nullptr;
-    }
+    bool hasData() { return column != nullptr || kind != Kind::Unknown; }
 
-    UInt8ColumnDataPtr getData()
-    {
-        if (column)
-            return &assert_cast<const ColumnUInt8 &>(*column).getData();
-        return nullptr;
-    }
+    size_t getSize() const { return size; }
 
     bool isRowFiltered(size_t row) const
     {
-        return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
+        chassert(!column || row < size);
+        return (kind == Kind::AllFalse) || (kind == Kind::Unknown && !assert_cast<const ColumnUInt8 &>(*column).getData()[row]);
     }
+
+    Kind getKind() const { return kind; }
 
 private:
     ColumnPtr column;
+    size_t size;
+    Kind kind;
 };
 
 
@@ -69,6 +82,9 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
 ColumnPtr emptyNotNullableClone(const ColumnPtr & column);
 ColumnPtr materializeColumn(const Block & block, const String & name);
 Columns materializeColumns(const Block & block, const Names & names);
+/// Like materializeColumns, but keeps LowCardinality columns as-is (only removes Const/Sparse). Used
+/// for the probe side of single-LowCardinality-column joins, whose key getter consumes the dictionary.
+Columns materializeColumnsKeepLowCardinality(const Block & block, const Names & names);
 ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names);
 ColumnRawPtrs getRawPointers(const Columns & columns);
 void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys);
@@ -101,6 +117,17 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name);
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column);
+
+template <Fn<size_t(size_t)> Sharder>
+IColumn::Selector hashToSelector(const PaddedPODArray<UInt32> & hashes, Sharder sharder)
+{
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
 
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Block & block, size_t num_shards);
 Blocks scatterBlockByHash(const Strings & key_columns_names, const Blocks & blocks, size_t num_shards);

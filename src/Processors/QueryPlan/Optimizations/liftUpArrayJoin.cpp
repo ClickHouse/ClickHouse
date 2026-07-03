@@ -8,7 +8,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -34,8 +34,6 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (split_actions.first.trivial())
         return 0;
 
-    auto description = parent->getStepDescription();
-
     /// Add new expression step before ARRAY JOIN.
     /// Expression/Filter -> ArrayJoin -> Something
     auto & node = nodes.emplace_back();
@@ -45,16 +43,18 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputHeader(),
                                                  std::move(split_actions.first));
-    node.step->setStepDescription(description);
+    node.step->setStepDescription(*parent);
     array_join_step->updateInputHeader(node.step->getOutputHeader());
 
+    QueryPlanStepPtr new_step;
     if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
+        new_step = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
     else
-        parent = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
+        new_step = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
                                               filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
 
-    parent->setStepDescription(description + " [split]");
+    new_step->setStepDescription(fmt::format("{} [split]", parent->getStepDescription()), settings.max_step_description_length);
+    parent = std::move(new_step);
     return 3;
 }
 

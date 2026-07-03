@@ -4,7 +4,6 @@
 #include <memory>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
-#include "Core/Settings.h"
 
 
 namespace DB
@@ -28,6 +27,8 @@ public:
     LimitReadBuffer(std::unique_ptr<ReadBuffer> in_, Settings settings);
 
     ~LimitReadBuffer() override;
+
+    bool poll(size_t timeout_microseconds) override;
 
 private:
     ReadBuffer * in;

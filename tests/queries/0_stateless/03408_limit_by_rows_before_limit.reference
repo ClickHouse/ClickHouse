@@ -1,0 +1,161 @@
+-- Assert total number of groups and records in unsorted
+10	50
+
+-- Assert rows_before_limit for unsorted ORDER BY + LIMIT BY + LIMIT
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3
+}
+
+-- Assert rows_before_limit for unsorted ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+
+-- Assert rows_before_limit for unsorted HAVING + ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "40"],
+		[1, "41"],
+		[2, "42"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 7
+}
+
+-- Assert total number of groups and records in sorted
+10	50
+
+-- Assert rows_before_limit for sorted ORDER BY + LIMIT BY + LIMIT
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3
+}
+
+-- Assert rows_before_limit for sorted ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+
+-- Assert rows_before_limit for sorted HAVING + ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "40"],
+		[1, "41"],
+		[2, "42"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 7
+}

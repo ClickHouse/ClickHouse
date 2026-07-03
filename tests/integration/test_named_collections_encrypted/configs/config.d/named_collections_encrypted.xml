@@ -9,4 +9,6 @@
       <key1>value1</key1>
     </collection1>
   </named_collections>
+
+  <display_secrets_in_show_and_select>1</display_secrets_in_show_and_select>
 </clickhouse>

@@ -4,9 +4,8 @@ sidebar_label: 'MOVE'
 sidebar_position: 54
 slug: /sql-reference/statements/move
 title: 'MOVE access entity statement'
+doc_type: 'reference'
 ---
-
-# MOVE access entity statement
 
 This statement allows to move an access entity from one access storage to another.
 
@@ -17,11 +16,11 @@ MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO a
 ```
 
 Currently, there are five access storages in ClickHouse:
- - `local_directory`
- - `memory`
- - `replicated`
- - `users_xml` (ro)
- - `ldap` (ro)
+- `local_directory`
+- `memory`
+- `replicated`
+- `users_xml` (ro)
+- `ldap` (ro)
 
 Examples:
 

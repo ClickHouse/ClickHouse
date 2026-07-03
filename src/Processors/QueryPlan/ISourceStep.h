@@ -8,7 +8,7 @@ namespace DB
 class ISourceStep : public IQueryPlanStep
 {
 public:
-    explicit ISourceStep(Header output_header_);
+    explicit ISourceStep(SharedHeader output_header_);
 
     ISourceStep(const ISourceStep &) = default;
     ISourceStep(ISourceStep &&) = default;

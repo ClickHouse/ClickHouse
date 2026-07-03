@@ -1,0 +1,52 @@
+{
+	"meta":
+	[
+		{
+			"name": "age",
+			"type": "Int16"
+		}
+	],
+
+	"data":
+	[
+		{
+			"age": 33
+		},
+		{
+			"age": 48
+		},
+		{
+			"age": 50
+		}
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3
+}
+{
+	"meta":
+	[
+		{
+			"name": "service_name",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		{
+			"service_name": "service1"
+		},
+		{
+			"service_name": "service2"
+		},
+		{
+			"service_name": "service3"
+		}
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 3
+}

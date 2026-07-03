@@ -5,9 +5,8 @@ sidebar_label: 'Enum'
 sidebar_position: 20
 slug: /sql-reference/data-types/enum
 title: 'Enum'
+doc_type: 'reference'
 ---
-
-# Enum
 
 Enumerated type consisting of named values.
 
@@ -76,7 +75,7 @@ Ok.
 ```
 
 ```sql
-INSERT INTO t_enum values('a')
+INSERT INTO t_enum VALUES('a')
 ```
 
 ```text
@@ -143,7 +142,7 @@ ENGINE = TinyLog
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
 ```sql
-INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+INSERT INTO t_enum_nullable VALUES('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.
@@ -163,3 +162,26 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+
+## ADD ENUM VALUES {#add-enum-values}
+
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](../../sql-reference/statements/alter/column.md#modify-column-add-enum-values)
+
+```sql
+CREATE TABLE enum
+(
+    x Enum('One' = 1, 'Two', 'Three')
+) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
+SHOW CREATE TABLE enum;
+```
+
+```text
+┌─statement────────────────────────────────────────────────────────────────┐
+│CREATE TABLE default.enum                                                 │
+│(                                                                         │
+│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
+│)                                                                         │
+│ENGINE = Memory                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```

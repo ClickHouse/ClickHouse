@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/Compaction/PartProperties.h>
 
 namespace DB
 {
@@ -13,6 +14,7 @@ public:
 
     std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override;
     std::expected<void, PreformattedMessage> canUsePartInMerges(const MergeTreeDataPartPtr & part) const;
+    PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 protected:
     const ReplicatedMergeTreeQueue & queue;
@@ -49,7 +51,7 @@ public:
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with
     /// smallest alter version. This required, because we have to execute alter mutations sequentially and
     /// don't glue them together. Alter is rare operation, so it shouldn't affect performance.
-    std::optional<std::pair<Int64, int>> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+    std::optional<std::pair<Int64, int>> getExpectedMutationVersion(const MergeTreeData::DataPartPtr & part) const;
 
     bool isMutationFinished(const std::string & znode_name, const std::map<String, int64_t> & block_numbers,
                             std::unordered_set<String> & checked_partitions_cache) const;

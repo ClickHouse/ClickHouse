@@ -21,9 +21,19 @@ static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HI
 using ValueMaskingFunc = std::function<std::string(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
+    /// Catalog credentials
     {"catalog_credential", DEFAULT_MASKING_RULE},
     {"auth_header", DEFAULT_MASKING_RULE},
+    /// AWS credentials
     {"aws_access_key_id", DEFAULT_MASKING_RULE},
     {"aws_secret_access_key", DEFAULT_MASKING_RULE},
+    /// OneLake credentials
+    {"onelake_client_secret", DEFAULT_MASKING_RULE},
+    /// Google credentials
+    {"google_adc_client_secret", DEFAULT_MASKING_RULE},
+    {"google_adc_refresh_token", DEFAULT_MASKING_RULE},
+    /// DLF credentials
+    {"dlf_access_key_id", DEFAULT_MASKING_RULE},
+    {"dlf_access_key_secret", DEFAULT_MASKING_RULE},
 };
 }

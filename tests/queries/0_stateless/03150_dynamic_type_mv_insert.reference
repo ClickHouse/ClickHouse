@@ -1,21 +1,12 @@
 1	2024-01-01	Date
-2	1704056400	Decimal(18, 3)
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
 3	1	Float32
 4	2	Float64
 
 1	2024-01-01	Date
 1	2024-01-01	Date
-2	1704056400	Decimal(18, 3)
-2	1704056400	Decimal(18, 3)
-3	1	Float32
-3	1	Float32
-4	2	Float64
-4	2	Float64
-
-1	2024-01-01	Date
-1	2024-01-01	Date
-2	1704056400	Decimal(18, 3)
-2	1704056400	Decimal(18, 3)
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
 3	1	Float32
 3	1	Float32
 4	2	Float64
@@ -23,10 +14,19 @@
 
 1	2024-01-01	Date
 1	2024-01-01	Date
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
+3	1	Float32
+3	1	Float32
+4	2	Float64
+4	2	Float64
+
 1	2024-01-01	Date
-2	1704056400	Decimal(18, 3)
-2	1704056400	Decimal(18, 3)
-2	1704056400	Decimal(18, 3)
+1	2024-01-01	Date
+1	2024-01-01	Date
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
+2	2024-01-01 00:00:00.000	DateTime64(3, \'Asia/Istanbul\')
 3	1	Float32
 3	1	Float32
 3	1	Float32

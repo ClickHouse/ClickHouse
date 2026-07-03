@@ -6,6 +6,7 @@ keywords: ['JSON']
 output_format: true
 slug: /interfaces/formats/JSON
 title: 'JSON'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -23,7 +24,7 @@ The `JSON` format returns the following:
 | `meta`                       | Column names and types.                                                                                                                                                                                                                    |
 | `data`                       | Data tables                                                                                                                                                                                                                                |
 | `rows`                       | The total number of output rows.                                                                                                                                                                                                           |
-| `rows_before_limit_at_least` | The minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains `GROUP BY`, rows_before_limit_at_least is the exact number of rows there would have been without a `LIMIT`. |
+| `rows_before_limit_at_least` | The lower estimate of the number of rows there would have been without LIMIT. Output only if the query contains LIMIT. This estimate is calculated from the blocks of data processed in the query pipeline before the limit transform, but could then be discarded by the limit transform. If the blocks didn't even reach the limit transform in the query pipeline, they don't participate in the estimation. |
 | `statistics`                 | Statistics such as `elapsed`, `rows_read`, `bytes_read`.                                                                                                                                                                                   |
 | `totals`                     | Total values (when using WITH TOTALS).                                                                                                                                                                                                     |
 | `extremes`                   | Extreme values (when extremes are set to 1).                                                                                                                                                                                               |
@@ -39,7 +40,7 @@ To remove the quotes, you can set the configuration parameter [`output_format_js
 
 ClickHouse supports [NULL](/sql-reference/syntax.md), which is displayed as `null` in the JSON output. To enable `+nan`, `-nan`, `+inf`, `-inf` values in output, set the [output_format_json_quote_denormals](/operations/settings/settings-formats.md/#output_format_json_quote_denormals) to `1`.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Example:
 
@@ -97,12 +98,12 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 For JSON input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
-## See Also {#see-also}
+## See also {#see-also}
 
 - [JSONEachRow](/interfaces/formats/JSONEachRow) format
 - [output_format_json_array_of_rows](/operations/settings/settings-formats.md/#output_format_json_array_of_rows) setting

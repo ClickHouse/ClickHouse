@@ -5,31 +5,32 @@ sidebar_label: 'postgresql'
 sidebar_position: 160
 slug: /sql-reference/table-functions/postgresql
 title: 'postgresql'
+doc_type: 'reference'
 ---
-
-# postgresql Table Function
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
-**Syntax**
+## Syntax {#syntax}
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
-**Parameters**
+## Arguments {#arguments}
 
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-- `schema` — Non-default table schema. Optional.
-- `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
+| Argument      | Description                                                                |
+|---------------|----------------------------------------------------------------------------|
+| `host:port`   | PostgreSQL server address.                                                 |
+| `database`    | Remote database name.                                                      |
+| `table`       | Remote table name, or a query passed to PostgreSQL as is (see [Passing a query instead of a table name](#passing-a-query)). |
+| `user`        | PostgreSQL user.                                                           |
+| `password`    | User password.                                                             |
+| `schema`      | Non-default table schema. Optional.                                        |
+| `on_conflict` | Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. |
 
-Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
-**Returned Value**
+## Returned value {#returned_value}
 
 A table object with the same columns as the original PostgreSQL table.
 
@@ -44,6 +45,23 @@ In the `INSERT` query to distinguish table function `postgresql(...)` from table
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the third argument can be a `SELECT` query that is passed to PostgreSQL as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`PostgreSQL`](/engines/table-engines/integrations/postgresql) table engine.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
@@ -67,7 +85,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 Supports replicas priority for PostgreSQL dictionary source. The bigger the number in map, the less the priority. The highest priority is `0`.
 
-**Examples**
+## Examples {#examples}
 
 Table in PostgreSQL:
 
@@ -98,7 +116,7 @@ Selecting data from ClickHouse using plain arguments:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION mypg AS
@@ -145,16 +163,11 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-**See Also**
+## Related {#related}
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/postgresql)
 
-## Related content {#related-content}
-
-- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
-- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
-
-### Replicating or migrating Postgres data with with PeerDB {#replicating-or-migrating-postgres-data-with-with-peerdb}
+### Replicating or migrating Postgres data with PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
 
 > In addition to table functions, you can always use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).

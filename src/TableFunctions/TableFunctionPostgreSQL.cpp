@@ -6,11 +6,11 @@
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Core/Settings.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseRemoteDescription.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -27,6 +27,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -38,12 +39,16 @@ public:
     static constexpr auto name = "postgresql";
     std::string getName() const override { return name; }
 
+    /// The 3rd argument may be a query passed to PostgreSQL as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {2}; }
+
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
             const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "PostgreSQL"; }
+    const char * getStorageEngineName() const override { return "PostgreSQL"; }
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
@@ -53,12 +58,18 @@ private:
 };
 
 StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+        ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not contact
+    /// the external database for schema inference (which could run an expensive or volatile query) only to fail.
+    if (is_insert_query && configuration->table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'postgresql' table function: it represents the result of a query passed to PostgreSQL, which is read-only");
+
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
-        configuration->table,
+        configuration->table_or_query,
         cached_columns,
         ConstraintsDescription{},
         String{},
@@ -73,7 +84,11 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table, configuration->schema, context);
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
+    return StoragePostgreSQL::getTableStructureFromData(connection_pool, configuration->table_or_query, configuration->schema, context);
 }
 
 
@@ -99,7 +114,7 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
 
 void registerTableFunctionPostgreSQL(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionPostgreSQL>();
+    factory.registerFunction<TableFunctionPostgreSQL>({});
 }
 
 }

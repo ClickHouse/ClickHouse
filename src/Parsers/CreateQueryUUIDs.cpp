@@ -1,6 +1,7 @@
 #include <Parsers/CreateQueryUUIDs.h>
 
 #include <Core/ServerSettings.h>
+#include <Core/UUID.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -11,10 +12,49 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace ServerSetting
 {
-extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
+    extern const ServerSettingsBool storage_shared_set_join_use_inner_uuid;
 }
+
+namespace
+{
+    ViewTarget::Kind parseViewTargetKindFromString(std::string_view str)
+    {
+        if (auto kind = magic_enum::enum_cast<ViewTarget::Kind>(str))
+        {
+            return *kind;
+        }
+        else if (str == "to")
+        {
+            return ViewTarget::To;
+        }
+        else if (str == "inner")
+        {
+            return ViewTarget::Inner;
+        }
+        else if (str == "data")
+        {
+            return ViewTarget::Samples;
+        }
+        else if (str == "tags")
+        {
+            return ViewTarget::Tags;
+        }
+        else if (str == "metrics")
+        {
+            return ViewTarget::Metrics;
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
+    }
+}
+
 
 CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_random, bool force_random)
 {
@@ -66,7 +106,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
 
             if (query.is_time_series_table)
             {
-                generate_target_uuid(ViewTarget::Data);
+                generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
             }
@@ -102,7 +142,7 @@ String CreateQueryUUIDs::toString() const
     for (const auto & [kind, inner_uuid] : targets_inner_uuids)
     {
         if (inner_uuid != UUIDHelpers::Nil)
-            add_name_and_uuid_to_string(::DB::toString(kind), inner_uuid);
+            add_name_and_uuid_to_string(magic_enum::enum_name(kind), inner_uuid);
     }
     out << "}";
     return out.str();
@@ -115,7 +155,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
     skipWhitespaceIfAny(in);
     in >> "{";
     skipWhitespaceIfAny(in);
-    char c;
+    char c = 0;
     while (in.peek(c) && c != '}')
     {
         String name;
@@ -132,8 +172,7 @@ CreateQueryUUIDs CreateQueryUUIDs::fromString(const String & str)
         }
         else
         {
-            ViewTarget::Kind kind;
-            parseFromString(kind, name);
+            ViewTarget::Kind kind = parseViewTargetKindFromString(name);
             res.setTargetInnerUUID(kind, parse<UUID>(value));
         }
         if (in.peek(c) && c == ',')
@@ -180,7 +219,7 @@ void CreateQueryUUIDs::copyToQuery(ASTCreateQuery & query) const
     if (!targets_inner_uuids.empty())
     {
         if (!query.targets)
-            query.set(query.targets, std::make_shared<ASTViewTargets>());
+            query.set(query.targets, make_intrusive<ASTViewTargets>());
 
         for (const auto & [kind, inner_uuid] : targets_inner_uuids)
         {

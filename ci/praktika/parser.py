@@ -22,6 +22,8 @@ class WorkflowYaml:
         gh_app_auth: bool
         run_unless_cancelled: bool
         parameter: Any
+        secret_names_gh: List[str] = dataclasses.field(default_factory=list)
+        variable_names_gh: List[str] = dataclasses.field(default_factory=list)
 
         def __repr__(self):
             return self.name
@@ -50,9 +52,9 @@ class WorkflowYaml:
     artifact_to_config: Dict[str, ArtifactYaml]
     secret_names_gh: List[str]
     variable_names_gh: List[str]
-    enable_cache: bool
     cron_schedules: List[str]
     dispatch_inputs: List[Workflow.Config.InputConfig]
+    config: Workflow.Config
 
 
 class WorkflowConfigParser:
@@ -78,14 +80,12 @@ class WorkflowConfigParser:
             variable_names_gh=[],
             job_to_config={},
             artifact_to_config={},
-            enable_cache=False,
             cron_schedules=config.cron_schedules,
             dispatch_inputs=config.inputs,
+            config=self.config,
         )
 
     def parse(self):
-        self.workflow_yaml_config.enable_cache = self.config.enable_cache
-
         # populate WorkflowYaml.branches
         if self.config.event in (Workflow.Event.PUSH,):
             assert (
@@ -188,6 +188,14 @@ class WorkflowConfigParser:
                     self.workflow_yaml_config.artifact_to_config[
                         artifact_name
                     ].required_by.append(job.name)
+            if job.run_after:
+                for dep_name in job.run_after:
+                    assert (
+                        dep_name in self.workflow_yaml_config.job_to_config
+                    ), f"run_after dependency [{dep_name}] is not a job name, job [{job.name}], workflow [{self.workflow_name}]"
+                    self.workflow_yaml_config.artifact_to_config[
+                        dep_name
+                    ].required_by.append(job.name)
 
         # populate JobYaml.addons
         for job in self.config.jobs:
@@ -251,6 +259,19 @@ class WorkflowConfigParser:
                 self.workflow_yaml_config.secret_names_gh.append(secret_config.name)
             elif secret_config.is_gh_var():
                 self.workflow_yaml_config.variable_names_gh.append(secret_config.name)
+
+        # populate per-job secrets
+        for job in self.config.jobs:
+            for secret_config in job.secrets:
+                if secret_config.is_gh_secret():
+                    self.workflow_yaml_config.job_to_config[
+                        job.name
+                    ].secret_names_gh.append(secret_config.name)
+                elif secret_config.is_gh_var():
+                    self.workflow_yaml_config.job_to_config[
+                        job.name
+                    ].variable_names_gh.append(secret_config.name)
+
         return self
 
 

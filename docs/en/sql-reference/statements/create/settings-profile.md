@@ -4,6 +4,7 @@ sidebar_label: 'SETTINGS PROFILE'
 sidebar_position: 43
 slug: /sql-reference/statements/create/settings-profile
 title: 'CREATE SETTINGS PROFILE'
+doc_type: 'reference'
 ---
 
 Creates [settings profiles](../../../guides/sre/user-management/index.md#settings-profiles-management) that can be assigned to a user or a role.

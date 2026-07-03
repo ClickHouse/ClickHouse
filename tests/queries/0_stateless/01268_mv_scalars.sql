@@ -4,13 +4,17 @@ DROP TABLE IF EXISTS right_table;
 DROP TABLE IF EXISTS dest_table;
 DROP TABLE IF EXISTS src_table;
 DROP VIEW IF EXISTS dst_mv;
+DROP VIEW IF EXISTS dst_mv_1;
+DROP VIEW IF EXISTS dst_mv_2;
+
 
 create table src_table Engine=Memory as system.numbers;
-CREATE MATERIALIZED VIEW dst_mv Engine=Memory as select *, (SELECT count() FROM src_table) AS cnt FROM src_table;
-insert into src_table select * from numbers(2);
-insert into src_table select * from numbers(2);
-insert into src_table select * from numbers(2);
-select * from dst_mv order by number;
+CREATE MATERIALIZED VIEW dst_mv_1 Engine=Memory as select *, (SELECT count() FROM src_table) AS cnt FROM src_table;
+insert into src_table select 1 from numbers(3);
+insert into src_table select 2 from numbers(2);
+insert into src_table select 3 from numbers(1);
+select * from dst_mv_1 order by number;
+
 
 CREATE TABLE dest_table (`Date` Date, `Id` UInt64, `Units` Float32) ENGINE = Memory;
 create table left_table as dest_table;
@@ -37,4 +41,6 @@ drop table left_table;
 drop table right_table;
 drop table dest_table;
 drop table src_table;
-drop view dst_mv;
+drop view if exists dst_mv;
+drop view if exists dst_mv_1;
+drop view if exists dst_mv_2;

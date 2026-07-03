@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-#include <Parsers/ASTIdentifier.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -10,7 +8,7 @@ namespace DB
 
 class Context;
 
-/** Implements a table engine for the system "iceberg_history".
+/** Implements a table engine for Iceberg tables. It gives information about the various snapshots of Iceberg tables created in ClickHouse.
  *
  * db_name String
  * table_name String
@@ -31,7 +29,13 @@ public:
 protected:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
-    void fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const override;
+    void fillData(
+        [[maybe_unused]] MutableColumns & res_columns,
+        [[maybe_unused]] ContextPtr context,
+        [[maybe_unused]] const ActionsDAG::Node * predicate,
+        std::vector<UInt8>) const override;
+
+    Block getFilterSampleBlock() const override;
 };
 
 }

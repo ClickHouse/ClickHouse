@@ -7,6 +7,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
@@ -14,7 +15,6 @@
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 #include <base/types.h>
-#include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -22,7 +22,6 @@
 #include <Poco/URI.h>
 #include <Poco/URIStreamFactory.h>
 #include <Common/RemoteHostFilter.h>
-#include "config.h"
 #include <Common/config_version.h>
 
 #include <filesystem>
@@ -30,8 +29,9 @@
 namespace DB
 {
 
-class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
+    friend class BuilderRWBufferFromHTTP;
 public:
     /// Information from HTTP response header.
     struct HTTPFileInfo
@@ -41,6 +41,12 @@ public:
         std::optional<time_t> last_modified;
         bool seekable = false;
     };
+
+    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using NextCallback = std::function<void(size_t)>;
+    using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
+
+    const Poco::URI & getCurrentURI() const { return current_uri; }
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -83,7 +89,8 @@ private:
     const bool http_skip_not_found_url;
     bool has_not_found_url = false;
 
-    std::function<void(std::ostream &)> out_stream_callback;
+    OutStreamCallback out_stream_callback;
+    RedirectCallback redirect_callback;
 
     Poco::URI current_uri;
     size_t redirects = 0;
@@ -91,9 +98,9 @@ private:
     std::string content_encoding;
     std::unique_ptr<ReadBuffer> impl;
 
-    std::vector<Poco::Net::HTTPCookie> cookies;
+    std::vector<Poco::Net::HTTPCookie> cookies; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    std::map<String, String> response_headers;
+    std::map<String, String> response_headers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     HTTPHeaderEntries http_header_entries;
     std::function<void(size_t)> next_callback;
@@ -140,10 +147,6 @@ private:
     // If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
-public:
-    using NextCallback = std::function<void(size_t)>;
-    using OutStreamCallback = std::function<void(std::ostream &)>;
-
     ReadWriteBufferFromHTTP(
         const HTTPConnectionGroupType & connection_group_,
         const Poco::URI & uri_,
@@ -160,9 +163,11 @@ public:
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
         HTTPHeaderEntries http_header_entries_,
+        RedirectCallback redirect_callback_,
         bool delay_initialization,
         std::optional<HTTPFileInfo> file_info_);
 
+public:
     bool nextImpl() override;
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override;
@@ -195,6 +200,7 @@ public:
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
 
     Map getResponseHeaders() const;
+    std::optional<Field> getMetadata(const String & name) const override;
 };
 
 using ReadWriteBufferFromHTTPPtr = std::unique_ptr<ReadWriteBufferFromHTTP>;
@@ -204,7 +210,7 @@ class BuilderRWBufferFromHTTP
     Poco::URI uri;
     std::string method = Poco::Net::HTTPRequest::HTTP_GET;
     HTTPConnectionGroupType connection_group = HTTPConnectionGroupType::HTTP;
-    ProxyConfiguration proxy_config{};
+    bool bypass_proxy = false;
     ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
     const RemoteHostFilter * remote_host_filter = nullptr;
@@ -212,6 +218,7 @@ class BuilderRWBufferFromHTTP
     size_t max_redirects = 0;
     bool enable_url_encoding = false;
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = nullptr;
+    ReadWriteBufferFromHTTP::RedirectCallback redirect_callback = nullptr;
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
@@ -232,7 +239,7 @@ public:
 
     setterMember(withConnectionGroup, connection_group)
     setterMember(withMethod, method)
-    setterMember(withProxy, proxy_config)
+    setterMember(withBypassProxy, bypass_proxy)
     setterMember(withSettings, read_settings)
     setterMember(withTimeouts, timeouts)
     setterMember(withHostFilter, remote_host_filter)
@@ -240,6 +247,7 @@ public:
     setterMember(withRedirects, max_redirects)
     setterMember(withEnableUrlEncoding, enable_url_encoding)
     setterMember(withOutCallback, out_stream_callback)
+    setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
@@ -247,27 +255,10 @@ public:
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_)
-    {
-        return std::make_unique<ReadWriteBufferFromHTTP>(
-            connection_group,
-            uri,
-            method,
-            proxy_config,
-            read_settings,
-            timeouts,
-            credentials_,
-            remote_host_filter,
-            buffer_size,
-            max_redirects,
-            enable_url_encoding,
-            out_stream_callback,
-            use_external_buffer,
-            http_skip_not_found_url,
-            http_header_entries,
-            delay_initialization,
-            /*file_info_=*/ std::nullopt);
-    }
+    ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 };
+
+/// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
+void setCredentialsFromURL(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & uri);
 
 }

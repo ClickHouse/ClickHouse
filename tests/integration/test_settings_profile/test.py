@@ -464,7 +464,7 @@ def test_show_profiles():
     )
 
     query_expected_response = [
-        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n",
+        "CREATE SETTINGS PROFILE `default`\n",
     ]
     assert (
         instance.query("SHOW CREATE SETTINGS PROFILE default")
@@ -472,14 +472,14 @@ def test_show_profiles():
     )
 
     query_expected_response = [
-        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n"
+        "CREATE SETTINGS PROFILE `default`\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n",
     ]
     assert instance.query("SHOW CREATE PROFILES") in query_expected_response
 
     expected_access = (
-        "CREATE SETTINGS PROFILE `default` SETTINGS min_os_cpu_wait_time_ratio_to_throw = 10., max_os_cpu_wait_time_ratio_to_throw = 20.\n"
+        "CREATE SETTINGS PROFILE `default`\n"
         "CREATE SETTINGS PROFILE `readonly` SETTINGS readonly = 1\n"
         "CREATE SETTINGS PROFILE `xyz`\n"
     )

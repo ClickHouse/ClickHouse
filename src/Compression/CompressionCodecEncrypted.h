@@ -1,8 +1,8 @@
 #pragma once
 
 #include <string_view>
-#include <unordered_map>
 #include <base/types.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +93,7 @@ public:
         /// because all algorithms can be described in config and used for different tables.
         struct Params
         {
-            std::unordered_map<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
+            UnorderedMapWithMemoryTracking<UInt64, String> keys_storage[MAX_ENCRYPTION_METHOD];
             UInt64 current_key_id[MAX_ENCRYPTION_METHOD] = {0, 0};
             String nonce[MAX_ENCRYPTION_METHOD];
         };
@@ -107,20 +107,19 @@ public:
     uint8_t getMethodByte() const override;
     void updateHash(SipHash & hash) const override;
 
-    bool isCompression() const override
+    bool isCompression() const override { return false; }
+    bool isGenericCompression() const override { return false; }
+    bool isEncryption() const override { return true; }
+    String getDescription() const override
     {
-        return false;
+        switch (encryption_method)
+        {
+            case AES_128_GCM_SIV: return "Encrypts and decrypts blocks with AES-128 in GCM-SIV mode (RFC-8452).";
+            case AES_256_GCM_SIV: return "Encrypts and decrypts blocks with AES-256 in GCM-SIV mode (RFC-8452).";
+            default: return "Encrypts and decrypts blocks with unknown encryption method in GCM-SIV mode (RFC-8452).";
+        }
     }
 
-    bool isGenericCompression() const override
-    {
-        return false;
-    }
-
-    bool isEncryption() const override
-    {
-        return true;
-    }
 protected:
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -130,7 +129,7 @@ protected:
 
     /// Decrypt data with chosen method
     /// Throws exception if decryption is impossible or size of decrypted text is incorrect
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 private:
     EncryptionMethod encryption_method;
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/Progress.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
@@ -14,6 +15,11 @@ class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 struct ITemporaryFileLookup;
 using TemporaryFileLookupPtr = std::shared_ptr<ITemporaryFileLookup>;
+using BlockMarshallingCallback = std::function<Block(const Block & block)>;
+struct IParameterLookup;
+using ParameterLookupPtr = std::shared_ptr<IParameterLookup>;
+struct IExchangeLookup;
+using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;
 
 struct BuildQueryPipelineSettings
 {
@@ -25,9 +31,16 @@ struct BuildQueryPipelineSettings
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback;
     TemporaryFileLookupPtr temporary_file_lookup;
+    BlockMarshallingCallback block_marshalling_callback;
+    ParameterLookupPtr parameter_lookup;
+    ExchangeLookupPtr exchange_lookup;
+
 
     size_t max_threads;
     size_t aggregation_memory_efficient_merge_threads;
+    size_t min_outstreams_per_resize_after_split;
+    size_t max_streams_for_union_step;
+    double max_streams_for_union_step_to_max_threads_ratio;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
 };

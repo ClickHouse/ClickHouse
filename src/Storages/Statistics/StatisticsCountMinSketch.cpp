@@ -12,8 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int ILLEGAL_STATISTICS;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices.
@@ -27,27 +26,34 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(removeNullable(data_type_))
+    , data_type(removeLowCardinalityAndNullable(data_type_))
 {
 }
 
 Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
 {
-    /// Try to convert field to data_type. Converting string to proper data types such as: number, date, datetime, IPv4, Decimal etc.
-    /// Return null if val larger than the range of data_type
-    ///
-    /// For example: if data_type is Int32:
-    ///     1. For 1.0, 1, '1', return Field(1)
-    ///     2. For 1.1, max_value_int64, return null
-    Field val_converted = convertFieldToType(val, *data_type);
+    /// Coerce the comparison field to data_type (e.g. parse '5' into a number). `val` may have an
+    /// unrelated type on paths that do not pre-coerce it, such as `col IN (subquery)`.
+    /// No from_type_hint: a hint equal to data_type short-circuits convertFieldToType into a no-op.
+    /// The try-variant returns null (-> zero selectivity) instead of throwing on an out-of-range or
+    /// unconvertible field, mirroring how TDigest/MinMax guard via tryConvertToFloat64.
+    Field val_converted = tryConvertFieldToType(val, *data_type);
     if (val_converted.isNull())
         return 0;
 
     if (data_type->isValueRepresentedByNumber())
-        return sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory());
+    {
+        /// Cannot use &val_converted directly: Field stores small types in a wider NearestFieldType
+        /// (e.g. Float32 → Float64, Int8 → Int64), so the bit pattern differs from what the column
+        /// stores. Insert into a temporary column to get the same byte representation as build().
+        auto temp_col = data_type->createColumn();
+        temp_col->insert(val_converted);
+        auto data = temp_col->getDataAt(0);
+        return static_cast<Float64>(sketch.get_estimate(data.data(), data.size()));
+    }
 
     if (isStringOrFixedString(data_type))
-        return sketch.get_estimate(val.safeGet<String>());
+        return static_cast<Float64>(sketch.get_estimate(val_converted.safeGet<String>()));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics 'countmin' does not support estimate data type of {}", data_type->getName());
 }
@@ -59,8 +65,14 @@ void StatisticsCountMinSketch::build(const ColumnPtr & column)
         if (column->isNullAt(row))
             continue;
         auto data = column->getDataAt(row);
-        sketch.update(data.data, data.size, 1);
+        sketch.update(data.data(), data.size(), 1);
     }
+}
+
+void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsCountMinSketch * other = typeid_cast<const StatisticsCountMinSketch *>(other_stats.get());
+    sketch.merge(other->sketch);
 }
 
 void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
@@ -70,9 +82,9 @@ void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
     buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
-void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
+void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    UInt64 size;
+    UInt64 size = 0;
     readIntBinary(size, buf);
 
     Sketch::vector_bytes bytes;
@@ -82,13 +94,10 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
     sketch = Sketch::deserialize(bytes.data(), size);
 }
 
-
-void countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeNullable(data_type);
-    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber() && !isStringOrFixedString(inner_data_type))
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'countmin' does not support type {}", data_type->getName());
+    DataTypePtr inner_data_type = removeLowCardinalityAndNullable(data_type);
+    return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 
 StatisticsPtr countMinSketchStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

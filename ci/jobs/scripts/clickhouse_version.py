@@ -1,8 +1,8 @@
 import re
 from pathlib import Path
 
-from praktika.info import Info
-from praktika.utils import Shell
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 
 class CHVersion:
@@ -50,15 +50,22 @@ SET(VERSION_STRING {string})
     def get_current_version_as_dict(cls):
         version = cls.get_release_version_as_dict()
         info = Info()
-        try:
-            tweak = int(
-                Shell.get_output(
-                    f"git rev-list --count {version['githash']}..HEAD", verbose=True
-                )
-            )
-        except ValueError:
-            # Shallow checkout
+        if info.pr_number != 0:
+            # Pin tweak in PRs: it is meaningless there and otherwise diverges
+            # across re-runs for the same HEAD, yielding two versions at one
+            # artifact prefix (see commit message).
             tweak = 1
+        else:
+            try:
+                tweak = int(
+                    Shell.get_output(
+                        f"git rev-list --count --first-parent {version['githash']}..HEAD",
+                        verbose=True,
+                    )
+                )
+            except (ValueError, Exception):
+                # Shallow checkout or other error
+                tweak = 1
         version_type = "testing"
         if info.pr_number == 0 and bool(
             re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))
@@ -93,5 +100,11 @@ SET(VERSION_STRING {string})
         return cls.get_release_version_as_dict()["githash"]
 
     @classmethod
-    def store_version_data_in_ci_pipeline(cls):
-        Info().store_custom_data("version", cls.get_current_version_as_dict())
+    def store_version_data_in_ci_pipeline(cls, version):
+        print(f"Store version in pipeline kv data: [version={version}]")
+        Info().store_kv_data("version", version)
+
+
+if __name__ == "__main__":
+    # test;
+    print(CHVersion.get_current_version_as_dict())

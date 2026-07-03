@@ -1,8 +1,8 @@
-
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
+#include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
-#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -21,9 +21,14 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) c
         ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
+String ASTLiteral::getID(char delim) const
+{
+    return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value));
+}
+
 ASTPtr ASTLiteral::clone() const
 {
-    auto res = std::make_shared<ASTLiteral>(*this);
+    auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
 }
@@ -45,6 +50,8 @@ private:
 template<>
 String FieldVisitorToColumnName::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
 
     wb << "tuple(";
@@ -63,7 +70,7 @@ String FieldVisitorToColumnName::operator() (const Tuple & x) const
 
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    if (use_legacy_column_name_of_tuple)
+    if (getUseLegacyColumnNameOfTuple())
     {
         appendColumnNameImplLegacy(ostr);
         return;
@@ -80,8 +87,8 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low;
-        UInt64 high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString(type == Field::Types::Array ? "__array_" : "__tuple_", ostr);
@@ -117,8 +124,8 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
-        UInt64 low;
-        UInt64 high;
+        UInt64 low = 0;
+        UInt64 high = 0;
         hash.get128(low, high);
 
         writeCString("__array_", ostr);
@@ -154,9 +161,7 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
-        ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         ostr << applyVisitor(FieldVisitorToString(), value);
     else
         ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);

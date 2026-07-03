@@ -13,16 +13,26 @@ String ASTDataType::getID(char delim) const
 
 ASTPtr ASTDataType::clone() const
 {
-    auto res = std::make_shared<ASTDataType>(*this);
+    auto res = make_intrusive<ASTDataType>(*this);
+    const auto & arguments = getArguments();
     res->children.clear();
 
     if (arguments)
-    {
-        res->arguments = arguments->clone();
-        res->children.push_back(res->arguments);
-    }
+        res->children.push_back(arguments->clone());
 
     return res;
+}
+
+ASTPtr ASTDataType::getArguments() const
+{
+    if (!children.empty())
+        return children[0];
+    return nullptr;
+}
+
+void ASTDataType::resetArguments()
+{
+    children.clear();
 }
 
 void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
@@ -34,11 +44,12 @@ void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
 
 void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_function : "") << name;
+    ostr << name;
 
+    const auto & arguments = getArguments();
     if (arguments && !arguments->children.empty())
     {
-        ostr << '(' << (settings.hilite ? hilite_none : "");
+        ostr << '(';
 
         if (!settings.one_line && settings.print_pretty_type_names && name == "Tuple")
         {
@@ -58,10 +69,8 @@ void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
             arguments->format(ostr, settings, state, frame);
         }
 
-        ostr << (settings.hilite ? hilite_function : "") << ')';
+        ostr << ')';
     }
-
-    ostr << (settings.hilite ? hilite_none : "");
 }
 
 }

@@ -1,14 +1,9 @@
 # coding: utf-8
 
-import datetime
-import logging
-import math
 import os
-import time
 
 import docker
 import pytest
-from docker.models.containers import Container
 
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
 
@@ -19,7 +14,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     user_configs=["configs/users.xml"],
-    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 

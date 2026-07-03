@@ -1,7 +1,15 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
+#include <Interpreters/Context.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event WriteBufferFromHTTPRequestsSent;
+    extern const Event WriteBufferFromHTTPBytes;
+}
 
 namespace DB
 {
@@ -21,7 +29,10 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     , session{makeHTTPSession(connection_group, uri, timeouts, proxy_configuration)}
     , request{method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1}
 {
-    request.setHost(uri.getHost());
+    if (uri.getPort())
+        request.setHost(uri.getHost(), uri.getPort());
+    else
+        request.setHost(uri.getHost());
     request.setChunkedTransferEncoding(true);
 
     if (!content_encoding.empty())
@@ -37,7 +48,14 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
     LOG_TRACE((getLogger("WriteBufferToHTTP")), "Sending request to {}", uri.toString());
 
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPRequestsSent);
     ostr = &session->sendRequest(request);
+}
+
+void WriteBufferFromHTTP::nextImpl()
+{
+    ProfileEvents::increment(ProfileEvents::WriteBufferFromHTTPBytes, offset());
+    WriteBufferFromOStream::nextImpl();
 }
 
 void WriteBufferFromHTTP::finalizeImpl()
@@ -49,6 +67,23 @@ void WriteBufferFromHTTP::finalizeImpl()
     /// TODO: Response body is ignored.
 
     WriteBufferFromOStream::finalizeImpl();
+}
+
+std::unique_ptr<WriteBufferFromHTTP> BuilderWriteBufferFromHTTP::create()
+{
+    ProxyConfiguration proxy_configuration;
+
+    if (!bypass_proxy)
+    {
+        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+        proxy_configuration = ProxyConfigurationResolverProvider::get(proxy_protocol)->resolve();
+    }
+
+    /// WriteBufferFromHTTP constructor is private and can't be used in `make_unique`
+    std::unique_ptr<WriteBufferFromHTTP> ptr(new WriteBufferFromHTTP(
+        connection_group, uri, method, content_type, content_encoding, additional_headers, timeouts, buffer_size_, proxy_configuration));
+
+    return ptr;
 }
 
 }

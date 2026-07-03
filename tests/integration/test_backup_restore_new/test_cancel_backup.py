@@ -6,6 +6,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
+# We expect backup/restore query cancellation to be fast enough,
+# though in CI cancellation may occasionally take slightly more
+# then 2 seconds (2000 - 2500 ms).
+kill_duration_ms_threshold = 4000
+
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [
@@ -105,13 +110,7 @@ def cancel_backup(backup_id):
             f"SELECT query_duration_ms FROM system.query_log WHERE query_kind='KillQuery' AND query LIKE '%{backup_id}%' AND type='QueryFinish'"
         )
     )
-    # Common failures in CI with 2000:
-    # E       assert 2520 < 2000
-    # E       assert 2210 < 2000
-    # E       assert 2160 < 2000
-    # E       assert 2143 < 2000
-    # E       assert 2495 < 2000
-    assert kill_duration_ms < 4000  # Query must be cancelled quickly
+    assert kill_duration_ms < kill_duration_ms_threshold
 
 
 # Start restoring from a backup.
@@ -177,7 +176,7 @@ def cancel_restore(restore_id):
             f"SELECT query_duration_ms FROM system.query_log WHERE query_kind='KillQuery' AND query LIKE '%{restore_id}%' AND type='QueryFinish'"
         )
     )
-    assert kill_duration_ms < 2000  # Query must be cancelled quickly
+    assert kill_duration_ms < kill_duration_ms_threshold
 
 
 # Test that BACKUP and RESTORE operations can be cancelled with KILL QUERY.
@@ -187,7 +186,7 @@ def test_cancel_backup():
         "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%20"
     )
 
-    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(500)")
 
     try_backup_id_1 = uuid.uuid4().hex
     start_backup(try_backup_id_1)
@@ -197,14 +196,14 @@ def test_cancel_backup():
     start_backup(backup_id)
     wait_backup(backup_id)
 
-    node.query(f"DROP TABLE tbl SYNC")
+    node.query("DROP TABLE tbl SYNC")
 
     try_restore_id_1 = uuid.uuid4().hex
     start_restore(try_restore_id_1, backup_id)
     cancel_restore(try_restore_id_1)
 
     # IF EXISTS because it's unknown whether RESTORE had managed to create a table before it got cancelled.
-    node.query(f"DROP TABLE IF EXISTS tbl SYNC")
+    node.query("DROP TABLE IF EXISTS tbl SYNC")
 
     restore_id = uuid.uuid4().hex
     start_restore(restore_id, backup_id)
@@ -217,7 +216,7 @@ def test_shutdown_cancel_backup():
         "CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY x%5"
     )
 
-    node.query(f"INSERT INTO tbl SELECT number FROM numbers(500)")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(500)")
 
     backup_id = uuid.uuid4().hex
     start_backup(backup_id)

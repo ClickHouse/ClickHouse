@@ -1,0 +1,7 @@
+<clickhouse>
+    <users>
+        <user1>
+            <password>qwe123</password>
+        </user1>
+    </users>
+</clickhouse>

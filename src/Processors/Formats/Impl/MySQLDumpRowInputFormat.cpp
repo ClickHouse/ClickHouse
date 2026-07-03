@@ -5,15 +5,26 @@
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
+#include <Parsers/MySQL/ASTDeclareColumn.h>
+#include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Storages/IStorage.h>
+
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -22,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace
@@ -34,10 +46,10 @@ namespace
     };
 }
 
-MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
-    , types(header_.getDataTypes())
+    , types(header_->getDataTypes())
     , format_settings(format_settings_)
 {
     column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
@@ -163,7 +175,81 @@ static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String
     }
 }
 
-void readUnquotedColumnName(String & name, ReadBuffer & in)
+static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+{
+    NamesAndTypesList columns_name_and_type;
+    for (const auto & declare_column_ast : columns_definition->children)
+    {
+        const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
+
+        if (!declare_column || !declare_column->data_type)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
+
+        bool is_nullable = true;
+        bool is_unsigned = false;
+        if (declare_column->column_options)
+        {
+            if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
+            {
+                if (options->changes.contains("is_null"))
+                    is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
+
+                if (options->changes.contains("is_unsigned"))
+                    is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
+            }
+        }
+
+        ASTPtr data_type = declare_column->data_type;
+        auto * data_type_node = data_type->as<ASTDataType>();
+
+        if (data_type_node)
+        {
+            String type_name_upper = Poco::toUpper(data_type_node->name);
+
+            if (is_unsigned)
+            {
+                /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
+                if (type_name_upper.contains("INT") && !endsWith(type_name_upper, "SIGNED")
+                    && !endsWith(type_name_upper, "UNSIGNED"))
+                    data_type_node->name = type_name_upper + " UNSIGNED";
+            }
+
+            if (type_name_upper == "SET")
+                data_type_node->resetArguments();
+
+            /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
+            /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
+            /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
+            /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
+            if (type_name_upper.contains("ENUM"))
+            {
+                UInt16 i = 0;
+                for (ASTPtr & child : data_type_node->getArguments()->children)
+                {
+                    auto new_child = make_intrusive<ASTFunction>();
+                    new_child->name = "equals";
+                    auto * literal = child->as<ASTLiteral>();
+
+                    new_child->arguments = make_intrusive<ASTExpressionList>();
+                    new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(literal->value.safeGet<String>()));
+                    new_child->arguments->children.push_back(make_intrusive<ASTLiteral>(Int16(++i)));
+                    child = new_child;
+                }
+            }
+
+            if (type_name_upper == "DATE")
+                data_type_node->name = "Date32";
+        }
+        if (is_nullable)
+            data_type = makeASTDataType("Nullable", data_type);
+
+        columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
+    }
+
+    return columns_name_and_type;
+}
+
+static void readUnquotedColumnName(String & name, ReadBuffer & in)
 {
     name.clear();
     while (!in.eof())
@@ -179,7 +265,7 @@ void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -289,7 +375,7 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_defines)
         return false;
 
-    structure = MySQLInterpreter::getColumnsList(create_defines->columns);
+    structure = getColumnsList(create_defines->columns);
     return true;
 }
 
@@ -470,6 +556,7 @@ void MySQLDumpSchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::D
     transformInferredTypesIfNeeded(type, new_type, format_settings);
 }
 
+void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory)
 {
     factory.registerInputFormat("MySQLDump", [](
@@ -478,10 +565,91 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
+        return std::make_shared<MySQLDumpRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings);
     });
+
+    factory.setDocumentation("MySQLDump", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✔     | ✗       |       |
+
+## Description {#description}
+
+ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html).
+
+It reads all the data from `INSERT` queries belonging to a single table in the dump. 
+If there is more than one table, by default it reads data from the first one.
+
+:::note
+This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
+:::
+
+## Example usage {#example-usage}
+
+Given the following SQL dump file:
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+We can run the following queries:
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+## Format settings {#format-settings}
+
+You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/operations/settings/settings-formats.md/#input_format_mysql_dump_table_name) setting.
+If setting `input_format_mysql_dump_map_columns` is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
+Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+)DOCS_MD"});
 }
 
+void registerMySQLSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("MySQLDump", [](ReadBuffer & buf, const FormatSettings & settings)
