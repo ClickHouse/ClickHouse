@@ -710,6 +710,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SAMPLE_BY)
     {
+        /// The sampling key is not a persisted binary key: its runtime filter is re-analyzed in the query
+        /// context, so keep it in the caller's context (do not canonicalize). Set explicitly in case
+        /// MODIFY SAMPLE BY adds a sampling key to a table that had none (default-constructed key is true).
+        metadata.sampling_key.canonicalize_key_types = false;
         metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, metadata.virtuals, context);
     }
     else if (type == REMOVE_SAMPLE_BY)

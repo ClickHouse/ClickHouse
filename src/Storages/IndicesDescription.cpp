@@ -10,6 +10,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
+#include <Storages/KeyDescription.h>
 
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
 
@@ -153,12 +154,20 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 
     expression_list_ast = expr_list->clone();
 
-    TreeRewriterResultPtr syntax = TreeRewriter(context).analyze(
+    /// sample_block and data_types below fix the skip-index column types in the metadata and drive
+    /// the index serializers. The columns that are actually fed to those serializers are produced by
+    /// the sorting-key-and-skip-indices expression, which is analyzed with the type-affecting settings
+    /// pinned off (see createKeyExpressionContext). Analyze here with the same context so the two agree,
+    /// otherwise a CREATE/ALTER run with such a setting on records an extended/nullable index type that
+    /// diverges from the produced column and aborts the next write with a Bad cast.
+    auto index_context = createKeyExpressionContext(context);
+
+    TreeRewriterResultPtr syntax = TreeRewriter(index_context).analyze(
         expr_list,
         columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns())
     );
 
-    expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
+    expression = ExpressionAnalyzer(expr_list, syntax, index_context).getActions(true);
 
     sample_block = expression->getSampleBlock();
 }
@@ -269,6 +278,11 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
+    /// This produces the skip-index columns during merges. The index types are fixed in the metadata
+    /// with the type-affecting settings pinned off (see IndexDescription::initExpressionInfo), so this
+    /// expression must be analyzed the same way, otherwise a session running with such a setting on makes
+    /// the produced column type diverge from the index serializer's expected type.
+    context = createKeyExpressionContext(context);
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, columns.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }

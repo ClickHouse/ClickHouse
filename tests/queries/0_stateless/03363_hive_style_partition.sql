@@ -144,4 +144,20 @@ CREATE TABLE t_03363_hive_requires_format (c0 Int) ENGINE = S3(s3_conn, partitio
 -- Should throw because hive strategy does not allow partition columns to be the only columns
 CREATE TABLE t_03363_hive_only_partition_columns (country String, year UInt16) ENGINE = S3(s3_conn, partition_strategy='hive') PARTITION BY (year, country); -- {serverError BAD_ARGUMENTS};
 
-DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format;
+-- Object-storage partition strategies opt out of key-type canonicalization: the partition value is a path
+-- string produced/consumed under the query context, not a persisted binary key file. A type-affecting session
+-- setting must not change the recorded key type independently of the written directory names. Partition by a
+-- bare DateTime64/Date32 column with enable_extended_results_for_datetime_functions=1 and confirm the paths and
+-- round-trip are unaffected.
+DROP TABLE IF EXISTS t_03363_ext_dt;
+CREATE TABLE t_03363_ext_dt (d Date32, ts DateTime64(3), v UInt8)
+ENGINE = S3(s3_conn, filename = 't_03363_ext_dt', format = Parquet, partition_strategy='hive')
+PARTITION BY (d, ts) SETTINGS use_hive_partitioning = 1;
+INSERT INTO t_03363_ext_dt SETTINGS enable_extended_results_for_datetime_functions = 1
+VALUES ('2020-01-01', '2020-01-01 00:00:00.000', 1), ('2021-02-03', '2021-02-03 04:05:06.000', 2);
+SELECT distinct on (v) replaceRegexpAll(_path, '/[0-9]+\\.parquet', '/<snowflakeid>.parquet') AS _path, v from t_03363_ext_dt order by v SETTINGS enable_extended_results_for_datetime_functions = 1;
+-- distinct on (v) because minio isn't cleaned up: re-runs append new parquet files under the same
+-- fixed hive path, so a plain read would return one row per accumulated file per key.
+SELECT distinct on (v) d, ts, v FROM t_03363_ext_dt ORDER BY v SETTINGS enable_extended_results_for_datetime_functions = 1;
+
+DROP TABLE IF EXISTS t_03363_parquet, t_03363_csv, s3_table_half_schema_with_format, t_03363_ext_dt;

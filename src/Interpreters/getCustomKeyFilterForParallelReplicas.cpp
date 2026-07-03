@@ -1,5 +1,6 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 
 #include <Core/Settings.h>
 
@@ -42,6 +43,20 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
+        /// Reject a nullable custom key in the caller's own context (do NOT canonicalize, same reason as
+        /// the range branch below). The sampling filter built here is positiveModulo(custom_key, N) =
+        /// replica_num, executed later in that query context. If the custom key produces Nullable at
+        /// runtime (e.g. cast_keep_nullable=1 with CAST(x AS UInt32) over Nullable(x)), positiveModulo
+        /// yields NULL for NULL rows, the equals is NULL, and those rows are silently dropped on every
+        /// replica. So a nullable custom key would give wrong results and must be rejected up front.
+        KeyDescription custom_key_description
+            = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
+        if (custom_key_description.data_types.size() == 1 && isNullableOrLowCardinalityNullable(custom_key_description.data_types[0]))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid custom key column type: {}. A nullable custom key would silently drop rows with NULL keys",
+                custom_key_description.data_types[0]->getName());
+
         // first we do modulo with replica count
         auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, make_intrusive<ASTLiteral>(replicas_count));
 
@@ -53,7 +68,14 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
-    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context);
+    /// Validate the type of the custom key in the caller's own context: the filter AST built below
+    /// (custom_key >= lo, custom_key < hi) is executed later in that same query context, so the type
+    /// this validation accepts must match the type the expression actually produces. Do NOT canonicalize
+    /// here, otherwise e.g. cast_keep_nullable=1 with CAST(x AS UInt32) over Nullable(x) would be
+    /// validated as plain UInt32 and accepted, while the runtime filter still yields Nullable and
+    /// silently drops NULL rows on every replica.
+    KeyDescription custom_key_description
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
