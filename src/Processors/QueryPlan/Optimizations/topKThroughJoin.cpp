@@ -1,7 +1,11 @@
 #include <Core/Joins.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -98,29 +102,63 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// (`MergeJoin`), `FULL_SORTING_MERGE` (`FullSortingMergeJoin`), or `AUTO`
 /// (`JoinSwitcher`).
 ///
-/// `PARALLEL_HASH` (`ConcurrentHashJoin`) preserves the left order only with a shared
-/// two-level map, and scatters it with single-level maps (key8 / key16, or a single
-/// non-nullable LowCardinality key). We treat it as non-order-preserving whenever it is
-/// enabled, even alongside a `HASH` fallback. The map type and the right-side size are not
-/// known at this logical stage (`rhs_size_estimation` is filled in the second pass), so we
-/// cannot tell whether the planner will pick plain `HashJoin` or switch to
-/// `ConcurrentHashJoin`: `PlannerJoins::tryCreateJoin` chooses `ConcurrentHashJoin` when
-/// `HASH` is disabled, when there is no size estimate, or when the right side is at least
-/// `parallel_hash_join_threshold` - so a `hash` fallback does not guarantee order
-/// preservation. Deferring would then bail in the second pass on the physical
-/// `!preservesLeftBlockOrder()` gate and disable both passes. Running the pushdown here
-/// instead is never worse: the injected `Sort + Limit` on the preserved input is itself
-/// satisfied by a read-in-order scan of the primary key when applicable, and the pushdown
+/// `PARALLEL_HASH` (`ConcurrentHashJoin`) is order-preserving except when it runs on more than
+/// one slot AND builds a single-level map. We mirror the physical
+/// `ConcurrentHashJoin::preservesLeftBlockOrder()` exactly with two conditions:
+///  - `max_threads == 1`: the join runs on one slot
+///    (`slots = toPowerOfTwo(min(max_threads, 256)) == 1`), `dispatchBlock` short-circuits, and the
+///    left block passes through unscattered regardless of map type - order preserved, do NOT flag.
+///  - multi-slot: order is preserved iff the map is two-level (`twoLevelMapIsUsed()`); only a
+///    single-level map (key8 / key16) scatters the left block. `parallelHashMultiSlotSingleLevelMap`
+///    reproduces that key-shape test from the logical join keys. `max_threads` is the same resolved
+///    value the analyzer feeds to the join (`JoinStepLogical` builds `JoinAlgorithmParams` from
+///    `optimization_settings.max_threads`), so both checks match the physical gate.
+/// When flagged, running the pushdown here is never worse than deferring to a second pass that would
+/// then bail on the physical `!preservesLeftBlockOrder()` gate: the injected `Sort + Limit` on the
+/// preserved input is itself satisfied by a read-in-order scan when applicable, and the pushdown
 /// soundness does not depend on the join algorithm.
-///
-/// The one exception mirrors the physical `ConcurrentHashJoin::preservesLeftBlockOrder()`
-/// fast path: with `max_threads == 1` the join is built on a single slot
-/// (`slots = toPowerOfTwo(min(max_threads, 256)) == 1`), `dispatchBlock` short-circuits, and
-/// the left block passes through unscattered regardless of the map type - so the order IS
-/// preserved. `max_threads` here is the same resolved value the analyzer feeds to the join
-/// (`JoinStepLogical` builds `JoinAlgorithmParams` from `optimization_settings.max_threads`),
-/// so this matches the physical gate exactly. In that case deferring is correct: read-in-order
-/// can propagate through the single-slot `parallel_hash` join, so we do NOT flag it here.
+
+/// Mirror the physical single-level-map condition of a multi-slot `ConcurrentHashJoin`, which is
+/// the only `parallel_hash` shape that reorders the left block (`preservesLeftBlockOrder()`
+/// returns `twoLevelMapIsUsed()` there). `ConcurrentHashJoin` builds its inner `HashJoin`s with
+/// `use_two_level_maps = true`, so `HashJoin::chooseMethod` returns a single-level map only for
+/// `key8` / `key16` - a single numeric equi-key of at most 2 bytes (the `default:` fall-through
+/// in the two-level switch); every other shape (>= 4-byte numeric, multi-key, string, hashed) is
+/// two-level and preserves the order. Nullable keys are unwrapped to their nested column and
+/// LowCardinality keys are materialized before `chooseMethod` runs, and the dictionary-aware
+/// single-LowCardinality map is disabled for two-level maps, so we strip both wrappers here to
+/// match. We can only see the logical `JoinStepLogical` at this stage, so anything we cannot
+/// prove to be two-level (non-equi condition, more than one equi-key, a key type we cannot
+/// classify) is treated as possibly single-level: flagging it keeps the sound `Sort + Limit`
+/// pushdown, which is never worse than deferring to a second pass that would then bail on the
+/// physical `!preservesLeftBlockOrder()` gate. Keep this in sync with `HashJoin::chooseMethod`.
+bool parallelHashMultiSlotSingleLevelMap(const JoinStepLogical & logical)
+{
+    const auto & join_operator = logical.getJoinOperator();
+    const auto & expression = join_operator.expression;
+
+    /// A single-level map (`key8`/`key16`) requires exactly one equi-join key.
+    if (expression.size() != 1)
+        return true;
+
+    const auto [op, lhs, rhs] = expression.front().asBinaryPredicate();
+    if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+        return true;
+
+    /// Both sides of an equi-condition share the join-key type; use the left one.
+    auto key_type = lhs.getType();
+    if (!key_type)
+        return true;
+
+    /// Match the key materialization `HashJoin` applies before `chooseMethod`: strip
+    /// LowCardinality and Nullable (`extractKeysForJoin` joins on the non-null nested column).
+    key_type = removeNullable(removeLowCardinality(key_type));
+
+    /// `key8` / `key16`: a single numeric key of at most 2 bytes stays single-level even with
+    /// two-level maps requested.
+    return key_type->isValueRepresentedByNumber() && key_type->getSizeOfValueInMemory() <= 2;
+}
+
 bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step, size_t max_threads)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -130,9 +168,10 @@ bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step, size_t max_th
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
-        /// A single-slot `parallel_hash` join preserves the left order (see above), so it
-        /// only reorders when it may run on more than one slot.
-        const bool parallel_hash_may_reorder = max_threads != 1;
+        /// `parallel_hash` reorders the left block only when it runs on more than one slot
+        /// (`max_threads != 1`) AND the key shape yields a single-level map; a two-level map (or
+        /// a single slot) keeps the order, matching `ConcurrentHashJoin::preservesLeftBlockOrder()`.
+        const bool parallel_hash_may_reorder = max_threads != 1 && parallelHashMultiSlotSingleLevelMap(*logical);
         const auto & algorithms = logical->getJoinSettings().join_algorithms;
         return std::ranges::any_of(algorithms, [parallel_hash_may_reorder](JoinAlgorithm a)
         {
