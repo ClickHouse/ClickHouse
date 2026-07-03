@@ -1918,6 +1918,8 @@ void Counters::incrementNoTrace(Event event, Count amount)
 
 void Counters::incrementSignalSafe(Event event, Count amount)
 {
+    static_assert(std::atomic_ref<Count>::is_always_lock_free);
+
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
