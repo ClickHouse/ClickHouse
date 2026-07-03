@@ -6,7 +6,8 @@
 # and rejects writes, so restoring rows into a read_only table cannot work: restore of a non-empty
 # backup must fail up front with a clear CANNOT_RESTORE_TABLE error instead of an opaque RocksDB write
 # error. A backup of an empty read_only table carries no rows, so its restore needs no write and is
-# allowed as a pure metadata restore.
+# allowed as a pure metadata restore. Even then the non-empty-table guard still applies, so an empty
+# backup restored over an already-populated read_only directory is rejected (not silently accepted).
 # See https://github.com/ClickHouse/ClickHouse/issues/109213
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,14 +18,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # so parallel runs do not collide.
 RDB_DIR="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb"
 RDB_DIR_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_empty"
+RDB_DIR_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_rocksdb_pop"
 BACKUP_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 BACKUP_ID_EMPTY="${CLICKHOUSE_TEST_UNIQUE_NAME}_empty"
+BACKUP_ID_POP="${CLICKHOUSE_TEST_UNIQUE_NAME}_pop"
 BACKUP_NAME="Disk('backups', '${BACKUP_ID}')"
 BACKUP_NAME_EMPTY="Disk('backups', '${BACKUP_ID_EMPTY}')"
+BACKUP_NAME_POP="Disk('backups', '${BACKUP_ID_POP}')"
 USER_FILES_PATH=$($CLICKHOUSE_CLIENT -q "SELECT value FROM system.server_settings WHERE name = 'user_files_path'")
 BACKUPS_PATH=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'backups'")
-rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" \
-    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}"
+rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
+    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}" "${BACKUPS_PATH:?}/${BACKUP_ID_POP}"
 
 # Populate an on-disk RocksDB directory through a writable table, then drop it (the explicit dir stays).
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_rw SYNC"
@@ -64,5 +68,35 @@ $CLICKHOUSE_CLIENT -q "RESTORE TABLE rdb_ro_empty FROM ${BACKUP_NAME_EMPTY} FORM
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb_ro_empty"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_ro_empty SYNC"
-rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" \
-    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUP_ID_EMPTY:+${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}}"
+
+# An empty backup must not silently succeed when the target read_only directory already holds rows.
+# Back up an empty read_only table over a directory, then populate that same directory, then restore
+# the empty backup: the non-empty-table guard must reject it (a read_only handle always points at an
+# existing external directory, so this stale-rows case is realistic). With allow_non_empty_tables the
+# restore is allowed, writes nothing, and the existing rows stay in place.
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_rw_pop SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE rdb_rw_pop (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_POP}') PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "DROP TABLE rdb_rw_pop SYNC"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_ro_pop SYNC"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE rdb_ro_pop (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_POP}', 1) PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE rdb_ro_pop TO ${BACKUP_NAME_POP} FORMAT Null"
+$CLICKHOUSE_CLIENT -q "DROP TABLE rdb_ro_pop SYNC"
+
+# Populate the directory behind the read_only table's back through a writable table over the same dir.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE rdb_rw_pop (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '${RDB_DIR_POP}') PRIMARY KEY k"
+$CLICKHOUSE_CLIENT -q "INSERT INTO rdb_rw_pop SELECT number, 'stale' || toString(number) FROM numbers(100)"
+$CLICKHOUSE_CLIENT -q "DROP TABLE rdb_rw_pop SYNC"
+
+# Empty backup over the now-populated read_only directory: rejected (guard fires), not silent success.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE rdb_ro_pop FROM ${BACKUP_NAME_POP} FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "NO_EXPECTED_ERROR"
+# With allow_non_empty_tables it is allowed, writes nothing, and the 100 existing rows are preserved.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE rdb_ro_pop FROM ${BACKUP_NAME_POP} SETTINGS allow_non_empty_tables = 1 FORMAT Null" 2>&1 \
+    | grep -o -m1 "CANNOT_RESTORE_TABLE" || echo "POPULATED_READONLY_RESTORE_ALLOWED"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM rdb_ro_pop"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS rdb_ro_pop SYNC"
+
+rm -rf "${USER_FILES_PATH:?}/${RDB_DIR}" "${USER_FILES_PATH:?}/${RDB_DIR_EMPTY}" "${USER_FILES_PATH:?}/${RDB_DIR_POP}" \
+    "${BACKUPS_PATH:?}/${BACKUP_ID}" "${BACKUP_ID_EMPTY:+${BACKUPS_PATH:?}/${BACKUP_ID_EMPTY}}" \
+    "${BACKUP_ID_POP:+${BACKUPS_PATH:?}/${BACKUP_ID_POP}}"

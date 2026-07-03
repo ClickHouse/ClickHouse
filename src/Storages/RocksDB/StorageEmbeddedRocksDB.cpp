@@ -585,19 +585,20 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
             getStorageID().getNameForLogs(), data_file);
 
     /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only) over an
-    /// externally-managed directory and rejects the Write() a data restore issues. An empty backup needs
-    /// no Write(), so a pure metadata restore of a read_only table is allowed; a backup that carries rows
-    /// is rejected up front with a clear error instead of failing later with an opaque RocksDB write error.
-    if (read_only)
-    {
-        if (backupHasRows(backup, data_file))
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore data into read_only EmbeddedRocksDB table {}. Restore into a writable table instead",
-                getStorageID().getNameForLogs());
-        return;
-    }
+    /// externally-managed directory and rejects the Write() a data restore issues. A backup that carries
+    /// rows therefore cannot be restored into it; reject up front with a clear error instead of failing
+    /// later with an opaque RocksDB write error. An empty backup writes nothing, so it is still allowed
+    /// (subject to the non-empty-table guard below, exactly like a writable table).
+    bool backup_has_rows = backupHasRows(backup, data_file);
+    if (read_only && backup_has_rows)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore data into read_only EmbeddedRocksDB table {}. Restore into a writable table instead",
+            getStorageID().getNameForLogs());
 
+    /// Unless allow_non_empty_tables is set, restoring into a table that already holds rows is rejected.
+    /// This guard applies to read_only tables too: an empty backup must not silently "succeed" and leave
+    /// the stale rows of a pre-populated external directory in place.
     if (!restorer.isNonEmptyTableAllowed())
     {
         bool empty = false;
@@ -614,6 +615,11 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
         if (!empty)
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
+
+    /// An empty backup has no rows to write; the metadata restore that recreated the table is all that
+    /// is needed (this is also what makes an empty read_only backup restorable).
+    if (!backup_has_rows)
+        return;
 
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()), backup, data_path_in_backup]
