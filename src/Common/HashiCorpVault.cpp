@@ -71,6 +71,11 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 
     params.certificateFile = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, "");
 
+    /// Mirror Poco's SSLManager::initDefaultContext behavior: when
+    /// certificateFile is not specified, default to privateKeyFile.
+    if (params.certificateFile.empty())
+        params.certificateFile = params.privateKeyFile;
+
     if (auth_method == HashiCorpVaultAuthMethod::Cert)
     {
         if (params.privateKeyFile.empty())

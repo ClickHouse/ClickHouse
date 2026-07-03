@@ -1,4 +1,5 @@
 #include <Common/Config/ConfigReloader.h>
+#include <Common/HashiCorpVault.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <filesystem>
@@ -129,6 +130,12 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         ConfigProcessor::LoadedConfig loaded_config;
 
         LOG_DEBUG(log, "Loading config '{}'", config_path);
+
+        /// Reset the transient vault before the first pass so that
+        /// from_hashicorp_vault references cannot be resolved against
+        /// stale state when <hashicorp_vault> has been removed.
+        if (reload_vault)
+            reload_vault->reset();
 
         try
         {

@@ -43,7 +43,6 @@ public:
 
     void commit(const HashiCorpVault & candidate);
 
-private:
     void reset()
     {
         loaded = false;
@@ -70,6 +69,8 @@ private:
         Reject
     };
 #endif
+
+private:
 #if USE_SSL
     void initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 #endif

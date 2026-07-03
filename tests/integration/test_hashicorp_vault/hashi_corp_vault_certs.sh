@@ -19,3 +19,7 @@ chmod 644 "${HASHICORP_VAULT_CERT_DIR}/client.crt"
 chmod 644 "${HASHICORP_VAULT_CERT_DIR}/server.crt"
 chmod 644 "${HASHICORP_VAULT_CERT_DIR}/server.key"
 chmod 644 "${HASHICORP_VAULT_CERT_DIR}/ca.crt"
+
+# Generate combined PEM (certificate + private key in one file)
+cat "${HASHICORP_VAULT_CERT_DIR}/client.crt" "${HASHICORP_VAULT_CERT_DIR}/client.key" > "${HASHICORP_VAULT_CERT_DIR}/client_combined.pem"
+chmod 644 "${HASHICORP_VAULT_CERT_DIR}/client_combined.pem"
