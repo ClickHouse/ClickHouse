@@ -401,20 +401,35 @@ INSERT INTO test_saturate_intermediate SELECT arrayJoin([CAST(toDecimal128('-120
 SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 DROP TABLE test_saturate_intermediate;
 
+SET date_time_overflow_behavior = 'ignore';
+
+-- A Time column can internally store a value beyond the visible range (>3599999 s).
+-- It displays as saturated (999:59:59 / -999:59:59) but Date+Time uses the internal
+-- value, so two Time values that print identically can produce different DateTime
+-- results. (Numeric toTime(9999999) no longer keeps the raw value: throw raises,
+-- saturate/ignore clamp; the column path below still exercises the internal value.)
+DROP TABLE IF EXISTS test_internal_time;
+CREATE TABLE test_internal_time (t_raw Time, t_vis Time) ENGINE = Memory;
+INSERT INTO test_internal_time VALUES (9999999, 3599999);
+SELECT t_raw, t_vis, t_raw = t_vis AS same_time FROM test_internal_time;
+SELECT
+    toDate('2024-01-15') + t_raw AS dt_raw,
+    toDate('2024-01-15') + t_vis AS dt_vis,
+    dt_raw = dt_vis AS same_dt
+FROM test_internal_time;
+SELECT (toDate('2024-01-15') + t_raw) = (toDate('2024-01-15') + t_vis) AS same_dt_from_same_visible_time
+FROM test_internal_time;
+DROP TABLE test_internal_time;
+
 SET date_time_overflow_behavior = 'throw';
 
--- Time values beyond the visible range display as saturated (999:59:59 or -999:59:59
--- depending on sign) but internally store their full numeric value. Date+Time uses
--- the internal value, so two Time values that print identically can produce different
--- DateTime results.
-SELECT
-    toTime(9999999) AS t_raw,
-    toTime(3599999) AS t_vis,
-    t_raw = t_vis AS same_time;
-SELECT
-    toDate('2024-01-15') + toTime(9999999) AS dt_raw,
-    toDate('2024-01-15') + toTime(3599999) AS dt_vis,
-    dt_raw = dt_vis AS same_dt;
-SELECT
-    (toDate('2024-01-15') + toTime(9999999)) =
-    (toDate('2024-01-15') + toTime(3599999)) AS same_dt_from_same_visible_time;
+-- Numeric cast of an out-of-visible-range Time now respects date_time_overflow_behavior:
+-- throw raises, while saturate/ignore clamp to the max visible Time (999:59:59 = 3599999 s).
+SELECT toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDate('2024-01-15') + toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SET date_time_overflow_behavior = 'saturate';
+SELECT toTime(9999999) AS t, toInt32(t) AS raw;
+SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
+SET date_time_overflow_behavior = 'ignore';
+SELECT toTime(9999999) AS t, toInt32(t) AS raw;
+SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
