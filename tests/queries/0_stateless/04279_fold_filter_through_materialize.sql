@@ -9,7 +9,8 @@ SELECT uniq(id) FROM (
 ) AS t
 WHERE event_type = 'online';
 
-SELECT 'folded filters', countIf(explain LIKE '%Const(UInt8) -> equals%')
+-- folded filter condition becomes a plain constant in the plan
+SELECT 'folded filters', countIf(explain LIKE '%Filter column: 1%' OR explain LIKE '%Filter column: 0%')
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT uniq(id) FROM (
@@ -22,7 +23,7 @@ FROM (
 
 -- pure const branches compared with a value - both branches fold
 SELECT x FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) WHERE x > 3 ORDER BY x;
-SELECT 'both folded', countIf(explain LIKE '%Const(UInt8) -> greater%')
+SELECT 'both folded', countIf(explain LIKE '%Filter column: 0%')
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT x FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) WHERE x > 3
@@ -33,7 +34,7 @@ SELECT x FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) WHERE x > 1 ORDER BY x;
 
 -- standalone WHERE materialize(const) = const
 SELECT count() FROM numbers(100) WHERE materialize('online'::String) = 'online';
-SELECT 'simple folded', countIf(explain LIKE '%Const(UInt8) -> equals%')
+SELECT 'simple folded', countIf(explain LIKE '%Filter column: 1%')
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM numbers(100) WHERE materialize('online'::String) = 'online'
