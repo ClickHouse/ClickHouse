@@ -17,6 +17,7 @@
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
+#include <string_view>
 
 
 namespace DB
@@ -245,25 +246,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
-        if (with_expression_list && select)
-        {
-            const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
-            for (const auto & child : children)
-            {
-                auto * child_select = child->as<ASTSelectQuery>();
-                if (child_select)
-                {
-                    if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
-                        throw Exception(ErrorCodes::SYNTAX_ERROR,
-                            "Only one WITH should be presented, either before INSERT or SELECT.");
-                    child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        ASTPtr(with_expression_list));
-                    /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
-                    child_select->normalizeChildrenOrder();
-                }
-            }
-        }
-
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
@@ -316,6 +298,37 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (data != nullptr)
             data = pos->begin;
     }
+
+    auto propagate_with_clause = [&](ASTPtr & target_select, std::string_view target_name)
+    {
+        if (!with_expression_list || !target_select)
+            return;
+
+        auto * select_with_union = target_select->as<ASTSelectWithUnionQuery>();
+        if (!select_with_union || !select_with_union->list_of_selects)
+            return;
+
+        const auto & children = select_with_union->list_of_selects->children;
+        for (const auto & child : children)
+        {
+            auto * child_select = child->as<ASTSelectQuery>();
+            if (!child_select)
+                continue;
+
+            if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
+                throw Exception(
+                    ErrorCodes::SYNTAX_ERROR,
+                    "Only one WITH should be presented, either before INSERT or {}.",
+                    target_name);
+
+            child_select->setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
+            /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
+            child_select->normalizeChildrenOrder();
+        }
+    };
+
+    propagate_with_clause(select, "SELECT");
+    propagate_with_clause(returning_select, "RETURNING subquery");
 
     if (select)
     {
