@@ -1927,7 +1927,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
   * but the inner join sees t2 on its right side (non-preserved) and must deny access.
   * Stopping at the first match would incorrectly allow t2.*.
   */
-void checkSemiAntiJoinTableAccess(
+static void checkSemiAntiJoinTableAccess(
     const QueryTreeNodePtr & table_expression_node,
     const IdentifierResolveScope & scope,
     const QueryTreeNodePtr & node_for_error_message)
