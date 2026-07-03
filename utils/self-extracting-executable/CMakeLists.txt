@@ -1,4 +1,8 @@
-add_executable (pre_compressor compressor.cpp)
+if (USE_MUSL)
+    add_executable (pre_compressor compressor.cpp ${MUSL_CRT_OBJECTS})
+else ()
+    add_executable (pre_compressor compressor.cpp)
+endif ()
 target_include_directories(pre_compressor PRIVATE .)
 target_link_libraries(pre_compressor PUBLIC ch_contrib::zstd)
 
