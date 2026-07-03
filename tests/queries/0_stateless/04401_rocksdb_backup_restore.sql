@@ -47,6 +47,23 @@ SELECT count() FROM 04401_rocksdb_empty;
 DROP TABLE 04401_rocksdb_mc SYNC;
 DROP TABLE 04401_rocksdb_empty SYNC;
 
+-- A backup that carries no data.bin (an old metadata-only backup from before this fix, or a
+-- structure_only backup) must fail the data restore instead of silently recreating an empty table
+-- (that silent empty restore is exactly the #109213 data loss). A structure_only backup is the
+-- deterministic way to produce such a data-less backup here.
+DROP TABLE IF EXISTS 04401_rocksdb_meta SYNC;
+
+CREATE TABLE 04401_rocksdb_meta (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k;
+INSERT INTO 04401_rocksdb_meta SELECT number, 'v_' || toString(number) FROM numbers(100);
+BACKUP TABLE 04401_rocksdb_meta TO Memory('04401_rocksdb_meta_backup') SETTINGS structure_only = true FORMAT Null;
+DROP TABLE 04401_rocksdb_meta SYNC;
+RESTORE TABLE 04401_rocksdb_meta FROM Memory('04401_rocksdb_meta_backup') FORMAT Null; -- { serverError CANNOT_RESTORE_TABLE }
+-- A structure_only restore of the same backup is still allowed (it does not touch data).
+RESTORE TABLE 04401_rocksdb_meta FROM Memory('04401_rocksdb_meta_backup') SETTINGS structure_only = true FORMAT Null;
+SELECT count() FROM 04401_rocksdb_meta;
+
+DROP TABLE 04401_rocksdb_meta SYNC;
+
 -- A TTL table preserves the original per-row expiration across a backup/restore.
 -- The backup keeps the raw RocksDB value with its trailing creation timestamp (read/written via
 -- GetRootDB so the DBWithTTL wrapper does not strip it on backup nor refresh it on restore).
