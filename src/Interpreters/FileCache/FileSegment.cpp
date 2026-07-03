@@ -5,6 +5,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
@@ -550,11 +552,30 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
+        /// Wait for the download in short slices so that cancellation of the waiting query
+        /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
+        /// is observed promptly. The condition variable is only notified on download progress, so a
+        /// stalled or dead downloader would otherwise pin this thread — and anything blocked on it,
+        /// e.g. RefreshTask::shutdown() -> deactivate() — until the full timeout. throwIfKilled()
+        /// re-raises the query's original cancellation reason rather than a generic one.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
+        auto downloaded = [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
-        });
-        /// chassert(ok);
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (true)
+        {
+            if (query_status)
+                query_status->throwIfKilled();
+            if (cv.wait_for(lk, std::chrono::seconds(1), downloaded))
+                break;
+            if (std::chrono::steady_clock::now() >= deadline)
+                break;
+        }
     }
 
     return download_state;
