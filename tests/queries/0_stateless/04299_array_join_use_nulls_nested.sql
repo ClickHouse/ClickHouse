@@ -1,3 +1,8 @@
+-- Tags: no-old-analyzer
+-- Accessing a whole Nested column as a tuple (e.g. `tupleElement(n, 'x')`, `SELECT *` over the
+-- array-joined Nested column) and the PruneArrayJoinColumnsPass exercised here are analyzer-only;
+-- the old analyzer exposes only the flattened `n.x`/`n.y` subcolumns and cannot address `n`.
+--
 -- Regression test for array_join_use_nulls with Nested columns and subcolumn pruning.
 --
 -- A LEFT ARRAY JOIN over a Nested column produces a nested() expression. When only some

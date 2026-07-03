@@ -25,7 +25,6 @@ namespace Setting
 {
 
 extern const SettingsBool enable_unaligned_array_join;
-extern const SettingsBool array_join_use_nulls;
 
 }
 
@@ -193,9 +192,16 @@ void pruneNestedFunctionArguments(
     FunctionNode & function_node,
     const ExpressionUsage & expr_usage,
     const ContextPtr & context,
-    bool make_nullable,
     std::unordered_map<UInt64, UInt64> & index_remap)
 {
+    /// `resolveArrayJoin` already typed this array-join column using the effective per-query
+    /// `array_join_use_nulls`: for `LEFT ARRAY JOIN` with the setting enabled it is `Nullable(...)`
+    /// (empty arrays yield NULL). Re-resolving `nested()` below always yields a plain non-nullable
+    /// type, so remember whether the analyzer made the column nullable and re-apply that at the end.
+    /// Reading the column type (rather than the pass-manager settings) keeps pruning consistent even
+    /// when a subquery carries its own `SETTINGS array_join_use_nulls` that differs from the outer query.
+    const bool preserve_nullable = isNullableOrLowCardinalityNullable(column_node.getColumnType());
+
     auto & nested_args = function_node.getArguments().getNodes();
     const auto & subcolumn_names = expr_usage.nested_subcolumn_names;
     size_t num_subcolumns = subcolumn_names.size();
@@ -245,11 +251,10 @@ void pruneNestedFunctionArguments(
     auto new_result_type = function_node.getResultType();
     auto new_column_type = assert_cast<const DataTypeArray &>(*new_result_type).getNestedType();
 
-    /// `nested()` knows nothing about `array_join_use_nulls`, so re-resolving it yields a plain
-    /// non-nullable tuple element type. For `LEFT ARRAY JOIN` with `array_join_use_nulls` the
-    /// analyzer made this column nullable (empty arrays yield NULL); re-apply the same conversion
-    /// here so pruning keeps the nullable contract instead of silently dropping it.
-    if (make_nullable)
+    /// Re-apply the analyzer's nullable decision captured above (see the note at the top of this
+    /// function): pruning must keep the `array_join_use_nulls` nullable contract instead of silently
+    /// dropping it.
+    if (preserve_nullable)
         new_column_type = makeNullableOrLowCardinalityNullableSafe(new_column_type);
 
     column_node.setColumnType(std::move(new_column_type));
@@ -352,8 +357,6 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
     if (settings[Setting::enable_unaligned_array_join])
         return;
 
-    const bool array_join_use_nulls = settings[Setting::array_join_use_nulls];
-
     /// Step 1: Find all ARRAY JOIN nodes and build the usage map.
     ArrayJoinUsageMap usage_map;
     ArrayJoinNodeSet tracked_nodes;
@@ -451,11 +454,6 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
             join_expressions = std::move(kept);
         }
 
-        /// For `LEFT ARRAY JOIN` with `array_join_use_nulls`, the pruned column type must be
-        /// re-wrapped in nullable (see pruneNestedFunctionArguments) to preserve the nullable
-        /// contract the analyzer established; pruning itself stays enabled.
-        const bool make_pruned_type_nullable = array_join_node->isLeft() && array_join_use_nulls;
-
         /// 3b: Prune unused nested() subcolumn arguments.
         for (auto & join_expr : join_expressions)
         {
@@ -476,7 +474,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
                 continue;
 
             pruneNestedFunctionArguments(
-                *column_node, *function_node, expr_usage, context, make_pruned_type_nullable,
+                *column_node, *function_node, expr_usage, context,
                 index_remap[node_ptr][column_node->getColumnName()]);
         }
 
