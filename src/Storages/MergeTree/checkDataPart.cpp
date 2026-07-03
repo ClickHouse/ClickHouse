@@ -353,7 +353,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
-    const auto & projections_description = data_part->storage.getInMemoryMetadataPtr()->projections;
+    /// Keep the metadata snapshot alive for the whole loop: `projections_description` is a reference into it.
+    auto metadata_snapshot = data_part->storage.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+    const auto & projections_description = metadata_snapshot->projections;
     std::string broken_projections_message;
     for (const auto & [name, projection] : data_part->getProjectionParts())
     {
