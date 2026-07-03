@@ -2635,11 +2635,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// A named `APPLY (x -> untuple(x), 'prefix')` or a `REPLACE (untuple(a) AS a)`
                     /// resolves to a list of `tupleElement` calls, one per tuple field. The legacy
                     /// path expands each element (`f_a.1`/`f_a.id` for APPLY, `a.1`/`a.id` for
-                    /// REPLACE), so expand the whole list here as sibling projection columns instead
-                    /// of rejecting it as a size != 1 result. Only when this is the terminal
-                    /// transformer: a transformer chained after `untuple` is rejected by both
-                    /// analyzers, so leave it to the throw below.
-                    const bool expand_named_untuple = is_last_transformer && node_list_nodes_size != 1
+                    /// REPLACE), so expand the whole list here as sibling projection columns.
+                    /// This also fires for a single-field tuple (a size-1 list): the legacy path
+                    /// keeps the field suffix there too (`f_a.id`, `a.1`), so we must not fall
+                    /// through to the generic single-node path that would drop it. Only when this
+                    /// is the terminal transformer: a transformer chained after `untuple` is
+                    /// rejected by both analyzers, so leave it to the throw below.
+                    const bool expand_named_untuple = is_last_transformer
                         && isUntupleExpansion(node_list_nodes)
                         && ((execute_apply_transformer && !apply_column_name_prefix.empty())
                             || execute_replace_transformer);

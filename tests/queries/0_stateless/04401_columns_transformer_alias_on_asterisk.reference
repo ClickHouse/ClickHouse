@@ -16,12 +16,20 @@ f_a.1	f_a.2	f_b.1	f_b.2
 1	2	3	4
 f_a.1	f_a.2
 1	2
+f_a.id
+1
+f_a.1
+1
 a.1	a.2
 1	2
 a.id	a.v
 1	2
 a.1	a.2	c
 1	2	5
+a.id
+1
+a.1
+1
 a.1	a.2	b
 1	2	(1,2)
 a	f_a	f_b
@@ -44,12 +52,20 @@ f_a.1	f_a.2	f_b.1	f_b.2
 1	2	3	4
 f_a.1	f_a.2
 1	2
+f_a.id
+1
+f_a.1
+1
 a.1	a.2
 1	2
 a.id	a.v
 1	2
 a.1	a.2	c
 1	2	5
+a.id
+1
+a.1
+1
 a.1	a.2	b
 1	2	(1,2)
 f_a	f_b
