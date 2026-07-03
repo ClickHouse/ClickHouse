@@ -1,0 +1,26 @@
+-- baseline: table name still works
+4
+-- query(...) form: filtering is done on the SQLite side
+2
+-- subquery form
+3	c
+4	d
+-- schema inference from a passthrough query
+id	Nullable(Int64)					
+name	Nullable(String)					
+val	Nullable(Float64)					
+-- a JOIN passed to SQLite as is
+1	a	x
+2	b	y
+4	d	z
+-- engine with a query, reading and write rejection
+1	a
+2	b
+-- subquery form quotes identifiers in the target dialect
+7	seven
+-- external_table_strict_query: an outer filter is applied locally by default
+1
+-- external_table_strict_query: an outer filter that cannot be pushed down is rejected
+-- external_table_strict_query: no outer filter is allowed
+4
+-- INSERT into a query-backed table function is rejected before schema inference

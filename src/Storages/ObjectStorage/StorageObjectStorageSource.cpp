@@ -176,6 +176,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -381,6 +382,25 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else if (configuration->supportsFileIterator())
     {
+        /// For datalake configurations, ensure datalake_table_state is present in the metadata
+        /// before calling iterate(). The state is normally set by
+        /// updateExternalDynamicMetadataIfExists() during query analysis, but it can be missing
+        /// due to race conditions between concurrent queries (TOCTOU between setInMemoryMetadata
+        /// and getInMemoryMetadataPtr), or when called from code paths that bypass the
+        /// analyzer/interpreter (e.g. schema inference, cluster functions with nullptr metadata).
+        if (configuration->isDataLakeConfiguration()
+            && (!storage_metadata || !storage_metadata->datalake_table_state.has_value()))
+        {
+            if (auto state = configuration->getTableStateSnapshot(local_context))
+            {
+                auto fixed_metadata = storage_metadata
+                    ? std::make_shared<StorageInMemoryMetadata>(*storage_metadata)
+                    : std::make_shared<StorageInMemoryMetadata>();
+                fixed_metadata->setDataLakeTableState(*state);
+                storage_metadata = std::move(fixed_metadata);
+            }
+        }
+
         auto iter = configuration->iterate(
             filter_actions_dag,
             filter_actions_dag ? std::function<void(FileProgress)>{} : file_progress_callback,
@@ -1271,8 +1291,19 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
+    /// 4. object etag to detect a concurrent in-place overwrite during the read
     if (!object_info.metadata)
+    {
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
+    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
+             && object_storage->getType() == ObjectStorageType::S3)
+    {
+        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
+        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
+        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
+    }
 
     if (use_page_cache && object_info.metadata->etag.empty())
     {
@@ -1338,6 +1369,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
+
+    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
+    /// instead of torn cross-generation data.
+    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+        stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache
@@ -1347,6 +1384,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            /// No cache stage is added in this case, so clear the flag: downstream decisions
+            /// (e.g. whether to issue the initial small-object prefetch) must reflect that the
+            /// read is a plain remote read, not a cached one.
+            use_filesystem_cache = false;
         }
         else
         {
@@ -1408,7 +1449,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     auto impl = pipeline.build();
 
-    if (use_prefetch && impl && !impl->supportsReadAt())
+    /// For small objects prefetch the file ahead of consumption: when reading lots of tiny files
+    /// this almost doubles throughput; bigger objects use parallel reading instead (`use_prefetch`
+    /// already implies the object is small, see `object_too_small` above). This covers random-access
+    /// formats (Parquet/ORC/Arrow) too: AsynchronousBoundedReadBuffer::readBigAt serves the requested
+    /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
+    /// small file) and otherwise drops the prefetch and falls back to a positioned read.
+    ///
+    /// Skip it when the filesystem cache is in use: the cache manages its own read-ahead and segment
+    /// ranges, so an extra initial prefetch over it is redundant and interferes with that handling.
+    if (use_prefetch && impl && !use_filesystem_cache)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
@@ -1673,6 +1723,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             }
             else
                 object_metadata = object_storage->getObjectMetadata(key, with_tags);
+        }
+        else
+        {
+            object_metadata.is_fetched = false;
         }
 
         if (file_progress_callback)

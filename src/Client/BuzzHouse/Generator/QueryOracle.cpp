@@ -216,6 +216,15 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             oracle_combination = OracleCombination::WHERE_ONLY;
     }
 
+    /// In the GROUP BY/HAVING combinations the first query references the GROUP BY
+    /// key columns while the second (flat) rewrite references only the predicate
+    /// columns. So a column that fails analysis only in the first query (e.g. a
+    /// group key that cannot be resolved) makes the two queries differ in success
+    /// without any result divergence - a false positive. Only the result is
+    /// comparable here, not the success status. WHERE_ONLY keeps the same column
+    /// footprint in both queries, so its success comparison stays meaningful.
+    can_test_success &= oracle_combination == OracleCombination::WHERE_ONLY;
+
     if (oracle_combination == OracleCombination::WHERE_ONLY)
     {
         /// WHERE-only path: SELECT count() AS s0 FROM T WHERE pred = TRUE
@@ -250,24 +259,17 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
             gen.generateWherePredicate(rg, bexpr->mutable_lhs());
         }
 
-        /// GROUP BY without auto-generated HAVING (allow_settings=false disables it)
-        gen.generateGroupBy(rg, 1, true, false, inner_ssc);
-
-        /// HAVING predicate restricted to GROUP BY key columns. Wrapped as
-        /// `pred = TRUE` like the WHERE path: the second query SUMs this whole
-        /// expression, and a bare predicate would be summed as its raw value
-        /// (e.g. `HAVING number` keeps every non-zero group, while
-        /// `sum(number)` adds the numbers themselves instead of counting).
-        const auto & gcols = gen.levels[gen.current_level].gcols;
-        if (!gcols.empty())
-        {
-            BinaryExpr * hexpr
-                = inner_ssc->mutable_groupby()->mutable_having_expr()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
-            hexpr->set_op(BinaryOperator::BINOP_EQ);
-            hexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
-                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
-            gen.addWhereFilter(rg, gcols, hexpr->mutable_lhs());
-        }
+        gen.generateGroupBy(rg, 1, false, false, inner_ssc);
+        BinaryExpr * bexpr = inner_ssc->mutable_groupby()
+                                 ->mutable_having_expr()
+                                 ->mutable_expr()
+                                 ->mutable_expr()
+                                 ->mutable_comp_expr()
+                                 ->mutable_binary_expr();
+        bexpr->set_op(BinaryOperator::BINOP_EQ);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
 
         /// Inner result: count() AS cnt
         ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();
@@ -579,7 +581,7 @@ void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, Statement
     if (rg.nextSmallNumber() < 4)
         gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
     if (rg.nextSmallNumber() < 3)
-        gen.generateGroupBy(rg, 1, rg.nextBool(), false, ssc1);
+        gen.generateGroupBy(rg, 1, rg.nextSmallNumber() < 4, true, ssc1);
 
     gen.levels.clear();
     gen.ctes.clear();
@@ -661,7 +663,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         const SQLTable & t = gen.lookupTable(policy.table_key);
 
         t.setName(jtf2->mutable_tof()->mutable_est(), false);
-        jtf2->set_final(t.supportsFinal());
+        jtf2->set_final(t.supportsFinal(true));
     }
     else
     {
@@ -859,7 +861,7 @@ void QueryOracle::dumpTableContent(
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
     switch (strategy)
     {
         case DumpOracleStrategy::REINSERT_TABLE:
@@ -933,6 +935,7 @@ void QueryOracle::dumpTableContent(
             eca->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     if (test_content)
     {
@@ -976,6 +979,7 @@ void QueryOracle::dumpTableContent(
             eca2->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
 }
 
@@ -1057,7 +1061,7 @@ void QueryOracle::generateExportQuery(
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
 }
 
 void QueryOracle::dumpOracleIntermediateSteps(
@@ -1198,7 +1202,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 SQLQuery next2;
                 const String part_name = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname);
@@ -1230,7 +1234,7 @@ void QueryOracle::dumpOracleIntermediateSteps(
             const String dname = t.getDatabaseName();
             const String tname = t.getBaseName();
 
-            if (t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname))
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
             {
                 const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
 
@@ -1310,6 +1314,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
             }
             intermediate_queries.emplace_back(next);
         }
+        break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     gen.setAllowNotDetermistic(true);
 }
@@ -1943,7 +1949,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily() && t.can_run_merges)
+        if (t.isMergeTreeFamily(true) && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1963,7 +1969,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-        jtf->set_final(t.supportsFinal());
+        jtf->set_final(t.supportsFinal(true));
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
