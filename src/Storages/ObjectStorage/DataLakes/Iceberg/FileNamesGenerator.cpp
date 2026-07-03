@@ -18,7 +18,6 @@ FileNamesGenerator::FileNamesGenerator(
     , compression_method(compression_method_)
     , format_name(boost::to_lower_copy(format_name_))
 {
-    /// Normalize: ensure table_location ends with '/'
     if (!table_location.empty() && table_location.back() != '/')
         table_location += '/';
 }

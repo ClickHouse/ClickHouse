@@ -27,10 +27,10 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_bigint_types", 1);
     context->setSetting("allow_experimental_bfloat16_type", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
+    context->setSetting("allow_experimental_nullable_tuple_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
-    context->setSetting("allow_experimental_nullable_tuple_type", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);
@@ -71,6 +71,7 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
+    context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 
     context->setSetting("allow_experimental_ai_functions", 1);

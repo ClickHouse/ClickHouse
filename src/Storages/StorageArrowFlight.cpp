@@ -89,8 +89,6 @@ StorageArrowFlight::Configuration StorageArrowFlight::processNamedCollectionResu
     configuration.port = static_cast<UInt16>(named_collection.get<UInt64>("port"));
     configuration.dataset_name = named_collection.getOrDefault<String>("dataset", "");
 
-    configuration.dataset_name = named_collection.get<String>("dataset");
-
     configuration.use_basic_authentication = named_collection.getOrDefault<bool>("use_basic_authentication", true);
     bool is_username_set = named_collection.has("username") || named_collection.has("user");
     if (configuration.use_basic_authentication && !is_username_set)
@@ -346,8 +344,8 @@ void registerStorageArrowFlight(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
-The ArrowFlight table engine enables ClickHouse to query remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
-This integration allows ClickHouse to fetch data from external Flight-enabled servers in a columnar Arrow format with high performance.
+The ArrowFlight table engine enables ClickHouse to read from and write to remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
+This integration allows ClickHouse to interact with external Flight-enabled servers in a columnar Arrow format with high performance.
 
 ## Creating a Table {#creating-a-table}
 
@@ -358,16 +356,34 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 **Engine Parameters**
 
-* `host:port` — Address of the remote Arrow Flight server.
-* `dataset_name` — Identifier of the dataset on the Flight server.
-* `username` - Username to use with basic HTTP style authentication.
-* `password` - Password to use with basic HTTP style authentication.
-If `username` and `password` are not specified, it means that authentication is not used
-(that will work only if the Arrow Flight server allows it).
+- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used.
+- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting).
+- `username` — Username for basic HTTP authentication.
+- `password` — Password for basic HTTP authentication.
+
+If `username` and `password` are omitted, authentication is not used (this works only if the Arrow Flight server allows unauthenticated access).
+
+The column list is optional — if omitted, the schema is inferred from the remote Arrow Flight server via `GetSchema`.
+
+## Named Collections {#named-collections}
+
+The engine supports [named collections](/operations/named-collections) for storing connection parameters:
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+Named collection parameters: `host`/`hostname`, `port` (required), `dataset`, `use_basic_authentication`,
+`user`/`username`, `password`, `enable_ssl`, `ssl_ca`, `ssl_override_hostname`.
+
+## Settings {#settings}
+
+- `arrow_flight_request_descriptor_type` — Controls how the dataset name is sent to the Flight server. Possible values: `path` (default, sends as a PATH descriptor) or `command` (sends as a CMD descriptor with `SELECT * FROM <dataset>`). Use `command` for Flight servers that expect SQL commands (e.g., Dremio).
 
 ## Usage Example {#usage-example}
 
-This example shows how to create a table that reads data from a remote Arrow Flight server:
+Reading data from a remote Arrow Flight server:
 
 ```sql
 CREATE TABLE remote_flight_data
@@ -376,11 +392,7 @@ CREATE TABLE remote_flight_data
     name String,
     value Float64
 ) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
-```
 
-Query the remote data as if it were a local table:
-
-```sql
 SELECT * FROM remote_flight_data ORDER BY id;
 ```
 
@@ -392,15 +404,24 @@ SELECT * FROM remote_flight_data ORDER BY id;
 └────┴─────────┴───────┘
 ```
 
+Inserting data into a remote Arrow Flight server:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
 ## Notes {#notes}
 
-* The schema defined in ClickHouse must match the schema returned by the Flight server.
-* This engine is suitable for federated queries, data virtualization, and decoupling storage from compute.
+- If columns are specified in the `CREATE TABLE` statement, they must match the schema returned by the Flight server.
+- If columns are omitted, the schema is inferred automatically from the remote server.
+- Both reading (`SELECT`) and writing (`INSERT`) are supported.
+- The `arrow_flight_request_descriptor_type` setting controls whether the dataset name is sent as a PATH descriptor or as a CMD descriptor wrapping a `SELECT *` query.
 
 ## See Also {#see-also}
 
-* [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
-* [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)
+- [arrowFlight table function](/sql-reference/table-functions/arrowflight)
+- [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+- [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)
 )DOCS_MD",
             .syntax = "ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password'])",
         });

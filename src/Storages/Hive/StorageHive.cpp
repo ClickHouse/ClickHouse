@@ -633,12 +633,12 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 
     if (prune_level >= PruneLevel::Partition)
     {
-        std::vector<Range> ranges;
+        Ranges ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
 
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition partition_key_condition(inverted_dag, context, partition_names, partition_minmax_idx_expr);
         if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
             return {};
@@ -707,7 +707,7 @@ HiveFilePtr StorageHive::getHiveFileIfNeeded(
 
     if (prune_level >= PruneLevel::File)
     {
-        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_);
+        ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context_, /* boolean_context */ true);
         const KeyCondition hivefile_key_condition(inverted_dag, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (hive_file->useFileMinMaxIndex())
         {
