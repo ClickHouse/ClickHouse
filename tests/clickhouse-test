@@ -1555,6 +1555,7 @@ class SettingsRandomizer:
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
@@ -1596,7 +1597,6 @@ class SettingsRandomizer:
     }
 
     stress_test_only_settings = {
-        "query_plan_optimize_join_order_randomize",
         "analyzer_compatibility_prefer_alias_over_subcolumn",
     }
 
