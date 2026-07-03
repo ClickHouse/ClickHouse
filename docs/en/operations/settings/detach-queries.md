@@ -5,6 +5,7 @@ sidebar_position: 65
 slug: /operations/settings/detach-queries
 title: 'allow_experimental_detach_queries'
 doc_type: 'reference'
+sidebar: false
 ---
 
 # allow_experimental_detach_queries {#detach-queries}
