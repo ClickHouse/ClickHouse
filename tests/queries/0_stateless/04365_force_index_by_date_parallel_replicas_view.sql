@@ -64,5 +64,25 @@ SELECT count() FROM v_force_index_pr
 WHERE value = 1
 SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
 
+-- Same via the automatic parallel replicas heuristic (automatic_parallel_replicas_mode = 1). The heuristic
+-- re-plans the query through the same view-inner path to build a parallel-replicas candidate, so the guards
+-- must behave the same: a covered predicate passes and a genuinely unused index still throws. sum(value)
+-- (instead of count()) is used so the heuristic actually builds the candidate plan for the view read;
+-- min_bytes_per_replica = 1 stops it from skipping the candidate on size.
+SELECT sum(value) FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
+    automatic_parallel_replicas_min_bytes_per_replica = 1, force_index_by_date = 1, force_primary_key = 1;
+
+SELECT sum(value) FROM v_force_index_pr
+WHERE value = 1
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
+    automatic_parallel_replicas_min_bytes_per_replica = 1, force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+
+SELECT sum(value) FROM v_force_index_pr
+WHERE value = 1
+SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1,
+    automatic_parallel_replicas_min_bytes_per_replica = 1, force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
+
 DROP VIEW v_force_index_pr;
 DROP TABLE t_force_index_pr;
