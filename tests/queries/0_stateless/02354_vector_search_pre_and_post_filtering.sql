@@ -4,6 +4,7 @@ SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET explain_query_plan_default = 'legacy'; -- this test greps plain (non-pretty) EXPLAIN output, so keep the legacy plan format
 
 DROP TABLE IF EXISTS tab;
 
@@ -123,7 +124,7 @@ SELECT trimLeft(explain) FROM (
 )
 WHERE explain LIKE '%vector_similarity%';
 
-SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK';
+SELECT '-- Additional WHERE clauses present, 2 full parts selected by partition key / 1 part partially selected by PK, expect index usage';
 SELECT id
 FROM tab
 WHERE date = '2025-01-03' AND id <= 9

@@ -18,11 +18,13 @@ INSERT INTO tab_pk_partial VALUES
     (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
 
 -- Case A: partial PK range with vector ORDER BY LIMIT.
-SELECT 'pk_partial_matches_exact_knn_without_skip_indexes';
+-- Compare the ordered ids (not just the set): a wrong row-to-distance mapping in the
+-- filtered_search path would keep the same candidate set but reorder it, so assert the order.
+SELECT 'pk_partial_ordered_ids_match_exact_knn_without_skip_indexes';
 WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
 SELECT
     (
-        SELECT arraySort(groupArray(id))
+        SELECT groupArray(id)
         FROM
         (
             SELECT id
@@ -33,7 +35,7 @@ SELECT
             SETTINGS use_skip_indexes = 1
         )
     ) = (
-        SELECT arraySort(groupArray(id))
+        SELECT groupArray(id)
         FROM
         (
             SELECT id
@@ -78,7 +80,8 @@ FROM
     SETTINGS use_skip_indexes = 0
 );
 
--- Adaptive granularity: variable row sizes per mark.
+-- Adaptive granularity: variable row sizes per mark. Vectors are deliberately non-monotonic
+-- (id order != distance order) so the ordered assertions below detect a wrong row-to-mark mapping.
 DROP TABLE IF EXISTS tab_pk_partial_adaptive;
 
 CREATE TABLE tab_pk_partial_adaptive(
@@ -89,16 +92,18 @@ CREATE TABLE tab_pk_partial_adaptive(
 ) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 3, index_granularity_bytes = 64, min_index_granularity_bytes = 10, min_bytes_for_wide_part = 0;
 
+-- For reference_vec [0, 0], the L2 distances of rows 6..11 are 3, 5, 1, 4, 2, 6, so the exact
+-- top-3 order is [8, 10, 6] which is neither the id order nor a plain sort of the surviving ids.
 INSERT INTO tab_pk_partial_adaptive VALUES
-    (0, repeat('a', 0), [1.0, 0.0]), (1, repeat('a', 20), [1.1, 0.0]), (2, repeat('a', 40), [1.2, 0.0]),
-    (3, repeat('a', 60), [1.3, 0.0]), (4, repeat('a', 80), [1.4, 0.0]), (5, repeat('a', 100), [1.5, 0.0]),
-    (6, repeat('a', 120), [0.0, 2.0]), (7, repeat('a', 140), [0.0, 2.1]), (8, repeat('a', 160), [0.0, 2.2]),
-    (9, repeat('a', 180), [0.0, 2.3]), (10, repeat('a', 200), [0.0, 2.4]), (11, repeat('a', 220), [0.0, 2.5]);
+    (0, repeat('a', 0), [10.0, 0.0]), (1, repeat('a', 20), [11.0, 0.0]), (2, repeat('a', 40), [12.0, 0.0]),
+    (3, repeat('a', 60), [13.0, 0.0]), (4, repeat('a', 80), [14.0, 0.0]), (5, repeat('a', 100), [15.0, 0.0]),
+    (6, repeat('a', 120), [0.0, 3.0]), (7, repeat('a', 140), [0.0, 5.0]), (8, repeat('a', 160), [0.0, 1.0]),
+    (9, repeat('a', 180), [0.0, 4.0]), (10, repeat('a', 200), [0.0, 2.0]), (11, repeat('a', 220), [0.0, 6.0]);
 
 SELECT id
 FROM tab_pk_partial_adaptive
 WHERE id >= 6
-ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(2.)]) ASC
+ORDER BY L2Distance(vec, [toFloat32(0.), toFloat32(0.)]) ASC
 LIMIT 3
 SETTINGS use_skip_indexes = 1, log_comment = '04217-adaptive-pk-partial'
 FORMAT Null;
@@ -114,6 +119,50 @@ WHERE current_database = currentDatabase()
     AND log_comment = '04217-adaptive-pk-partial'
     AND event_date >= yesterday()
     AND event_time >= now() - 600;
+
+-- Ordered correctness under adaptive granularity: the filtered_search result must match the
+-- brute-force baseline exactly, including order. This guards the row-to-mark mapping that the
+-- USearchSearchCount check above cannot (it only proves the index path executed, not that it
+-- returned the right rows in the right order).
+SELECT 'pk_partial_adaptive_ordered_ids_match_exact_knn_without_skip_indexes';
+WITH [toFloat32(0.), toFloat32(0.)] AS reference_vec
+SELECT
+    (
+        SELECT groupArray(id)
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial_adaptive
+            WHERE id >= 6
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 1
+        )
+    ) = (
+        SELECT groupArray(id)
+        FROM
+        (
+            SELECT id
+            FROM tab_pk_partial_adaptive
+            WHERE id >= 6
+            ORDER BY L2Distance(vec, reference_vec) ASC
+            LIMIT 3
+            SETTINGS use_skip_indexes = 0
+        )
+    );
+
+SELECT 'pk_partial_adaptive_expected_ordered_top3_ids';
+WITH [toFloat32(0.), toFloat32(0.)] AS reference_vec
+SELECT groupArray(id)
+FROM
+(
+    SELECT id
+    FROM tab_pk_partial_adaptive
+    WHERE id >= 6
+    ORDER BY L2Distance(vec, reference_vec) ASC
+    LIMIT 3
+    SETTINGS use_skip_indexes = 1
+);
 
 DROP TABLE tab_pk_partial_adaptive;
 
