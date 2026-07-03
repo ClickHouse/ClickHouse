@@ -484,7 +484,7 @@ Usage example:
 CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
 ```
 
-      Ok
+Ok
 
 Take a look at what's in the table.
 

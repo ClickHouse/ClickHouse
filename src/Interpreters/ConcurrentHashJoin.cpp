@@ -220,6 +220,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
@@ -319,6 +320,10 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
+
+                /// Update the snapshot of total rows and bytes for the current join instance
+                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
+                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -454,10 +459,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 {
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalRowCount();
-    }
+        res += hash_join->total_rows.load(std::memory_order_relaxed);
     return res;
 }
 
@@ -465,10 +467,7 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
 {
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        res += hash_join->data->getTotalByteCount();
-    }
+        res += hash_join->total_bytes.load(std::memory_order_relaxed);
     return res;
 }
 
@@ -735,6 +734,8 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     std::lock_guard lock(hash_join->mutex);
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
+    hash_join->total_rows.store(0, std::memory_order_relaxed);
+    hash_join->total_bytes.store(0, std::memory_order_relaxed);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
