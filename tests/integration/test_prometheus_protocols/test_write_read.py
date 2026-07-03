@@ -7,6 +7,7 @@ from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_response_to_remote_read,
+    get_response_to_remote_write,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
 )
