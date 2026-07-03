@@ -34,9 +34,8 @@ namespace DB
 class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_, bool standard_mode_ = false)
+    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_)
         : aliases(aliases_)
-        , standard_mode(standard_mode_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -98,21 +97,18 @@ private:
         const auto & alias = node->getAlias();
         auto cloned_alias_node = node->clone();
 
-        /// Quoted aliases (`1 AS "MyAlias"`) stay case-sensitive even in standard mode
-        const bool case_insensitive = standard_mode && !node->isAliasDoubleQuoted();
-
         switch (node_type)
         {
         case QueryTreeNodeType::LAMBDA:
             {
-                bool inserted = aliases.registerAlias(IdentifierLookupContext::FUNCTION, alias, cloned_alias_node, case_insensitive);
+                bool inserted = aliases.registerAlias(IdentifierLookupContext::FUNCTION, alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
                 break;
             }
         case QueryTreeNodeType::IDENTIFIER:
             {
-                bool inserted_expression = aliases.registerAlias(IdentifierLookupContext::EXPRESSION, alias, cloned_alias_node, case_insensitive);
+                bool inserted_expression = aliases.registerAlias(IdentifierLookupContext::EXPRESSION, alias, cloned_alias_node);
                 bool inserted_lambda           = true; // Avoid adding to duplicating aliases if identifier is compound.
                 bool inserted_table_expression = true; // Avoid adding to duplicating aliases if identifier is compound.
 
@@ -121,8 +117,8 @@ private:
                 auto * identifier_node = node->as<IdentifierNode>();
                 if (identifier_node->getIdentifier().isShort())
                 {
-                    inserted_lambda = aliases.registerAlias(IdentifierLookupContext::FUNCTION, alias, cloned_alias_node, case_insensitive);
-                    inserted_table_expression = aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias, cloned_alias_node, case_insensitive);
+                    inserted_lambda = aliases.registerAlias(IdentifierLookupContext::FUNCTION, alias, cloned_alias_node);
+                    inserted_table_expression = aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias, cloned_alias_node);
                 }
 
                 if (!inserted_expression || !inserted_lambda || !inserted_table_expression)
@@ -131,7 +127,7 @@ private:
             }
         default:
             {
-                bool inserted = aliases.registerAlias(IdentifierLookupContext::EXPRESSION, alias, cloned_alias_node, case_insensitive);
+                bool inserted = aliases.registerAlias(IdentifierLookupContext::EXPRESSION, alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
                 break;
@@ -140,7 +136,6 @@ private:
     }
 
     ScopeAliases & aliases;
-    bool standard_mode;
 };
 
 }

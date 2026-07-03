@@ -16,8 +16,8 @@ namespace ErrorCodes
 class TableExpressionsAliasVisitor : public InDepthQueryTreeVisitor<TableExpressionsAliasVisitor>
 {
 public:
-    TableExpressionsAliasVisitor(IdentifierResolveScope & scope_, bool standard_mode_)
-        : scope(scope_), standard_mode(standard_mode_)
+    explicit TableExpressionsAliasVisitor(IdentifierResolveScope & scope_)
+        : scope(scope_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -62,9 +62,7 @@ private:
             return;
 
         const auto & node_alias = node->getAlias();
-        /// A double-quoted table alias stays case-sensitive even in standard mode
-        const bool register_for_ci_lookup = standard_mode && !node->isAliasDoubleQuoted();
-        if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, node_alias, node, register_for_ci_lookup))
+        if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, node_alias, node))
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
                 "Multiple table expressions with same alias {}. In scope {}",
                 node_alias,
@@ -72,7 +70,6 @@ private:
     }
 
     IdentifierResolveScope & scope;
-    bool standard_mode;
 };
 
 }

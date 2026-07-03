@@ -584,19 +584,17 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
     const bool standard_mode = scope.isStandardMode();
-    /// Full-name lookup keys off the last part; prefix lookup keys off part 0 (the bind name)
-    /// so e.g. `arrayMap(item -> ITEM."Name", arr)` still binds `ITEM` to the lambda argument `item`
-    const bool use_case_insensitive_full = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
-    const bool use_case_insensitive_prefix = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
-    auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive_full);
+    /// Exact-only probes: a case-folded reference is respelled to the canonical argument name by
+    /// the `tryResolveIdentifierByCaseFoldRespell` fallback and retried through this same path.
+    auto it = scope.expression_argument_name_to_node.find(identifier_lookup.identifier.getFullName());
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
 
     if (!resolve_full_identifier)
     {
         const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-        it = scope.findExpressionArgument(identifier_bind_part, use_case_insensitive_prefix);
+        it = scope.expression_argument_name_to_node.find(identifier_bind_part);
         if (it == scope.expression_argument_name_to_node.end())
             return {};
     }
@@ -627,13 +625,6 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    /// Aliases are matched by the first part of the identifier, so part-0 quoting decides case sensitivity
-    const bool standard_mode = scope.isStandardMode();
-    const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
-
-    if (use_case_insensitive)
-        return scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
-
     return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
 }
 

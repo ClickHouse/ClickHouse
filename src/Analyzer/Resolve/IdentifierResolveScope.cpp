@@ -140,11 +140,9 @@ void IdentifierResolveScope::popExpressionNode()
 void IdentifierResolveScope::addExpressionArgument(const std::string & name, QueryTreeNodePtr node, bool is_double_quoted)
 {
     expression_argument_name_to_node.emplace(name, std::move(node));
-    /// Quoted lambda arguments / quoted recursive-CTE self-references stay case-sensitive in standard mode.
-    /// Keep them out of the lowercase index so an unquoted lookup cannot match them.
-    if (!is_double_quoted)
-        lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
-    else
+    /// Quoted lambda arguments / quoted recursive-CTE self-references stay case-sensitive in
+    /// standard mode: the case-fold respell fallback skips pinned names.
+    if (is_double_quoted)
         case_sensitive_expression_args.insert(name);
 }
 
@@ -158,37 +156,20 @@ IdentifierResolveScope::registerCTE(const std::string & cte_name, QueryTreeNodeP
     /// Standard mode: unquoted CTE names collide case-insensitively; quoted names stay distinct
     if (isStandardMode() && !is_double_quoted)
     {
-        auto & originals = lowercase_cte_to_original_names[Poco::toLower(cte_name)];
-        if (!originals.empty())
-            return CTERegisterResult::CaseInsensitiveCollision;
-        originals.push_back(cte_name);
+        for (const auto & entry : cte_name_to_query_node)
+        {
+            const auto & existing_name = entry.first;
+            if (existing_name == cte_name || case_sensitive_cte_names.contains(existing_name))
+                continue;
+            if (Poco::icompare(existing_name, cte_name) == 0)
+                return CTERegisterResult::CaseInsensitiveCollision;
+        }
     }
+
+    if (is_double_quoted)
+        case_sensitive_cte_names.insert(cte_name);
+
     return CTERegisterResult::OK;
-}
-
-std::unordered_map<std::string, QueryTreeNodePtr>::iterator
-IdentifierResolveScope::findExpressionArgument(const std::string & name, bool case_insensitive)
-{
-    /// Exact-case wins, like columns/aliases/tables in `standard` mode. Without this,
-    /// `arrayMap((x, X) -> x + X, [1], [2])` would throw AMBIGUOUS_IDENTIFIER because
-    /// `x` and `X` share a lowercase bucket, even though both references are exact.
-    auto exact_it = expression_argument_name_to_node.find(name);
-    if (exact_it != expression_argument_name_to_node.end() || !case_insensitive)
-        return exact_it;
-
-    auto lowercase_it = lowercase_expression_arg_to_names.find(Poco::toLower(name));
-    if (lowercase_it == lowercase_expression_arg_to_names.end())
-        return expression_argument_name_to_node.end();
-
-    const auto & original_names = lowercase_it->second;
-    if (original_names.size() > 1)
-    {
-        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-            "Identifier '{}' is ambiguous: matches multiple arguments with different cases: '{}' and '{}'. In scope {}",
-            name, original_names[0], original_names[1], scope_node->formatASTForErrorMessage());
-    }
-
-    return expression_argument_name_to_node.find(original_names.front());
 }
 
 namespace

@@ -293,8 +293,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
             if (node_type == QueryTreeNodeType::LIST)
             {
-                const bool standard_mode = scope.isStandardMode();
-                QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
                 visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
@@ -305,8 +304,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            const bool standard_mode = scope.isStandardMode();
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, standard_mode);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases);
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -1191,31 +1189,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     IdentifierResolveContext identifier_resolve_context)
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
-    const bool standard_mode = scope.isStandardMode();
-    /// Alias matching keys off the first part (the alias name itself), so use part 0's quote style
-    const bool use_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
 
-    QueryTreeNodePtr * it = nullptr;
-
-    if (use_case_insensitive)
-    {
-        /// case-insensitive for SQL-standard mode with unquoted identifier
-        std::vector<std::string> ambiguous_aliases;
-        it = scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME, &ambiguous_aliases);
-        if (!ambiguous_aliases.empty())
-        {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "Alias '{}' is ambiguous: matches multiple aliases with different cases: {}. In scope {}",
-                identifier_bind_part,
-                fmt::join(ambiguous_aliases, ", "),
-                scope.scope_node->formatASTForErrorMessage());
-        }
-    }
-    else
-    {
-        /// default mode or double-quoted identifier in standard mode: case-sensitive
-        it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
-    }
+    /// Exact-only probe: a case-folded reference is respelled to the canonical alias name by
+    /// the `tryResolveIdentifierByCaseFoldRespell` fallback and retried through this same path.
+    QueryTreeNodePtr * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
 
     if (it == nullptr)
         return {};
@@ -1309,7 +1286,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (identifier_lookup.isExpressionLookup())
         {
             /// Fold the suffix case-insensitively when in `standard` mode and every suffix part was unquoted.
-            bool suffix_case_insensitive = standard_mode;
+            bool suffix_case_insensitive = scope.isStandardMode();
             for (size_t p = 1; p < identifier_lookup.identifier.getPartsSize() && suffix_case_insensitive; ++p)
                 suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
             if (auto resolved_identifier = identifier_resolver.tryResolveIdentifierFromCompoundExpression(
@@ -1350,22 +1327,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    const bool standard_mode = scope.isStandardMode();
-    const bool use_case_insensitive = identifier_lookup.isLastPartCaseInsensitive(standard_mode);
 
     auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
-    if (cte_query_node_it == scope.cte_name_to_query_node.end() && use_case_insensitive)
-    {
-        /// Unquoted lookup in standard mode — go through the lowercase index. CTE registration enforces
-        /// case-insensitive uniqueness for unquoted CTEs, so the index holds at most one original per key
-        auto lower_it = scope.lowercase_cte_to_original_names.find(Poco::toLower(full_name));
-        if (lower_it != scope.lowercase_cte_to_original_names.end())
-        {
-            chassert(lower_it->second.size() == 1);
-            cte_query_node_it = scope.cte_name_to_query_node.find(lower_it->second.front());
-            full_name = lower_it->second.front();
-        }
-    }
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -1767,7 +1730,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierByCaseFoldRespell(con
                 cte_name_pinned = cte_union->isCTENameDoubleQuoted();
             else if (const auto * cte_table = cte_node->as<TableNode>())
                 cte_name_pinned = cte_table->isMaterializedCTE() && cte_table->getMaterializedCTE()->name_is_double_quoted;
-            if (cte_name_pinned)
+            if (cte_name_pinned || scope.case_sensitive_cte_names.contains(cte_name))
                 continue;
             if (cte_name != full_name && identifierPartsEqual(cte_name, full_name, true))
                 add_candidate(cte_name);
@@ -3429,8 +3392,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    const bool standard_mode = scope.isStandardMode();
-    QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -4945,7 +4907,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
                 alias_column_resolve_scope.context = scope.context;
 
                 /// Initialize aliases in alias column scope
-                QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases, scope.isStandardMode());
+                QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
                 visitor.visit(alias_column_to_resolve->getExpression());
 
                 resolveExpressionNode(alias_column_resolve_scope.scope_node,
@@ -6475,10 +6437,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         if (alias_name.empty())
             return;
 
-        const bool standard_mode = scope.isStandardMode();
-        /// A double-quoted table alias stays case-sensitive even in standard mode
-        const bool register_for_ci_lookup = standard_mode && !table_expression_node->isAliasDoubleQuoted();
-        if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias_name, table_expression_node, register_for_ci_lookup))
+        if (!scope.aliases.registerAlias(IdentifierLookupContext::TABLE_EXPRESSION, alias_name, table_expression_node))
         {
             const auto & existing = scope.aliases.alias_name_to_table_expression_node.find(alias_name)->second;
             throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
@@ -6555,8 +6514,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
     /// Initialize aliases in query node scope
-    const bool standard_mode = scope.isStandardMode();
-    QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
 
     if (scope.context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
     {
@@ -6564,7 +6522,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
     else
     {
-        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases, standard_mode);
+        QueryExpressionsAliasVisitor alias_collector(scope.global_with_aliases);
         alias_collector.visit(query_node_typed.getWithNode());
 
         scope.aliases = scope.global_with_aliases;
@@ -6677,12 +6635,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     auto transitive_aliases = std::move(scope.aliases.alias_name_to_table_expression_node);
-    /// Save the lowercase index alongside so the visitor sees an empty primary + lowercase pair,
-    /// and the original parent-scope entries are restored after the join tree visit.
-    auto transitive_lowercase_table_aliases = std::move(scope.aliases.lowercase_table_alias_to_originals);
 
-    const bool standard_mode_for_table_aliases = scope.isStandardMode();
-    TableExpressionsAliasVisitor table_expressions_visitor(scope, standard_mode_for_table_aliases);
+    TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
@@ -6696,7 +6650,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
-    scope.aliases.lowercase_table_alias_to_originals = std::move(transitive_lowercase_table_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
 

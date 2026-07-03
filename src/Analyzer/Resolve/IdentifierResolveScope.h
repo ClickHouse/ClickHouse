@@ -146,8 +146,6 @@ struct IdentifierResolveScope
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
     /// Lowercase name -> list of original names, used by `findExpressionArgument(name, /*case_insensitive=*/true)`
-    std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_arg_to_names;
-
     /// Expression arguments registered from a double-quoted definition (`"X"` lambda parameter,
     /// quoted INTERPOLATE target). Pinned case-sensitive: the case-fold respell must skip them.
     std::unordered_set<std::string> case_sensitive_expression_args;
@@ -162,14 +160,13 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node — stored with original case.
-    /// Sibling lowercase index below must stay in sync; registration in `resolveQuery` updates both,
-    /// throwing on case-insensitive collisions among unquoted CTEs
+    /// CTE name to query node — stored with original case. Register through `registerCTE`,
+    /// which rejects case-insensitive collisions among unquoted CTEs in standard mode
     std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
 
-    /// Lowercase CTE name -> original-case name (always exactly one entry per key by construction),
-    /// populated in standard mode only for unquoted CTE definitions
-    std::unordered_map<std::string, std::vector<std::string>> lowercase_cte_to_original_names;
+    /// CTE names registered double-quoted — pinned case-sensitive, skipped by the collision
+    /// scan in `registerCTE` and by the case-fold respell fallback
+    std::unordered_set<std::string> case_sensitive_cte_names;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
@@ -248,19 +245,14 @@ struct IdentifierResolveScope
     /// false — quoted lambda arguments stay case-sensitive in standard mode.
     void addExpressionArgument(const std::string & name, QueryTreeNodePtr node, bool is_double_quoted = false);
 
-    /// can do optional case-insensitive lookup, in this case throws exception if multiple matches exist
-    std::unordered_map<std::string, QueryTreeNodePtr>::iterator
-    findExpressionArgument(const std::string & name, bool case_insensitive);
-
     /// True iff the `case_insensitive_names` setting is `standard` for this scope's context.
     /// Cached at construction: the setting cannot change for the lifetime of a scope, and this
     /// predicate sits on per-identifier hot paths.
     bool isStandardMode() const { return standard_mode; }
 
-    /// Register a CTE in this scope. Updates `cte_name_to_query_node` and, when the CTE is unquoted
-    /// in standard mode, also updates `lowercase_cte_to_original_names`. Returns OK if registered;
-    /// DuplicateName if the same name (case-sensitive) is already registered; CaseInsensitiveCollision
-    /// for unquoted name collisions so that `WITH MyCTE AS …, mycte AS …` can be rejected.
+    /// Register a CTE in this scope. Returns OK if registered; DuplicateName if the same name
+    /// (case-sensitive) is already registered; CaseInsensitiveCollision for unquoted name
+    /// collisions in standard mode so that `WITH MyCTE AS …, mycte AS …` can be rejected.
     enum class CTERegisterResult { OK, DuplicateName, CaseInsensitiveCollision };
     CTERegisterResult registerCTE(const std::string & cte_name, QueryTreeNodePtr node, bool is_double_quoted);
 
