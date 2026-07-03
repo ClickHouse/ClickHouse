@@ -94,6 +94,16 @@
             --syntax-comment:    #757575;
             --syntax-operator:   var(--text-color-active);
             --syntax-error:      #B71C1C;
+
+            /* Rainbow parentheses: one color per nesting depth, cycling.
+               Dark variants so they read on a light background. */
+            --syntax-bracket-0:  #A31515;
+            --syntax-bracket-1:  #8A4B00;
+            --syntax-bracket-2:  #6B5D00;
+            --syntax-bracket-3:  #1B5E3A;
+            --syntax-bracket-4:  #0D3C8C;
+            --syntax-bracket-5:  #4A2A85;
+            --syntax-bracket-6:  #8A0F42;
         }
 
         [data-theme="dark"] {
@@ -146,6 +156,16 @@
             --syntax-comment:    #9E9E9E;
             --syntax-operator:   var(--text-color-active);
             --syntax-error:      #FF6E40;
+
+            /* Rainbow parentheses: one color per nesting depth, cycling.
+               Light variants so they read on a dark background. */
+            --syntax-bracket-0:  #FF9999;
+            --syntax-bracket-1:  #FFD3A6;
+            --syntax-bracket-2:  #F7FCC0;
+            --syntax-bracket-3:  #9BFAB8;
+            --syntax-bracket-4:  #BFF3FF;
+            --syntax-bracket-5:  #D7C4FC;
+            --syntax-bracket-6:  #FFB0DE;
         }
 
         ::selection {
@@ -929,6 +949,30 @@
         #query-backdrop .q-com { color: var(--syntax-comment); font-style: italic; }
         #query-backdrop .q-op  { color: var(--syntax-operator); }
         #query-backdrop .q-err { color: var(--syntax-error); text-decoration: underline wavy; }
+
+        /* Rainbow parentheses: brackets are colored by their nesting depth (cycling
+           through the seven --syntax-bracket-* colors). */
+        #query-backdrop .q-br0 { color: var(--syntax-bracket-0); }
+        #query-backdrop .q-br1 { color: var(--syntax-bracket-1); }
+        #query-backdrop .q-br2 { color: var(--syntax-bracket-2); }
+        #query-backdrop .q-br3 { color: var(--syntax-bracket-3); }
+        #query-backdrop .q-br4 { color: var(--syntax-bracket-4); }
+        #query-backdrop .q-br5 { color: var(--syntax-bracket-5); }
+        #query-backdrop .q-br6 { color: var(--syntax-bracket-6); }
+
+        /* The pair of brackets around the cursor is emphasized in bold with a faint
+           background box. Bold monospace has the same advance width, so the surrounding
+           text does not shift. */
+        #query-backdrop .q-br-match
+        {
+            font-weight: bold;
+            background-color: color-mix(in srgb, var(--syntax-default) 20%, transparent);
+            border-radius: 0.15rem;
+        }
+
+        /* Underline used both for every occurrence of the identifier under the cursor and
+           for the digit-group separators inside long numbers (matching `clickhouse-client`). */
+        #query-backdrop .q-underline { text-decoration: underline; }
 
         /* Off-screen mirror used to measure the pixel coordinates of the caret inside the
            textarea. Its typography and box model MUST match the textarea exactly (same as
@@ -6179,6 +6223,8 @@ function escapeHTML(s) {
 const TT = {
     Whitespace: 0, Comment: 1, BareWord: 2, Number: 3, StringLiteral: 4, QuotedIdentifier: 5,
     OpeningRoundBracket: 6, ClosingRoundBracket: 7,
+    OpeningSquareBracket: 8, ClosingSquareBracket: 9,
+    OpeningCurlyBrace: 10, ClosingCurlyBrace: 11,
     Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
     Plus: 19, Minus: 20, Slash: 21, Percent: 22, Arrow: 23,
     QuestionMark: 24, Colon: 25, Caret: 26, DoubleColon: 27,
@@ -6228,9 +6274,104 @@ const SQL_KEYWORDS = new Set([
     'XOR', 'YEAR', 'ZKPATH',
 ]);
 
+/// Bracket token types, grouped by kind. Used for rainbow parentheses (coloring by
+/// nesting depth) and matched-bracket highlighting.
+const OPENING_BRACKETS = new Set([TT.OpeningRoundBracket, TT.OpeningSquareBracket, TT.OpeningCurlyBrace]);
+const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracket, TT.ClosingCurlyBrace]);
+/// The closing type that matches each opening type.
+const BRACKET_PAIR = {
+    [TT.OpeningRoundBracket]:  TT.ClosingRoundBracket,
+    [TT.OpeningSquareBracket]: TT.ClosingSquareBracket,
+    [TT.OpeningCurlyBrace]:    TT.ClosingCurlyBrace,
+};
+/// Number of distinct rainbow colors before the cycle repeats (see the --syntax-bracket-* vars).
+const RAINBOW_BRACKET_COUNT = 7;
+
+/// Compute, for every token, its rainbow-bracket depth (-1 for non-brackets and for
+/// unmatched brackets) and the set of bracket tokens to embolden as the matched pair around
+/// the cursor.
+///
+/// Depth is assigned with a type-aware stack, but only once a bracket has a real mate: the
+/// matching opening and closing brackets both take the pair's nesting depth so they share a
+/// color. A bracket without a counterpart — a lone `(`, a stray `)`, or a mismatched pair —
+/// is left at depth -1 so it keeps the default color instead of a rainbow one, mirroring
+/// `clickhouse-client`, which colors a bracket only after it finds its match.
+///
+/// Once the nesting is broken (a closer that does not match the innermost opener), the
+/// outstanding openers are discarded so a later closer cannot reach over the break and
+/// retroactively match an opener that was never properly closed — e.g. `SELECT ([)]` colors
+/// nothing. A `;` is not treated as a statement boundary: like `clickhouse-client` (whose
+/// rainbow loop skips `;` without clearing its bracket stack), brackets still match across it,
+/// so `SELECT (; SELECT )` pairs the `(` with the later `)`.
+///
+/// The matched pair is the bracket adjacent to the cursor (preferring the one immediately
+/// before the caret, as most editors do) together with its counterpart.
+function computeBracketInfo(tokens, cursor, focused) {
+    const depth = new Array(tokens.length).fill(-1);
+    const matchOf = new Array(tokens.length).fill(-1);
+    const starts = new Array(tokens.length).fill(0);
+
+    const stack = [];
+    let offset = 0;
+    for (let i = 0; i < tokens.length; ++i) {
+        starts[i] = offset;
+        offset += tokens[i].token.length;
+        const type = tokens[i].type;
+        if (OPENING_BRACKETS.has(type)) {
+            /// Depth stays -1 until a matching closing bracket is found below.
+            stack.push(i);
+        } else if (CLOSING_BRACKETS.has(type)) {
+            const top = stack.length ? stack[stack.length - 1] : -1;
+            if (top >= 0 && BRACKET_PAIR[tokens[top].type] === type) {
+                stack.pop();
+                matchOf[i] = top;
+                matchOf[top] = i;
+                /// The pair's nesting depth is the stack size after popping; the opening and
+                /// closing brackets share it so they render with the same rainbow color.
+                depth[top] = depth[i] = stack.length;
+            } else if (top >= 0) {
+                /// A closing bracket that does not match the innermost opener breaks the
+                /// nesting (e.g. the `)` in `([)]`). Discard every outstanding opener so a
+                /// later closer cannot reach over the mismatch and retroactively "match" an
+                /// opener that was never properly closed. The mismatched closer itself keeps
+                /// depth -1.
+                stack.length = 0;
+            }
+            /// A closing bracket with no match keeps depth -1 (rendered with the default color).
+        }
+    }
+
+    const bold = new Set();
+    if (focused) {
+        /// Prefer the bracket ending at the cursor (the char just before the caret), then
+        /// fall back to the bracket starting at the cursor (the char just after).
+        let found = -1;
+        for (let i = 0; i < tokens.length; ++i) {
+            const type = tokens[i].type;
+            if (!OPENING_BRACKETS.has(type) && !CLOSING_BRACKETS.has(type)) continue;
+            if (starts[i] + tokens[i].token.length === cursor) { found = i; break; }
+        }
+        if (found < 0) {
+            for (let i = 0; i < tokens.length; ++i) {
+                const type = tokens[i].type;
+                if (!OPENING_BRACKETS.has(type) && !CLOSING_BRACKETS.has(type)) continue;
+                if (starts[i] === cursor) { found = i; break; }
+            }
+        }
+        if (found >= 0 && matchOf[found] >= 0) {
+            bold.add(found);
+            bold.add(matchOf[found]);
+        }
+    }
+
+    return { depth, bold };
+}
+
 /// Map a single token to a CSS class. For BareWords we also peek at the next
-/// non-whitespace token to distinguish a function call (`foo(`) from a plain
-/// identifier — the lexer alone cannot tell them apart.
+/// non-whitespace, non-comment token to distinguish a function call (`foo(`) from a plain
+/// identifier — the lexer alone cannot tell them apart. Skipping comments as well as
+/// whitespace matches `highlightWithLexer` in `src/Client/ClientBaseHelpers.cpp`, so
+/// `sum/*c*/(x)` is a function name here too.
 function tokenClass(tokens, i) {
     const elem = tokens[i];
     switch (elem.type) {
@@ -6242,7 +6383,7 @@ function tokenClass(tokens, i) {
         case TT.BareWord: {
             if (SQL_KEYWORDS.has(elem.token.toUpperCase())) return 'q-kw';
             for (let j = i + 1; j < tokens.length; ++j) {
-                if (tokens[j].type === TT.Whitespace) continue;
+                if (tokens[j].type === TT.Whitespace || tokens[j].type === TT.Comment) continue;
                 return tokens[j].type === TT.OpeningRoundBracket ? 'q-fn' : 'q-id';
             }
             return 'q-id';
@@ -6257,6 +6398,92 @@ function tokenClass(tokens, i) {
         default:
             return '';
     }
+}
+
+/// A token is a matchable identifier if it renders as a plain identifier (`q-id`) or a
+/// quoted identifier (`q-qid`) — i.e. not a keyword, function name, number, etc.
+function isMatchableIdentifier(tokens, i) {
+    const cls = tokenClass(tokens, i);
+    return cls === 'q-id' || cls === 'q-qid';
+}
+
+/// If the cursor is inside an identifier, return the set of token indices of every identifier
+/// with the same text, so they can be underlined together (as `clickhouse-client` does).
+function computeMatchingIdentifiers(tokens, cursor, focused) {
+    const result = new Set();
+    if (!focused) return result;
+
+    let offset = 0;
+    let target = -1;
+    for (let i = 0; i < tokens.length; ++i) {
+        const start = offset;
+        offset += tokens[i].token.length;
+        /// The caret must be strictly inside the token (`start <= cursor < end`), matching the
+        /// CLI: sitting right after an identifier does not trigger the highlight.
+        if (start <= cursor && cursor < offset && isMatchableIdentifier(tokens, i)) {
+            target = i;
+            break;
+        }
+    }
+    if (target < 0) return result;
+
+    const text = tokens[target].token;
+    for (let i = 0; i < tokens.length; ++i) {
+        if (tokens[i].token === text && isMatchableIdentifier(tokens, i)) result.add(i);
+    }
+    return result;
+}
+
+/// For a plain decimal number token, return the set of character indices to underline as
+/// digit-group separators. Mirrors `clickhouse-client`: only the integer part of a regular
+/// base-10 number (no exponent, hex/bin prefix, or `_` separators) is considered, and only
+/// when it has at least 5 digits; then one digit is underlined at each group-of-three boundary
+/// counting from the right (before the decimal point).
+function digitGroupUnderlines(token) {
+    const result = new Set();
+    let is_regular = true;
+    let finished = false; /// Passed the decimal point.
+    let first = -1;
+    let last = -1;
+
+    for (let i = 0; i < token.length; ++i) {
+        const c = token[i];
+        if (c === '-') {
+            /// Skip (the lexer emits `-` as a separate token, but be safe).
+        } else if (c >= '0' && c <= '9') {
+            if (!finished) {
+                if (first < 0) first = i;
+                last = i;
+            }
+        } else if (c === '.') {
+            finished = true;
+        } else {
+            /// Exponent, hex/bin, or `_` separators: not a plain number, do not highlight.
+            is_regular = false;
+            break;
+        }
+    }
+
+    if (is_regular && first >= 0 && last >= 0) {
+        const length = 1 + last - first;
+        if (length >= 5) {
+            for (let off = length - 4; off >= 0; off -= 3) result.add(first + off);
+        }
+    }
+    return result;
+}
+
+/// Render a number token's inner HTML, underlining the digit-group separators.
+function renderNumberContent(token) {
+    const underlines = digitGroupUnderlines(token);
+    if (underlines.size === 0) return escapeHTML(token);
+
+    let html = '';
+    for (let i = 0; i < token.length; ++i) {
+        const ch = escapeHTML(token[i]);
+        html += underlines.has(i) ? '<span class="q-underline">' + ch + '</span>' : ch;
+    }
+    return html;
 }
 
 /// Cached state for cursor-tracking re-renders that do not re-tokenize.
@@ -6314,6 +6541,11 @@ function renderQueryBackdrop() {
         }
     }
 
+    /// Rainbow-parentheses depths and the matched-bracket pair around the cursor.
+    const { depth: bracketDepth, bold: bracketBold } = computeBracketInfo(tokens, cursor, focused);
+    /// Every occurrence of the identifier under the cursor (underlined together).
+    const matchingIdentifiers = computeMatchingIdentifiers(tokens, cursor, focused);
+
     let html = '';
     let offset = 0;
     let activeOpen = false;
@@ -6333,12 +6565,28 @@ function renderQueryBackdrop() {
             activeOpen = false;
         }
 
-        const cls = tokenClass(tokens, i);
-        const escaped = escapeHTML(elem.token);
-        if (cls) {
-            html += '<span class="' + cls + '">' + escaped + '</span>';
+        /// Brackets are colored by nesting depth (rainbow) rather than by the generic
+        /// token class; the matched pair around the cursor is additionally emboldened.
+        let cls;
+        if (bracketDepth[i] >= 0) {
+            cls = 'q-br' + (bracketDepth[i] % RAINBOW_BRACKET_COUNT);
         } else {
-            html += escaped;
+            cls = tokenClass(tokens, i);
+        }
+        if (bracketBold.has(i)) {
+            cls = cls ? cls + ' q-br-match' : 'q-br-match';
+        }
+        /// Every occurrence of the identifier under the cursor is underlined.
+        if (matchingIdentifiers.has(i)) {
+            cls = cls ? cls + ' q-underline' : 'q-underline';
+        }
+
+        /// Numbers get per-digit-group underlines; everything else is plain escaped text.
+        const content = elem.type === TT.Number ? renderNumberContent(elem.token) : escapeHTML(elem.token);
+        if (cls) {
+            html += '<span class="' + cls + '">' + content + '</span>';
+        } else {
+            html += content;
         }
 
         /// The cursor sits at the end of the prefix identifier (a token boundary); insert the

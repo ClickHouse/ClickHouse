@@ -2735,7 +2735,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
-            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
         case Type::SYNC_DATABASE_REPLICA:
