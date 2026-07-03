@@ -118,6 +118,14 @@ public:
 
     void resetEvictionPos(EvictionCursor cursor) override;
 
+    void setOnEvictCallback(OnEvictCallback callback) override
+    {
+        for (auto & p : priorities_holder)
+            if (p)
+                p->setOnEvictCallback(callback);
+        IFileCachePriority::setOnEvictCallback(std::move(callback));
+    }
+
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
     {
