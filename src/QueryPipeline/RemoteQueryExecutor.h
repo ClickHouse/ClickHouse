@@ -305,14 +305,14 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;
 #endif
 
     PoolMode pool_mode = PoolMode::GET_MANY;
     StorageID main_table = StorageID::createEmpty();
 
-    LoggerPtr log = nullptr;
+    LoggerPtr log = getLogger("RemoteQueryExecutor");
 
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     bool shard_skip_reported = false;
