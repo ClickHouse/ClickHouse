@@ -80,6 +80,7 @@ public:
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
         MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
         LoggerPtr log);
 
