@@ -1,5 +1,7 @@
 #include <Interpreters/Cache/QueryPlanCache.h>
 
+#include <algorithm>
+
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/ProfileEvents.h>
@@ -266,7 +268,18 @@ bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryP
     /// it, just like in `QueryResultCache`.
     std::lock_guard lock(per_user_mutex);
     auto it = per_user_bytes.find(*key.user_id);
-    const size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;
+    size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;
+
+    /// A same-key insertion is a replacement: `set` first releases the old entry's weight
+    /// (see the `entry_weights` bookkeeping there) before charging the new one, so admission
+    /// must compare against the size that will remain *after* that release. Otherwise a user
+    /// already at the quota can never refresh an invalidated plan - the stale entry keeps its
+    /// weight counted here, the new (identical-key) entry is rejected, the stale entry stays
+    /// resident, and every later execution re-pays `validate` + replanning without ever
+    /// updating the cache.
+    if (auto weight_it = entry_weights.find(key); weight_it != entry_weights.end())
+        current_size_for_user -= std::min(weight_it->second.second, current_size_for_user);
+
     return current_size_for_user + new_entry_size <= max_size_in_bytes_for_user;
 }
 
