@@ -4056,7 +4056,7 @@ Has no effect when the destination table has no dependent materialized views, ha
 
 Note that with this setting enabled the queries of the other dependent materialized views observe the rows of each block in sorting-key order instead of the original insertion order, which matters if a view query uses order-dependent constructs such as `LIMIT` without `ORDER BY`, window functions without `ORDER BY`, or aggregate functions like `any`, `groupArray`, and `argMax` with equal ties. Enabling or disabling the setting between retries of the same insert also changes the deduplication tokens derived from block contents in dependent views.
 
-Blocks that carry more than one deduplication token (for example, merged asynchronous inserts) are passed through unsorted, because the tokens map to ranges of row offsets and reordering the rows would break deduplication.
+When insert deduplication is enabled, blocks that carry more than one deduplication token are passed through unsorted, because the tokens map to ranges of row offsets and reordering the rows would break deduplication. In particular, asynchronous inserts produce one token per buffered mini-insert, so flushed blocks are presorted only when `async_insert_deduplicate` is disabled (the default).
 )", 0) \
     DECLARE(Bool, enable_unaligned_array_join, false, R"(
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.

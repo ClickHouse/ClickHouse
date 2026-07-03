@@ -1001,10 +1001,11 @@ public:
 class PresortBeforeSinkTransform final : public ExceptionKeepingTransform
 {
 public:
-    PresortBeforeSinkTransform(SharedHeader header_, SortDescription description_, bool keep_original_order_)
+    PresortBeforeSinkTransform(SharedHeader header_, SortDescription description_, bool keep_original_order_, bool deduplicate_blocks_)
         : ExceptionKeepingTransform(header_, header_)
         , description(std::move(description_))
         , keep_original_order(keep_original_order_)
+        , deduplicate_blocks(deduplicate_blocks_)
     {
     }
 
@@ -1015,8 +1016,12 @@ protected:
     {
         /// A block that carries more than one deduplication token maps the tokens to ranges of row
         /// offsets (e.g. merged asynchronous inserts). Reordering the rows would break that mapping,
-        /// and self-deduplication in the sink could then drop wrong rows, so pass such blocks through.
-        if (chunk.getChunkInfos().has<DeduplicationInfo>()
+        /// and self-deduplication in the sink could then drop wrong rows, so pass such blocks through
+        /// when deduplication is enabled for this insert. When it is disabled (e.g. asynchronous
+        /// inserts without `async_insert_deduplicate`, which always produce one token per buffered
+        /// mini-insert), nothing consumes the ranges and the block can be sorted.
+        if (deduplicate_blocks
+            && chunk.getChunkInfos().has<DeduplicationInfo>()
             && chunk.getChunkInfos().getSafe<DeduplicationInfo>()->getCount() > 1)
         {
             cur_chunk = std::move(chunk);
@@ -1060,6 +1065,7 @@ protected:
 private:
     SortDescription description;
     bool keep_original_order;
+    bool deduplicate_blocks;
     Chunk cur_chunk;
 };
 
@@ -1203,7 +1209,7 @@ Chain InsertDependenciesBuilder::createPresortChain() const
     }
 
     Chain chain;
-    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description), keep_original_order));
+    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description), keep_original_order, deduplicate_blocks));
     return chain;
 }
 
