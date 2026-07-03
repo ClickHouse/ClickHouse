@@ -175,6 +175,10 @@ struct ExportReplicatedMergeTreePartitionManifest
     bool write_full_path_in_iceberg_metadata = false;
     bool allow_lossy_cast = false;
     String iceberg_metadata_json;
+    String parquet_compression_method;
+    UInt64 output_format_compression_level;
+    UInt64 parquet_row_group_size;
+    UInt64 parquet_row_group_size_bytes;
 
     std::string toJsonString() const
     {
@@ -208,6 +212,10 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("task_timeout_seconds", task_timeout_seconds);
         json.set("write_full_path_in_iceberg_metadata", write_full_path_in_iceberg_metadata);
         json.set("allow_lossy_cast", allow_lossy_cast);
+        json.set("parquet_compression_method", parquet_compression_method);
+        json.set("output_format_compression_level", output_format_compression_level);
+        json.set("parquet_row_group_size", parquet_row_group_size);
+        json.set("parquet_row_group_size_bytes", parquet_row_group_size_bytes);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
         Poco::JSON::Stringifier::stringify(json, oss);
@@ -265,6 +273,11 @@ struct ExportReplicatedMergeTreePartitionManifest
         /// export scheduled with the old permissive worker behavior is not wrongly rejected
         /// on upgrade. New tasks always persist the initiator's actual choice.
         manifest.allow_lossy_cast = json->has("allow_lossy_cast") ? json->getValue<bool>("allow_lossy_cast") : true;
+
+        manifest.parquet_compression_method = json->getValue<String>("parquet_compression_method");
+        manifest.output_format_compression_level = json->getValue<UInt64>("output_format_compression_level");
+        manifest.parquet_row_group_size = json->getValue<UInt64>("parquet_row_group_size");
+        manifest.parquet_row_group_size_bytes = json->getValue<UInt64>("parquet_row_group_size_bytes");
 
         return manifest;
     }

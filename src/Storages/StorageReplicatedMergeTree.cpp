@@ -229,6 +229,10 @@ namespace Setting
     extern const SettingsUInt64 export_merge_tree_partition_task_timeout_seconds;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsBool output_format_parquet_parallel_encoding;
+    extern const SettingsParquetCompression output_format_parquet_compression_method;
+    extern const SettingsUInt64 output_format_compression_level;
+    extern const SettingsUInt64 output_format_parquet_row_group_size;
+    extern const SettingsUInt64 output_format_parquet_row_group_size_bytes;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsMergeTreePartExportFileAlreadyExistsPolicy export_merge_tree_part_file_already_exists_policy;
     extern const SettingsUInt64 export_merge_tree_part_max_bytes_per_file;
@@ -8709,6 +8713,10 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     manifest.parallel_formatting = query_context->getSettingsRef()[Setting::output_format_parallel_formatting];
     manifest.parquet_parallel_encoding = query_context->getSettingsRef()[Setting::output_format_parquet_parallel_encoding];
+    manifest.parquet_compression_method = query_context->getSettingsRef()[Setting::output_format_parquet_compression_method].toString();
+    manifest.output_format_compression_level = query_context->getSettingsRef()[Setting::output_format_compression_level];
+    manifest.parquet_row_group_size = query_context->getSettingsRef()[Setting::output_format_parquet_row_group_size];
+    manifest.parquet_row_group_size_bytes = query_context->getSettingsRef()[Setting::output_format_parquet_row_group_size_bytes];
     manifest.max_bytes_per_file = query_context->getSettingsRef()[Setting::export_merge_tree_part_max_bytes_per_file];
     manifest.max_rows_per_file = query_context->getSettingsRef()[Setting::export_merge_tree_part_max_rows_per_file];
 

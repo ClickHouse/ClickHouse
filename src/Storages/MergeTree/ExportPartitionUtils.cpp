@@ -81,6 +81,10 @@ namespace ExportPartitionUtils
         context_copy->setCurrentQueryId(manifest.query_id);
         context_copy->setSetting("output_format_parallel_formatting", manifest.parallel_formatting);
         context_copy->setSetting("output_format_parquet_parallel_encoding", manifest.parquet_parallel_encoding);
+        context_copy->setSetting("output_format_parquet_compression_method", manifest.parquet_compression_method);
+        context_copy->setSetting("output_format_compression_level", manifest.output_format_compression_level);
+        context_copy->setSetting("output_format_parquet_row_group_size", manifest.parquet_row_group_size);
+        context_copy->setSetting("output_format_parquet_row_group_size_bytes", manifest.parquet_row_group_size_bytes);
         context_copy->setSetting("max_threads", manifest.max_threads);
         context_copy->setSetting("export_merge_tree_part_file_already_exists_policy", String(magic_enum::enum_name(manifest.file_already_exists_policy)));
         context_copy->setSetting("export_merge_tree_part_max_bytes_per_file", manifest.max_bytes_per_file);
