@@ -32,6 +32,12 @@ SELECT * REPLACE (a + 1 AS a) FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 -- A matcher nested inside a function is not a bare matcher, so a named APPLY over it is
 -- still allowed (only the top-level result being a bare matcher is rejected).
 SELECT * APPLY (x -> tuple(*), 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- A named APPLY over `untuple` expands into one prefixed column per tuple field
+-- (`f_a.1`, `f_a.id`), not a single renamed column.
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a, (3, 4) AS b) FORMAT TSVWithNames;
+SELECT * APPLY (untuple, 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
 -- The prefix uses the short column name, not a qualified one, even in a scope that
 -- requires qualification (alias `a` collides with `x.a`, so `x.*` qualifies to `x.a`).
 SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
@@ -61,6 +67,14 @@ SELECT * APPLY (x -> COLUMNS('a'), 'f_') FROM (SELECT 1 AS a, 2 AS b); -- { serv
 SELECT * REPLACE (COLUMNS('a') AS a) FROM (SELECT 1 AS a, 2 AS b); -- { serverError BAD_ARGUMENTS }
 -- A matcher nested inside a function is not a bare matcher: still allowed, matching the old analyzer.
 SELECT * APPLY (x -> tuple(*), 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- A named APPLY over `untuple` expands into one prefixed column per tuple field, matching the
+-- old analyzer (`f_a.1`, `f_a.id`). It used to be rejected with a generic UNSUPPORTED_METHOD.
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a, (3, 4) AS b) FORMAT TSVWithNames;
+SELECT * APPLY (untuple, 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+-- A transformer chained after `untuple` is rejected (both analyzers): `untuple` must be terminal.
+SELECT * APPLY (x -> untuple(x), 'f_') APPLY toString FROM (SELECT (1, 2) AS a); -- { serverError UNSUPPORTED_METHOD }
 
 SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x + 1, 'f_') FROM (SELECT 1 AS a, 2 AS b) FORMAT TSVWithNames;

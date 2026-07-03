@@ -138,6 +138,33 @@ namespace ErrorCodes
 namespace
 {
 
+/// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
+/// calls (see `untuple` handling in resolveFunction). Recognize that shape so the matcher can
+/// expand it into one prefixed projection column per element, matching the legacy analyzer.
+bool isUntupleExpansion(const QueryTreeNodes & nodes)
+{
+    for (const auto & element : nodes)
+    {
+        const auto * function = element->as<FunctionNode>();
+        if (!function || function->getFunctionName() != "tupleElement")
+            return false;
+
+        const auto & arguments = function->getArguments().getNodes();
+        if (arguments.size() != 2 || !arguments[1]->as<ConstantNode>())
+            return false;
+    }
+    return !nodes.empty();
+}
+
+/// The tuple field name a `tupleElement(arg, name)` node projects. The legacy path names an
+/// untupled element `<prefix><column>.<field>` (`f_a.1`, `f_a.id`); the field comes from the
+/// constant second argument.
+String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
+{
+    const auto & arguments = tuple_element_node->as<FunctionNode &>().getArguments().getNodes();
+    return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
+}
+
 /// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
 /// types as the storage that was created from the first reference.
 ///
@@ -2474,13 +2501,15 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         /// short column name (`f_a`), not the qualified projection name (`f_t1.a`).
         String apply_prefixed_projection_name = column_name;
 
-        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
+        for (const auto & transformer : column_transformers)
         {
             /// The node this transformer starts from. After resolution we compare against it to
             /// tell an identity lambda (`x -> x` resolves back to this same node) from a freshly
             /// created node (a function/lambda that wraps it). Only a reused node may overwrite
             /// its cached projection name.
             const IQueryTreeNode * input_node_before_transformer = node.get();
+            const bool is_last_transformer = transformer.get() == column_transformers.back().get();
 
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
@@ -2602,6 +2631,38 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     auto & node_list_nodes = node_list->getNodes();
                     size_t node_list_nodes_size = node_list_nodes.size();
+
+                    /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of
+                    /// `tupleElement` calls, one per tuple field. The legacy path prefixes each
+                    /// expanded element (`f_a.1`, `f_a.id`), so expand the whole list here as
+                    /// sibling projection columns instead of rejecting it as a size != 1 result.
+                    /// Only when this is the terminal transformer: a transformer chained after
+                    /// `untuple` is rejected by both analyzers, so leave it to the throw below.
+                    if (execute_apply_transformer && is_last_transformer && !apply_column_name_prefix.empty()
+                        && node_list_nodes_size != 1 && isUntupleExpansion(node_list_nodes))
+                    {
+                        for (size_t i = 0; i < node_list_nodes_size; ++i)
+                        {
+                            String element_projection_name
+                                = apply_column_name_prefix + column_name + '.' + getTupleElementName(node_list_nodes[i]);
+
+                            /// The first element reuses the name slot already pushed for this
+                            /// matched column; the rest add new sibling slots.
+                            if (i != 0)
+                                result_projection_names.push_back({});
+                            result_projection_names.back() = element_projection_name;
+
+                            node_to_projection_name.emplace(node_list_nodes[i], element_projection_name);
+
+                            /// Push all but the last element now; the last stays in `node` so
+                            /// the loop tail pushes it, keeping the node/name counts in sync.
+                            if (i + 1 < node_list_nodes_size)
+                                list->getNodes().push_back(node_list_nodes[i]);
+                        }
+                        node = node_list_nodes.back();
+                        node_projection_names.clear();
+                        break;
+                    }
 
                     if (node_list_nodes_size != 1)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
