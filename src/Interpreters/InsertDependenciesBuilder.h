@@ -141,6 +141,8 @@ private:
 
     Chain createPreSink(StorageIDMaybeEmpty view_id) const;
     Chain createPresortChain() const;
+    bool subtreeNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const;
+    bool viewBranchNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const;
     Chain createSelect(StorageIDMaybeEmpty view_id) const;
     Chain createSink(StorageIDMaybeEmpty view_id) const;
     Chain createPostSink(StorageIDMaybeEmpty view_id) const;

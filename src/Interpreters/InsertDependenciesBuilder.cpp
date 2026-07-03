@@ -970,18 +970,41 @@ Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTran
 }
 
 
+/// Carries the inverse of the permutation PresortBeforeSinkTransform applied to the rows of a
+/// block, so that the branches of order-sensitive views can restore the original row order.
+/// Deliberately not the original columns themselves: that would keep a second full copy of the
+/// block alive for as long as any view branch is still processing it, while the permutation costs
+/// only 8 bytes per row. The permutation is shared between the clones of the chunk in the
+/// per-view branches.
+class OriginalRowOrderInfo : public ChunkInfoCloneable<OriginalRowOrderInfo>
+{
+public:
+    OriginalRowOrderInfo() = default;
+    OriginalRowOrderInfo(const OriginalRowOrderInfo & other) = default;
+    explicit OriginalRowOrderInfo(std::shared_ptr<const IColumn::Permutation> inverse_permutation_)
+        : inverse_permutation(std::move(inverse_permutation_))
+    {
+    }
+
+    std::shared_ptr<const IColumn::Permutation> inverse_permutation;
+};
+
+
 /// Sorts every chunk by the destination table's sorting key before the sink.
 /// The sink then detects the block as already sorted and skips its own sorting step, and dependent
 /// materialized views receive the rows in sorted order, so their target tables' sinks can also skip
 /// sorting when their sorting key is compatible with the source one and the view query preserves
 /// the row order. Without this, every materialized view target re-sorts the matched rows from
 /// scratch, which can dominate the cost of pushing to views.
+/// When `keep_original_order` is set, the pre-sort columns are attached to the chunk, so that the
+/// branches of order-sensitive views can restore the original row order with a pointer swap.
 class PresortBeforeSinkTransform final : public ExceptionKeepingTransform
 {
 public:
-    PresortBeforeSinkTransform(SharedHeader header_, SortDescription description_)
+    PresortBeforeSinkTransform(SharedHeader header_, SortDescription description_, bool keep_original_order_)
         : ExceptionKeepingTransform(header_, header_)
         , description(std::move(description_))
+        , keep_original_order(keep_original_order_)
     {
     }
 
@@ -1003,10 +1026,26 @@ protected:
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         if (!isAlreadySorted(block, description))
         {
-            /// Stable sort, because the sink sorts with a stable permutation as well: the relative
-            /// order of rows with equal keys is significant e.g. for Replacing/CollapsingMergeTree.
-            sortBlock(block, description, /*limit=*/0, IColumn::PermutationSortStability::Stable);
-            chunk.setColumns(block.getColumns(), block.rows());
+            /// Stable permutation, because the sink sorts with a stable permutation as well: the
+            /// relative order of rows with equal keys is significant e.g. for ReplacingMergeTree.
+            IColumn::Permutation permutation;
+            stableGetPermutation(block, description, permutation);
+
+            const size_t num_rows = chunk.getNumRows();
+            Columns sorted_columns;
+            sorted_columns.reserve(chunk.getNumColumns());
+            for (const auto & column : chunk.getColumns())
+                sorted_columns.push_back(column->permute(permutation, 0));
+
+            if (keep_original_order)
+            {
+                auto inverse_permutation = std::make_shared<IColumn::Permutation>(num_rows);
+                for (size_t i = 0; i < num_rows; ++i)
+                    (*inverse_permutation)[permutation[i]] = i;
+                chunk.getChunkInfos().add(std::make_shared<OriginalRowOrderInfo>(std::move(inverse_permutation)));
+            }
+
+            chunk.setColumns(std::move(sorted_columns), num_rows);
         }
         cur_chunk = std::move(chunk);
     }
@@ -1020,8 +1059,89 @@ protected:
 
 private:
     SortDescription description;
+    bool keep_original_order;
     Chunk cur_chunk;
 };
+
+
+/// Restores the original row order of a block reordered by PresortBeforeSinkTransform.
+/// Placed at the beginning of the branch of a view that must observe the rows in the original
+/// insertion order. Applies the saved inverse permutation, which costs one column permute on
+/// this branch only - comparable to the sort the branch's own sink performs anyway.
+class RestoreOriginalRowOrderTransform final : public ExceptionKeepingTransform
+{
+public:
+    explicit RestoreOriginalRowOrderTransform(SharedHeader header_)
+        : ExceptionKeepingTransform(header_, header_)
+    {
+    }
+
+    String getName() const override { return "RestoreOriginalRowOrderTransform"; }
+
+protected:
+    void onConsume(Chunk chunk) override
+    {
+        if (auto info = chunk.getChunkInfos().extract<OriginalRowOrderInfo>())
+        {
+            const size_t num_rows = chunk.getNumRows();
+            Columns restored_columns;
+            restored_columns.reserve(chunk.getNumColumns());
+            for (const auto & column : chunk.getColumns())
+                restored_columns.push_back(column->permute(*info->inverse_permutation, 0));
+            chunk.setColumns(std::move(restored_columns), num_rows);
+        }
+        cur_chunk = std::move(chunk);
+    }
+
+    GenerateResult onGenerate() override
+    {
+        GenerateResult res;
+        res.chunk = std::move(cur_chunk);
+        return res;
+    }
+
+private:
+    Chunk cur_chunk;
+};
+
+
+namespace
+{
+
+/// Whether the engine resolves rows with equal sorting key positionally ("the last row wins"),
+/// so that the result depends on the order in which the rows arrive within a block.
+bool isOrderSensitiveTarget(const IStorage * storage)
+{
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage);
+    if (!merge_tree)
+        return false;
+
+    const auto & merging_params = merge_tree->merging_params;
+    return merging_params.mode == MergeTreeData::MergingParams::Collapsing
+        || merging_params.mode == MergeTreeData::MergingParams::Coalescing
+        || merging_params.mode == MergeTreeData::MergingParams::Graphite
+        || (merging_params.mode == MergeTreeData::MergingParams::Replacing && merging_params.version_column.empty());
+}
+
+}
+
+
+bool InsertDependenciesBuilder::subtreeNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const
+{
+    for (const auto & child_view_id : dependent_views.at(view_id))
+    {
+        if (viewBranchNeedsOriginalRowOrder(child_view_id))
+            return true;
+    }
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::viewBranchNeedsOriginalRowOrder(const StorageIDMaybeEmpty & view_id) const
+{
+    return isOrderSensitiveTarget(storages.at(inner_tables.at(view_id)).get())
+        || subtreeNeedsOriginalRowOrder(view_id);
+}
 
 
 Chain InsertDependenciesBuilder::createPresortChain() const
@@ -1043,28 +1163,24 @@ Chain InsertDependenciesBuilder::createPresortChain() const
         return {};
 
     /// The presort changes the order in which the dependent views observe the rows of a block.
-    /// Engines that resolve rows with equal sorting key positionally ("the last row wins") would
-    /// silently keep different rows, so skip the presort when any view in the dependency tree
-    /// targets such an engine. The destination table itself is not affected: its sink sorts the
-    /// block by the same key with a stable permutation, producing an identical part either way.
-    for (const auto & [view_id, view_inner_table_id] : inner_tables)
+    /// Branches leading to engines that resolve rows with equal sorting key positionally
+    /// ("the last row wins") restore the original order from the saved inverse permutation
+    /// (see RestoreOriginalRowOrderTransform in createPostSink), so they behave as if there
+    /// were no presort. If every branch needs the original order restored, nothing is left to
+    /// benefit from the presort, so skip it. The destination table itself is not affected
+    /// either way: its sink sorts the block by the same key with a stable permutation,
+    /// producing an identical part.
+    bool keep_original_order = false;
+    bool any_branch_benefits = false;
+    for (const auto & child_view_id : dependent_views.at(root_view))
     {
-        if (view_id == root_view)
-            continue;
-
-        const auto * target_merge_tree = dynamic_cast<const MergeTreeData *>(storages.at(view_inner_table_id).get());
-        if (!target_merge_tree)
-            continue;
-
-        const auto & merging_params = target_merge_tree->merging_params;
-        bool order_sensitive = merging_params.mode == MergeTreeData::MergingParams::Collapsing
-            || merging_params.mode == MergeTreeData::MergingParams::Coalescing
-            || merging_params.mode == MergeTreeData::MergingParams::Graphite
-            || (merging_params.mode == MergeTreeData::MergingParams::Replacing && merging_params.version_column.empty());
-
-        if (order_sensitive)
-            return {};
+        if (viewBranchNeedsOriginalRowOrder(child_view_id))
+            keep_original_order = true;
+        else
+            any_branch_benefits = true;
     }
+    if (!any_branch_benefits)
+        return {};
 
     const auto & header = output_headers.at(root_view);
 
@@ -1087,7 +1203,7 @@ Chain InsertDependenciesBuilder::createPresortChain() const
     }
 
     Chain chain;
-    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description)));
+    chain.addSink(std::make_shared<PresortBeforeSinkTransform>(header, std::move(description), keep_original_order));
     return chain;
 }
 
@@ -1673,6 +1789,13 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
         auto chain = Chain(std::make_shared<BeginingViewsTransform>(input_headers.at(child_view_id)));
+
+        /// This branch must observe the rows in the original insertion order: undo the presort.
+        /// A cheap no-op when the chunk carries no OriginalRowOrderInfo (the presort did not run
+        /// or the block was already sorted).
+        if (init_context->getSettingsRef()[Setting::presort_inserts_with_materialized_views]
+            && viewBranchNeedsOriginalRowOrder(child_view_id))
+            chain.addSink(std::make_shared<RestoreOriginalRowOrderTransform>(input_headers.at(child_view_id)));
 
         chain = Chain::concat(std::move(chain), createSelect(child_view_id));
         chain = Chain::concat(std::move(chain), createSink(child_view_id));
