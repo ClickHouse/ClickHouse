@@ -58,6 +58,11 @@ SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', materialize('#'))
 -- buried materialize under a non-whitelisted child of a non-whitelisted parent - still no fold
 SELECT count() FROM numbers(1) WHERE like('50%off', '50#%off', concat(materialize('#'), '')); -- { serverError ILLEGAL_COLUMN }
 
+-- mixed String/non-String comparison raises at analysis (header build on non-const String),
+-- before any fold runs - the exception must be preserved
+SELECT count() FROM numbers(1) WHERE materialize('1') = toUInt8(1); -- { serverError NO_COMMON_TYPE }
+SELECT count() FROM numbers(1) WHERE materialize('257') != toUInt8(1); -- { serverError NO_COMMON_TYPE }
+
 -- empty rowset, toFloat64 is not whitelisted so no speculative fold, runtime skips the WHERE
 SELECT count() FROM numbers(0) WHERE toFloat64(materialize('x86_74')) < 50;
 
