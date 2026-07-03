@@ -100,7 +100,7 @@ public:
             }
             catch (...)
             {
-                /// If deserialization fails, return 0
+                /// Ok: if deserialization fails, return 0.
                 vec_res[i] = 0;
             }
         }

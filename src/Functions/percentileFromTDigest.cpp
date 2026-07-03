@@ -100,7 +100,7 @@ public:
                 }
                 catch (...)
                 {
-                    /// Keep NaN on invalid/corrupted input (consistent with percentileFromQuantiles()).
+                    /// Ok: keep NaN on invalid/corrupted input (consistent with percentileFromQuantiles).
                     result = std::numeric_limits<Float64>::quiet_NaN();
                 }
             }

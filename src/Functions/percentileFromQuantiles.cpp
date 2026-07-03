@@ -186,7 +186,7 @@ public:
             }
             catch (...)
             {
-                /// If deserialization fails, return NaN
+                /// Ok: if deserialization fails, return NaN.
                 vec_res[i] = std::numeric_limits<Float64>::quiet_NaN();
             }
         }

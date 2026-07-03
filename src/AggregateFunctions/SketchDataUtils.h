@@ -77,7 +77,7 @@ inline std::pair<const uint8_t*, size_t> decodeSketchData(
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
-            /// Looked like base64 but wasn't valid, use raw data
+            /// Ok: looked like base64 but wasn't valid, fall back to raw data.
         }
     }
 

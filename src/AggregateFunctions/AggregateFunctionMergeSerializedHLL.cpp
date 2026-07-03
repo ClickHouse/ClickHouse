@@ -159,7 +159,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     {
         /// Either [base64_encoded, lg_k] OR [lg_k, type]
         bool second_is_string = false;
-        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; }
+        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; } // Ok: probe whether the parameter is a String.
 
         if (second_is_string)
         {
@@ -177,8 +177,8 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
         /// Either [base64_encoded, lg_k, type] OR [lg_k, type, base64_encoded]
         bool second_is_string = false;
         bool third_is_string = false;
-        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; }
-        try { (void)params[2].safeGet<String>(); third_is_string = true; } catch (...) { third_is_string = false; }
+        try { (void)params[1].safeGet<String>(); second_is_string = true; } catch (...) { second_is_string = false; } // Ok: probe whether the parameter is a String.
+        try { (void)params[2].safeGet<String>(); third_is_string = true; } catch (...) { third_is_string = false; } // Ok: probe whether the parameter is a String.
 
         if (second_is_string && !third_is_string)
         {

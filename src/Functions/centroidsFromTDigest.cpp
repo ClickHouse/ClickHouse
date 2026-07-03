@@ -103,7 +103,7 @@ public:
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)
                 {
-                    /// Best-effort: ignore on invalid/corrupted input.
+                    /// Ok: best-effort, ignore on invalid/corrupted input.
                 }
             }
 

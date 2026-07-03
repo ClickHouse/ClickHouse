@@ -108,6 +108,7 @@ public:
                 }
                 catch (...)
                 {
+                    /// Ok: best-effort JSON building; fall back to an empty object on invalid/corrupted input.
                     result = "{}";
                 }
             }
