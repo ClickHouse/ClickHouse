@@ -21,3 +21,10 @@ mixed rows int	4	0
 nested object raw	{"InnerKey":42}
 nested object raw exact	{"InnerKey":42}
 nested object deep raw	{"Deep":7}
+typed shadow string	1	alice
+typed shadow string	2	bob
+typed shadow string	3	
+typed shadow raw	1	"alice"
+typed shadow raw	2	"bob"
+typed shadow raw	3	""
+typed shadow int	5

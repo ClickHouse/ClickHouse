@@ -51,3 +51,21 @@ DROP TABLE t_04092_mixed_case_int;
 SELECT 'nested object raw',  JSONExtractRawCaseInsensitive('{"Nested": {"InnerKey": 42}}'::JSON, 'nested');
 SELECT 'nested object raw exact', JSONExtractRaw('{"Nested": {"InnerKey": 42}}'::JSON, 'Nested');
 SELECT 'nested object deep raw', JSONExtractRawCaseInsensitive('{"Nested": {"Inner": {"Deep": 7}}}'::JSON, 'nested', 'inner');
+
+-- A typed path must not shadow a differently-cased key that carries a real value at a given row.
+-- With a typed `Name` and max_dynamic_paths=0, a row's lowercase `name` lands in shared data;
+-- case-insensitive lookup of `NAME` must return the real shared value (row 1), prefer the typed
+-- value when it is actually set (row 2), and fall back to the typed default only when no casing
+-- carries a value at that row (row 3).
+DROP TABLE IF EXISTS t_04092_typed_shadow;
+CREATE TABLE t_04092_typed_shadow (id UInt32, j JSON(Name String, max_dynamic_paths=0)) ENGINE = Memory;
+INSERT INTO t_04092_typed_shadow VALUES
+    (1, '{"name": "alice"}'),
+    (2, '{"Name": "bob"}'),
+    (3, '{"other": "x"}');
+SELECT 'typed shadow string', id, JSONExtractStringCaseInsensitive(j, 'NAME') FROM t_04092_typed_shadow ORDER BY id;
+SELECT 'typed shadow raw',    id, JSONExtractRawCaseInsensitive(j, 'NAME')    FROM t_04092_typed_shadow ORDER BY id;
+DROP TABLE t_04092_typed_shadow;
+
+-- Same shadowing for a typed numeric path: the real lowercase value must win over the typed default.
+SELECT 'typed shadow int', JSONExtractIntCaseInsensitive('{"count": 5}'::JSON(Count Int64, max_dynamic_paths=0), 'COUNT');

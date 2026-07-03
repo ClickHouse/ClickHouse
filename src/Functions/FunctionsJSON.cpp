@@ -390,6 +390,32 @@ public:
                         return path_is_typed[k] || !per_path_merged[k]->isNullAt(i);
                     };
 
+                    /// A value that is definitely present at this row rather than a placeholder default.
+                    /// A typed path always reports present via `path_is_typed`, but its stored value is
+                    /// indistinguishable from an absent key when it equals the type default (#101721), so
+                    /// only a non-default typed value proves presence. For non-typed paths a non-null
+                    /// Dynamic value proves presence.
+                    auto path_has_real_value_at = [&](size_t k, size_t i)
+                    {
+                        return path_is_typed[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
+                    };
+
+                    /// Pick the stored path to use for this row. Prefer a candidate carrying a real value so
+                    /// a differently-cased key with an actual value is not shadowed by an earlier typed path
+                    /// that only holds its default (e.g. query `NAME` with typed `Name` empty and shared
+                    /// `name` = 'alice'). Only when no candidate has a real value do we fall back to a
+                    /// present-but-default typed path, matching case-sensitive extraction of that key.
+                    auto pick_path_for_row = [&](size_t i) -> size_t
+                    {
+                        for (size_t k = 0; k < num_paths; ++k)
+                            if (path_has_real_value_at(k, i))
+                                return k;
+                        for (size_t k = 0; k < num_paths; ++k)
+                            if (path_has_value_at(k, i))
+                                return k;
+                        return num_paths;
+                    };
+
                     if constexpr (is_extract_raw)
                     {
                         VectorWithMemoryTracking<SerializationPtr> serializations(num_paths);
@@ -399,15 +425,7 @@ public:
                         auto raw_col = ColumnString::create();
                         for (size_t i = 0; i < input_rows_count; ++i)
                         {
-                            size_t pick = num_paths;
-                            for (size_t k = 0; k < num_paths; ++k)
-                            {
-                                if (path_has_value_at(k, i))
-                                {
-                                    pick = k;
-                                    break;
-                                }
-                            }
+                            size_t pick = pick_path_for_row(i);
                             if (pick == num_paths)
                                 raw_col->insertDefault();
                             else
@@ -434,15 +452,7 @@ public:
                         result_column->reserve(input_rows_count);
                         for (size_t i = 0; i < input_rows_count; ++i)
                         {
-                            size_t pick = num_paths;
-                            for (size_t k = 0; k < num_paths; ++k)
-                            {
-                                if (path_has_value_at(k, i))
-                                {
-                                    pick = k;
-                                    break;
-                                }
-                            }
+                            size_t pick = pick_path_for_row(i);
                             if (pick == num_paths)
                                 result_column->insertDefault();
                             else
