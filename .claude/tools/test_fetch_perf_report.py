@@ -18,7 +18,6 @@ Run directly:  python3 .claude/tools/test_fetch_perf_report.py
 import importlib.util
 import os
 import shutil
-import sys
 import tempfile
 import types
 
