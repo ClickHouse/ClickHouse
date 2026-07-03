@@ -1,4 +1,4 @@
-pk_partial_matches_exact_knn_without_skip_indexes
+pk_partial_ordered_ids_match_exact_knn_without_skip_indexes
 1
 vector_index_path_used
 1
@@ -6,6 +6,10 @@ expected_top3_ids_for_reference_vec
 [6,7,8]
 pk_partial_adaptive_vector_index_used
 1
+pk_partial_adaptive_ordered_ids_match_exact_knn_without_skip_indexes
+1
+pk_partial_adaptive_expected_ordered_top3_ids
+[8,10,6]
 pk_multi_granule_vector_index_used
 1
 pk_multi_granule_same_row_count_as_without_skip_indexes
