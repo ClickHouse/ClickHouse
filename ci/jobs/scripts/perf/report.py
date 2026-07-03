@@ -1,14 +1,10 @@
 #!/usr/bin/python3
 
 import argparse
-import ast
-import collections
 import csv
 import itertools
-import json
 import os
 import os.path
-import pprint
 import sys
 import traceback
 

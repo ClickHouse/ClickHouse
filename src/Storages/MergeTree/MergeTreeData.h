@@ -52,6 +52,7 @@ const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
 
 struct AlterCommand;
 class AlterCommands;
+class ASTFunction;
 class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -74,6 +75,9 @@ enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
+
+/// Throws if an index or primary-key expression list contains a duplicate sub-expression (unless allow_suspicious_indices)
+void checkSuspiciousIndices(const ASTFunction * index_function);
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -1282,7 +1286,7 @@ public:
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn);
+        const MergeTreeTransactionPtr & txn) const;
 
     MergeTreeDataFormatVersion format_version;
 

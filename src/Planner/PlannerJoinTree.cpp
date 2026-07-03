@@ -32,6 +32,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -102,7 +103,6 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
@@ -265,13 +265,28 @@ NameAndTypePair chooseSmallestColumnToReadFromStorage(const StoragePtr & storage
 
     if (!column_names_allowed_to_select.empty())
     {
-        auto it = column_names_and_types.begin();
-        while (it != column_names_and_types.end())
+        /// Keep only the columns the user is allowed to read, so that a trivial query reads a column
+        /// it has access to. But if none of the allowed columns is a physical column (e.g. the user is
+        /// granted access only to ALIAS columns, which are not physical and therefore never appear in
+        /// `column_names_and_types`), the filter below would remove everything. In that case we keep all
+        /// physical columns: reading any of them just to determine the number of rows for a trivial query
+        /// (such as `SELECT count()`) is allowed, because computing an accessible ALIAS column requires
+        /// reading its physical source columns anyway and no column values are exposed to the user.
+        bool has_allowed_physical_column = std::any_of(
+            column_names_and_types.begin(),
+            column_names_and_types.end(),
+            [&](const auto & column) { return column_names_allowed_to_select.contains(column.name); });
+
+        if (has_allowed_physical_column)
         {
-            if (!column_names_allowed_to_select.contains(it->name))
-                it = column_names_and_types.erase(it);
-            else
-                ++it;
+            auto it = column_names_and_types.begin();
+            while (it != column_names_and_types.end())
+            {
+                if (!column_names_allowed_to_select.contains(it->name))
+                    it = column_names_and_types.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
@@ -365,7 +380,7 @@ bool applyTrivialCountIfPossible(
     if (main_query_node.hasGroupBy() || main_query_node.hasPrewhere() || main_query_node.hasWhere())
         return false;
 
-    if (settings[Setting::allow_experimental_query_deduplication] || settings[Setting::empty_result_for_aggregation_by_empty_set])
+    if (settings[Setting::empty_result_for_aggregation_by_empty_set])
         return false;
 
     QueryTreeNodes aggregates = collectAggregateFunctionNodes(query_tree);
@@ -1585,6 +1600,24 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         planner.buildQueryPlanIfNeeded();
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
+
+        if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
+        {
+            /// If the shard deduplicated structurally-identical projection/sort/group expressions (e.g. several ALIAS
+            /// columns expanding to the same expression), its header has fewer columns than the initiator expects.
+            /// Reconstruct the missing columns by fanning out the deduplicated shard columns before the positional
+            /// reconciliation below (which only handles renames, not different column counts).
+            if (auto fan_out_actions_dag = buildShardCollapseFanOut(
+                    select_query_info.query_tree,
+                    select_query_info.planner_context,
+                    *query_plan.getCurrentHeader(),
+                    *expected_header))
+            {
+                auto fan_out_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
+                fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
+                query_plan.addStep(std::move(fan_out_step));
+            }
+        }
 
         if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *expected_header))
         {

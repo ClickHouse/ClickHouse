@@ -152,19 +152,6 @@ private:
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
 
-    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static RangesInDataParts selectPartsToReadWithUUIDFilter(
-        const RangesInDataParts & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
-        MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-        const std::optional<KeyCondition> & minmax_idx_condition,
-        const DataTypes & minmax_columns_types,
-        const std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context,
-        PartFilterCounters & counters,
-        LoggerPtr log);
-
 public:
     /// For given number rows and bytes, get the number of marks to read.
     /// It is a minimal number of marks which contain so many rows and bytes.
@@ -246,6 +233,7 @@ public:
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & context,
         LoggerPtr log);
