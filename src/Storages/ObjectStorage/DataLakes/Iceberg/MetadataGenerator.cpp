@@ -221,49 +221,12 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
-    const auto snapshot_summary = [&]() -> Iceberg::SnapshotSummary
-    {
-        /// `nullopt` means "no parent" (the first commit). Carrying a concrete zero here instead would
-        /// tell `SnapshotSummary` a parent total exists, so an `APPEND` would reset `total-*` and a
-        /// `DELETE`/`OVERWRITE` would subtract from zero and underflow the unsigned totals.
-        std::optional<Iceberg::SnapshotSummaryTotals> previous_totals;
-
-        /// `parent_snapshot_id <= 0` is the "no parent" sentinel (-1 for the first INSERT, 0 for the root
-        /// of a rebuilt history). A positive id must resolve to a real snapshot; if it does not (snapshot
-        /// expiration / catalog pruning), fail close rather than silently committing wrong totals.
-        if (parent_snapshot_id > 0)
-        {
-            auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
-            if (!parent_snapshot)
-                throw Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Iceberg metadata {} does not contain parent snapshot {} referenced by the new snapshot",
-                    metadata_file_path,
-                    parent_snapshot_id);
-
-            auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
-            if (!parent_summary)
-                throw Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Iceberg metadata {} is missing summary for parent snapshot {}",
-                    metadata_file_path,
-                    parent_snapshot_id);
-
-            auto parent_totals = Iceberg::SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false)
-                                     .transform([](auto summary) { return summary.getTotals(); });
-
-            if (parent_totals)
-                previous_totals = parent_totals.value();
-            else if (format_version > 1) /// No fields were required on 1st version
-                throw Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Iceberg metadata {} has snapshot summary we cannot read {}",
-                    metadata_file_path,
-                    parent_totals.error());
-        }
-
-        return Iceberg::SnapshotSummary{std::move(snapshot_summary_update), std::move(previous_totals)};
-    }();
+    const auto snapshot_summary = generateNextSnaphotSummary(
+        std::move(snapshot_summary_update),
+        parent_snapshot_id,
+        metadata_file_path.serialize(),
+        format_version
+    );
 
     new_snapshot->set(Iceberg::f_summary, snapshot_summary.toJSON());
 
@@ -626,6 +589,48 @@ void MetadataGenerator::generateRenameColumnMetadata(const String & column_name,
     metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+}
+
+Iceberg::SnapshotSummary MetadataGenerator::generateNextSnaphotSummary(
+    Iceberg::SnapshotSummaryUpdate && update,
+    Int64 parent_snapshot_id,
+    const String & metadata_file_path,
+    int format_version)
+{
+        std::optional<Iceberg::SnapshotSummaryTotals> previous_totals;
+
+        if (parent_snapshot_id > 0)
+        {
+            auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+            if (!parent_snapshot)
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} does not contain parent snapshot {} referenced by the new snapshot",
+                    metadata_file_path,
+                    parent_snapshot_id);
+
+            auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
+            if (!parent_summary)
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} is missing summary for parent snapshot {}",
+                    metadata_file_path,
+                    parent_snapshot_id);
+
+            auto parent_totals = Iceberg::SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false)
+                                     .transform([](auto summary) { return summary.getTotals(); });
+
+            if (parent_totals)
+                previous_totals = parent_totals.value();
+            else if (format_version > 1) /// No fields were required on 1st version
+                throw Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "Iceberg metadata {} has snapshot summary we cannot read {}",
+                    metadata_file_path,
+                    parent_totals.error());
+        }
+
+        return Iceberg::SnapshotSummary{std::move(update), std::move(previous_totals)};
 }
 
 }

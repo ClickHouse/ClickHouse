@@ -54,6 +54,13 @@ private:
 
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
+
+    Iceberg::SnapshotSummary generateNextSnaphotSummary(
+        Iceberg::SnapshotSummaryUpdate && update,
+        Int64 parent_snapshot_id,
+        const String & metadata_file_path,
+        int format_version
+    );
 };
 
 #endif
