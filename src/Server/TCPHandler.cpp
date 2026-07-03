@@ -729,7 +729,8 @@ void TCPHandler::runImpl()
                         {
                             ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
                             detach_attempted = true;
-                            detach_query_id = detachQuery(query_state->query, async_context).query_id;
+                            detach_query_id
+                                = detachQuery(String(query_state->query.data(), query_state->query.size()), async_context).query_id;
                             detach_started = true;
                         }
                     }
