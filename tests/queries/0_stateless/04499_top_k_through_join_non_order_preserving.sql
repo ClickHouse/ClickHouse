@@ -71,10 +71,14 @@ SELECT count() > 0 FROM (
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
 -- parallel_hash (ConcurrentHashJoin) does not preserve the left order for single-level map key
--- shapes (key8 / key16 / single non-nullable LowCardinality), and the map type is unknown at the
--- logical stage where this deferral runs. So parallel_hash is treated conservatively as
--- non-order-preserving too: the pushdown must fire in pass 1 instead of deferring to a pass-2
--- read-in-order path that the physical gate can refuse.
+-- shapes (key8 / key16 / single non-nullable LowCardinality) when it runs on more than one slot,
+-- and the map type is unknown at the logical stage where this deferral runs. So multi-slot
+-- parallel_hash is treated conservatively as non-order-preserving: the pushdown must fire in pass 1
+-- instead of deferring to a pass-2 read-in-order path that the physical gate can refuse.
+-- max_threads is pinned above 1 so the join has several slots: with max_threads = 1 the join is
+-- single-slot, dispatchBlock short-circuits, the left order IS preserved, and the deferral is kept
+-- (covered by the max_threads = 1 probe below). The stateless runner randomizes max_threads, so
+-- this must be pinned or the probe flips when max_threads lands at 1.
 -- enable_analyzer is pinned to 1 here: this deferral runs on the logical JoinStepLogical, which
 -- only exists in the new analyzer. Under the old analyzer topKThroughJoin sees the already-built
 -- physical ConcurrentHashJoin and reads its exact preservesLeftBlockOrder() (true for the
@@ -86,7 +90,7 @@ SELECT count() > 0 FROM (
     SELECT tl_04499.pk, tr_04499.v
     FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
     ORDER BY tl_04499.pk LIMIT 10
-    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1,
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 8,
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
@@ -101,6 +105,8 @@ SETTINGS enable_analyzer = 1;
 -- type and the right-side size are unknown at this logical stage, so the deferral must treat the list
 -- as possibly non-order-preserving and fire the pushdown; otherwise a large-RHS single-level join would
 -- defer to a second pass that then bails on the physical `!preservesLeftBlockOrder()` gate, losing both.
+-- max_threads is pinned above 1 for the same reason as the parallel_hash probe above (single-slot
+-- preserves order and is covered separately below).
 -- enable_analyzer pinned to 1 for the same reason as the parallel_hash probe above: the list is only
 -- treated as possibly-non-order-preserving on the logical JoinStepLogical (new analyzer); under the old
 -- analyzer the physical join is inspected directly and correctly defers, flipping this assertion to 0.
@@ -109,13 +115,51 @@ SELECT count() > 0 FROM (
     SELECT tl_04499.pk, tr_04499.v
     FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
     ORDER BY tl_04499.pk LIMIT 10
-    SETTINGS join_algorithm = 'direct,parallel_hash,hash', enable_analyzer = 1,
+    SETTINGS join_algorithm = 'direct,parallel_hash,hash', enable_analyzer = 1, max_threads = 8,
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
         query_plan_join_swap_table = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
+
+-- Single-slot parallel_hash (max_threads = 1) preserves the left order: dispatchBlock short-circuits
+-- on one slot and passes the left block through unscattered regardless of the map type, so
+-- ConcurrentHashJoin::preservesLeftBlockOrder() is true. The logical topKThroughJoin deferral mirrors
+-- that (max_threads == 1 -> not flagged as reordering), so it defers to the read-in-order-through-join
+-- second pass instead of injecting a Sort + Limit.
+-- First probe is the guard: with the fix there is NO explicit pushed Limit on the left (count = 0);
+-- before threading max_threads into the logical check the pushdown fired here and this returned 1.
+-- Second probe is an invariant: the left MergeTree read must stream InOrder (count > 0), confirming
+-- the recovered plan really reads in primary-key order through the join. max_threads = 1 and the
+-- in-order trio are pinned per-query (the stateless runner randomizes both).
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 1,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 1,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
 
 -- Order-preserving `hash` must be unchanged: it legitimately defers to read-in-order-through-join

@@ -112,7 +112,16 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// instead is never worse: the injected `Sort + Limit` on the preserved input is itself
 /// satisfied by a read-in-order scan of the primary key when applicable, and the pushdown
 /// soundness does not depend on the join algorithm.
-bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
+///
+/// The one exception mirrors the physical `ConcurrentHashJoin::preservesLeftBlockOrder()`
+/// fast path: with `max_threads == 1` the join is built on a single slot
+/// (`slots = toPowerOfTwo(min(max_threads, 256)) == 1`), `dispatchBlock` short-circuits, and
+/// the left block passes through unscattered regardless of the map type - so the order IS
+/// preserved. `max_threads` here is the same resolved value the analyzer feeds to the join
+/// (`JoinStepLogical` builds `JoinAlgorithmParams` from `optimization_settings.max_threads`),
+/// so this matches the physical gate exactly. In that case deferring is correct: read-in-order
+/// can propagate through the single-slot `parallel_hash` join, so we do NOT flag it here.
+bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step, size_t max_threads)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
     {
@@ -121,14 +130,17 @@ bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
+        /// A single-slot `parallel_hash` join preserves the left order (see above), so it
+        /// only reorders when it may run on more than one slot.
+        const bool parallel_hash_may_reorder = max_threads != 1;
         const auto & algorithms = logical->getJoinSettings().join_algorithms;
-        return std::ranges::any_of(algorithms, [](JoinAlgorithm a)
+        return std::ranges::any_of(algorithms, [parallel_hash_may_reorder](JoinAlgorithm a)
         {
             return a == JoinAlgorithm::PARTIAL_MERGE
                 || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
                 || a == JoinAlgorithm::FULL_SORTING_MERGE
                 || a == JoinAlgorithm::AUTO
-                || a == JoinAlgorithm::PARALLEL_HASH;
+                || (a == JoinAlgorithm::PARALLEL_HASH && parallel_hash_may_reorder);
         });
     }
     /// Unknown step kind - be conservative.
@@ -382,10 +394,12 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Likewise, the join must preserve the left block order. `findReadingStep` also gates
     /// the second pass on `join->preservesLeftBlockOrder()`, which is `false` for
     /// `partial_merge` / `prefer_partial_merge` (`MergeJoin`), `full_sorting_merge`
-    /// (`FullSortingMergeJoin`), `auto` (`JoinSwitcher`), and `parallel_hash`
+    /// (`FullSortingMergeJoin`), `auto` (`JoinSwitcher`), and multi-slot `parallel_hash`
     /// (`ConcurrentHashJoin` with single-level maps). Read-in-order was never going to fire
     /// for those, so deferring to it would just disable both passes; instead let the sound
-    /// `Sort + Limit` pushdown below run in this pass.
+    /// `Sort + Limit` pushdown below run in this pass. Single-slot `parallel_hash`
+    /// (`max_threads == 1`) does preserve the order and is left to defer (see
+    /// `joinMayNotPreserveLeftBlockOrder`).
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
@@ -393,7 +407,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && join_kind == JoinKind::Left
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
         && !joinMayHaveDelayedBlocks(*join_node->step)
-        && !joinMayNotPreserveLeftBlockOrder(*join_node->step);
+        && !joinMayNotPreserveLeftBlockOrder(*join_node->step, settings.max_threads);
     if (second_pass_can_apply)
     {
         if (const auto * reading = findMergeTreeRead(preserved_input_node))

@@ -53,6 +53,13 @@ struct Optimization
         bool read_in_order{};
         bool read_in_order_through_join{};
 
+        /// Resolved `max_threads` (mirrors `QueryPlanOptimizationSettings::max_threads`).
+        /// `topKThroughJoin` consults it because a `parallel_hash` (`ConcurrentHashJoin`)
+        /// built with `max_threads == 1` runs on a single slot (`slots == 1`) and preserves
+        /// the left block order regardless of the map type, so the deferral must stay enabled
+        /// for that case just like the physical `preservesLeftBlockOrder()` fast path.
+        size_t max_threads{};
+
         /// Mirrors `QueryPlanOptimizationSettings::join_swap_table`. `std::nullopt` means
         /// "auto" (swap decided by `optimizeJoinLegacy` from per-side row estimations);
         /// `true`/`false` are explicit. `topKThroughJoin` consults it because deferring to
