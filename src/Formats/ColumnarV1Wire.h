@@ -62,6 +62,7 @@
 #include <span>
 #include <functional>
 
+#include <base/unaligned.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -153,10 +154,9 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         const auto & ch_offs = arr->getOffsets();
-        uint64_t * wire_offs = reinterpret_cast<uint64_t *>(dst);
-        wire_offs[0] = 0ull;
+        unalignedStore<uint64_t>(dst, 0ull);
         for (uint32_t i = 0; i < n; ++i)
-            wire_offs[i + 1u] = static_cast<uint64_t>(ch_offs[i]);
+            unalignedStore<uint64_t>(dst + (i + 1u) * 8u, static_cast<uint64_t>(ch_offs[i]));
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
         writeComplexData(arr->getData(), total, dst + (n + 1u) * 8u);
         return;
@@ -176,9 +176,8 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     {
         const auto & ch_offs = str->getOffsets();
         const auto & chars   = str->getChars();
-        uint64_t * wire_offs = reinterpret_cast<uint64_t *>(dst);
         uint8_t  * chars_dst = dst + (n + 1u) * 8u;
-        wire_offs[0] = 0ull;
+        unalignedStore<uint64_t>(dst, 0ull);
         uint64_t wire_pos = 0ull;
         uint64_t ch_pos   = 0ull;
         for (uint32_t i = 0; i < n; ++i)
@@ -187,7 +186,7 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
             uint64_t len = end - ch_pos;
             std::memcpy(chars_dst + wire_pos, chars.data() + ch_pos, len);
             wire_pos += len;
-            wire_offs[i + 1u] = wire_pos;
+            unalignedStore<uint64_t>(dst + (i + 1u) * 8u, wire_pos);
             ch_pos = end;
         }
         return;
@@ -436,10 +435,10 @@ inline void writeColData(
         uint32_t total_elems = static_cast<uint32_t>(nested.size());
 
         // Sequential layout: outer offsets at data_offset, nested data immediately after.
-        uint64_t * wire_outer = reinterpret_cast<uint64_t *>(buf.data() + desc.data_offset);
-        wire_outer[0] = 0ull;
+        uint8_t * wire_outer = buf.data() + desc.data_offset;
+        unalignedStore<uint64_t>(wire_outer, 0ull);
         for (uint32_t i = 0; i < num_rows; ++i)
-            wire_outer[i + 1u] = static_cast<uint64_t>(ch_offsets[i]);
+            unalignedStore<uint64_t>(wire_outer + (i + 1u) * 8u, static_cast<uint64_t>(ch_offsets[i]));
 
         writeComplexData(nested, total_elems, buf.data() + desc.data_offset + (num_rows + 1u) * sizeof(uint64_t));
         return;
@@ -469,10 +468,10 @@ inline void writeColData(
         const auto & ch_offsets = str_col->getOffsets();
         const auto & chars = str_col->getChars();
 
-        uint64_t * wire_offsets = reinterpret_cast<uint64_t *>(buf.data() + desc.offsets_offset);
+        uint8_t * wire_offsets = buf.data() + desc.offsets_offset;
         uint8_t * data_dst = buf.data() + desc.data_offset;
 
-        wire_offsets[0] = 0ull;
+        unalignedStore<uint64_t>(wire_offsets, 0ull);
         uint64_t wire_pos = 0ull;
         uint64_t ch_pos = 0ull;
         for (uint32_t i = 0; i < num_rows; ++i)
@@ -481,7 +480,7 @@ inline void writeColData(
             uint64_t str_len = str_end - ch_pos;
             std::memcpy(data_dst + wire_pos, chars.data() + ch_pos, str_len);
             wire_pos += str_len;
-            wire_offsets[i + 1] = wire_pos;
+            unalignedStore<uint64_t>(wire_offsets + (i + 1u) * 8u, wire_pos);
             ch_pos = str_end;
         }
         return;
@@ -526,13 +525,13 @@ inline MutableColumnPtr readColumnFromDesc(
             if (p + outer_bytes > data_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
-            const uint64_t * outer_offs = reinterpret_cast<const uint64_t *>(p);
+            const uint8_t * outer_offs = p;
             p += outer_bytes;
-            uint32_t total_elems = static_cast<uint32_t>(outer_offs[n]);
+            uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + n * 8u));
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(n);
             for (uint32_t i = 0; i < n; ++i)
-                offsets_col->getData()[i] = outer_offs[i + 1u];
+                offsets_col->getData()[i] = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
             return ColumnArray::create(std::move(nested_col), std::move(offsets_col));
         }
         if (const auto * tup_type = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -550,9 +549,9 @@ inline MutableColumnPtr readColumnFromDesc(
             if (p + off_bytes > data_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
-            const uint64_t * wire_offs = reinterpret_cast<const uint64_t *>(p);
+            const uint8_t * wire_offs = p;
             p += off_bytes;
-            uint64_t total_chars = wire_offs[n];
+            uint64_t total_chars = unalignedLoad<uint64_t>(wire_offs + n * 8u);
             if (p + total_chars > data_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
@@ -565,8 +564,8 @@ inline MutableColumnPtr readColumnFromDesc(
             uint64_t ch_pos = 0ull;
             for (uint32_t i = 0; i < n; ++i)
             {
-                uint64_t wire_end   = wire_offs[i + 1u];
-                uint64_t wire_start = wire_offs[i];
+                uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offs + (i + 1u) * 8u);
+                uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + i * 8u);
                 uint64_t str_len    = wire_end - wire_start;
                 chars.resize(ch_pos + str_len);
                 std::memcpy(chars.data() + ch_pos, chars_src + wire_start, str_len);
@@ -615,7 +614,7 @@ inline MutableColumnPtr readColumnFromDesc(
                 "COLUMNAR_V1: COL_BYTES data out of bounds: offset={}, size={}, buf={}",
                 desc.data_offset, desc.data_size, buf.size());
 
-        const uint64_t * wire_offsets = reinterpret_cast<const uint64_t *>(buf.data() + desc.offsets_offset);
+        const uint8_t  * wire_offsets = buf.data() + desc.offsets_offset;
         const uint8_t  * data         = buf.data() + desc.data_offset;
         auto col_str = ColumnString::create();
         auto & chars   = col_str->getChars();
@@ -624,8 +623,8 @@ inline MutableColumnPtr readColumnFromDesc(
         uint64_t ch_pos = 0ull;
         for (uint32_t i = 0; i < rows_to_dec; ++i)
         {
-            uint64_t wire_end   = wire_offsets[i + 1];
-            uint64_t wire_start = wire_offsets[i];
+            uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offsets + (i + 1u) * 8u);
+            uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + i * 8u);
             if (wire_start > wire_end || wire_end > desc.data_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_BYTES invalid string offsets at row {}: [{}, {}), data_size={}",
@@ -715,13 +714,13 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_COMPLEX outer offsets exceed data_size: need={}, data_size={}",
                     outer_offset_bytes, desc.data_size);
             const uint8_t * p = buf.data() + desc.data_offset;
-            const uint64_t * outer_offs = reinterpret_cast<const uint64_t *>(p);
+            const uint8_t * outer_offs = p;
             p += outer_offset_bytes;
-            uint32_t total_elems = static_cast<uint32_t>(outer_offs[rows_to_dec]);
+            uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + rows_to_dec * 8u));
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(rows_to_dec);
             for (uint32_t i = 0; i < rows_to_dec; ++i)
-                offsets_col->getData()[i] = outer_offs[i + 1u];
+                offsets_col->getData()[i] = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
             col = maybe_nullable(ColumnArray::create(std::move(nested_col), std::move(offsets_col)));
         }
         else
