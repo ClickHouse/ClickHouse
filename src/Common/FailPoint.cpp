@@ -198,6 +198,8 @@ static struct InitFiu
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
+    REGULAR(parallel_replicas_force_local_replica_inactive) \
+    ONCE(parallel_replicas_insert_select_drop_active_replica) \
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
