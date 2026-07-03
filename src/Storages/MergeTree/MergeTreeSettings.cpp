@@ -1918,7 +1918,7 @@ Enable persisting column _block_number for each row.
     DECLARE(Bool, enable_block_offset_column, false, R"(
 Persists virtual column `_block_offset` on merges.
 )", 0) \
-    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
+    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET, R"(
 Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
 
 Possible values:
