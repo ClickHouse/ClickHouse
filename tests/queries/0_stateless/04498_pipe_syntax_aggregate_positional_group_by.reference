@@ -1,0 +1,26 @@
+0	3
+1	3
+0	3
+1	3
+0	0	1
+0	1	1
+1	0	1
+1	1	1
+2	0	1
+2	1	1
+0	0	1
+0	1	1
+1	0	1
+1	1	1
+2	0	1
+2	1	1
+SELECT
+    modulo(number, 2) AS k,
+    count() AS c
+FROM numbers(6)
+GROUP BY 1
+SELECT
+    modulo(number, 2) AS k,
+    count() AS c
+FROM numbers(6)
+GROUP BY 1
