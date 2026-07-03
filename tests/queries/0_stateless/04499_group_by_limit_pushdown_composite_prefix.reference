@@ -1,0 +1,22 @@
+composite_two_int
+composite_int_string
+composite_three_keys
+composite_nullable
+prefix_one_of_two
+prefix_one_of_three
+prefix_two_of_three
+prefix_with_offset
+composite_two_level
+prefix_two_level
+nullable_nulls_first_asc
+nullable_nulls_last_asc
+nullable_nulls_first_desc
+nullable_nulls_last_desc
+composite_nullable_nulls_first
+composite_nullable_nulls_last
+aliased key passes through: still optimized
+1
+aliased key, prefer_column_name_to_alias = 1: result matches optimization off
+5
+aliased key, ORDER BY position: result matches optimization off
+5
