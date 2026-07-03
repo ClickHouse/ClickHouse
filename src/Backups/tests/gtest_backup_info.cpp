@@ -90,6 +90,14 @@ namespace
 }
 
 
+/// gtest's death-test macros expand to a bare `stderr`, which on musl is defined as
+/// `#define stderr (stderr)` (see contrib/musl/include/stdio.h) so that its address can be taken;
+/// clang's -Wdisabled-macro-expansion flags this self-referential (but valid) expansion.
+#if defined(USE_MUSL)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 TEST(BackupInfoDeathTest, WithoutS3CredentialsEvaluatesURLOverrideExpression)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
@@ -109,6 +117,10 @@ TEST(BackupInfoDeathTest, WithoutS3CredentialsRedactsExpressionURLKeyAndValue)
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     EXPECT_EXIT(checkExpressionURLKeyAndValueWithContext(), ::testing::ExitedWithCode(0), ".*");
 }
+
+#if defined(USE_MUSL)
+#pragma clang diagnostic pop
+#endif
 
 
 TEST(BackupInfo, WithoutS3CredentialsStripsPositionalArguments)
