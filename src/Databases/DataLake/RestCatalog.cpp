@@ -3,6 +3,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -22,6 +23,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -186,6 +188,7 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        validateAuthHeaders(auth_header.value());
     }
     config = loadConfig();
 }
@@ -246,6 +249,18 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
         result.default_base_location = object->get("default-base-location").extract<String>();
 }
 
+void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
+{
+    /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+    /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+    /// The catalog is built lazily on first use instead; this is where the user-provided
+    /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+    /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+    /// validated and the original parsed header is kept.
+    DB::HTTPHeaderEntries header_to_check{header};
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+}
+
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
     fiu_do_on(DB::FailPoints::check_database_datalake_negative,
@@ -265,13 +280,15 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        if (!access_token.has_value() || update_token)
+        auto current = access_token.get();
+        if (!current || update_token)
         {
-            access_token = retrieveAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
     return {};
@@ -283,6 +300,7 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
     const std::string & onelake_client_secret,
+    const std::string & bearer_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
@@ -290,15 +308,38 @@ OneLakeCatalog::OneLakeCatalog(
     : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, context_)
     , tenant_id(onelake_tenant_id)
 {
-    client_id = onelake_client_id;
-    client_secret = onelake_client_secret;
-    update_token_if_expired = true;
-    // Get token before loading config so getAuthHeaders() can work
-    if (!client_id.empty() && !client_secret.empty())
+    if (!bearer_token_.empty())
     {
-        access_token = retrieveAccessToken();
+        /// Pre-obtained token scoped to https://storage.azure.com. Used for both catalog header
+        /// and Azure Blob access. Does not support refresh.
+        bearer_token = bearer_token_;
+        auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token);
+        validateAuthHeaders(auth_header.value());
+    }
+    else
+    {
+        client_id = onelake_client_id;
+        client_secret = onelake_client_secret;
+        update_token_if_expired = true;
+        // Get token before loading config so getAuthHeaders() can work
+        if (!client_id.empty() && !client_secret.empty())
+        {
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+        }
     }
     config = loadConfig();
+}
+
+DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
+{
+    auto headers = RestCatalog::getAuthHeaders(update_token);
+    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return headers;
+}
+
+String OneLakeCatalog::getBearerToken() const
+{
+    return bearer_token;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const
@@ -412,7 +453,7 @@ BigLakeCatalog::BigLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token = retrieveGoogleCloudAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
 }
@@ -425,13 +466,15 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
+        auto current = access_token.get();
+        if (!current || update_token || current->isExpired())
         {
-            access_token = retrieveGoogleCloudAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -624,19 +667,23 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (found_table)
+            return true;
+
         const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        if (!tables.empty())
+            found_table = true;
+
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const

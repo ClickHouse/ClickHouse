@@ -130,6 +130,7 @@ struct CatalogSettings
     String region;
     String aws_role_arn;
     String aws_role_session_name;
+    String aws_external_id;
 
     DB::SettingsChanges allChanged() const;
 };

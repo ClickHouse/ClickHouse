@@ -290,6 +290,16 @@ void optimizeTreeSecondPass(
             });
     }
 
+    /// Run after runtime filter push-down so that chains of joins are detected correctly.
+    if (optimization_settings.min_columns_for_join_lazy_indexing > 0)
+    {
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
+            {
+                optimizeJoinLazyIndexing(frame_node, nodes, optimization_settings);
+            });
+    }
+
     /// Do PREWHERE optimization after all possible filters including JOIN runtime filters were pushed down
     if (optimization_settings.optimize_prewhere)
     {
@@ -397,6 +407,9 @@ void optimizeTreeSecondPass(
 
             if (optimization_settings.distinct_in_order)
                 optimizeDistinctInOrder(frame_node, nodes, optimization_settings);
+
+            if (optimization_settings.limit_by_in_order)
+                optimizeLimitByInOrder(frame_node, nodes, optimization_settings);
 
             if (optimization_settings.push_limit_by_into_sort)
                 pushLimitByIntoSort(frame_node);
@@ -566,6 +579,11 @@ void optimizeTreeSecondPass(
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
+
+    /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
+    /// Must run after applyOrder, which converts SortingStep to FinishSorting.
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

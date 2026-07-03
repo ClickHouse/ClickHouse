@@ -7,6 +7,7 @@ CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
 insert into small select number, [number] from numbers(0, 1000);
 insert into big select number, [number] from numbers(0, 100000);
 
+SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
 SET max_rows_to_group_by = 0;
@@ -49,9 +50,9 @@ SELECT '------------';
 EXPLAIN SELECT count()
 FROM big, small
 WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_default_shuffle_join_bucket_count=5, distributed_plan_default_reader_bucket_count=2;
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2;
 
 SELECT count()
 FROM big, small
 WHERE (small.sid = (big.bid + 1) % 5000)
-SETTINGS distributed_plan_default_shuffle_join_bucket_count=5, distributed_plan_default_reader_bucket_count=2;
+SETTINGS distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=2;
