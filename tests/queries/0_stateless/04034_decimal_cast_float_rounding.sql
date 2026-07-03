@@ -71,6 +71,19 @@ SELECT 'Zero is representable for every Decimal scale:';
 SELECT CAST(toFloat32(0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(0)), 'Decimal256(76)') AS d_batch;
 SELECT CAST(toFloat32(-0.0), 'Decimal256(76)') AS d_scalar, CAST(materialize(toFloat32(-0.0)), 'Decimal256(76)') AS d_batch;
 
+-- Float32 -> Decimal256 at a scale (38) whose multiplier is still finite, but whose bound
+-- `2^255` overflows to +inf in Float32. A product that overflows to -inf must still throw:
+-- `-inf >= +inf` and `-inf < -inf` are both false, so without an explicit `isFinite(out)` guard
+-- the batch path would reach the integer cast (undefined). Both signs and the batch path.
+SELECT 'Float32 -> Decimal256 finite multiplier, infinite product:';
+SELECT CAST(toFloat32(-10), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(toFloat32(10), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(-10)), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(10)), 'Decimal256(38)'); -- { serverError DECIMAL_OVERFLOW }
+SELECT CAST(materialize(toFloat32(-10)), 'Decimal256(38)') SETTINGS cast_float_to_decimal_uses_rounding = 0; -- { serverError DECIMAL_OVERFLOW }
+-- Zero still succeeds on this path.
+SELECT CAST(materialize(toFloat32(0)), 'Decimal256(38)') AS d_batch;
+
 -- Compatibility: `cast_float_to_decimal_uses_rounding = 0` restores the old truncate-toward-zero
 -- behavior, both in the scalar and the vectorized (batch) paths.
 SELECT 'Truncation when rounding is disabled (scalar):';

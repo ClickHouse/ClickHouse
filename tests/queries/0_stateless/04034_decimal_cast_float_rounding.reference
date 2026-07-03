@@ -37,6 +37,8 @@ Float32 -> Decimal256 high-scale non-finite multiplier:
 Zero is representable for every Decimal scale:
 0	0
 0	0
+Float32 -> Decimal256 finite multiplier, infinite product:
+0
 Truncation when rounding is disabled (scalar):
 0	0
 2	-2

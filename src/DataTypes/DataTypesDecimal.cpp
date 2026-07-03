@@ -494,15 +494,19 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
         /// rather than `max` itself, so the comparison stays correct for widths where the
         /// integer max can't be exactly represented in the source float (e.g. `Int64::max`).
         const FromFieldType max_plus_one = std::ldexp(static_cast<FromFieldType>(1), sizeof(ToNativeType) * 8 - 1);
-        /// Resolve `round` and the rare non-finite-multiplier handling at compile time, and forward
-        /// the `__restrict` pointers, so each instantiation is a branch-free, auto-vectorizable loop.
+        /// Resolve `round` and the rare non-finite handling at compile time, and forward the
+        /// `__restrict` pointers, so each instantiation is a branch-free, auto-vectorizable loop.
         /// (The per-element zero short-circuit and `isFinite(out)` guard otherwise defeat
         /// vectorization, which regresses throughput vs. the previous truncating conversion.)
-        /// `finite_multiplier` is the common case: a finite multiplier can never turn a finite input
-        /// into `NaN`, and the `max_plus_one` bound already rejects infinite products, so the zero
-        /// short-circuit and `isFinite(out)` guard are only required when the multiplier itself
-        /// overflowed to `+/-inf` (e.g. `Float32` * `10^76` for `Decimal256`).
-        auto convert = [&]<bool do_round, bool finite_multiplier>(
+        /// The tight path (`tight == true`) is valid only when BOTH the multiplier and the
+        /// `max_plus_one` bound are finite: a finite multiplier can't turn a finite input into `NaN`
+        /// (no `0 * inf`), and a finite bound rejects infinite products via
+        /// `out >= max_plus_one || out < -max_plus_one` (catching both `+inf` and `-inf`).
+        /// When the bound is `+inf` (e.g. `Float32` -> `Decimal256`, where `2^255` overflows
+        /// `Float32`) a negative infinite product slips past both comparisons, so the guarded path
+        /// keeps an explicit `isFinite(out)` check (plus a zero short-circuit for the non-finite
+        /// multiplier case, where `0 * inf = NaN`).
+        auto convert = [&]<bool do_round, bool tight>(
             const FromFieldType * __restrict from_ptr,
             typename ToDataType::FieldType * __restrict to_ptr,
             [[maybe_unused]] ReturnType * __restrict nullmap_ptr)
@@ -510,7 +514,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             for (size_t i = 0; i < size; ++i)
             {
                 FromFieldType scaled;
-                if constexpr (finite_multiplier)
+                if constexpr (tight)
                     scaled = from_ptr[i] * multiplier;
                 else
                     scaled = from_ptr[i] == FromFieldType{} ? FromFieldType{} : from_ptr[i] * multiplier;
@@ -522,7 +526,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
                     out = scaled;
 
                 bool overflow = !isFinite(from_ptr[i]) || out >= max_plus_one || out < -max_plus_one;
-                if constexpr (!finite_multiplier)
+                if constexpr (!tight)
                     overflow = overflow || !isFinite(out);
 
                 if constexpr (has_nullmap)
@@ -548,7 +552,7 @@ NO_SANITIZE_UNDEFINED void convertToDecimalBatch(
             }
         };
 
-        if (isFinite(multiplier)) [[likely]]
+        if (isFinite(multiplier) && isFinite(max_plus_one)) [[likely]]
         {
             if (round)
                 convert.template operator()<true, true>(from, to, nullmap);
