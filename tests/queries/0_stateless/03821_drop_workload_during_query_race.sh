@@ -31,14 +31,17 @@ function bounded()
     timeout --signal=TERM --kill-after="$KILL_GRACE" "$CALL_TIMEOUT" "$@"
 }
 
-# A client killed by timeout can leave its query still running server-side
-# (see wait_for_queries_to_finish in shell_config.sh). This test has a unique
-# database, so kill every query still running in it (except this KILL itself)
-# so the cleanup DDL below does not block behind a lingering scheduler query.
+# A timeout-killed client can leave its query running server-side (shell_config.sh
+# wait_for_queries_to_finish). The workload/resource are global server singletons but
+# clickhouse-test runs each shell test in a fresh random database, so a query leaked by
+# an earlier timed-out invocation lives in a different database while still holding them.
+# Match by the fixed object name (every query holding them names them in its text)
+# instead of current_database, so cross-invocation lingering work is killed too. The
+# KILL's own text contains those names, hence the NOT ILIKE '%KILL QUERY%' self-exclusion.
 function kill_lingering_queries()
 {
     bounded $CLICKHOUSE_CLIENT -q "
-        KILL QUERY WHERE current_database = currentDatabase()
+        KILL QUERY WHERE (query ILIKE '%$WORKLOAD_NAME%' OR query ILIKE '%$RESOURCE_NAME%')
             AND query NOT ILIKE '%KILL QUERY%'
         SYNC
     " 2>/dev/null ||:
