@@ -135,6 +135,78 @@ LIMIT 3
 └────────┴────────────────────────────────────┴────────────────────┴────────────────────┴──────────┴──────────┘
 ```
 
+## Storing captures in a table {#storing-captures-in-a-table}
+
+The `PCAP` format is read-only, so to keep captures around for repeated
+analysis you typically ingest them into a `MergeTree` table. Create a table
+whose columns match the ones you care about and `INSERT ... SELECT` from the
+capture file:
+
+```sql title="Create table and ingest"
+CREATE TABLE packets
+(
+    timestamp       DateTime64(9),
+    src_addr        Nullable(IPv6),
+    dst_addr        Nullable(IPv6),
+    ip_protocol     LowCardinality(String),
+    src_port        Nullable(UInt16),
+    dst_port        Nullable(UInt16),
+    tcp_flags       Nullable(String),
+    capture_length  UInt32,
+    payload_length  UInt32,
+    raw             String
+)
+ENGINE = MergeTree
+ORDER BY (ip_protocol, timestamp);
+
+INSERT INTO packets
+SELECT
+    timestamp,
+    src_addr,
+    dst_addr,
+    ip_protocol,
+    src_port,
+    dst_port,
+    tcp_flags,
+    capture_length,
+    payload_length,
+    raw
+FROM file('capture.pcap', PCAP);
+```
+
+You usually do not need to store both `raw` and `payload`. The payload is a
+suffix of the raw frame, so it can always be recovered from `raw` together
+with `capture_length` and `payload_length`:
+
+```sql title="Recover the payload from raw"
+SELECT substring(raw, (capture_length - payload_length) + 1) AS payload
+FROM packets;
+```
+
+Storing only `raw` (plus the two lengths) avoids duplicating the packet bytes,
+while still letting you reconstruct the payload on demand. If you never need
+the link-layer/header bytes, you can do the opposite and store only `payload`.
+
+The best `ORDER BY` key depends on your queries. Two common choices:
+
+- For flow- or service-oriented analysis (grouping by protocol, port, or
+  endpoint), lead with the low-cardinality, frequently-filtered columns, for
+  example `ORDER BY (ip_protocol, timestamp)`. This clusters packets of the
+  same protocol together and makes such filters and aggregations cheap.
+- For time-series analysis (traffic over time, replaying a window of a
+  capture), lead with `timestamp`, for example `ORDER BY (timestamp)`, which
+  keeps chronologically close packets together and speeds up range scans over
+  time.
+
+Put the columns you filter on most often first, and remember that a
+low-cardinality prefix (like `ip_protocol`) compresses and skips better than a
+high-cardinality one. Note that most layer-specific columns (such as
+`dst_port` or `src_addr`) are `Nullable`, and `MergeTree` rejects nullable
+columns in the sorting key unless the `allow_nullable_key` setting is enabled;
+prefer non-nullable columns like `ip_protocol` and `timestamp` in `ORDER BY`,
+or cast/default the nullable ones (for example `assumeNotNull(dst_port)`) if
+you need them in the key.
+
 ## Format settings {#format-settings}
 
 The `PCAP` format currently has no format-specific settings.
