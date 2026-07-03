@@ -227,7 +227,9 @@ class ReleaseInfo:
             print(json.dumps(dataclasses.asdict(self), indent=2), file=f)
         return self
 
-    def prepare(self, commit_ref: str, release_type: str) -> "ReleaseInfo":
+    def prepare(
+        self, commit_ref: str, release_type: str, dry_run: bool = False
+    ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
         # commands run through a shell below; fail closed on anything that is
@@ -300,40 +302,50 @@ class ReleaseInfo:
         self.latest = latest_release
 
         # Does the branch already carry a release tag newer than this version?
-        newer_release_exists = version.has_newer_release_tag()
         # This release is the latest on its branch unless a newer tag exists —
         # controls the floating minor/major Docker tags (recovering the current
         # release re-applies them; recovering a superseded one does not).
-        self.is_branch_release = not newer_release_exists
+        self.is_branch_release = not version.has_newer_release_tag()
 
-        # Decide recovery vs. create. The kind of ref comes first:
-        if Git.tag_exists(commit_ref):
-            # The ref is an existing release tag → recovery: re-publish exactly
-            # that release (allowed even for a superseded one). The version at the
-            # tag's commit must describe the same tag.
-            recover = True
+        # The operation is decided by the KIND of ref:
+        #   * a release tag re-publishes (recovers) exactly that release;
+        #   * a branch creates the next release from its tip;
+        #   * a bare commit SHA creates a release from that commit, but only if it
+        #     is strictly after the branch's latest release tag (else it is stale /
+        #     out of order). A branch tip is always the newest commit, so the
+        #     out-of-order check applies only to a raw SHA.
+        # For a branch/SHA (i.e. a create), the commit's CI must be green.
+        recover = Git.tag_exists(commit_ref)
+        if recover:
             assert release_tag == commit_ref, (
                 f"ref [{commit_ref}] is a release tag but the version at its commit "
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
-        elif newer_release_exists:
-            # A non-tag ref (branch or commit) while the branch already has a newer
-            # release tag. A branch ref can't reach this — its version is always
-            # ahead of every tag — so this is a commit/SHA that points behind the
-            # latest release. Creating it would be an out-of-order (backwards)
-            # release; refuse it. Re-publish a superseded release via its tag.
-            raise RuntimeError(
-                f"Refusing to create out-of-order release [{release_tag}]: branch "
-                f"[{release_branch}] already has a newer release tag. To re-publish "
-                f"an existing release, pass its tag as the ref."
-            )
         else:
-            # A branch advancing forward, or a rerun whose release was already
-            # tagged (auto_releases keeps the same commit SHA across reruns). Only
-            # here is a commit ref allowed to recover, and only if its own tag
-            # already exists; otherwise we create the release.
-            recover = Git.tag_exists(release_tag)
+            if not Git.branch_exists(commit_ref):
+                latest_tag = version.latest_release_tag()
+                if latest_tag:
+                    latest_sha = Git.get_commit_sha(latest_tag)
+                    strictly_after = commit_sha != latest_sha and Shell.check(
+                        f"git merge-base --is-ancestor {latest_sha} {commit_sha}",
+                        verbose=True,
+                    )
+                    if not strictly_after:
+                        raise RuntimeError(
+                            f"Refusing out-of-order release from [{commit_ref}]: it "
+                            f"is not after the latest release tag [{latest_tag}] on "
+                            f"branch [{release_branch}]. Pass the tag to recover an "
+                            f"existing release, or the branch to release the next "
+                            f"commit."
+                        )
+            # Never create a release from a commit whose CI has not passed. Skipped
+            # on dry-run (the CI-status query needs the real GitHub API).
+            if not dry_run and not GH.is_commit_ci_green(commit_sha):
+                raise RuntimeError(
+                    f"Refusing to release [{commit_ref}] ({commit_sha}): CI is not "
+                    f"green for this commit."
+                )
         self.create_new_release = not recover
         self.release_type = release_type
         return self
@@ -932,6 +944,7 @@ if __name__ == "__main__":
             release_info.prepare(
                 commit_ref=args.ref,
                 release_type=args.release_type,
+                dry_run=args.dry_run,
             )
 
     if args.download_packages:

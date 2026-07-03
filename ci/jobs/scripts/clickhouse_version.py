@@ -122,27 +122,32 @@ class ClickHouseVersion:
                 version.tweak = git.tweak
         return version
 
-    def has_newer_release_tag(self) -> bool:
-        """Whether the release branch already has a release tag with a higher
-        version than this one.
+    def latest_release_tag(self) -> str:
+        """The highest-version release tag on this branch, or '' if there is none.
 
-        Scans all `vX.Y.*` tags on the branch (by name, so it sees the whole
-        branch regardless of what is reachable from the current commit) and
-        ignores the `-new` branch-cut tag.
+        Scans all `vX.Y.*` tags by name (so it sees the whole branch regardless
+        of what is reachable from the current commit) and ignores the `-new`
+        branch-cut tag.
         """
-        branch_tags = Shell.get_output(
+        latest_tag = ""
+        latest_version = None
+        for tag in Shell.get_output(
             f"git tag --list 'v{self._major}.{self._minor}.*'"
-        ).split()
-        for tag in branch_tags:
+        ).split():
             if tag.endswith("-new"):
                 continue
             try:
                 other = _version_from_tag(tag)
             except Exception:
                 continue
-            if self < other:
-                return True
-        return False
+            if latest_version is None or latest_version < other:
+                latest_version, latest_tag = other, tag
+        return latest_tag
+
+    def has_newer_release_tag(self) -> bool:
+        """Whether the branch already has a release tag with a higher version."""
+        latest_tag = self.latest_release_tag()
+        return bool(latest_tag) and self < _version_from_tag(latest_tag)
 
     @property
     def major(self) -> int:

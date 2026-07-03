@@ -316,7 +316,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     step(
         "--prepare-release-info",
         "--ref",
-        commit_sha,
+        "26.6",  # new release from the branch tip
         "--release-type",
         "patch",
         "--dry-run",
@@ -329,6 +329,7 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["version"] == "26.6.2.1"
     assert info["commit_sha"] == commit_sha
+    assert info["create_new_release"] is True
 
     step("--push-release-tag", "--dry-run")
     step("--create-bump-version-pr", "--dry-run")
@@ -336,13 +337,11 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     assert "New release" in final.stdout
 
 
-def test_prepare_recovers_already_released_commit(tmp_path):
-    """A commit whose release tag already exists degrades to recovery.
+def test_prepare_recovers_from_tag(tmp_path):
+    """Dispatching an existing release tag recovers (re-publishes) that release.
 
-    ``auto_releases.yml`` dispatches with ``ref=<commit_sha>`` and GitHub reruns
-    keep that same SHA even after the first attempt created ``v26.6.2.1-stable``.
-    On a rerun ``prepare`` must recognise the existing release tag and set
-    ``create_new_release=false`` (recovery) instead of trying to create it again.
+    Recovery is expressed by passing the version tag: ``prepare`` must set
+    ``create_new_release=false`` and not attempt to create it again.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -402,7 +401,7 @@ def test_prepare_recovers_already_released_commit(tmp_path):
             script,
             "--prepare-release-info",
             "--ref",
-            commit_sha,
+            "v26.6.2.1-stable",  # recovery via the release tag
             "--release-type",
             "patch",
             "--dry-run",
@@ -423,13 +422,12 @@ def test_prepare_recovers_already_released_commit(tmp_path):
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
-    """A commit ref that points behind a newer release must fail.
+    """A commit ref that is behind the latest release tag must fail.
 
-    The versions file is at patch 2 (the run would create ``v26.6.2``), but the
-    branch already carries a newer ``v26.6.3.1-stable`` tag while ``v26.6.2.*``
-    does not exist. Passing a plain commit ref (not the tag) means it is neither
-    recovery nor a branch advancing forward — creating ``v26.6.2`` behind
-    ``v26.6.3`` is out of order, so ``prepare`` must refuse it.
+    The decision is topological, not version-based: an old commit that predates
+    the branch's latest release tag (``v26.6.3.1-stable`` here, at a later
+    commit) is stale, so ``prepare`` must refuse it rather than create a release
+    from it. Re-publishing an existing release is done by passing its tag.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -455,17 +453,7 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     )
     git("add", "-A")
     git("commit", "-q", "-m", "Base release commit")
-    # A newer release than the one this commit would create (v26.6.2) exists.
-    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
-    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
-    git("add", "-A")
-    git("commit", "-q", "-m", "Post-release commit")
-    git("remote", "add", "origin", str(repo))
-    git("fetch", "-q", "origin")
-
-    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
-    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
-    script = str(repo / "ci" / "jobs" / "create_release.py")
+    # The stale commit we will dispatch — it predates the latest release tag.
     commit_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=repo,
@@ -473,6 +461,17 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
+    # Advance the branch and put the latest release tag ahead of that commit.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Later commit")
+    git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
 
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -504,3 +503,84 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     )
     assert result.returncode != 0, "out-of-order release should have failed"
     assert "out-of-order release" in (result.stdout + result.stderr)
+
+
+def test_prepare_creates_from_branch_ref(tmp_path):
+    """A branch ref whose tip is after the latest release tag creates the next
+    release — it is never treated as out-of-order, even if a version file lags.
+
+    The branch tip is a commit past ``v26.6.1.1-stable``; dispatching the branch
+    (not a tag/SHA) must set ``create_new_release=true``.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Previous release commit")
+    git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
+    # Advance the branch tip past the latest release tag.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "New commit to release")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            "26.6",
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"branch release prepare failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.2.1-stable"
+    assert info["create_new_release"] is True
