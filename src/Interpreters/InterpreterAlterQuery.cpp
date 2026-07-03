@@ -159,8 +159,9 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (!session_tz.empty())
             {
                 auto source_alter = mutation_command->ast();
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    *source_alter, metadata_snapshot->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
@@ -672,6 +673,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::DROP_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_PROJECTION:

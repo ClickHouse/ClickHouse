@@ -10,26 +10,45 @@
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {
+
+/// Network endpoint of a worker, resolved on the initiator from the cluster config (and
+/// server-level defaults). Both ports may differ per node so several workers can share a host.
+struct WorkerAddress
+{
+    String host;
+    UInt16 stateless_worker_port = 0;    /// interserver HTTP port the initiator dispatches tasks to
+    UInt16 streaming_exchange_port = 0;  /// port this node accepts streaming-exchange peer connections on
+};
+
+/// Producer endpoint of an exchange stream, shipped to consumers so they dial the producer's
+/// actual streaming-exchange port.
+struct StreamSourceAddress
+{
+    String host;
+    UInt16 port = 0;
+};
 
 class TaskToHostMap : public boost::noncopyable
 {
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
 
-    const Strings & getHostnames() const { return hostnames; }
-    const UnorderedMapWithMemoryTracking<String, String> & getTaskHosts() const { return task_hosts; }
-    const UnorderedMapWithMemoryTracking<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
+    const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
+    const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
-    void fillHostnames(ContextPtr context);
+    void fillWorkerAddresses(ContextPtr context);
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
-    Strings hostnames;
-    UnorderedMapWithMemoryTracking<String, String> task_hosts;
-    UnorderedMapWithMemoryTracking<String, String> exchange_stream_source_hosts;
+    VectorWithMemoryTracking<WorkerAddress> worker_addresses;
+    UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
+    UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -84,9 +103,13 @@ void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id);
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources
 {
-    /// Exchange stream id -> source host
-    UnorderedMapWithMemoryTracking<String, String> stream_hosts;
+    /// Exchange stream id -> producer endpoint (host + that producer's streaming-exchange port)
+    UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
+
+/// Minimal serialization version: v1 if every producer uses the server-level exchange port (a v1 worker
+/// derives it locally), else v2.
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
 
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
@@ -99,6 +122,8 @@ struct DistributedQueryTaskDescription
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
     SettingsChanges settings_changes;
+    /// Wire-format version to emit, lowered to v1 for legacy-port-only tasks (rolling-upgrade safe).
+    UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };
 
 /// Executes a task locally. `distributed_query_id` is the node-independent identifier of the whole

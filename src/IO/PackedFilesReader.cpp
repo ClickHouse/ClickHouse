@@ -14,17 +14,13 @@ namespace ErrorCodes
 }
 
 PackedFilesReader::PackedFilesReader(
-    DiskPtr disk_, const String & data_file_name_, const ReadSettings & read_settings_)
-    : disk(std::move(disk_)), data_file_name(data_file_name_)
+    const DiskPtr & disk, const String & data_file_name, const ReadSettings & read_settings)
+    : index(readIndex(*disk->readFile(data_file_name, read_settings.adjustBufferSize(4096))))
 {
-    auto in = disk->readFile(data_file_name, read_settings_.adjustBufferSize(4096));
-
-    index = readIndex(*in);
 }
 
-PackedFilesReader::PackedFilesReader(
-    DiskPtr disk_, const String & data_file_name_, const PackedFilesIO::Index & index_)
-    : disk(std::move(disk_)), data_file_name(data_file_name_), index(index_)
+PackedFilesReader::PackedFilesReader(PackedFilesIO::Index index_)
+    : index(std::move(index_))
 {
 }
 
@@ -87,6 +83,8 @@ static ReadSettings patchSettings(ReadSettings settings)
 }
 
 std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
+    const DiskPtr & disk,
+    const String & data_file_name,
     const String & file_name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
