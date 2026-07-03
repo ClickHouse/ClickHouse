@@ -64,18 +64,23 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
 /// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
 /// so we conservatively assume delayed blocks are possible when the configured settings
 /// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
-/// automatic spilling is configured via `max_bytes_*_before_external_join` AND a
-/// hash-family algorithm that the spilling wrapper actually applies to is enabled.
+/// automatic spilling is effectively enabled AND a hash-family algorithm that the spilling
+/// wrapper actually applies to is enabled.
 ///
 /// The spill settings only wrap the chosen join in `SpillingHashJoin`, and that wrapping
 /// happens only in the `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE` / `DEFAULT` (and
 /// `AUTO`) branches of `chooseJoinAlgorithm` (`ExpressionAnalyzer.cpp`, `PlannerJoins.cpp`).
 /// `DIRECT` (`DirectKeyValueJoin`), `PARTIAL_MERGE` (`MergeJoin`), and `FULL_SORTING_MERGE`
 /// (`FullSortingMergeJoin`) never enter that branch, so a nonzero spill setting leaves them
-/// with no delayed blocks. Gating the spill check on an enabled spillable algorithm keeps
-/// `join_algorithm = 'direct'` (and `partial_merge` / `full_sorting_merge`) eligible for the
-/// deferral even under the default `max_bytes_ratio_before_external_join = 0.5`, rather than
-/// forcing the explicit `Sort + Limit` pushdown when the physical join cannot spill.
+/// with no delayed blocks. That wrapping is also gated on the *effective* threshold
+/// (`JoinAlgorithmParams::max_bytes_before_external_join`, set from
+/// `getEffectiveMaxBytesBeforeExternalJoin()`), which resolves the default
+/// `max_bytes_ratio_before_external_join = 0.5` to `0` when there is no system memory hard
+/// limit. Keying the logical gate off the same effective threshold (rather than the raw
+/// settings) keeps `join_algorithm = 'direct'` (and `partial_merge` / `full_sorting_merge`)
+/// eligible for the deferral, and also keeps `hash` / `parallel_hash` / `default` eligible on
+/// installs without a memory limit, rather than forcing the explicit `Sort + Limit` pushdown
+/// when the physical join cannot spill.
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -96,13 +101,19 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
         if (always_delayed)
             return true;
 
-        /// A nonzero spill setting only matters when an algorithm that the `SpillingHashJoin`
-        /// wrapper is applied to is enabled: `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE`
-        /// / `DEFAULT`. `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped, so
-        /// they cannot produce delayed blocks even with spilling configured.
-        const bool spilling_configured
-            = js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0;
-        if (!spilling_configured)
+        /// Spilling only matters when it is actually configured AND enabled for an algorithm the
+        /// `SpillingHashJoin` wrapper applies to (`HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE`
+        /// / `DEFAULT`); `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped.
+        ///
+        /// Key this off the *effective* threshold, not the raw settings, to match the physical
+        /// wrap: it gates on `JoinAlgorithmParams::max_bytes_before_external_join`, which is set
+        /// from `JoinSettings::getEffectiveMaxBytesBeforeExternalJoin()` (`PlannerJoins.cpp`). The
+        /// raw `max_bytes_ratio_before_external_join` (default `0.5`) resolves to `0` when there is
+        /// no system memory hard limit (`getMostStrictAvailableSystemMemory()` is empty), leaving a
+        /// plain non-spilling `HashJoin`. Reading the raw ratio would wrongly flag every
+        /// `hash` / `parallel_hash` / `default` join as may-delay on installs without a memory
+        /// limit and force the slower `Sort + Limit` pushdown.
+        if (js.getEffectiveMaxBytesBeforeExternalJoin() == 0)
             return false;
 
         return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
