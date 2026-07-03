@@ -1,0 +1,74 @@
+case17_columns_in_part
+a
+key
+case17_post_mutate
+1	101	0
+case18_columns_in_part
+a
+key
+case18_post_merge_alter
+1	100	0
+2	200	0
+case19_post_rename_alter
+1	100	0
+case20_columns_in_part
+a
+b
+key
+case20_data
+1	100	
+case21_columns_in_part
+a
+key
+case21_post_rename_merge_alter
+1	100	0
+2	200	0
+case27_pre_materialize
+1	100	0
+case27_post_materialize
+1	100	999
+case28_pre_clear
+1	100	0
+case28_post_clear
+1	100	0
+case29_pre_delete
+1	100	0
+2	200	0
+case29_post_delete
+2	200	0
+case30_post_mutations
+1	102	0
+case41_pre_merge
+1	100	999
+2	200	0
+case41_post_merge
+1	100	999
+2	200	0
+case41_post_alter
+1	100	999
+2	200	0
+case42_pre_modify
+1	100	0
+case42_post_modify
+1	100	\N
+case43_compact_rename_mutate
+1	101	0
+case44_pre
+1	100	0
+case44_post_materialize
+1	100	999
+case44_columns_in_part
+a
+b
+key
+case44_post_second_alter
+1	100	999
+case45_post_clear
+1	100	0
+case45_post_mutate
+1	101	0
+case46_epoch
+1	1970-01-01
+case46_type_default
+1	1970-01-01
+2	1900-01-01
