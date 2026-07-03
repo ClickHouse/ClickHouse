@@ -139,7 +139,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_mt_d
 Parts: 1 | Granules: 49
 PrimaryKey
 Keys:
-Condition: and((ts not in [1767243600, 1767243600]), or(and((toDate(ts) in [20493, +Inf)), and((toYYYYMM(ts) in [202602, +Inf)), (ts in [1770595200, +Inf)))), and((toDate(ts) in (-Inf, 20455]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1767311999])))))
+Condition: and(and((toDate(ts) not in [20454, 20454]), and((toYYYYMM(ts) not in [202601, 202601]), (ts not in [1767243600, 1767243600]))), or(and((toDate(ts) in [20493, +Inf)), and((toYYYYMM(ts) in [202602, +Inf)), (ts in [1770595200, +Inf)))), and((toDate(ts) in (-Inf, 20455]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1767311999])))))
 Parts: 1/1
 Granules: 49/960
 Search Algorithm: generic exclusion search
@@ -180,13 +180,14 @@ SELECT count() FROM test_mt_dt WHERE NULL AND ts = toDateTime('2026-01-10 05:00:
 -- Negated equality: the direct key column atom is exact and may prune; rows sharing
 -- toDate/toYYYYMM with the constant must survive.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_mt_dt WHERE ts != toDateTime('2026-01-10 05:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│        Parts: 1 | Granules: 960
-│          PrimaryKey
-│            Keys:
-│            Condition: (ts not in [1768021200, 1768021200])
-│            Parts: 1/1
-│            Granules: 960/960
-│            Search Algorithm: generic exclusion search
+│  Keys:
+Parts: 1 | Granules: 960
+PrimaryKey
+Keys:
+Condition: and((toDate(ts) not in [20463, 20463]), and((toYYYYMM(ts) not in [202601, 202601]), (ts not in [1768021200, 1768021200])))
+Parts: 1/1
+Granules: 960/960
+Search Algorithm: generic exclusion search
 SELECT count() FROM test_mt_dt WHERE ts != toDateTime('2026-01-10 05:00:00', 'UTC') SETTINGS force_primary_key = 1;
 959
 SELECT count() FROM test_mt_dt WHERE ts != toDateTime('2026-01-10 05:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
