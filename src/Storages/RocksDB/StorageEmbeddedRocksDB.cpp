@@ -477,7 +477,18 @@ bool StorageEmbeddedRocksDB::optimize(
 /// Single file holding all key-value pairs of the table as (raw key, raw value) length-prefixed
 /// binary records. RocksDB already stores keys/values as raw serialized strings, so no
 /// (de)serialization is required - we copy the bytes verbatim.
+///
+/// The scan and the restore write both go through GetRootDB(): for a ttl > 0 table rocksdb_ptr is
+/// a DBWithTTL whose iterator strips the trailing 4-byte creation timestamp and whose Write()
+/// appends a fresh one, which would reset every row's expiration on restore. GetRootDB() gives the
+/// underlying DB, so the timestamp suffix is copied verbatim in both directions and the original
+/// expiration state is preserved. For a non-ttl table GetRootDB() is the DB itself, so the bytes
+/// are identical to a plain scan/write.
 static constexpr std::string_view rocksdb_backup_data_filename = "data.bin";
+
+/// Flush the restore WriteBatch once it reaches this many bytes so a large backup does not require a
+/// full in-RAM copy of the table (EmbeddedRocksDB is an on-disk engine).
+static constexpr size_t rocksdb_restore_batch_flush_bytes = 64 * 1024 * 1024;
 
 /// Lazily dumps all key-value pairs of a RocksDB table into a single compressed backup entry.
 class EmbeddedRocksDBBackup : public IBackupEntriesLazyBatch, boost::noncopyable
@@ -514,7 +525,8 @@ private:
             if (!storage->rocksdb_ptr)
                 throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
 
-            std::unique_ptr<rocksdb::Iterator> iterator(storage->rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            /// GetRootDB() bypasses the DBWithTTL wrapper so raw values keep their TTL timestamp suffix.
+            std::unique_ptr<rocksdb::Iterator> iterator(storage->rocksdb_ptr->GetRootDB()->NewIterator(rocksdb::ReadOptions()));
             for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next())
             {
                 writeStringBinary(iterator->key().ToStringView(), *data_out);
@@ -584,6 +596,19 @@ void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const Str
     CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
 
     rocksdb::WriteBatch batch;
+
+    /// GetRootDB() bypasses the DBWithTTL wrapper so the raw TTL timestamp suffix is written verbatim.
+    const auto flush_batch = [&]
+    {
+        SharedLockGuard lock(rocksdb_ptr_mx);
+        if (!rocksdb_ptr)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+        auto status = rocksdb_ptr->GetRootDB()->Write(rocksdb::WriteOptions(), &batch);
+        if (!status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+        batch.Clear();
+    };
+
     String key;
     String value;
     while (!compressed_in.eof())
@@ -594,14 +619,14 @@ void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const Str
         auto status = batch.Put(key, value);
         if (!status.ok())
             throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+
+        /// Flush periodically so restoring a large table does not buffer the whole batch in RAM.
+        if (batch.GetDataSize() >= rocksdb_restore_batch_flush_bytes)
+            flush_batch();
     }
 
-    SharedLockGuard lock(rocksdb_ptr_mx);
-    if (!rocksdb_ptr)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-    auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-    if (!status.ok())
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    if (batch.Count() > 0)
+        flush_batch();
 }
 
 static_assert(rocksdb::DEBUG_LEVEL == 0);
