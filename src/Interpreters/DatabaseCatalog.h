@@ -275,7 +275,9 @@ public:
     }
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
-    void prepareNewDisksOnConfigChange(const StoragePolicySelectorPtr & new_storage_policy_selector, const Strings & new_added_disks);
+    void prepareNewDisksOnConfigChange(
+        const StoragePolicySelectorPtr & old_storage_policy_selector,
+        const StoragePolicySelectorPtr & new_storage_policy_selector);
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

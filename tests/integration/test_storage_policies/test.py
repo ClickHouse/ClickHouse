@@ -46,7 +46,7 @@ def test_storage_policy_configuration_change(started_cluster):
 def test_storage_policy_configuration_change_rejects_existing_disk_contents(started_cluster):
     node.stop_clickhouse()
     node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "disk1_only.xml"),
+        os.path.join(CONFIG_DIR, "disk2_existing_before_reload.xml"),
         "/etc/clickhouse-server/config.d/disks.xml",
     )
     node.start_clickhouse()
@@ -69,7 +69,7 @@ def test_storage_policy_configuration_change_rejects_existing_disk_contents(star
         )
 
         node.copy_file_to_container(
-            os.path.join(CONFIG_DIR, "disks.xml"),
+            os.path.join(CONFIG_DIR, "disk2_added_to_test_policy.xml"),
             "/etc/clickhouse-server/config.d/disks.xml",
         )
         node.query("SYSTEM RELOAD CONFIG")
@@ -84,11 +84,12 @@ def test_storage_policy_configuration_change_rejects_existing_disk_contents(star
         node.query(f"DROP TABLE IF EXISTS {table_name}")
         if disk2_data_path:
             node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+        node.stop_clickhouse()
         node.copy_file_to_container(
             os.path.join(CONFIG_DIR, "disks.xml"),
             "/etc/clickhouse-server/config.d/disks.xml",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.start_clickhouse()
 
 
 def test_alter_storage_policy_with_existing_disk_contents(started_cluster):

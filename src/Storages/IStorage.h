@@ -739,7 +739,9 @@ public:
     virtual bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) { return true; }
 
     /// Prepare new disks before reloaded storage policies are applied. Exceptions abort storage policy reload.
-    virtual void prepareNewDisksOnConfigChange(const StoragePolicySelectorPtr & /*new_storage_policy_selector*/, const std::set<String> & /*new_added_disks*/) const {}
+    virtual void prepareNewDisksOnConfigChange(
+        const StoragePolicySelectorPtr & /*old_storage_policy_selector*/,
+        const StoragePolicySelectorPtr & /*new_storage_policy_selector*/) const {}
 
     /// A helper to implement read()
     static void readFromPipe(

@@ -1457,7 +1457,9 @@ public:
     UInt64 estimateNumberOfRowsToRead(
         ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
-    void prepareNewDisksOnConfigChange(const StoragePolicySelectorPtr & new_storage_policy_selector, const std::set<String> & new_added_disks) const override;
+    void prepareNewDisksOnConfigChange(
+        const StoragePolicySelectorPtr & old_storage_policy_selector,
+        const StoragePolicySelectorPtr & new_storage_policy_selector) const override;
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);

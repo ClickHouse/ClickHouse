@@ -464,6 +464,9 @@ struct ContextSharedPart : boost::noncopyable
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
+    /// Serializes storage configuration reloads. Reload can prepare table disk paths
+    /// without storage_policies_mutex, but concurrent reloads must not interleave.
+    mutable std::mutex storage_configuration_update_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
 
@@ -6677,9 +6680,14 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::
 
 void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
+    std::lock_guard update_lock(shared->storage_configuration_update_mutex);
+
+    Strings disks_to_reinit;
+    StoragePolicySelectorPtr old_storage_policy_selector;
+    StoragePolicySelectorPtr new_storage_policy_selector;
+
     {
         std::lock_guard lock(shared->storage_policies_mutex);
-        Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
@@ -6688,22 +6696,43 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         {
             try
             {
-                auto new_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                old_storage_policy_selector = shared->merge_tree_storage_policy_selector;
+                new_storage_policy_selector = old_storage_policy_selector->updateFromConfig(
                     config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
-                if (!disks_to_reinit.empty())
-                {
-                    /// Tables must prepare new disks before new policies are visible, otherwise they can own stale files.
-                    DatabaseCatalog::instance().prepareNewDisksOnConfigChange(new_storage_policy_selector, disks_to_reinit);
-                }
-                shared->merge_tree_storage_policy_selector = std::move(new_storage_policy_selector);
             }
             catch (Exception & e)
             {
                 disks_to_reinit.clear();
+                old_storage_policy_selector.reset();
+                new_storage_policy_selector.reset();
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }
         }
+    }
+
+    if (new_storage_policy_selector)
+    {
+        try
+        {
+            /// Tables must prepare new disks before new policies are visible, otherwise they can own stale files.
+            DatabaseCatalog::instance().prepareNewDisksOnConfigChange(old_storage_policy_selector, new_storage_policy_selector);
+        }
+        catch (Exception & e)
+        {
+            disks_to_reinit.clear();
+            new_storage_policy_selector.reset();
+            LOG_ERROR(
+                shared->log,
+                "An error has occurred while preparing disks for reloaded storage policies, storage policies were not applied: {}",
+                e.message());
+        }
+    }
+
+    {
+        std::lock_guard lock(shared->storage_policies_mutex);
+        if (new_storage_policy_selector)
+            shared->merge_tree_storage_policy_selector = std::move(new_storage_policy_selector);
 
         if (!disks_to_reinit.empty())
         {

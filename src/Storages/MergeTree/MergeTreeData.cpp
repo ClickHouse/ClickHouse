@@ -11403,16 +11403,21 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
 }
 
 void MergeTreeData::prepareNewDisksOnConfigChange(
-    const StoragePolicySelectorPtr & new_storage_policy_selector, const std::set<String> & new_added_disks) const
+    const StoragePolicySelectorPtr & old_storage_policy_selector,
+    const StoragePolicySelectorPtr & new_storage_policy_selector) const
 {
+    auto old_storage_policy = getStoragePolicyFromSelector(old_storage_policy_selector);
     auto new_storage_policy = getStoragePolicyFromSelector(new_storage_policy_selector);
-    if (!new_storage_policy)
+    if (!old_storage_policy || !new_storage_policy || old_storage_policy == new_storage_policy)
         return;
 
-    for (const auto & name : new_added_disks)
+    std::unordered_set<String> old_disk_names;
+    for (const auto & disk : old_storage_policy->getDisks())
+        old_disk_names.insert(disk->getName());
+
+    for (const auto & disk : new_storage_policy->getDisks())
     {
-        auto disk = new_storage_policy->tryGetDiskByName(name);
-        if (disk && !disk->isBroken() && !disk->isReadOnly())
+        if (!old_disk_names.contains(disk->getName()) && !disk->isBroken() && !disk->isReadOnly())
             initializeNewDiskOnConfigChange(disk);
     }
 }
