@@ -2632,21 +2632,27 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto & node_list_nodes = node_list->getNodes();
                     size_t node_list_nodes_size = node_list_nodes.size();
 
-                    /// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of
-                    /// `tupleElement` calls, one per tuple field. The legacy path prefixes each
-                    /// expanded element (`f_a.1`, `f_a.id`), so expand the whole list here as
-                    /// sibling projection columns instead of rejecting it as a size != 1 result.
-                    /// Only when this is the terminal transformer: a transformer chained after
-                    /// `untuple` is rejected by both analyzers, so leave it to the throw below.
-                    if (execute_apply_transformer && is_last_transformer && !apply_column_name_prefix.empty()
-                        && node_list_nodes_size != 1 && isUntupleExpansion(node_list_nodes))
+                    /// A named `APPLY (x -> untuple(x), 'prefix')` or a `REPLACE (untuple(a) AS a)`
+                    /// resolves to a list of `tupleElement` calls, one per tuple field. The legacy
+                    /// path expands each element (`f_a.1`/`f_a.id` for APPLY, `a.1`/`a.id` for
+                    /// REPLACE), so expand the whole list here as sibling projection columns instead
+                    /// of rejecting it as a size != 1 result. Only when this is the terminal
+                    /// transformer: a transformer chained after `untuple` is rejected by both
+                    /// analyzers, so leave it to the throw below.
+                    const bool expand_named_untuple = is_last_transformer && node_list_nodes_size != 1
+                        && isUntupleExpansion(node_list_nodes)
+                        && ((execute_apply_transformer && !apply_column_name_prefix.empty())
+                            || execute_replace_transformer);
+                    if (expand_named_untuple)
                     {
                         for (size_t i = 0; i < node_list_nodes_size; ++i)
                         {
-                            /// Base each element on the accumulated display name feeding untuple,
-                            /// not the original short column_name: a direct untuple keeps `f_a.1`,
-                            /// but a chained one follows the prior transformer (`q_p_a.1`,
-                            /// `q_identity(a).1`), matching the legacy path.
+                            /// Base each element on the display name feeding untuple. For APPLY that
+                            /// is the accumulated prefixed name (a direct untuple keeps `f_a.1`, a
+                            /// chained one follows the prior transformer: `q_p_a.1`, `q_identity(a).1`).
+                            /// For REPLACE the prefix is empty and the accumulator is the replaced
+                            /// column name, so this yields `a.1` (matching `ActionsVisitor::doUntuple`,
+                            /// which aliases the untuple to the REPLACE target name).
                             String element_projection_name = apply_column_name_prefix + apply_prefixed_projection_name
                                 + '.' + getTupleElementName(node_list_nodes[i]);
 

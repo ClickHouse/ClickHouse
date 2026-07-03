@@ -38,6 +38,14 @@ SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithN
 SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a, (3, 4) AS b) FORMAT TSVWithNames;
 SELECT * APPLY (untuple, 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+-- A named `REPLACE (untuple(a) AS a)` expands into one column per tuple field named after the
+-- REPLACE target (`a.1`, `a.id`), matching `ActionsVisitor::doUntuple` (which aliases the
+-- untuple to the target name). Other columns are preserved.
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT (1, 2) AS a, 5 AS c) FORMAT TSVWithNames;
+-- The expanded names come from the REPLACE target, not the untupled source expression.
+SELECT * REPLACE (untuple(b) AS a) FROM (SELECT 10 AS a, (1, 2) AS b) FORMAT TSVWithNames;
 -- The prefix uses the short column name, not a qualified one, even in a scope that
 -- requires qualification (alias `a` collides with `x.a`, so `x.*` qualifies to `x.a`).
 SELECT 99 AS a, x.* APPLY (toString, 'f_') FROM (SELECT 1 AS a, 2 AS b) AS x FORMAT TSVWithNames;
@@ -78,6 +86,14 @@ SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithN
 SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> untuple(x), 'f_') FROM (SELECT (1, 2) AS a, (3, 4) AS b) FORMAT TSVWithNames;
 SELECT * APPLY (untuple, 'f_') FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+-- A named `REPLACE (untuple(a) AS a)` expands into one column per tuple field named after the
+-- REPLACE target (`a.1`, `a.id`), matching the old analyzer. It used to be rejected with a
+-- generic UNSUPPORTED_METHOD because the untuple list-expansion only ran for APPLY.
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT (1, 2) AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT cast((1, 2), 'Tuple(id UInt8, v UInt8)') AS a) FORMAT TSVWithNames;
+SELECT * REPLACE (untuple(a) AS a) FROM (SELECT (1, 2) AS a, 5 AS c) FORMAT TSVWithNames;
+-- The expanded names come from the REPLACE target, not the untupled source expression.
+SELECT * REPLACE (untuple(b) AS a) FROM (SELECT 10 AS a, (1, 2) AS b) FORMAT TSVWithNames;
 -- A transformer chained after `untuple` is rejected (both analyzers): `untuple` must be terminal.
 SELECT * APPLY (x -> untuple(x), 'f_') APPLY toString FROM (SELECT (1, 2) AS a); -- { serverError UNSUPPORTED_METHOD }
 
