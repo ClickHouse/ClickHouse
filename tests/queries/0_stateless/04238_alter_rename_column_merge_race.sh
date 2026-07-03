@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-random-settings, no-random-merge-tree-settings
+# Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+# Tag no-parallel: uses the server-wide `mt_select_parts_to_mutate_no_free_threads` failpoint and
+# then relies on the pending mutation materializing after it is disabled; a concurrent test toggling
+# the same global failpoint could postpone that mutation and make the final read flaky.
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/80648
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,112 +11,80 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-# Each iteration spawns 4 clickhouse-client processes; under sanitizers + the
-# parallel runner that startup cost dominates, so the iteration count is the
-# main lever on wall time. At the ~20% per-attempt data-loss rate on buggy
-# master, 25 attempts catch the regression with >99% probability per build.
-ITERATIONS=25
+# The race is deterministic here, not probabilistic. The `mt_select_parts_to_mutate_no_free_threads`
+# failpoint keeps the RENAME mutation from ever being selected, so the source parts stay physically
+# at the old column name while the metadata already carries the new one. `alter_sync = 0` returns
+# right after the metadata commit, and OPTIMIZE FINAL then merges the still-old parts under the new
+# metadata, applying the rename on-fly. That is exactly the window that dropped the renamed column.
+# The failpoint is disabled afterwards so the pending mutation can materialize before the final read
+# (reading the renamed column while its mutation is still pending returns NULL regardless of the fix,
+# because the merged part physically holds the new name while the read maps new->old). Same idiom as
+# 03830_vertical_merge_inject_column_after_drop.
 
-for i in $(seq 1 "$ITERATIONS"); do
-    # One client invocation: each INSERT still makes its own part.
-    $CLICKHOUSE_CLIENT --query="
-        DROP TABLE IF EXISTS t_rename_merge_race;
+wait_mutation() {
+    local table="$1"
+    for _ in $(seq 1 100); do
+        [ "$(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database = currentDatabase() AND table = '${table}'")" = "1" ] && return 0
+        sleep 0.3
+    done
+}
 
-        CREATE TABLE t_rename_merge_race (id UInt64, d String DEFAULT '')
-        ENGINE = MergeTree() ORDER BY id
-        SETTINGS min_bytes_for_wide_part = 0;
+# Phase 1: a column WITH a default (String DEFAULT ''). This is the facet #104822 fixed:
+# a dropped-and-refilled default keeps the row count but the original values must survive.
+${CLICKHOUSE_CLIENT} --query="
+    DROP TABLE IF EXISTS t_rename_merge_race;
+    CREATE TABLE t_rename_merge_race (id UInt64, d String DEFAULT '')
+    ENGINE = MergeTree() ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0;
+    INSERT INTO t_rename_merge_race VALUES (1, 'hello'), (2, 'world');
+    INSERT INTO t_rename_merge_race VALUES (3, 'foo'), (4, 'bar');
+    INSERT INTO t_rename_merge_race VALUES (5, 'baz'), (6, 'qux');
+"
 
-        INSERT INTO t_rename_merge_race VALUES (1, 'hello'), (2, 'world');
-        INSERT INTO t_rename_merge_race VALUES (3, 'foo'), (4, 'bar');
-        INSERT INTO t_rename_merge_race VALUES (5, 'baz'), (6, 'qux');
-        INSERT INTO t_rename_merge_race VALUES (7, 'alpha'), (8, 'beta');
-        INSERT INTO t_rename_merge_race VALUES (9, 'gamma'), (10, 'delta');
-    "
+${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race RENAME COLUMN d TO d1 SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race FINAL"
+${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+wait_mutation t_rename_merge_race
 
-    # alter_sync=2 waits for the rename mutation to fully apply.
-    $CLICKHOUSE_CLIENT --query="ALTER TABLE t_rename_merge_race RENAME COLUMN d TO d1 SETTINGS alter_sync = 2" &
-    pid_alter=$!
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE t_rename_merge_race FINAL" &
-    pid_optimize=$!
+count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race WHERE d1 != ''")
+if [ "$count" != "6" ]; then
+    echo "FAIL (String DEFAULT ''): expected 6 non-empty rows, got $count"
+    ${CLICKHOUSE_CLIENT} --query="SELECT id, d1 FROM t_rename_merge_race ORDER BY id"
+fi
 
-    # `wait pid1 pid2` returns only the last status, masking a failure of the
-    # other process; wait on each separately so both statuses are checked.
-    set +e
-    wait "$pid_alter"
-    alter_status=$?
-    wait "$pid_optimize"
-    optimize_status=$?
-    set -e
+# Phase 2: a Dynamic column with NO default (the residual facet this fix closes). The merge sees the
+# new name in metadata, finds it absent from the parts (they still hold the old name), and without
+# the fix expires and drops it from the merged part, so every value reads back as NULL. A default
+# would have refilled it (Phase 1); a Dynamic column has nothing to refill from.
+${CLICKHOUSE_CLIENT} --query="
+    DROP TABLE IF EXISTS t_rename_merge_race_dynamic;
+    SET allow_experimental_dynamic_type = 1;
+    CREATE TABLE t_rename_merge_race_dynamic (x UInt64, y UInt64)
+    ENGINE = MergeTree() ORDER BY x
+    SETTINGS min_bytes_for_wide_part = 0;
+    INSERT INTO t_rename_merge_race_dynamic SELECT number, number FROM numbers(3);
+    ALTER TABLE t_rename_merge_race_dynamic ADD COLUMN d Dynamic SETTINGS mutations_sync = 1;
+    INSERT INTO t_rename_merge_race_dynamic SELECT number, number, number FROM numbers(3, 3);
+    INSERT INTO t_rename_merge_race_dynamic SELECT number, number, 'str_' || toString(number) FROM numbers(6, 3);
+    INSERT INTO t_rename_merge_race_dynamic SELECT number, number, NULL FROM numbers(9, 3);
+    INSERT INTO t_rename_merge_race_dynamic SELECT number, number, multiIf(number % 3 = 0, number, number % 3 = 1, 'str_' || toString(number), NULL) FROM numbers(12, 3);
+"
 
-    if [ "$alter_status" -ne 0 ] || [ "$optimize_status" -ne 0 ]; then
-        echo "FAIL on iteration $i: alter exited with $alter_status, optimize exited with $optimize_status"
-        $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race"
-        exit 1
-    fi
+${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_dynamic FINAL"
+${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+wait_mutation t_rename_merge_race_dynamic
 
-    # Before the fix the merge fills d1 with empty defaults, dropping this below 10.
-    count=$($CLICKHOUSE_CLIENT --query="SELECT count() FROM t_rename_merge_race WHERE d1 != ''")
-    if [ "$count" != "10" ]; then
-        echo "FAIL on iteration $i: expected 10 non-empty rows, got $count"
-        $CLICKHOUSE_CLIENT --query="SELECT id, d1 FROM t_rename_merge_race ORDER BY id"
-        $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race"
-        exit 1
-    fi
-done
+# 8 of the 15 rows hold a non-null Dynamic value. Before the fix they read back as NULL, dropping
+# this count to 0.
+count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race_dynamic WHERE d1 IS NOT NULL SETTINGS allow_experimental_dynamic_type = 1")
+if [ "$count" != "8" ]; then
+    echo "FAIL (Dynamic no-default): expected 8 non-null rows, got $count"
+    ${CLICKHOUSE_CLIENT} --query="SELECT x, d1 FROM t_rename_merge_race_dynamic ORDER BY x SETTINGS allow_experimental_dynamic_type = 1"
+fi
 
-# Second phase: a Dynamic column with no default. This is a distinct facet of the
-# same race. A merge applies the pending rename on-fly, but the source parts still
-# physically store the old name; the merge sees the new name in metadata, finds it
-# absent from the parts, and (because a Dynamic column has no default) expires and
-# drops it from the merged part, so every value reads back as NULL. The String
-# column above is saved by its default; the Dynamic column is not.
-for i in $(seq 1 "$ITERATIONS"); do
-    $CLICKHOUSE_CLIENT --query="
-        DROP TABLE IF EXISTS t_rename_merge_race_dynamic;
-
-        SET allow_experimental_dynamic_type = 1;
-
-        CREATE TABLE t_rename_merge_race_dynamic (x UInt64, y UInt64)
-        ENGINE = MergeTree() ORDER BY x
-        SETTINGS min_bytes_for_wide_part = 0;
-
-        INSERT INTO t_rename_merge_race_dynamic SELECT number, number FROM numbers(3);
-        ALTER TABLE t_rename_merge_race_dynamic ADD COLUMN d Dynamic SETTINGS mutations_sync = 1;
-        INSERT INTO t_rename_merge_race_dynamic SELECT number, number, number FROM numbers(3, 3);
-        INSERT INTO t_rename_merge_race_dynamic SELECT number, number, 'str_' || toString(number) FROM numbers(6, 3);
-        INSERT INTO t_rename_merge_race_dynamic SELECT number, number, NULL FROM numbers(9, 3);
-        INSERT INTO t_rename_merge_race_dynamic SELECT number, number, multiIf(number % 3 = 0, number, number % 3 = 1, 'str_' || toString(number), NULL) FROM numbers(12, 3);
-    "
-
-    $CLICKHOUSE_CLIENT --query="ALTER TABLE t_rename_merge_race_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 2" &
-    pid_alter=$!
-    $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE t_rename_merge_race_dynamic FINAL" &
-    pid_optimize=$!
-
-    set +e
-    wait "$pid_alter"
-    alter_status=$?
-    wait "$pid_optimize"
-    optimize_status=$?
-    set -e
-
-    if [ "$alter_status" -ne 0 ] || [ "$optimize_status" -ne 0 ]; then
-        echo "FAIL on dynamic iteration $i: alter exited with $alter_status, optimize exited with $optimize_status"
-        $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
-        exit 1
-    fi
-
-    # 8 of the 15 rows hold a non-null Dynamic value. Before the fix they read
-    # back as NULL, dropping this count to 0.
-    count=$($CLICKHOUSE_CLIENT --query="SELECT count() FROM t_rename_merge_race_dynamic WHERE d1 IS NOT NULL SETTINGS allow_experimental_dynamic_type = 1")
-    if [ "$count" != "8" ]; then
-        echo "FAIL on dynamic iteration $i: expected 8 non-null Dynamic rows, got $count"
-        $CLICKHOUSE_CLIENT --query="SELECT x, d1 FROM t_rename_merge_race_dynamic ORDER BY x SETTINGS allow_experimental_dynamic_type = 1"
-        $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
-        exit 1
-    fi
-done
-
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race"
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
 echo "OK"
