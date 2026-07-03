@@ -123,36 +123,73 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 /// returns `twoLevelMapIsUsed()` there). `ConcurrentHashJoin` builds its inner `HashJoin`s with
 /// `use_two_level_maps = true`, so `HashJoin::chooseMethod` returns a single-level map only for
 /// `key8` / `key16` - a single numeric equi-key of at most 2 bytes (the `default:` fall-through
-/// in the two-level switch); every other shape (>= 4-byte numeric, multi-key, string, hashed) is
-/// two-level and preserves the order. Nullable keys are unwrapped to their nested column and
-/// LowCardinality keys are materialized before `chooseMethod` runs, and the dictionary-aware
-/// single-LowCardinality map is disabled for two-level maps, so we strip both wrappers here to
-/// match. We can only see the logical `JoinStepLogical` at this stage, so anything we cannot
-/// prove to be two-level (non-equi condition, more than one equi-key, a key type we cannot
-/// classify) is treated as possibly single-level: flagging it keeps the sound `Sort + Limit`
-/// pushdown, which is never worse than deferring to a second pass that would then bail on the
-/// physical `!preservesLeftBlockOrder()` gate. Keep this in sync with `HashJoin::chooseMethod`.
+/// in the two-level switch). Every other shape is two-level and preserves the order: two or more
+/// equi-keys become `keys*` / `two_level_hashed`, and a single >= 4-byte numeric / string /
+/// fixed-string key becomes `two_level_key*`.
+///
+/// `chooseMethod` keys off the number and types of the *equi-join keys*, not the number of `ON`
+/// conjuncts. `JoinOperator::expression` holds one entry per `ON` conjunct, so we must count the
+/// cross-side equality predicates (the actual hash keys) rather than `expression.size()`: a
+/// multi-key join (`ON l.k1 = r.k1 AND l.k2 = r.k2`) and a single-key join with a residual filter
+/// (`ON l.k = r.k AND l.a > r.b`) both have more than one entry but are two-level / single-key,
+/// and flagging them would force the `Sort + Limit` pushdown on a join that actually preserves the
+/// order (the regression this predicate is meant to avoid). Range and same-side conditions are
+/// residual filters applied after the join; they add no hash key and do not change the scatter
+/// order.
+///
+/// Nullable keys are unwrapped to their nested column and LowCardinality keys are materialized
+/// before `chooseMethod` runs, and the dictionary-aware single-LowCardinality map is disabled for
+/// two-level maps, so we strip both wrappers here to match. We can only see the logical
+/// `JoinStepLogical` at this stage, so anything we cannot prove to be two-level (a disjunctive
+/// `ON`, a key type we cannot classify) is treated as possibly single-level: flagging it keeps the
+/// sound `Sort + Limit` pushdown, which is never worse than deferring to a second pass that would
+/// then bail on the physical `!preservesLeftBlockOrder()` gate. Keep this in sync with
+/// `HashJoin::chooseMethod`.
 bool parallelHashMultiSlotSingleLevelMap(const JoinStepLogical & logical)
 {
     const auto & join_operator = logical.getJoinOperator();
-    const auto & expression = join_operator.expression;
 
-    /// A single-level map (`key8`/`key16`) requires exactly one equi-join key.
-    if (expression.size() != 1)
-        return true;
+    size_t equi_key_count = 0;
+    DataTypePtr single_key_type;
+    for (const auto & predicate : join_operator.expression)
+    {
+        const auto [op, lhs, rhs] = predicate.asBinaryPredicate();
 
-    const auto [op, lhs, rhs] = expression.front().asBinaryPredicate();
-    if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-        return true;
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+        {
+            /// A residual range / comparison filter (`l.a > r.b`) is applied after the join and
+            /// adds no hash key, so it does not change the map type - skip it. A disjunctive or
+            /// otherwise non-decomposable conjunct we cannot reduce to a plain equi-key set: be
+            /// conservative and treat the join as possibly single-level.
+            if (op == JoinConditionOperator::And || op == JoinConditionOperator::Or
+                || op == JoinConditionOperator::Unknown)
+                return true;
+            continue;
+        }
 
-    /// Both sides of an equi-condition share the join-key type; use the left one.
-    auto key_type = lhs.getType();
-    if (!key_type)
+        /// Only a cross-side equality becomes a join key; a same-side equality or a comparison
+        /// against a constant is a filter, not a key.
+        const bool cross_side = (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+        if (!cross_side)
+            continue;
+
+        ++equi_key_count;
+        /// The left and right key of an equi-condition share a unified type; keep the left one.
+        single_key_type = lhs.getType();
+    }
+
+    /// Zero equi-keys (a `cross` / `empty` map, not two-level) still scatters on multiple slots, so
+    /// flag it conservatively. Two or more equi-keys are always two-level (`keys*` /
+    /// `two_level_hashed`) and preserve the order.
+    if (equi_key_count != 1)
+        return equi_key_count == 0;
+
+    if (!single_key_type)
         return true;
 
     /// Match the key materialization `HashJoin` applies before `chooseMethod`: strip
     /// LowCardinality and Nullable (`extractKeysForJoin` joins on the non-null nested column).
-    key_type = removeNullable(removeLowCardinality(key_type));
+    const auto key_type = removeNullable(removeLowCardinality(single_key_type));
 
     /// `key8` / `key16`: a single numeric key of at most 2 bytes stays single-level even with
     /// two-level maps requested.

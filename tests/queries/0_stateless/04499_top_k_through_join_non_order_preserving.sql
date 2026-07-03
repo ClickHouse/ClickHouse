@@ -218,6 +218,77 @@ SELECT count() FROM (
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
+-- The logical deferral must key off the number and type of the actual equi-join keys, not the
+-- number of `ON` conjuncts: `HashJoin::chooseMethod` leaves only a single 1/2-byte numeric key
+-- single-level, so every other shape is two-level and preserves the left order under multi-slot
+-- parallel_hash. Two shapes have more than one `ON` conjunct yet are two-level, and must DEFER to
+-- the read-in-order-through-join second pass (no explicit pushed Limit, count = 0):
+--
+--  - A multi-key equi-join (two UInt64 keys): `chooseMethod` packs them into `two_level_keys*`.
+--  - A single UInt64 equi-key plus a residual range filter: the range condition is applied after
+--    the join and adds no hash key, so this is still a single `two_level_key64`.
+--
+-- Before keying off the equi-key set (when the guard counted raw `ON` conjuncts), both were flagged
+-- as single-level and wrongly forced the pushdown, losing the cheaper through-join plan. The second
+-- probe of each pair is an invariant: the left MergeTree read streams InOrder (count > 0).
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j AND tl_04499.pk = tr_04499.v
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 8,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j AND tl_04499.pk = tr_04499.v
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 8,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain ILIKE '%Read type: InOrder%'
+SETTINGS enable_analyzer = 1;
+
+-- Single UInt64 equi-key + residual range filter (`tl.pk > tr.v`): still one `two_level_key64`, so
+-- multi-slot parallel_hash preserves the order and this DEFERS (no pushed Limit, count = 0).
+SELECT count() FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j AND tl_04499.pk > tr_04499.v
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 8,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
+SETTINGS enable_analyzer = 1;
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT tl_04499.pk, tr_04499.v
+    FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j AND tl_04499.pk > tr_04499.v
+    ORDER BY tl_04499.pk LIMIT 10
+    SETTINGS join_algorithm = 'parallel_hash', enable_analyzer = 1, max_threads = 8,
+        query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
+        query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+        query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
+        query_plan_join_swap_table = 0,
+        max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+) WHERE explain ILIKE '%Read type: InOrder%'
+SETTINGS enable_analyzer = 1;
+
 -- Correctness pins the pushed limit's value and side. Because the join is one-to-one, the top-10
 -- pk are exactly 0..9: a pushdown that keeps only the first row (a wrong `Limit 1`) would return a
 -- single 0, and a limit pushed onto the right side would drop or reorder left rows. This is the
