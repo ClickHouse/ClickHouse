@@ -24,7 +24,7 @@ LambdaArgumentsNode::LambdaArgumentsNode(Names argument_names)
 
 void LambdaArgumentsNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
 {
-    buffer << std::string(indent, ' ') << "LAMBDA_ARGS id: " << format_state.getNodeId(this);
+    buffer << std::string(indent, ' ') << "ARGUMENTS id: " << format_state.getNodeId(this);
 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
@@ -88,11 +88,10 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     if (hasAlias())
         buffer << ", alias: " << getAlias();
 
-    const auto & args = getArguments();
-    if (!args.getNames().empty())
+    if (!getArguments().getNames().empty())
     {
-        buffer << '\n' << std::string(indent + 2, ' ') << "ARGUMENTS " << '\n';
-        getArguments().dumpTreeImpl(buffer, format_state, indent + 4);
+        buffer << '\n';
+        getArguments().dumpTreeImpl(buffer, format_state, indent + 2);
     }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION " << '\n';
