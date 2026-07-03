@@ -3,6 +3,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -51,8 +52,21 @@ void DeltaLakeSink::cancelBuffers()
     /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
     /// this flips its isCancelled(), so its destructor finalizes/cancels its
     /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
+    /// WriteBuffer::cancel does not unlink an already written data file, so also
+    /// remove each uncommitted object (mirrors the commit-failure cleanup in
+    /// onFinish); otherwise a failed insert leaves an orphan parquet file behind.
     for (auto & data_file : data_files)
+    {
         data_file.sink->cancel();
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(data_file.sink->getPath()));
+        }
+        catch (...)
+        {
+            tryLogCurrentException("DeltaLakeSink", "Failed to remove uncommitted data file on cancel");
+        }
+    }
 }
 
 void DeltaLakeSink::onException(std::exception_ptr)

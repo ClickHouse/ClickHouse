@@ -4155,6 +4155,18 @@ def test_write_failure_does_not_crash_server(started_cluster, partitioned):
     # Server stays alive after the failed write (would have aborted before the fix).
     assert "1" == instance.query("SELECT 1").strip()
 
+    # The failed INSERT must not leave any orphan data file behind. cancel() only
+    # flips the WriteBuffer flag; it does not unlink the partially written parquet
+    # (WriteBufferFromFile does not override cancelImpl), so before the cleanup
+    # fix the uncommitted data file was leaked. The table started empty, so no
+    # parquet file must remain after the failed insert.
+    orphan_parquet_count = instance.exec_in_container(
+        ["bash", "-c", f"find /{result_file} -name '*.parquet' | wc -l"]
+    ).strip()
+    assert orphan_parquet_count == "0", (
+        f"orphan data file(s) left after failed insert: {orphan_parquet_count}"
+    )
+
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
