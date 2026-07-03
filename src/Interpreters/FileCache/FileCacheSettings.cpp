@@ -38,6 +38,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_elements, FILECACHE_DEFAULT_MAX_ELEMENTS, "Maximum number of cache elements, e.g. file segments (limits number of files on filesystem)", 0) \
     DECLARE(UInt64, max_file_segment_size, FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE, "Maximum size of a single file segment", 0) \
     DECLARE(UInt64, boundary_alignment, FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT, "File segment alignment", 0) \
+    DECLARE(UInt64, reserve_granularity, FILECACHE_DEFAULT_RESERVE_GRANULARITY, "When reserving space for a file segment download, reserve at least this many bytes ahead of the downloaded size (capped at the file segment size). Coarser granularity reduces the rate of cache state lock acquisitions on the reservation hot path, at the cost of holding some reserved-but-not-yet-downloaded space (reclaimed on file segment completion). Value 0 disables reserve-ahead: space is reserved exactly as requested.", 0) \
     DECLARE(Bool, cache_on_write_operations, false, "Enables write-through cache (cache on INSERT and MERGE)", 0) \
     DECLARE(FileCachePolicy, cache_policy, FILECACHE_DEFAULT_CACHE_POLICY, "Cache eviction policy", 0) \
     DECLARE(Double, slru_size_ratio, FILECACHE_DEFAULT_SLRU_RATIO, "SLRU cache policy size ratio of protected to probationary elements", 0) \
@@ -49,6 +50,10 @@ namespace ErrorCodes
     DECLARE(Double, keep_free_space_size_ratio, FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO, "A ratio of free space which cache would try to uphold in the background", 0) \
     DECLARE(Double, keep_free_space_elements_ratio, FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO, "A ratio of free elements which cache would try to uphold in the background", 0) \
     DECLARE(UInt64, keep_free_space_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "A remove batch size of cache elements made by background thread which upholds free space/elements ratio", 0) \
+    DECLARE(NonZeroUInt64, keep_free_space_eviction_threads, FILECACHE_DEFAULT_FREE_SPACE_EVICTION_THREADS, "Number of threads which perform the actual file segment removal (filesystem deletion) for the background free space/elements ratio keeping. The single background thread collects eviction candidates and frees their priority queue entries, while these threads do the lock-free removal in parallel", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_interval_ms, 10000, "Idle interval in milliseconds of the background task which purges invalidated (lazily-removed) priority queue entries", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_threshold, 1000, "Number of accumulated invalidated priority queue entries which triggers their background removal", 0) \
+    DECLARE(NonZeroUInt64, invalidated_entries_cleanup_remove_batch, FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH, "Maximum number of invalidated priority queue entries removed under a single write lock per background iteration", 0) \
     DECLARE(Bool, enable_filesystem_query_cache_limit, false, "Enable limiting maximum size of cache which can be written within a query", 0) \
     DECLARE(UInt64, cache_hits_threshold, 0, "Deprecated setting", 0) \
     DECLARE(Bool, enable_bypass_cache_with_threshold, false, "Undocumented. Not recommended for use", 0) \
@@ -62,6 +67,8 @@ namespace ErrorCodes
     DECLARE(Double, split_cache_ratio, 0.1, "Ratio of system segment to total size of cache for split_cache.", 0) \
     DECLARE(UInt64, overcommit_eviction_evict_step, 10 * 1_MiB, "Eviction step in bytes for overcommit eviction policy. Used for keep_free_space_*_ratio settings", 0) \
     DECLARE(Double, check_cache_probability, 0.001, "Works only for debug or sanitizer build. Checks cache correctness by going through all cache and checking state of each cache element", 0) \
+    DECLARE(Bool, expose_prometheus_eviction_metrics, false, "Expose Prometheus metrics for filesystem cache eviction activity (`filesystem_cache_evictions_total` etc.). Off by default. Can be toggled at runtime via `SYSTEM RELOAD CONFIG`.", 0) \
+    DECLARE(Bool, expose_prometheus_eviction_metrics_per_user, false, "Additionally expose per-user-id eviction metrics. Requires `expose_prometheus_eviction_metrics`. Cardinality grows with distinct evicting users.", 0) \
 
 DECLARE_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FILE_CACHE_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(FileCacheSettingsTraits, LIST_OF_FILE_CACHE_SETTINGS, FileCacheSettings, FileCacheSetting)
@@ -235,6 +242,15 @@ void FileCacheSettings::validate()
 
     if (settings[FileCacheSetting::overcommit_eviction_evict_step] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "`overcommit_eviction_evict_step` cannot be zero");
+
+    if (settings[FileCacheSetting::use_split_cache]
+        && (settings[FileCacheSetting::cache_policy] == FileCachePolicy::LRU_OVERCOMMIT
+            || settings[FileCacheSetting::cache_policy] == FileCachePolicy::SLRU_OVERCOMMIT))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`use_split_cache` is not supported with overcommit cache policies. "
+            "`SplitFileCachePriority` merges and fans out eviction infos of its sub-priorities "
+            "for total space cleanup, which the overcommit eviction cannot consume correctly");
 
     if (settings[FileCacheSetting::boundary_alignment] > settings[FileCacheSetting::max_file_segment_size])
         throw Exception(

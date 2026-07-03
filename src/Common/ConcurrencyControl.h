@@ -23,15 +23,25 @@ namespace DB
  * granted: slot is allocated by specific query, but not yet acquired by any thread.
  * acquired: slot is allocated by specific query and acquired by a thread.
  *
+ * Allocation model:
+ *  - `allocate(min, max)` creates an allocation that gets exactly `min` slots
+ *    unconditionally, then eagerly fills up to `max` from currently available capacity.
+ *    A consumer that wants to upscale lazily (zero capacity waste while idle) passes
+ *    `min == max` and grows the ceiling later via `setMax`. A consumer that wants the
+ *    full ceiling up front passes `max > min`.
+ *  - `max` is mutable via `setMax(new_max)`: raise to upscale, lower to cap future
+ *    grants. The current ceiling is the only demand signal -- `schedule` simply grants
+ *    up to it whenever capacity is available. Growing past a previously-saturated point
+ *    re-inserts the allocation into the scheduler's waiter list; shrinking does not
+ *    reclaim already-granted slots, it only caps future grants.
+ *
  * USAGE:
- *   1. Create an allocation for a query:
+ *   1. Create an allocation:
  *      `auto slots = ConcurrencyControl::instance().allocate(min, max);`
- *      It will allocate at least `min` and at most `max` slots.
- *      Note that `min` slots are granted immediately, but other `max - min` may be granted later.
- *   2. For every thread a slot has to be acquired from that allocation:
+ *   2. Acquire a slot per thread:
  *      `while (auto slot = slots->tryAcquire()) createYourThread([slot = std::move(slot)] { ... });`
- *      This snippet can be used at query startup and for upscaling later.
- * (both functions are non-blocking)
+ *   3. To raise or lower the ceiling at runtime: `slots->setMax(new_max);`
+ * (all of these are non-blocking)
  *
  * There is a scheduler of CPU slots. It could be set with `setScheduler(name)`.
  * Possible values:
@@ -62,6 +72,11 @@ struct ConcurrencyControlState
     SlotCount max_concurrency = UnlimitedSlots;
     SlotCount cur_concurrency = 0;
     CurrentMetrics::Increment max_concurrency_metric;
+
+    // Rollback lever for the lazy allocation strategy. When false, pipelines bypass the
+    // lazy `allocate(1, 1) + setMax` growth path and use eager `allocate(1, num_threads)`
+    // directly. Read without locking (relaxed).
+    std::atomic<bool> lazy_allocation{true};
 };
 
 class ConcurrencyControlRoundRobinScheduler
@@ -95,9 +110,16 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
+        void setMax(SlotCount new_max) override;
+
+        // Set true the first time `emitDelayedOnGrow` observes capacity pressure on this
+        // allocation, ensuring `ConcurrencyControlQueriesDelayed` is bumped at most once.
+        bool query_counted = false;
+
     private:
-        friend struct Slot; // for release()
-        friend class ConcurrencyControlRoundRobinScheduler; // for grant(), free() and ctor
+        friend struct Slot; // for release
+        friend class ConcurrencyControlRoundRobinScheduler; // for grant, free, schedule and ctor
 
         Allocation(ConcurrencyControlRoundRobinScheduler & parent_, SlotCount limit_, SlotCount granted_, Waiters::iterator waiter_ = {});
 
@@ -117,16 +139,18 @@ public:
         void release();
 
         ConcurrencyControlRoundRobinScheduler & parent;
-        const SlotCount limit;
 
         mutable std::mutex mutex; // the following values must be accessed under this mutex
+        SlotCount limit; // mutable: raised or lowered via setMax
         SlotCount allocated; // allocated total (including already `released`)
         SlotCount released = 0;
         size_t last_slot_id = 0;
 
         std::atomic<SlotCount> granted; // allocated, but not yet acquired
 
-        const Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
+        // Iterator to self in Waiters list; valid iff allocated < limit. Non-const so
+        // `setMax` can re-insert after a previously-saturated allocation gets grown.
+        Waiters::iterator waiter;
     };
 
     ConcurrencyControlRoundRobinScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
@@ -140,14 +164,20 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Round-robin scheduling of available slots among waiting allocations
+    // Walk the waiter list in round-robin order, granting up to each waiter's current
+    // `limit` while capacity allows. The limit is the only demand signal -- set by the
+    // caller via `setMax` (or implicitly via `allocate(min, max)`).
     void schedule(std::unique_lock<std::mutex> &);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free, release and setMax internals
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
+
+    // Waiter list maintenance. Must be called under state.mutex.
+    void addWaiterLocked(Allocation * allocation);
+    void removeWaiterLocked(Allocation * allocation);
 
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
@@ -187,9 +217,15 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
+        void setMax(SlotCount new_max) override;
+
+        // See RR::Allocation::query_counted.
+        bool query_counted = false;
+
     private:
-        friend struct Slot; // for release()
-        friend class ConcurrencyControlFairRoundRobinScheduler; // for grant(), free() and ctor
+        friend struct Slot; // for release
+        friend class ConcurrencyControlFairRoundRobinScheduler; // for grant, free, schedule and ctor
 
         Allocation(ConcurrencyControlFairRoundRobinScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, Waiters::iterator waiter_ = {});
 
@@ -210,9 +246,9 @@ public:
 
         ConcurrencyControlFairRoundRobinScheduler & parent;
         const SlotCount min;
-        const SlotCount limit;
 
         mutable std::mutex mutex; // the following values must be accessed under this mutex
+        SlotCount limit; // mutable: raised or lowered via setMax (competing slots only; excludes `min`)
         SlotCount allocated; // allocated total excluding non-competing (including already `released`)
         SlotCount released = 0;
         size_t last_slot_id = 0;
@@ -220,7 +256,9 @@ public:
         std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
         std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired
 
-        const Waiters::iterator waiter; // iterator to itself in Waiters list; valid iff allocated < limit
+        // Iterator to self in Waiters list; valid iff allocated < limit. Non-const so `setMax`
+        // can re-insert after a previously-saturated allocation gets grown.
+        Waiters::iterator waiter;
     };
 
     ConcurrencyControlFairRoundRobinScheduler(ConcurrencyControl & parent_, ConcurrencyControlState & state_);
@@ -234,14 +272,18 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Round-robin scheduling of available slots among waiting allocations
+    // See ConcurrencyControlRoundRobinScheduler::schedule for semantics. FRR's `limit`
+    // tracks competing slots only -- the `min` non-competing slots are off-budget.
     void schedule(std::unique_lock<std::mutex> &);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free, release and setMax internals
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
+
+    void addWaiterLocked(Allocation * allocation);
+    void removeWaiterLocked(Allocation * allocation);
 
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
@@ -267,9 +309,15 @@ public:
         // This is the same as tryAcquire(), waiting is not supported, so caller should only use it for the first `min` slots
         [[nodiscard]] AcquiredSlotPtr acquire() override;
 
+        // Raise or lower the allocation's slot ceiling (see ISlotAllocation::setMax).
+        void setMax(SlotCount new_max) override;
+
+        // See RR::Allocation::query_counted.
+        bool query_counted = false;
+
     private:
-        friend struct Slot; // for release()
-        friend class ConcurrencyControlMaxMinFairScheduler; // for grant(), free() and ctor
+        friend struct Slot; // for release
+        friend class ConcurrencyControlMaxMinFairScheduler; // for grant, free, schedule and ctor
         friend struct AllocationCompare;
 
         Allocation(ConcurrencyControlMaxMinFairScheduler & parent_, SlotCount min_, SlotCount max, SlotCount granted_, UInt64 sequence_number_);
@@ -288,9 +336,9 @@ public:
 
         ConcurrencyControlMaxMinFairScheduler & parent;
         const SlotCount min;
-        const SlotCount limit;
 
         mutable std::mutex mutex; // the following values must be accessed under this mutex
+        SlotCount limit; // mutable: raised or lowered via setMax (competing slots only)
         SlotCount allocated; // allocated total excluding non-competing (including already `released`)
         SlotCount released = 0;
         size_t last_slot_id = 0;
@@ -299,7 +347,7 @@ public:
         std::atomic<SlotCount> granted; // allocated competing slots, but not yet acquired
 
         UInt64 sequence_number; // monotonically increasing counter for FIFO ordering
-        boost::intrusive::set_member_hook<> waiters_hook; // intrusive hook for waiters set, use is_linked() to check if waiting
+        boost::intrusive::set_member_hook<> waiters_hook; // use is_linked() to check if waiting
     };
 
     // Scoped guard for acquired slot, see Allocation::tryAcquire()
@@ -340,14 +388,21 @@ public:
     // Use `Allocation::tryAcquire()` to acquire allocated slot, before running a thread.
     SlotAllocationPtr allocate(std::unique_lock<std::mutex> & lock, SlotCount min, SlotCount max);
 
-    // Max-min fair scheduling of available slots among waiting allocations
+    // Max-min fair scheduling: walk waiters in (allocated, sequence_number) order,
+    // granting one slot to the front of the set per iteration up to its current `limit`
+    // while capacity allows. The grant changes the sort key, so the waiter is removed
+    // and (if still under limit) re-inserted before the next iteration. The limit is the
+    // only demand signal -- set by the caller via `setMax`.
     void schedule(std::unique_lock<std::mutex> &);
 
 private:
-    friend struct Allocation; // for free() and release()
+    friend struct Allocation; // for free, release and setMax internals
 
     void free(Allocation * allocation);
     void release(SlotCount amount);
+
+    void addWaiterLocked(Allocation * allocation);
+    void removeWaiterLocked(Allocation * allocation);
 
     ConcurrencyControl & parent;
     ConcurrencyControlState & state;
@@ -377,8 +432,15 @@ public:
     // Returns the current scheduling algorithm
     String getScheduler() const;
 
-    // Schedule available slots to waiters.
-    // Do not call directly, for internal use only.
+    // Rollback lever: when false, callers are expected to use eager `allocate(1, num_threads)`
+    // bypassing the lazy `allocate(1, 1) + setMax` growth path. Default is true (lazy). Safe
+    // to toggle at runtime -- only affects new allocations.
+    void setLazyAllocation(bool value);
+    bool getLazyAllocation() const;
+
+    // Schedule available slots to waiters: walks the waiter list and grants up to each
+    // waiter's current `limit` while capacity allows. Do not call directly, for internal
+    // use only -- invoked by release, free, setMax, and setMaxConcurrency.
     void schedule(std::unique_lock<std::mutex> &);
 
 private:

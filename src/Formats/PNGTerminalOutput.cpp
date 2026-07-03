@@ -1,5 +1,7 @@
 #include <Formats/PNGTerminalOutput.h>
 
+#if USE_LIBPNG && USE_BASE64
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
@@ -7,11 +9,15 @@
 #include <string>
 #include <vector>
 
+#include <libbase64.h>
+
+#include <IO/Base64WriteBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/StringWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -123,11 +129,15 @@ ImageTerminalMode parseImageTerminalMode(const String & mode, bool is_writing_to
 void writeImageITerm(WriteBuffer & out, std::string_view png)
 {
     /// ESC ] 1337 ; File = inline=1 ; size=<bytes> : <base64> BEL
-    const std::string encoded = base64Encode(std::string(png));
     writeCString("\033]1337;File=inline=1;size=", out);
     writeIntText(png.size(), out);
     writeChar(':', out);
-    out.write(encoded.data(), encoded.size());
+    {
+        /// Stream the base64 of the whole payload into `out` without materializing it (the image can be large).
+        Base64WriteBuffer base64(out);
+        base64.write(png.data(), png.size());
+        base64.finalize();
+    }
     writeChar('\a', out);
     writeChar('\n', out);
 }
@@ -137,15 +147,21 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
     /// ESC _ G <control data> ; <base64 chunk> ESC \, repeated for each chunk.
     /// The first chunk declares the PNG format (f=100) and the transmit-and-display action (a=T);
     /// `m=1` marks that more chunks follow, `m=0` marks the last one.
-    const std::string encoded = base64Encode(std::string(png));
-    const size_t total = encoded.size();
+    ///
+    /// Each chunk carries at most KITTY_CHUNK_SIZE base64 bytes. base64 expands 3 input bytes to 4, so a block
+    /// of KITTY_CHUNK_SIZE / 4 * 3 input bytes encodes to exactly KITTY_CHUNK_SIZE base64 bytes. Every block but
+    /// the last is a multiple of 3 bytes, so each is encoded independently with no carry between chunks.
+    static constexpr size_t INPUT_CHUNK_SIZE = KITTY_CHUNK_SIZE / 4 * 3;
+    /// A full input block encodes to exactly KITTY_CHUNK_SIZE base64 bytes; the extra bytes are slack that
+    /// libbase64 asks callers to leave past the 4/3 output size.
+    char encoded[KITTY_CHUNK_SIZE + 16];
     size_t offset = 0;
     bool first = true;
 
     do
     {
-        const size_t len = std::min(KITTY_CHUNK_SIZE, total - offset);
-        const bool last = offset + len >= total;
+        const size_t len = std::min(INPUT_CHUNK_SIZE, png.size() - offset);
+        const bool last = offset + len >= png.size();
 
         writeCString("\033_G", out);
         if (first)
@@ -153,12 +169,16 @@ void writeImageKitty(WriteBuffer & out, std::string_view png)
         writeCString("m=", out);
         writeChar(last ? '0' : '1', out);
         writeChar(';', out);
-        out.write(encoded.data() + offset, len);
+
+        size_t encoded_size = 0;
+        base64_encode(png.data() + offset, len, encoded, &encoded_size, 0);
+        out.write(encoded, encoded_size);
+
         writeCString("\033\\", out);
 
         offset += len;
         first = false;
-    } while (offset < total);
+    } while (offset < png.size());
 
     writeChar('\n', out);
 }
@@ -218,9 +238,9 @@ void writeImageSixel(WriteBuffer & out, const UInt8 * pixels, size_t width, size
     }
 
     /// Sixels encode 6 vertical pixels at a time, so the image is processed in horizontal bands of 6 rows.
-    std::vector<int> band_colors(width * 6);
+    VectorWithMemoryTracking<int> band_colors(width * 6);
     std::array<bool, SIXEL_LEVELS * SIXEL_LEVELS * SIXEL_LEVELS> present{};
-    std::string line;
+    StringWithMemoryTracking line;
 
     for (size_t band_top = 0; band_top < height; band_top += 6)
     {
@@ -292,3 +312,5 @@ void writeImageSixel(WriteBuffer & out, const UInt8 * pixels, size_t width, size
 }
 
 }
+
+#endif

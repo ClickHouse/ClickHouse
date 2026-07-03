@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
+    extern const int FAULT_INJECTED;
     }
 namespace FailPoints
 {
@@ -130,6 +131,7 @@ namespace FailPoints
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_throw_on_stop_replication[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -335,7 +337,30 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
+        /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// `/replicas` exists but is empty -- i.e. the first replica is
+        /// not fully created yet or the last replica was just dropped)
+        /// are all expected during concurrent database lifecycle
+        /// operations. The caller treats nullptr as "no cluster info
+        /// available for this database, skip it". Logging those at
+        /// `error` is misleading and noisy: the test runner forwards
+        /// server logs at `warning` and above to the client stderr,
+        /// which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Log
+        /// them at `information` so administrators still see the message
+        /// in normal server logs but it does not propagate to clients.
+        /// Anything else is unexpected (malformed Keeper payloads, logic
+        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// `error` level so operators notice it.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster;
 }
@@ -359,7 +384,18 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// See the note in `tryGetCluster` above: downgrade the expected
+        /// coordination/connection failures and the "no active replicas"
+        /// state (all reachable through `getClusterImpl`) to
+        /// `information`, leave anything else at the default `error`
+        /// level so unexpected problems are visible.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster_all_groups;
 }
@@ -541,15 +577,22 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
                 UInt64 recovery_time = 0;
+                bool unsynced_after_recovery = false;
                 {
+                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+                    /// access to it must hold the lock. Read both members here.
                     std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    if (ddl_worker)
+                    {
+                        if (replica.is_local)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+                    }
                 }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                    .unsynced_after_recovery = unsynced_after_recovery,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
@@ -562,7 +605,19 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
+        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
+        /// replica state columns for this database", and the Keeper state
+        /// of a Replicated database can be in flux during normal lifecycle
+        /// operations. Log expected coordination/connection failures at
+        /// `information` so they do not leak into the client stderr at the
+        /// default `send_logs_level = warning`, but keep anything
+        /// unexpected at the default `error` level.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
         return {};
     }
 }
@@ -800,6 +855,7 @@ void DatabaseReplicated::createEmptyLogEntry(const ZooKeeperPtr & current_zookee
 
 bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, SyncReplicaMode mode)
 {
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::waitForReplicaToProcessAllEntries");
     chassert(mode == SyncReplicaMode::DEFAULT || mode == SyncReplicaMode::STRICT);
     {
         std::lock_guard lock{ddl_worker_mutex};
@@ -810,23 +866,32 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     if (mode == SyncReplicaMode::DEFAULT)
         return ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms);
 
+    /// In STRICT mode the sync is satisfied as soon as our replication lag is within the
+    /// max_replication_lag_to_enqueue threshold - we do not require every entry to be fully
+    /// processed. Check that condition before blocking, and otherwise wait in short bounded
+    /// steps and re-check, so a sync that is (or becomes) within-threshold returns promptly
+    /// instead of blocking for the whole timeout. Blocking for the full budget would make a
+    /// successful sync arrive at the same boundary as the client's own read timeout.
+    static constexpr UInt64 wait_step_ms = 100;
     Stopwatch elapsed;
     while (true)
     {
-        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
-        if (elapsed_ms > timeout_ms)
-            return false;
-
-        if (ddl_worker->waitForReplicaToProcessAllEntries(timeout_ms - elapsed_ms))
-            return true;
-
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
         UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
         bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
 
-        /// max_log_ptr might be increased while we were waiting - retry until replication lag is below the threshold
+        UInt64 elapsed_ms = elapsed.elapsedMilliseconds();
+        if (elapsed_ms >= timeout_ms)
+            return false;
+
+        /// Block until the worker fully processes the queue or wait_step_ms elapses. Full
+        /// processing (our_log_ptr == max_log_ptr) is strictly stronger than the STRICT
+        /// threshold, so return immediately in that case; otherwise loop and re-check the
+        /// threshold above, re-reading max_log_ptr, which might have advanced while we waited.
+        if (ddl_worker->waitForReplicaToProcessAllEntries(std::min(wait_step_ms, timeout_ms - elapsed_ms)))
+            return true;
     }
 }
 
@@ -2179,13 +2244,37 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::shutdown");
-    stopReplication();
+
+    /// DatabaseAtomic::shutdown() (below) is what releases this database's table references (the
+    /// UUID -> storage mappings and the tables). stopReplication() runs first and can throw before
+    /// we get there (e.g. a ZooKeeper timeout in the DDL worker's tryRemove). If we let that escape,
+    /// the cleanup is skipped and the storages survive until DatabaseCatalog is destroyed at process
+    /// exit, which aborts. So remember the first error, still run the cleanup, then rethrow it.
+    std::exception_ptr first_error;
+    try
+    {
+        fiu_do_on(FailPoints::database_replicated_throw_on_stop_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while stopping replication of database {}", backQuoteIfNeed(getDatabaseName()));
+        });
+        stopReplication();
+    }
+    catch (...)
+    {
+        first_error = std::current_exception();
+        tryLogCurrentException(log, fmt::format("Failed to stop replication of database {}", backQuoteIfNeed(getDatabaseName())));
+    }
+
     {
         std::lock_guard lock{ddl_worker_mutex};
         ddl_worker_initialized = false;
         ddl_worker = nullptr;
     }
+
     DatabaseAtomic::shutdown();
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -2204,8 +2293,11 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     auto table = tryGetTable(table_name, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't exist", table_name);
-    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin")
+    if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "SharedSet" || table->getName() == "SharedJoin"
+        || table->getName() == "TimeSeries")
     {
+        /// Drop inner tables here while the metadata transaction is available, so the background
+        /// dropTableFinally task does not re-route the inner DROP through the replicated DDL log.
         /// Avoid recursive locking of metadata_mutex
         table->dropInnerTableIfAny(sync, local_context);
     }
