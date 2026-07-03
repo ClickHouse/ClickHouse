@@ -22,16 +22,24 @@ SELECT
     if(number % 2 == 0, 'info', 'medium') AS severity
 FROM numbers(10000);
 
+-- These plan assertions parse `EXPLAIN` line by line, so they must pin the output
+-- format: since `explain_query_plan_default` defaults to `pretty`, the plan is
+-- rendered as a tree with box-drawing prefixes (`└──LazilyReadFromMergeTree`), which
+-- `trimLeft` does not strip, so `LIKE 'LazilyRead%'` would not match. `pretty = 0`
+-- forces the legacy indented output (space-only indentation, stripped by `trimLeft`).
+-- The `EXPLAIN actions = 1` queries below already render legacy output because
+-- specifying `actions` explicitly overrides `explain_query_plan_default`.
+
 -- 1. Baseline: LazilyReadFromMergeTree appears when selecting a physical column.
 SELECT 'physical_column_plan';
 SELECT trimLeft(explain) AS s
-FROM (EXPLAIN SELECT body FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
+FROM (EXPLAIN pretty = 0 SELECT body FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
 -- 2. Same optimization must also apply when selecting an ALIAS column.
 SELECT 'alias_column_plan';
 SELECT trimLeft(explain) AS s
-FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
+FROM (EXPLAIN pretty = 0 SELECT body_alias FROM test_lazy_alias ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
 -- 3. The reported regression is the filtered top-K shape `WHERE ... ORDER BY ... LIMIT`.
@@ -39,7 +47,7 @@ WHERE s LIKE 'LazilyRead%';
 --    so result correctness alone cannot hide a lost optimization.
 SELECT 'alias_filtered_plan';
 SELECT trimLeft(explain) AS s
-FROM (EXPLAIN SELECT body_alias FROM test_lazy_alias WHERE severity = 'medium' ORDER BY time DESC LIMIT 10)
+FROM (EXPLAIN pretty = 0 SELECT body_alias FROM test_lazy_alias WHERE severity = 'medium' ORDER BY time DESC LIMIT 10)
 WHERE s LIKE 'LazilyRead%';
 
 -- 3b. The regression also disabled the top-K optimization for the ALIAS shape.
