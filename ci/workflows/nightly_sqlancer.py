@@ -27,6 +27,9 @@ workflow = Workflow.Config(
     jobs=[
         asan_ubsan_build_job,
         *JobConfigs.sqlancer_master_jobs,
+        # SQLancer++ shares the same arm_asan_ubsan build (it also requires
+        # CH_ARM_ASAN_UBSAN) and runs in parallel with SQLancer.
+        *JobConfigs.sqlancer_pp_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.clickhouse_binaries,
