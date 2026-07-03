@@ -84,7 +84,7 @@ long double NGram::UnigramsWithStats::getWeightedWordCount(const std::string & w
 {
     if (unigram_map.contains(word))
     {
-        return unigram_map.at(word).cnt * std::sqrt(static_cast<long double>(unigram_map.at(word).last_timestamp));
+        return static_cast<long double>(unigram_map.at(word).cnt) * std::sqrt(static_cast<long double>(unigram_map.at(word).last_timestamp));
     }
     return 0.0L;
 }
