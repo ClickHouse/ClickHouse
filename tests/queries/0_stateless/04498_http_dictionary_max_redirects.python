@@ -120,18 +120,18 @@ def main():
     t.start()
 
     # Without allowed redirects the source must refuse to follow the 302.
-    create_dictionary("dict_04417_no_redirects", 0)
-    answer = get_ch_answer("SELECT * FROM dict_04417_no_redirects ORDER BY id")
+    create_dictionary("dict_04498_no_redirects", 0)
+    answer = get_ch_answer("SELECT * FROM dict_04498_no_redirects ORDER BY id")
     print("no redirects:", "TOO_MANY_REDIRECTS" in answer)
 
     # With redirects allowed the source must follow the 302 and load the data.
-    create_dictionary("dict_04417_with_redirects", 5)
-    answer = get_ch_answer("SELECT * FROM dict_04417_with_redirects ORDER BY id")
+    create_dictionary("dict_04498_with_redirects", 5)
+    answer = get_ch_answer("SELECT * FROM dict_04498_with_redirects ORDER BY id")
     print("with redirects:")
     sys.stdout.write(answer)
 
-    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04417_no_redirects")
-    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04417_with_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_no_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_with_redirects")
 
     httpd.shutdown()
     t.join()
