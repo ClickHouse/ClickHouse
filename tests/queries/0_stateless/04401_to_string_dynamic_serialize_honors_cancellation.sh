@@ -35,4 +35,4 @@ $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$query_id' SYNC" >/dev/
 end=$EPOCHREALTIME
 wait "$bg_pid" 2>/dev/null
 
-awk -v d="$(echo "$end - $start" | bc)" 'BEGIN { if (d < 2) print "cancelled promptly"; else printf "KILL blocked for %.1fs\n", d }'
+awk -v s="$start" -v e="$end" 'BEGIN { d = e - s; if (d < 2) print "cancelled promptly"; else printf "KILL blocked for %.1fs\n", d }'
