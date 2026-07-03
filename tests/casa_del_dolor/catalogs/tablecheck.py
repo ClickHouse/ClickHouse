@@ -1,4 +1,5 @@
 import logging
+import re
 import traceback
 import random
 from pyspark.sql import SparkSession
@@ -50,6 +51,31 @@ class SparkAndClickHouseCheck:
             return False
         return True
 
+    def _clickhouse_engine_matches(self, client, table: SparkTable):
+        expected_by_format = {
+            LakeFormat.Iceberg: "Iceberg",
+            LakeFormat.DeltaLake: "DeltaLake",
+            LakeFormat.Paimon: "Paimon",
+        }
+        expected = expected_by_format.get(table.lake_format)
+        # Read the declared engine from the DDL rather than system.tables.engine:
+        # with lazy_load_tables, system.tables reports StorageTableProxy's name
+        # ("TableProxy") until the table is first materialized, which is not an
+        # engine swap. SHOW CREATE reflects the real (possibly REPLACEd) engine
+        # without forcing a load.
+        ddl = client.query(f"SHOW CREATE TABLE {table.get_clickhouse_path()};")
+        ddl = ddl if isinstance(ddl, str) else ""
+        match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
+        if not match:
+            # Could not determine the engine: proceed with the check rather than
+            # silently skip it. An unparseable SHOW CREATE shape is a diagnostic
+            # gap, not evidence that the engine is wrong.
+            return True, ddl.strip()
+        engine = match.group(1)
+        if expected is None:
+            return True, engine
+        return engine.startswith(expected), engine
+
     def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
         try:
             clickhouse_predicate = ""
@@ -68,6 +94,13 @@ class SparkAndClickHouseCheck:
                 command=cluster.client_bin_path,
             )
 
+            engine_ok, ch_engine = self._clickhouse_engine_matches(client, table)
+            if not engine_ok:
+                self.logger.warning(
+                    f"Skipping check for {table.get_clickhouse_path()}: ClickHouse engine is '{ch_engine}', but the descriptor expects {table.lake_format.name}"
+                )
+                return True
+
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
                 result = spark.sql(
@@ -75,7 +108,7 @@ class SparkAndClickHouseCheck:
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
                 timestamps = [r.committed_at for r in result]
-            else:
+            elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
                 ).collect()

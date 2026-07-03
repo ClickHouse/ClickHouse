@@ -15,8 +15,11 @@ from pr_version_info import (
     SECTION_START,
     MergedPR,
     has_backport_label,
+    has_ignore_label,
     original_pr_number_from_backport_ref,
     partition_merged_prs,
+    release_from_backport_ref,
+    render_issue_section,
     render_section,
     upsert_section,
     version_key,
@@ -50,7 +53,8 @@ class TestUpsertSection(unittest.TestCase):
         body = "Original description."
         section = render_section("26.6.1.1", [])
         result = upsert_section(body, section)
-        self.assertTrue(result.startswith("Original description.\n\n"))
+        # Two blank lines separate the section from the preceding description.
+        self.assertTrue(result.startswith("Original description.\n\n\n"))
         self.assertIn(SECTION_START, result)
         self.assertIn(SECTION_END, result)
         self.assertIn("Merged into: `26.6.1.1`", result)
@@ -89,6 +93,32 @@ class TestUpsertSection(unittest.TestCase):
         self.assertNotIn("old", updated)
 
 
+class TestRenderIssueSection(unittest.TestCase):
+    def test_inserts_resolved_by_after_header(self):
+        section = render_section("26.6.1.1", ["25.12.1.100"])
+        issue_section = render_issue_section(12345, section)
+        # No delimiters here -- `upsert_section` adds them, as for PR bodies.
+        self.assertNotIn(SECTION_START, issue_section)
+        self.assertNotIn(SECTION_END, issue_section)
+        # `Resolved by` is the first list item, right after the header.
+        self.assertEqual(
+            issue_section,
+            "### Version info\n"
+            "- Resolved by: #12345\n"
+            "- Merged into: `26.6.1.1`\n"
+            "- Backported to: `25.12.1.100`",
+        )
+
+    def test_upserts_into_issue_body_idempotently(self):
+        section = render_issue_section(1, render_section("26.6.1.1", []))
+        once = upsert_section("Issue description.", section)
+        twice = upsert_section(once, section)
+        self.assertEqual(once, twice)
+        self.assertEqual(once.count(SECTION_START), 1)
+        self.assertTrue(once.startswith("Issue description."))
+        self.assertIn("- Resolved by: #1", once)
+
+
 class TestVersionKey(unittest.TestCase):
     def test_orders_numerically(self):
         versions = ["25.8.1.200", "26.6.1.1", "25.12.1.100"]
@@ -111,6 +141,13 @@ class TestBackportRefParsing(unittest.TestCase):
     def test_non_backport_ref(self):
         self.assertIsNone(original_pr_number_from_backport_ref("my-feature-branch"))
         self.assertIsNone(original_pr_number_from_backport_ref("cherrypick/25.12/1"))
+
+    def test_release_extraction(self):
+        self.assertEqual(release_from_backport_ref("backport/25.12/92538"), "25.12")
+        self.assertEqual(
+            release_from_backport_ref("backport/release/26.5/58548"), "release/26.5"
+        )
+        self.assertIsNone(release_from_backport_ref("my-feature-branch"))
 
 
 class TestHasBackportLabel(unittest.TestCase):
@@ -159,6 +196,31 @@ class TestPartitionMergedPRs(unittest.TestCase):
         prs = [MergedPR(300, "some-fix", "25.12", [])]
         backports, originals, need_scan = partition_merged_prs(prs, "master")
         self.assertEqual((backports, originals, need_scan), (set(), set(), set()))
+
+    def test_ignore_label_pr_is_dropped(self):
+        # The automated periodic upstream-sync PR merges to master but must not
+        # get a version-info section.
+        prs = [
+            MergedPR(
+                400, "sync-upstream/master", "master", ["pr-periodic-sync-upstream"]
+            ),
+            MergedPR(401, "feature-branch", "master", ["pr-must-backport"]),
+        ]
+        backports, originals, need_scan = partition_merged_prs(prs, "master")
+        self.assertEqual(backports, set())
+        self.assertEqual(originals, {401})
+        self.assertEqual(need_scan, {401})
+
+
+class TestHasIgnoreLabel(unittest.TestCase):
+    def test_periodic_sync_label(self):
+        self.assertTrue(has_ignore_label(["pr-periodic-sync-upstream"]))
+
+    def test_other_labels(self):
+        self.assertFalse(has_ignore_label(["pr-sync-upstream", "pr-backport"]))
+
+    def test_no_labels(self):
+        self.assertFalse(has_ignore_label([]))
 
 
 if __name__ == "__main__":

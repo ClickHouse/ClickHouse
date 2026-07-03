@@ -24,6 +24,7 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
+#include <exception> /// std::current_exception for retry classification
 #include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
@@ -40,7 +41,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_ai_functions;
-    extern const SettingsString ai_function_credentials;
     extern const SettingsUInt64 ai_function_request_timeout_sec;
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
@@ -56,7 +56,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -72,12 +71,9 @@ public:
 
     explicit FunctionAiEmbed(ContextPtr context_) : context(context_)
     {
-        const auto & settings = getContext()->getSettingsRef();
-        if (!settings[Setting::allow_experimental_ai_functions])
+        if (!getContext()->getSettingsRef()[Setting::allow_experimental_ai_functions])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "AI functions are experimental. Set `allow_experimental_ai_functions` setting to enable it");
-
-        credentials_collection_name = settings[Setting::ai_function_credentials];
     }
 
     String getName() const override { return name; }
@@ -102,6 +98,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
+            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -114,12 +111,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), credentials_collection_name);
+        auto nc = FunctionBaseAI::resolveAINamedCollection(getContext(), arguments[0].column);
 
         UInt64 dimensions = 0;
-        if (arguments.size() > 1)
+        if (arguments.size() > 2)
         {
-            const auto * dim_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
+            const auto * dim_const = typeid_cast<const ColumnConst *>(arguments[2].column.get());
             chassert(dim_const, "dimensions must be a constant UInt (validated by getReturnTypeImpl)");
             dimensions = dim_const->getUInt(0);
 
@@ -220,6 +217,12 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
+                /// Enforce the API-call quota before every provider request, including retries, so a flaky
+                /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
+                if (quota.checkQuotas())
+                    break;
+
                 try
                 {
                     /// update api_calls/quotas before call so failed calls are still added to total
@@ -231,21 +234,16 @@ public:
                     batch_ok = true;
                     break;
                 }
-                catch (const Exception & e)
+                catch (...)
                 {
-                    if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                    /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                    /// `url` table function does; deterministic errors are surfaced immediately.
+                    if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
                     {
                         std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
                         continue;
                     }
 
-                    if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
-                        break;
-
-                    throw;
-                }
-                catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-                {
                     if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
                         break;
 
@@ -291,13 +289,10 @@ public:
     }
 
 private:
-    static constexpr size_t text_arg_index = 0;
+    static constexpr size_t text_arg_index = 1;
 
     ContextPtr context;
     ContextPtr getContext() const { return context; }
-
-    /// Value of the `ai_function_credentials` setting, read once at construction (it is constant for the query).
-    String credentials_collection_name;
 };
 
 }
@@ -313,19 +308,20 @@ Within a single block of rows, inputs are grouped into batches of up to
 [`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
 The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 )",
-        .syntax = "aiEmbed(text[, dimensions])",
+        .syntax = "aiEmbed(collection, text[, dimensions])",
         .arguments
-        = {{"text", "Text to embed.", {"String"}},
+        = {{"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
+           {"text", "Text to embed.", {"String"}},
            {"dimensions", "Optional target dimensionality for the output vector. `0` or omitted means the model's native size.", {"UInt64"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string", "SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'", ""},
-           {"With explicit dimensions", "SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'", ""},
-           {"Embed a column of texts", "SELECT aiEmbed(title, 256) FROM articles LIMIT 10", ""}},
+        = {{"Embed a single string", "SELECT aiEmbed('ai_credentials', 'Hello world')", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('ai_credentials', 'Hello world', 256)", ""},
+           {"Embed a column of texts", "SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
 }
