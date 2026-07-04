@@ -7787,6 +7787,9 @@ Both database and table names have to be unquoted - only simple identifiers are 
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
+    DECLARE(UInt64, max_expanded_join_conditions, 1024, R"(
+Maximum number of expanded join conditions when distributing AND over OR in disjunctive JOIN ON expressions during general join planning. A query like `(A OR B) AND (C OR D) AND ...` produces a cross-product of conditions that can grow exponentially. This setting caps the expansion to prevent excessive memory usage and query planning time. If exceeded, an exception is thrown.
+)", 0) \
     DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
 Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 
