@@ -68,6 +68,7 @@
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -2331,6 +2332,15 @@ try
     }
     global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
 
+    size_t partial_aggregate_cache_max_size = config().getUInt64("partial_aggregate_cache.max_size_in_bytes", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_SIZE);
+    size_t partial_aggregate_cache_max_entries = config().getUInt64("partial_aggregate_cache.max_entries", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_ENTRIES);
+    if (partial_aggregate_cache_max_size > max_cache_size)
+    {
+        partial_aggregate_cache_max_size = max_cache_size;
+        LOG_INFO(log, "Lowered partial aggregate cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(partial_aggregate_cache_max_size));
+    }
+    global_context->setPartialAggregateCache(partial_aggregate_cache_max_size, partial_aggregate_cache_max_entries);
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
     size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
@@ -2745,6 +2755,7 @@ try
                 global_context->updateTextIndexPostingsCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePartialAggregateCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));

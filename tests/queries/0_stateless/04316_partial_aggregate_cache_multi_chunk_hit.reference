@@ -1,0 +1,8 @@
+--- Baseline without cache
+0	4999950000	100000
+--- Warm cache (miss, multi-chunk read)
+0	4999950000	100000
+0	1
+--- Cache hit (skip later chunks for same part key)
+0	4999950000	100000
+1	0

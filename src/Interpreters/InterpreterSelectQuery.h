@@ -11,6 +11,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IASTHash.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 #include <QueryPipeline/Pipe.h>
@@ -221,6 +222,9 @@ private:
     TreeRewriterResultPtr syntax_analyzer_result;
     std::unique_ptr<SelectQueryExpressionAnalyzer> query_analyzer;
     SelectQueryInfo query_info;
+
+    /// Filled in `executeAggregation` for `ReadFromMergeTree` planning-stage cache probes.
+    std::optional<IASTHash> partial_aggregate_cache_query_hash_for_pipeline;
 
     /// Is calculated in getSampleBlock. Is used later in readImpl.
     ExpressionAnalysisResult analysis_result;
