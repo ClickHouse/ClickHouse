@@ -132,7 +132,7 @@ private:
 class MergeTreeIndexCuckooFilter final : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexCuckooFilter(const IndexDescription & index_, double false_positive_rate_, size_t f_bits_);
+    MergeTreeIndexCuckooFilter(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, double false_positive_rate_, size_t f_bits_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
