@@ -33,10 +33,12 @@ class AggregateFunctionVariantAdapter final : public IAggregateFunctionHelper<Ag
 {
 private:
     AggregateFunctionPtr nested_function;
-    /// Argument types expected by the nested function: each Variant argument is replaced by Nullable(supertype).
+    /// Argument types expected by the nested function: each adapted Variant argument is replaced by Nullable(supertype).
     DataTypes nested_argument_types;
-    /// Which argument positions are Variant and thus need conversion before being passed to the nested function.
-    std::vector<UInt8> is_variant_argument; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    /// Which argument positions must be converted before being passed to the nested function, i.e. those whose nested
+    /// type differs from the original. This is every adapted Variant argument; a Variant argument the nested function
+    /// accepts natively (e.g. the returned "arg" of argMin/argMax) keeps its type and is forwarded unconverted.
+    std::vector<UInt8> argument_needs_conversion; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t num_arguments;
 
     /// Cache of the internal cast functions (Variant -> Nullable(supertype)) reused across blocks.
@@ -66,7 +68,7 @@ private:
         result.columns.resize(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
         {
-            if (i < num_arguments && is_variant_argument[i])
+            if (i < num_arguments && argument_needs_conversion[i])
             {
                 ColumnPtr converted = castColumn({columns[i]->getPtr(), argument_types[i], {}}, nested_argument_types[i], &cast_cache);
                 result.columns[i] = converted.get();
@@ -89,9 +91,9 @@ public:
         , nested_argument_types(nested_arguments)
         , num_arguments(arguments.size())
     {
-        is_variant_argument.reserve(num_arguments);
-        for (const auto & type : arguments)
-            is_variant_argument.push_back(isVariant(type));
+        argument_needs_conversion.reserve(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            argument_needs_conversion.push_back(!arguments[i]->equals(*nested_argument_types[i]));
     }
 
     String getName() const override
@@ -136,7 +138,7 @@ public:
         for (size_t i = 0; i < num_arguments; ++i)
         {
             ColumnPtr one_row = columns[i]->cut(row_num, 1);
-            if (is_variant_argument[i])
+            if (argument_needs_conversion[i])
                 one_row = castColumn({one_row, argument_types[i], {}}, nested_argument_types[i], &cast_cache);
             nested_columns[i] = one_row.get();
             holder.push_back(std::move(one_row));

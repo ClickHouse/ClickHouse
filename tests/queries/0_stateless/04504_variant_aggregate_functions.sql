@@ -106,3 +106,19 @@ SELECT 'unify', sumMerge(s) FROM
     SELECT sumState(v) AS s FROM t_variant_norm
 );
 DROP TABLE t_variant_norm;
+
+-- argMin/argMax (and the *ArgMin/*ArgMax combinators) natively accept a Variant in the returned "arg" position and
+-- reject it only in the comparable "key" position. When both are Variant, the adapter converts only the key: the arg
+-- is kept as-is, so the result type stays the original Variant instead of collapsing to Nullable(supertype). Note the
+-- arg here -- Variant(String, UInt64) -- has no common supertype and could not be adapted at all, yet the call still
+-- resolves because only the key needs adapting.
+DROP TABLE IF EXISTS t_variant_argminmax;
+CREATE TABLE t_variant_argminmax (arg Variant(String, UInt64), key Variant(UInt8, UInt64)) ENGINE = Memory;
+INSERT INTO t_variant_argminmax VALUES ('a', 1), ('b', 3), ('c', 2);
+SELECT 'argMax', argMax(arg, key) AS r, toTypeName(r) FROM t_variant_argminmax;
+SELECT 'argMin', argMin(arg, key) AS r, toTypeName(r) FROM t_variant_argminmax;
+DROP TABLE t_variant_argminmax;
+
+-- A Variant in both positions with a numeric supertype: the result type is still the original arg Variant, not the
+-- adapted Nullable(supertype) of the key.
+SELECT 'argMax type', toTypeName(argMax(CAST(number AS Variant(UInt8, UInt64)), CAST(number AS Variant(UInt8, UInt64)))) FROM numbers(4);

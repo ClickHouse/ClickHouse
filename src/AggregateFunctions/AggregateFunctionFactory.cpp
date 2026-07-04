@@ -201,54 +201,120 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant) const
 {
-    /// Replace every Variant argument with Nullable(least common supertype of its nested types). Nullable is used
-    /// so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
-    DataTypes nested_argument_types;
-    nested_argument_types.reserve(argument_types.size());
-    for (const auto & type : argument_types)
+    /// The type each Variant argument would be adapted to: Nullable(least common supertype of its nested types).
+    /// Nullable is used so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
+    /// A non-Variant argument keeps its type; a Variant with no Nullable-wrappable supertype has no adapted type
+    /// (stays null) and therefore cannot be adapted at all.
+    DataTypes adapted_types(argument_types.size());
+    size_t num_variant_arguments = 0;
+    for (size_t i = 0; i < argument_types.size(); ++i)
     {
-        if (isVariant(type))
+        if (!isVariant(argument_types[i]))
         {
-            const auto & variants = assert_cast<const DataTypeVariant &>(*type).getVariants();
-            auto supertype = tryGetLeastSupertype(variants);
-            /// getLeastSupertype is strict and reports no common type for e.g. Decimal + Float64 or Int64 + Float64
-            /// (there is no lossless conversion). For aggregation, a mix of numeric types is naturally computed in
-            /// Float64 (exactly as arithmetic does: Decimal + Float64 -> Float64), so fall back to Float64 when all
-            /// the variants are numeric.
-            if (!supertype && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); }))
-                supertype = std::make_shared<DataTypeFloat64>();
-            /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit
-            /// NULLs of the Variant (which the aggregation then skips). This is not possible when there is no common
-            /// supertype, when it is itself a composite type (e.g. Variant), or when it is a container type such as
-            /// Array/Tuple/Map. So a top-level Variant whose supertype is a container is out of scope even for an
-            /// orderable aggregate such as min/max over Variant(Array(...), Array(...)): the original error is
-            /// reported. Supporting it would require tracking the Variant NULLs separately from the value column
-            /// (a natural follow-up).
-            if (!supertype || !supertype->canBeInsideNullable())
-                return nullptr;
-            nested_argument_types.push_back(makeNullable(supertype));
+            adapted_types[i] = argument_types[i];
+            continue;
         }
-        else
-            nested_argument_types.push_back(type);
+
+        ++num_variant_arguments;
+        const auto & variants = assert_cast<const DataTypeVariant &>(*argument_types[i]).getVariants();
+        auto supertype = tryGetLeastSupertype(variants);
+        /// getLeastSupertype is strict and reports no common type for e.g. Decimal + Float64 or Int64 + Float64
+        /// (there is no lossless conversion). For aggregation, a mix of numeric types is naturally computed in
+        /// Float64 (exactly as arithmetic does: Decimal + Float64 -> Float64), so fall back to Float64 when all
+        /// the variants are numeric.
+        if (!supertype && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); }))
+            supertype = std::make_shared<DataTypeFloat64>();
+        /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
+        /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,
+        /// when it is itself a composite type (e.g. Variant), or when it is a container type such as Array/Tuple/Map.
+        /// So a top-level Variant whose supertype is a container is out of scope even for an orderable aggregate such
+        /// as min/max over Variant(Array(...), Array(...)): the original error is reported. Supporting it would require
+        /// tracking the Variant NULLs separately from the value column (a natural follow-up).
+        if (supertype && supertype->canBeInsideNullable())
+            adapted_types[i] = makeNullable(supertype);
     }
 
-    /// Resolve the function over the supertypes. If it does not support them either, there is nothing we can do.
-    /// The supertype arguments contain no Variant, so combinators need not (and must not) apply the adapter again.
-    AggregateFunctionPtr nested_function;
-    try
+    /// Build the argument list with each Variant position for which adapt[i] is set replaced by its adapted type.
+    /// Returns nullopt when a position that must be adapted has no adapted type.
+    auto build_nested_types = [&](const std::vector<bool> & adapt) -> std::optional<DataTypes> // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
-        nested_function = getWithoutVariantAdapter(
-            name, action, nested_argument_types, parameters, out_properties, state_variant,
-            /*apply_variant_adapter_to_nested=*/ false);
-    }
-    catch (const Exception & e)
+        DataTypes nested(argument_types.size());
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            if (isVariant(argument_types[i]) && adapt[i])
+            {
+                if (!adapted_types[i])
+                    return std::nullopt;
+                nested[i] = adapted_types[i];
+            }
+            else
+                nested[i] = argument_types[i];
+        }
+        return nested;
+    };
+
+    /// Resolve the function over the given argument types, returning nullptr when it rejects them. Any Variant left in
+    /// place is one the function accepts natively, so combinators need not (and must not) apply the adapter again.
+    auto try_resolve = [&](const DataTypes & nested) -> AggregateFunctionPtr
     {
-        if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
-            return nullptr;
-        throw;
+        try
+        {
+            return getWithoutVariantAdapter(
+                name, action, nested, parameters, out_properties, state_variant,
+                /*apply_variant_adapter_to_nested=*/ false);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                return nullptr;
+            throw;
+        }
+    };
+
+    /// Adapt every Variant argument by default. Most functions accept a Variant in none of their positions, so this is
+    /// the whole story. But some aggregates (argMin / argMax and the *ArgMin / *ArgMax combinators) natively accept a
+    /// Variant in some positions (the returned "arg") and reject it only in others (the comparable key). Adapting a
+    /// natively-accepted position would needlessly change the result type (Variant(...) -> Nullable(supertype)) or
+    /// reject a call that only needed part of the signature adapted. So, when more than one argument is a Variant, keep
+    /// as Variant every position the function still resolves with, adapting only the rest.
+    std::vector<bool> adapt(argument_types.size(), true); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    if (num_variant_arguments > 1)
+    {
+        for (size_t i = 0; i < argument_types.size(); ++i)
+        {
+            if (!isVariant(argument_types[i]))
+                continue;
+
+            adapt[i] = false; /// tentatively keep this Variant argument as-is
+            /// Keeping every Variant argument would be the native resolution that already failed, so only probe when
+            /// at least one Variant argument is still being adapted.
+            bool any_variant_still_adapted = false;
+            for (size_t j = 0; j < argument_types.size(); ++j)
+                if (isVariant(argument_types[j]) && adapt[j])
+                {
+                    any_variant_still_adapted = true;
+                    break;
+                }
+
+            std::optional<DataTypes> nested;
+            if (any_variant_still_adapted)
+                nested = build_nested_types(adapt);
+            if (!nested || !try_resolve(*nested))
+                adapt[i] = true; /// keeping it does not resolve -> adapt it after all
+        }
     }
 
-    return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, argument_types, nested_argument_types, parameters);
+    auto nested_argument_types = build_nested_types(adapt);
+    if (!nested_argument_types)
+        return nullptr;
+
+    /// Resolve the function over the (partially) adapted argument types. If it does not support them either, there is
+    /// nothing we can do.
+    auto nested_function = try_resolve(*nested_argument_types);
+    if (!nested_function)
+        return nullptr;
+
+    return std::make_shared<AggregateFunctionVariantAdapter>(nested_function, argument_types, *nested_argument_types, parameters);
 }
 
 std::optional<AggregateFunctionWithProperties>

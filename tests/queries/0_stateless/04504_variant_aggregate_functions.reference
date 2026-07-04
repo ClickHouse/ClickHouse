@@ -17,3 +17,6 @@ merge uint	Nullable(UInt64)
 cast to variant	6.5
 cast from variant	6.5
 unify	13
+argMax	b	Variant(String, UInt64)
+argMin	a	Variant(String, UInt64)
+argMax type	Variant(UInt64, UInt8)
