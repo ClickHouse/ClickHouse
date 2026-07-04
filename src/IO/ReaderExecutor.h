@@ -389,7 +389,12 @@ private:
     struct RetrieveStatus
     {
         RetrievePhase phase = RetrievePhase::NotLaunched;
-        size_t fetched = 0;               /// bytes confirmed fetched (the `Ready` frontier)
+        /// The launch HIGH-WATER (job-relative): bytes attempted end to end - launched over, or
+        /// served inline past the cursor - whether they committed, were refused by the cache,
+        /// or belong to a sibling's download. LAUNCH POLICY only (`launchProgress`); a
+        /// populatable job's DATA progress is display-derived (`jobFrontier`). For a bypass job
+        /// this is also the bank frontier.
+        size_t fetched = 0;
         ChainedBuffers ready_bytes;                 /// banked fetched prefix for serve, drained as the cursor advances
     };
 
@@ -801,7 +806,12 @@ private:
     /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
     /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
     ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
-    /// Read-only coverage of `window_phys` by the plan's held write buffers' committed ranges
+    // ─── The display: the one state surface where execution results appear ─────────
+    // The committed cell bytes (plus, until it is virtualized, the bypass bank). The serve
+    // looks at the display and either takes ready bytes or advances a job; a job's progress
+    // IS the display state - there is no separate populatable progress counter to drift.
+
+    /// DISPLAY coverage: `window_phys` ∩ the plan's held write buffers' committed ranges
     /// (the read-only twin of `recreditCommittedPrefixes`'s computation: no read, no stats). A
     /// byte a SIBLING downloaded is NOT in this executor's per-writer committed set, so it reads
     /// as uncovered here - which is what bounds the inline serve to its own led prefix.
@@ -812,9 +822,30 @@ private:
     /// is committed there). The inline populatable serve narrows to this prefix: the first
     /// sibling-led byte bounds it short, so the serve returns the led prefix as a short window.
     size_t committedCellPrefixEnd(ByteRange window_phys) const;
-    /// Serve a populatable window from the cells: the committed prefix, then (when `allow_wait`)
-    /// the still-uncommitted bytes the in-flight worker is downloading, waited on per-frontier
-    /// via the worker's OWN target writers (`waitAndReadSiblingLed`). Accumulates into `out` /
+    /// The display-derived DATA progress of job `ri`: the first byte of its `fetch_runs` not
+    /// yet committed to the cells (`range.end()` when all are). The serve-side piece derivation
+    /// works from the same display state, so stopping a piece anywhere IS the migration handoff.
+    /// (Within one plan the per-writer committed set is monotone; an eviction is healed at the
+    /// next re-plan, whose fresh writers start empty.) A BYPASS job has no cell; its frontier
+    /// is the launch high-water (`RetrieveStatus::fetched`) until the bank is virtualized.
+    size_t jobFrontier(size_t ri) const;
+    /// The background launch POLICY frontier: `jobFrontier` advanced past bytes already
+    /// ATTEMPTED (launched over / served inline) that can never enter this executor's own
+    /// committed set - a refused cell write or a sibling-downloaded segment. Used by the launch
+    /// scan, the lead launch, and the Ready->Done transition; the serve never reads it.
+    size_t launchProgress(size_t ri) const;
+    /// DISPLAY wait: read the still-uncommitted sub-ranges of `window_phys` from disk cells a
+    /// LIVE writer is filling, blocking on each segment's download frontier
+    /// (`waitAndReadSiblingLed`, a `FileSegment` condition wait). `own_worker_only` restricts
+    /// the wait to cells the in-flight machine itself downloads (the read-behind serve; a cell
+    /// nobody downloads would never wake); otherwise any disk-tier writer qualifies (the
+    /// contended path: dedup on a sibling executor's download). Page cells are filled by
+    /// promotion, not downloaded - never waited on.
+    void waitOnDisplay(ByteRange window_phys, bool own_worker_only, ChainedBuffers & out,
+        IntervalSet & covered, Stats & out_stats);
+
+    /// Serve a populatable window from the display: the committed prefix, then (when
+    /// `allow_wait`) the in-flight worker's own live frontier. Accumulates into `out` /
     /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
     void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
         Stats & out_stats);
