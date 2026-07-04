@@ -28,9 +28,11 @@ FROM experimental_session_settings
 UNION ALL
 SELECT *
 FROM experimental_mergetree_settings
-ORDER BY Name ASC
     )
 SELECT concat('| ', Name, ' | ', Default, ' |')
 FROM combined
+-- The ORDER BY must be on the outer query: inside the CTE it does not survive
+-- the parallel UNION ALL, making the output order nondeterministic.
+ORDER BY Name ASC
     INTO OUTFILE 'experimental-beta-settings.md' APPEND
 FORMAT TSVRaw;
