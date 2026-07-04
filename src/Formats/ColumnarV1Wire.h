@@ -61,6 +61,8 @@
 #include <cstring>
 #include <span>
 #include <functional>
+#include <utility>
+#include <vector>
 
 #include <base/unaligned.h>
 #include <Columns/ColumnArray.h>
@@ -74,6 +76,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -145,6 +148,14 @@ inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
         uint32_t chars = static_cast<uint32_t>(str.getChars().size());
         return (n + 1u) * 8u + chars;
     }
+    if (typeid_cast<const ColumnNullable *>(&col))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
+            "use a flat nullable column or a different format");
+    if (typeid_cast<const ColumnVariant *>(&col))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+            "use a flat variant column or a different format");
     // Fixed-width fallback (ColumnVector<T>, ColumnUInt8, etc.)
     return n * static_cast<uint32_t>(col.sizeOfValueIfFixed());
 }
@@ -191,6 +202,14 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
         }
         return;
     }
+    if (typeid_cast<const ColumnNullable *>(&col))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
+            "use a flat nullable column or a different format");
+    if (typeid_cast<const ColumnVariant *>(&col))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+            "use a flat variant column or a different format");
     // Fixed-width fallback
     std::memcpy(dst, col.getRawData().data(), n * col.sizeOfValueIfFixed());
 }
@@ -513,6 +532,16 @@ inline MutableColumnPtr readColumnFromDesc(
         ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
         : result_type;
 
+    // desc comes straight from guest/network memory and is otherwise untrusted:
+    // validate data_offset/data_size against buf.size() before forming any
+    // pointer from them (data_end below, and every buf.data() + desc.data_offset
+    // in the branches further down), or a malformed descriptor can build an
+    // out-of-bounds pointer that later bounds checks then compare against.
+    if (desc.data_offset > buf.size() || desc.data_size > buf.size() - desc.data_offset)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: column data range out of bounds: offset={}, size={}, buf={}",
+            desc.data_offset, desc.data_size, buf.size());
+
     const uint8_t * const data_end = buf.data() + desc.data_offset + desc.data_size;
 
     // Recursive decoder for COL_COMPLEX (Array / Tuple / nested scalars).
@@ -574,6 +603,14 @@ inline MutableColumnPtr readColumnFromDesc(
             }
             return col_str;
         }
+        if (typeid_cast<const DataTypeNullable *>(type.get()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
+                "use a flat nullable column or a different format");
+        if (typeid_cast<const DataTypeVariant *>(type.get()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
+                "use a flat variant column or a different format");
         uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
         if (p + static_cast<uint64_t>(n) * elem_bytes > data_end)
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -729,6 +766,107 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint8_t * data_ptr = buf.data() + desc.data_offset;
             col = maybe_nullable(decode(data_ptr, base_type, rows_to_dec));
         }
+    }
+    else if (raw_type == COL_VARIANT)
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(base_type.get());
+        if (!variant_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT descriptor does not match declared type {}", base_type->getName());
+
+        const auto & alt_types = variant_type->getVariants();
+        if (alt_types.size() > ColumnVariant::MAX_NESTED_COLUMNS)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT declared type has too many alternatives: {}", alt_types.size());
+
+        // Discriminators: uint8[rows_to_dec] at null_offset (NULL_DISCRIMINATOR=0xFF for NULL rows).
+        if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT discriminators out of bounds: offset={}, rows={}, buf={}",
+                desc.null_offset, rows_to_dec, buf.size());
+        const uint8_t * disc_src = buf.data() + desc.null_offset;
+
+        // Row offsets: uint32[rows_to_dec] at offsets_offset (position within the row's sub-column).
+        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec) * 4u > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT row offsets out of bounds: offset={}, rows={}, buf={}",
+                desc.offsets_offset, rows_to_dec, buf.size());
+        const uint8_t * offs_src = buf.data() + desc.offsets_offset;
+
+        // Header: uint32 K + K x { uint8 global_discriminator, uint8[3] pad, ColDescriptor }.
+        if (desc.data_size < 4u)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT header truncated: data_size={}", desc.data_size);
+        const uint8_t * header = buf.data() + desc.data_offset;
+        uint32_t k = unalignedLoad<uint32_t>(header);
+        constexpr uint64_t record_bytes = 4u + COLUMNAR_DESC_BYTES;
+        if (static_cast<uint64_t>(k) * record_bytes > desc.data_size - 4u)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_VARIANT header declares {} sub-variants, exceeding data_size={}",
+                k, desc.data_size);
+
+        // Map global discriminator -> (inner descriptor, row count in that sub-column).
+        std::vector<std::pair<ColDescriptor, uint32_t>> sub_by_global(alt_types.size(), {ColDescriptor{}, 0u});
+        std::vector<bool> sub_present(alt_types.size(), false);
+        const uint8_t * record_ptr = header + 4u;
+        for (uint32_t r = 0; r < k; ++r)
+        {
+            uint8_t global_d = record_ptr[0];
+            if (global_d >= alt_types.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_VARIANT sub-variant global discriminator {} out of range [0, {})",
+                    static_cast<uint32_t>(global_d), alt_types.size());
+            if (sub_present[global_d])
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_VARIANT duplicate global discriminator {}", static_cast<uint32_t>(global_d));
+
+            ColDescriptor inner_desc{};
+            std::memcpy(&inner_desc, record_ptr + 4u, COLUMNAR_DESC_BYTES);
+            // null_offset was repurposed by the writer to carry this sub-column's row count.
+            uint32_t sub_rows = static_cast<uint32_t>(inner_desc.null_offset);
+            sub_by_global[global_d] = {inner_desc, sub_rows};
+            sub_present[global_d] = true;
+            record_ptr += record_bytes;
+        }
+
+        // Decode each alternative's sub-column (empty if absent from the header).
+        MutableColumns variant_cols;
+        variant_cols.reserve(alt_types.size());
+        for (size_t g = 0; g < alt_types.size(); ++g)
+        {
+            if (sub_present[g])
+            {
+                const auto & [inner_desc, sub_rows] = sub_by_global[g];
+                variant_cols.push_back(readColumnFromDesc(buf, inner_desc, sub_rows, alt_types[g]));
+            }
+            else
+            {
+                variant_cols.push_back(alt_types[g]->createColumn());
+            }
+        }
+
+        // Discriminators/offsets are local == global here since variant_cols is built in
+        // the declared type's global order (see ColumnVariant.h for the local/global distinction).
+        auto discr_col = ColumnVariant::ColumnDiscriminators::create(rows_to_dec);
+        auto offs_col  = ColumnVariant::ColumnOffsets::create(rows_to_dec);
+        std::vector<uint32_t> next_offset(alt_types.size(), 0);
+        for (uint32_t i = 0; i < rows_to_dec; ++i)
+        {
+            uint8_t d = disc_src[i];
+            uint32_t row_off = unalignedLoad<uint32_t>(offs_src + i * 4u);
+            if (d != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                if (d >= alt_types.size() || row_off != next_offset[d] || row_off >= sub_by_global[d].second)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "COLUMNAR_V1: COL_VARIANT row {} has invalid discriminator/offset: discr={}, offset={}",
+                        i, static_cast<uint32_t>(d), row_off);
+                ++next_offset[d];
+            }
+            discr_col->getData()[i] = d;
+            offs_col->getData()[i] = row_off;
+        }
+
+        col = ColumnVariant::create(std::move(discr_col), std::move(offs_col), std::move(variant_cols));
     }
     else
     {
