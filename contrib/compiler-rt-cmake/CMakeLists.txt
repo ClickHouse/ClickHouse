@@ -718,7 +718,7 @@ endif()
 # Source list mirrors PROFILE_SOURCES in
 # contrib/llvm-project/compiler-rt/lib/profile/CMakeLists.txt (the
 # non-baremetal, non-Windows branch). The COMPILER_RT_HAS_* defines replace
-# upstream's CHECK_CXX_SOURCE_COMPILES probes - all four trivially hold on
+# upstream's dynamic configure-time probes - all four trivially hold on
 # Linux with either libc.
 #
 # $CACHE{}: contrib/CMakeLists.txt shadows WITH_COVERAGE to OFF in this scope.
