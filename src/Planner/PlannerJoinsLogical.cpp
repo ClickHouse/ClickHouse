@@ -342,7 +342,7 @@ static bool hasEquiConditions(const JoinCondition & condition)
 
 static void checkExpandedJoinConditionsLimit(size_t size, size_t max_expanded, const IQueryTreeNode & node)
 {
-    if (size > max_expanded)
+    if (max_expanded != 0 && size > max_expanded)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
             "JOIN ON expression {} expands to {} join conditions, maximum: {}",
             node.formatASTForErrorMessage(),
@@ -352,7 +352,8 @@ static void checkExpandedJoinConditionsLimit(size_t size, size_t max_expanded, c
 
 static void checkExpandedJoinConditionsProductLimit(size_t lhs_size, size_t rhs_size, size_t max_expanded, const IQueryTreeNode & node)
 {
-    if (lhs_size != 0 && rhs_size > max_expanded / lhs_size)
+    /// Overflow-safe check for `lhs_size * rhs_size > max_expanded`.
+    if (max_expanded != 0 && lhs_size != 0 && rhs_size > max_expanded / lhs_size)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
             "JOIN ON expression {} expands to more than {} join conditions",
             node.formatASTForErrorMessage(),
@@ -376,7 +377,6 @@ static std::vector<JoinCondition> makeCrossProduct(
     checkExpandedJoinConditionsProductLimit(lhs.size(), rhs.size(), max_expanded, node);
 
     std::vector<JoinCondition> result;
-    result.reserve(lhs.size() * rhs.size());
     for (const auto & rhs_clause : rhs)
     {
         for (const auto & lhs_clause : lhs)
