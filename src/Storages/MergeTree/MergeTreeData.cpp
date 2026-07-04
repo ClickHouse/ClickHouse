@@ -362,6 +362,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -1229,6 +1230,20 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+}
+
+void MergeTreeData::checkMetadataProperties(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    ContextPtr local_context) const
+{
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/false,
+        /*allow_empty_sorting_key=*/false,
+        allow_nullable_key,
+        local_context);
 }
 
 void MergeTreeData::setProperties(
@@ -5158,6 +5173,30 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "Cannot materialize text index in part {} with {} rows. Materialization of text index is not supported for parts with more than {} rows",
                     part->name, part->rows_count, std::numeric_limits<UInt32>::max());
             }
+        }
+    }
+
+    /// An explicit MATERIALIZE INDEX of an inert index (a removed index type, e.g. legacy
+    /// `hypothesis`, kept only for attach compatibility) cannot be honored: the index has no data
+    /// and cannot be recomputed. Background merge/delete/insert paths carry it forward untouched,
+    /// but a user asking to rebuild it must be told it is impossible rather than get a silent no-op.
+    /// Reject it here, synchronously, before the mutation is queued -- throwing inside the
+    /// background mutation instead would leave the mutation retrying forever and wedge the table.
+    {
+        const auto index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & indices = index_metadata_snapshot->getSecondaryIndices();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::MATERIALIZE_INDEX)
+                continue;
+            if (!indices.has(command.index_name))
+                continue;
+            auto index_ptr = MergeTreeIndexFactory::instance().get(
+                index_metadata_snapshot, indices.getByName(command.index_name), *getSettings());
+            if (index_ptr->isInert())
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "Index of type '{}' is no longer supported. Please drop the index",
+                    indices.getByName(command.index_name).type);
         }
     }
 }
@@ -11252,12 +11291,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
+    auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
+    /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+    /// cannot be materialized. Skip them so building an empty part (delete-to-empty, TTL-to-empty,
+    /// lost-part replacement) does not throw creating their aggregator.
+    std::erase_if(skip_indices, [](const auto & index) { return index->isInert(); });
     MergedBlockOutputStream out(
         new_data_part,
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings()),
+        skip_indices,
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,
