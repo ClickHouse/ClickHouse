@@ -4350,19 +4350,19 @@ function resetCredentialsStatus() {
     [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
 }
 
-/// Re-check credentials shortly after the user stops typing (or pastes), so that correct
-/// credentials turn green and wrong ones red without any explicit action. Debounced to avoid a
-/// request per keystroke; the delay also lets a paste's value settle into the field before it is
-/// read (a `paste` reaches here through the `input` event it triggers, once the value is updated).
-let credentials_check_timer = null;
-function scheduleCredentialsCheck() {
-    resetCredentialsStatus();
-    clearTimeout(credentials_check_timer);
-    credentials_check_timer = setTimeout(checkCredentials, 300);
-}
-
-user_elem.addEventListener('input', scheduleCredentialsCheck);
-password_elem.addEventListener('input', scheduleCredentialsCheck);
+/// While a credential field is being edited, clear any stale indication and invalidate any
+/// in-flight check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
+/// `getServerStatus` puts the credentials into the request, so probing incomplete input would emit
+/// login attempts with partial — and, for the password, secret — values (`?password=s`,
+/// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits. Instead the
+/// check runs once on `change`, i.e. when the field is committed (typically on blur), so a correct
+/// value is confirmed with green and a wrong one with red without any explicit action, using only
+/// the final, complete value. This subsumes the old paste handlers: a pasted value is committed by
+/// the following blur just like typed input.
+user_elem.addEventListener('input', resetCredentialsStatus);
+password_elem.addEventListener('input', resetCredentialsStatus);
+user_elem.addEventListener('change', checkCredentials);
+password_elem.addEventListener('change', checkCredentials);
 
 
 function queryToColor(str) {
