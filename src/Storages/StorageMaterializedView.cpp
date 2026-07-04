@@ -425,7 +425,7 @@ void StorageMaterializedView::readImpl(
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
     /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them
-    /// back to top-level storage columns before the access checks below.
+    /// back to top-level storage columns before the target-table access check below.
     auto columns_for_access_check = target_storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names);
 
     if (query_info.order_optimizer)
