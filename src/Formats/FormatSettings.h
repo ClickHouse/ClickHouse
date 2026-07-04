@@ -621,6 +621,7 @@ struct FormatSettings
     struct
     {
         bool disable_preallocation = false;
+        UInt64 max_frame_size = 1_GiB;
     } column_binary{};
 
     enum class UnsupportedGeometryHandling { Throw, Null };

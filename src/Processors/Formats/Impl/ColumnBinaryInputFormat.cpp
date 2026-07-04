@@ -96,10 +96,10 @@ Chunk ColumnBinaryInputFormat::read()
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: descriptor references data before descriptor table end");
 
-    if (data_end - static_cast<uint64_t>(hdr_desc_size) > format_settings_.binary.max_binary_string_size)
+    if (data_end - static_cast<uint64_t>(hdr_desc_size) > format_settings_.column_binary.max_frame_size)
         throw Exception(ErrorCodes::INCORRECT_DATA,
-            "ColumnBinary: frame data size {} exceeds max_binary_string_size limit {}",
-            data_end - hdr_desc_size, format_settings_.binary.max_binary_string_size);
+            "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
+            data_end - hdr_desc_size, format_settings_.column_binary.max_frame_size);
 
     // Read the column data section exactly.
     if (data_end > static_cast<uint64_t>(hdr_desc_size))

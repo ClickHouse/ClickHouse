@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"column_binary_disable_preallocation", false, false, "New setting: disable output buffer preallocation in ColumnBinary format. Useful for benchmarking and diagnostics."},
+            {"column_binary_max_frame_size", 0, 1024ull * 1024 * 1024, "New setting: caps the total column data size of a single ColumnBinary frame, rejecting malformed frames before they can force an unreasonably large allocation."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
