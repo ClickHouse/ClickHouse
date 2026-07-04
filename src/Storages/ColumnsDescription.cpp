@@ -791,11 +791,24 @@ Names ColumnsDescription::getColumnNamesInStorageForAccessCheck(const Names & co
     NameSet seen;
     for (const auto & name : column_names)
     {
-        /// If `name` resolves to a subcolumn, `getNameInStorage` returns its parent
-        /// storage column; otherwise (real column or unknown name) it is kept as-is.
         String name_in_storage = name;
         if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+        {
+            /// A regular subcolumn resolves to its parent via `getNameInStorage`; a real column
+            /// (including one whose name legitimately contains a dot) resolves to itself.
             name_in_storage = column->getNameInStorage();
+        }
+        else
+        {
+            /// Dynamic subcolumns (`Dynamic` / `JSON` / dynamic `Map` keys, e.g. `json.a.b` or
+            /// `d.\`Tuple(a UInt64)\`.a`) are not part of the type's static subcolumn list, so the
+            /// lookup above cannot resolve them. Fall back to the longest dotted prefix that is a
+            /// real column, so a grant on the parent column still covers them. Names with no such
+            /// prefix (virtual or unknown columns) are left unchanged.
+            for (const auto & [column_name, _] : Nested::getAllColumnAndSubcolumnPairs(name))
+                if (has(String(column_name)))
+                    name_in_storage = String(column_name);
+        }
 
         if (seen.insert(name_in_storage).second)
             result.push_back(std::move(name_in_storage));
