@@ -44,6 +44,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -148,16 +150,12 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
-    extern const ServerSettingsUInt64 max_database_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
-    extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -212,10 +210,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = getContext()->getGlobalContext()->getMaxDatabaseNumToThrow();
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -1221,6 +1219,54 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    /// Merge the storage settings of the source table (in `CREATE TABLE x AS y`) into the settings
+    /// explicitly specified for the new table. The explicitly specified settings take precedence;
+    /// the rest are inherited from the source table.
+    void mergeStorageSettings(ASTStorage & storage, const ASTSetQuery * source_settings)
+    {
+        if (!source_settings || source_settings->changes.empty())
+            return;
+
+        if (!storage.settings)
+        {
+            storage.set(storage.settings, source_settings->clone());
+            return;
+        }
+
+        for (const auto & change : source_settings->changes)
+            storage.settings->changes.insertSetting(change.name, change.value);
+    }
+
+    /// Inherit the storage definition of the source table (in `CREATE TABLE x AS y <storage_clauses>` without
+    /// an explicit ENGINE) into the partial storage definition of the new table. The engine and every storage
+    /// clause (PARTITION BY, PRIMARY KEY, ORDER BY, SAMPLE BY, TTL, UNIQUE KEY) that was not explicitly
+    /// specified for the new table is taken from the source; explicitly specified clauses (and individual
+    /// SETTINGS) take precedence. This preserves the full inheritance of plain `CREATE TABLE x AS y` (engine,
+    /// keys, TTL, ...) while still allowing individual clauses and settings to be overridden, and it also
+    /// works when the source is a materialized view whose inherited engine lives in its inner storage.
+    void inheritStorageFromSource(ASTStorage & storage, const ASTStorage & source)
+    {
+        /// We only reach this for `CREATE TABLE x AS y <storage_clauses>` without an explicit ENGINE.
+        chassert(!storage.engine);
+        if (source.engine)
+            storage.set(storage.engine, source.engine->clone());
+
+        if (!storage.partition_by && source.partition_by)
+            storage.set(storage.partition_by, source.partition_by->clone());
+        if (!storage.primary_key && source.primary_key)
+            storage.set(storage.primary_key, source.primary_key->clone());
+        if (!storage.order_by && source.order_by)
+            storage.set(storage.order_by, source.order_by->clone());
+        if (!storage.sample_by && source.sample_by)
+            storage.set(storage.sample_by, source.sample_by->clone());
+        if (!storage.ttl_table && source.ttl_table)
+            storage.set(storage.ttl_table, source.ttl_table->clone());
+        if (!storage.unique_key && source.unique_key)
+            storage.set(storage.unique_key, source.unique_key->clone());
+
+        mergeStorageSettings(storage, source.settings);
+    }
+
     void setNullTableEngine(ASTStorage & storage)
     {
         storage.forEachPointerToChild([](IAST ** ptr, boost::intrusive_ptr<IAST> *)
@@ -1232,6 +1278,20 @@ namespace
         engine_ast->name = "Null";
         engine_ast->setNoEmptyArgs(true);
         storage.set(storage.engine, engine_ast);
+    }
+
+    /// For external tables with the `restore_replace_external_engines_to_null` setting we replace external
+    /// engines with the `Null` table engine. This must run after the engine has been resolved, whether it
+    /// was specified explicitly or inherited from the source table of `CREATE TABLE x AS y` (both the partial
+    /// storage clause and the plain `AS` forms inherit the source engine, so both must be replaced).
+    void replaceExternalEngineWithNullIfNeeded(ASTStorage & storage, bool enabled)
+    {
+        if (enabled
+            && storage.engine
+            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+        {
+            setNullTableEngine(storage);
+        }
     }
 
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
@@ -1346,30 +1406,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
     }
 
-    if (create.storage)
-    {
-        /// This table already has a storage definition.
-        if (!create.storage->engine)
-        {
-            /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
-        }
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
-        {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
-            {
-                setNullTableEngine(*create.storage);
-            }
-        }
-        return;
-    }
-
     /// We'll try to extract a storage definition from clause `AS`:
-    ///     CREATE TABLE table_name AS other_table_name
+    ///     CREATE TABLE table_name AS other_table_name [storage_clauses]
+    /// It is needed both when no storage clause is specified at all and when storage clauses such as
+    /// PARTITION BY, ORDER BY or SETTINGS are specified without an explicit ENGINE: in the latter case
+    /// the engine and the settings are inherited from `other_table_name`.
     boost::intrusive_ptr<ASTStorage> storage_def;
-    if (!create.as_table.empty())
+    if (!create.as_table.empty() && (!create.storage || !create.storage->engine))
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -1406,8 +1449,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
-            return;
+            /// The source table is backed by a table function. Forward the table function only when no storage
+            /// clauses were specified for the new table; otherwise keep the explicit storage definition.
+            if (!create.storage)
+            {
+                create.set(create.as_table_function, as_create.as_table_function->ptr());
+                return;
+            }
         }
         else if (as_create.storage)
         {
@@ -1418,6 +1466,32 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
+    }
+
+    if (create.storage)
+    {
+        /// This table already has a (possibly partial) storage definition.
+        if (!create.storage->engine)
+        {
+            if (storage_def && storage_def->engine)
+            {
+                /// `CREATE TABLE x AS y [storage_clauses]` without an explicit ENGINE: inherit the engine of `y`
+                /// together with every storage clause (keys, TTL, ...) that was not explicitly specified, and
+                /// merge its settings under the explicitly specified ones (the latter take precedence).
+                inheritStorageFromSource(*create.storage, *storage_def);
+            }
+            else
+            {
+                /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
+                setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
+            }
+        }
+
+        /// For external tables with the restore_replace_external_engines_to_null setting we replace external
+        /// engines with the Null table engine, whether the engine was specified explicitly or inherited.
+        replaceExternalEngineWithNullIfNeeded(
+            *create.storage, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+        return;
     }
 
     if (!storage_def)
@@ -1431,7 +1505,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_materialized_view)
         create.setTargetInnerEngine(ViewTarget::To, storage_def);
     else
+    {
+        /// A plain `CREATE TABLE x AS y` without any storage clause reaches here with the engine inherited from
+        /// the source table. The external-engine replacement must run for it too, consistently with the partial
+        /// storage clause path above; otherwise `CREATE TABLE x AS url_src` would keep the external engine while
+        /// `CREATE TABLE x AS url_src ORDER BY ...` becomes Null.
+        replaceExternalEngineWithNullIfNeeded(
+            *storage_def, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
         create.set(create.storage, storage_def);
+    }
 }
 
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
@@ -2208,28 +2290,40 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
 void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
-    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
-        {
-            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
-            UInt64 attached_count = CurrentMetrics::get(metric);
-            if (num_limit > 0 && attached_count >= num_limit)
-                throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                                "Too many {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
-        };
+    auto check_and_throw = [&](UInt64 num_limit, CurrentMetrics::Metric metric, String setting_name, String entity_name)
+    {
+        UInt64 attached_count = CurrentMetrics::get(metric);
+        if (num_limit > 0 && attached_count >= num_limit)
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Too many {}. "
+                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                entity_name,
+                setting_name,
+                num_limit,
+                attached_count);
+    };
 
     String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
     bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 
+    auto global_context = getContext()->getGlobalContext();
     if (create.is_dictionary)
-        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
+        check_and_throw(
+            global_context->getMaxDictionaryNumToThrow(),
+            CurrentMetrics::AttachedDictionary,
+            "max_dictionary_num_to_throw",
+            "dictionaries");
     else if (create.isView())
-        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+        check_and_throw(global_context->getMaxViewNumToThrow(), CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
     else if (is_replicated)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+        check_and_throw(
+            global_context->getMaxReplicatedTableNumToThrow(),
+            CurrentMetrics::AttachedReplicatedTable,
+            "max_replicated_table_num_to_throw",
+            "replicated tables");
     else
-        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
+        check_and_throw(global_context->getMaxTableNumToThrow(), CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
@@ -2268,6 +2362,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
+    }
+
+    /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
+    /// built while the view being replaced still owns it, so reject only when a different view owns it.
+    /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        auto target_table_id = create.getTargetTableID(ViewTarget::To);
+        if (!target_table_id.empty())
+        {
+            if (target_table_id.database_name.empty())
+                target_table_id.database_name = create.getDatabase();
+            if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(target_table_id))
+            {
+                auto owner_view_id = task->getInfo().view_id;
+                if (owner_view_id != StorageID{create.getDatabase(), table_to_replace_name})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} is already a target of another refreshable materialized view: {}",
+                        target_table_id.getFullTableName(), owner_view_id.getFullTableName());
+            }
+        }
     }
 
     {
@@ -2360,6 +2475,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// The replacement view's refresher was created paused so it could not touch the target
+        /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
+        /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
+        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->start();
 
         create.setTable(table_to_replace_name);
 

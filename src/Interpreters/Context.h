@@ -159,6 +159,7 @@ struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
+struct InitialAllRangesAnnouncementResponse;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
@@ -259,7 +260,7 @@ struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
@@ -381,6 +382,7 @@ protected:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
+    UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
     struct InsertionTableInfo
     {
         StorageID table = StorageID::createEmpty();
@@ -751,6 +753,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
@@ -827,6 +830,7 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -1083,6 +1087,10 @@ public:
 
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
+    /// Share the privilege-accounting object with another context, so privileges checked on this context are
+    /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on
+    /// a copy of the original query context but should still account its access checks to the original query.
+    void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
@@ -1186,6 +1194,9 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
+    /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
+    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
+
     std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
@@ -1239,20 +1250,37 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    size_t getMaxNamedCollectionNumToWarn() const;
-    size_t getMaxTableNumToWarn() const;
-    size_t getMaxViewNumToWarn() const;
-    size_t getMaxDictionaryNumToWarn() const;
-    size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
-    void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
-    void setMaxTableNumToWarn(size_t max_table_to_warn);
-    void setMaxViewNumToWarn(size_t max_view_to_warn);
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
-    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(M) \
+    M(named_collection, NamedCollection, 1000lu, max_named_collection_num_to_warn, "max_named_collection_num_to_warn") \
+    M(table, Table, 5000lu, max_table_num_to_warn, "max_table_num_to_warn") \
+    M(view, View, 10000lu, max_view_num_to_warn, "max_view_num_to_warn") \
+    M(dictionary, Dictionary, 1000lu, max_dictionary_num_to_warn, "max_dictionary_num_to_warn") \
+    M(database, Database, 1000lu, max_database_num_to_warn, "max_database_num_to_warn")
+
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(M) \
+    M(named_collection, NamedCollection, 0lu, max_named_collection_num_to_throw, "max_named_collection_num_to_throw") \
+    M(table, Table, 0lu, max_table_num_to_throw, "max_table_num_to_throw") \
+    M(view, View, 0lu, max_view_num_to_throw, "max_view_num_to_throw") \
+    M(dictionary, Dictionary, 0lu, max_dictionary_num_to_throw, "max_dictionary_num_to_throw") \
+    M(database, Database, 0lu, max_database_num_to_throw, "max_database_num_to_throw") \
+    M(replicated_table, ReplicatedTable, 0lu, max_replicated_table_num_to_throw, "max_replicated_table_num_to_throw")
+
+#define DECLARE_ENTITY_LIMIT_WITH_WARNING(ename, EName, warn_default, warn_setting, warn_setting_name) \
+    size_t getMax##EName##NumToWarn() const; \
+    void setMax##EName##NumToWarn(size_t max_##ename##_to_warn);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(DECLARE_ENTITY_LIMIT_WITH_WARNING)
+#undef DECLARE_ENTITY_LIMIT_WITH_WARNING
+
+#define DECLARE_ENTITY_LIMIT_WITH_THROW(ename, EName, throw_default, throw_setting, throw_setting_name) \
+    size_t getMax##EName##NumToThrow() const; \
+    void setMax##EName##NumToThrow(size_t max_##ename##_to_throw);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(DECLARE_ENTITY_LIMIT_WITH_THROW)
+#undef DECLARE_ENTITY_LIMIT_WITH_THROW
+
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
@@ -1337,6 +1365,11 @@ public:
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
     QueryStatusPtr getProcessListElementSafe() const;
+
+    /// Hash of the normalized query text. Set once before execution; used to account resources of
+    /// `NORMALIZED_QUERY_HASH` quotas (e.g. on the insert path, where the hash is not otherwise available).
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_);
+    UInt64 getNormalizedQueryHash() const;
 
     /// List all queries.
     ProcessList & getProcessList();
