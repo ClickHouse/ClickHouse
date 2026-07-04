@@ -2,6 +2,9 @@
 
 -- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET max_rows_to_group_by = 0;
+-- Pin off: statistics change the estimated group count, flipping the distributed aggregation
+-- strategy (Shuffle vs partial+merge) and thus the asserted plan.
+SET use_statistics = 0;
 
 DROP TABLE IF EXISTS test;
 
