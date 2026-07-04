@@ -38,6 +38,14 @@ wait_mutation() {
     return 1
 }
 
+# mt_select_parts_to_mutate_no_free_threads is server-global; clear it on every exit path so a
+# failure under `set -e` before an in-flow disable cannot leave it armed for the rest of the run.
+# The in-flow disables stay: the pending mutation only materializes once the failpoint is off.
+disable_failpoint() {
+    ${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads" 2>/dev/null || true
+}
+trap disable_failpoint EXIT
+
 # Phase 1: a column WITH a default (String DEFAULT ''). This is the facet #104822 fixed:
 # a dropped-and-refilled default keeps the row count but the original values must survive.
 ${CLICKHOUSE_CLIENT} --query="
@@ -53,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query="
 ${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race RENAME COLUMN d TO d1 SETTINGS alter_sync = 0"
 ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race FINAL"
-${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+disable_failpoint
 wait_mutation t_rename_merge_race
 
 count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race WHERE d1 != ''")
@@ -84,7 +92,7 @@ ${CLICKHOUSE_CLIENT} --query="
 ${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_dynamic RENAME COLUMN d TO d1 SETTINGS alter_sync = 0"
 ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_dynamic FINAL"
-${CLICKHOUSE_CLIENT} --query="SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+disable_failpoint
 wait_mutation t_rename_merge_race_dynamic
 
 # 8 of the 15 rows hold a non-null Dynamic value. Before the fix they read back as NULL, dropping
