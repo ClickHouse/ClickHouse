@@ -1,0 +1,112 @@
+---
+description: 'توثيق بند FROM'
+sidebarTitle: 'FROM'
+slug: /sql-reference/statements/select/from
+title: 'بند FROM'
+doc_type: 'مرجع'
+---
+
+يحدّد بند `FROM` المصدر الذي تُقرأ منه البيانات:
+
+* [جدول](/ar/reference/engines/table-engines/index)
+* [استعلام فرعي](/ar/reference/statements/select/index)
+* [دالة جدول](/ar/reference/functions/table-functions/index)
+
+يمكن أيضًا استخدام البندين [JOIN](/ar/reference/statements/select/join) و[ARRAY JOIN](/ar/reference/statements/select/array-join) لتوسيع إمكانات بند `FROM`.
+
+الاستعلام الفرعي هو استعلام `SELECT` آخر يمكن وضعه بين قوسين داخل بند `FROM`.
+
+يمكن أيضًا استخدام بند `VALUES` القياسي في SQL كتعبير جدولي:
+
+```sql
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+راجع [دالة الجدول Values](/ar/reference/functions/table-functions/values#sql-standard-values-clause) لمزيد من التفاصيل.
+
+يمكن أن يحتوي `FROM` على عدة مصادر بيانات مفصولة بفواصل، وهو ما يعادل إجراء [CROSS JOIN](/ar/reference/statements/select/join) عليها.
+
+يمكن أن يَرِد `FROM` اختياريًا قبل عبارة `SELECT`. وهذا امتداد خاص بـ ClickHouse لـ SQL القياسي، مما يجعل عبارات `SELECT` أسهل قراءةً. مثال:
+
+```sql
+FROM table
+SELECT *
+```
+
+<div id="final-modifier">
+  ## مُعدِّل FINAL
+</div>
+
+عند تحديد `FINAL`، يدمج ClickHouse البيانات دمجًا كاملًا قبل إرجاع النتيجة. ويؤدي ذلك أيضًا إلى تنفيذ جميع تحويلات البيانات التي تحدث أثناء عمليات الدمج في محرك الجدول المعني.
+
+ينطبق هذا عند تحديد البيانات من الجداول التي تستخدم محركات الجداول التالية:
+
+* `ReplacingMergeTree`
+* `SummingMergeTree`
+* `AggregatingMergeTree`
+* `CollapsingMergeTree`
+* `VersionedCollapsingMergeTree`
+
+تُنفَّذ استعلامات `SELECT` التي تتضمن `FINAL` بالتوازي. ويحدّد الإعداد [max&#95;final&#95;threads](/ar/reference/settings/session-settings#max_final_threads) عدد سلاسل التنفيذ المستخدمة.
+
+<div id="drawbacks">
+  ### السلبيات
+</div>
+
+تُنفَّذ الاستعلامات التي تستخدم `FINAL` بشكل أبطأ قليلًا من الاستعلامات المماثلة التي لا تستخدم `FINAL` للأسباب التالية:
+
+* تُدمَج البيانات أثناء تنفيذ الاستعلام.
+* قد تقرأ الاستعلامات التي تتضمن `FINAL` أعمدة المفتاح الأساسي بالإضافة إلى الأعمدة المحددة في الاستعلام.
+
+يتطلب `FINAL` موارد إضافية من الحوسبة والذاكرة، لأن المعالجة التي تحدث عادةً في وقت الدمج يجب أن تتم في الذاكرة عند تنفيذ الاستعلام. ومع ذلك، يكون استخدام `FINAL` ضروريًا أحيانًا للحصول على نتائج دقيقة (إذ قد لا تكون البيانات قد دُمجت بالكامل بعد). كما أن تكلفته أقل من تشغيل `OPTIMIZE` لفرض عملية دمج.
+
+وكبديل لاستخدام `FINAL`، يمكن أحيانًا استخدام استعلامات مختلفة تفترض أن العمليات الخلفية لمحرك `MergeTree` لم تكتمل بعد، وتتعامل مع ذلك عبر تطبيق التجميع (على سبيل المثال، للتخلص من التكرارات). وإذا كنت بحاجة إلى استخدام `FINAL` في استعلاماتك للحصول على النتائج المطلوبة، فلا بأس بذلك، ولكن ينبغي الانتباه إلى المعالجة الإضافية التي يتطلبها.
+
+يمكن تطبيق `FINAL` تلقائيًا باستخدام إعداد [FINAL](/ar/reference/settings/session-settings#final) على جميع الجداول في الاستعلام باستخدام جلسة أو ملف تعريف مستخدم.
+
+<div id="example-usage">
+  ### مثال على الاستخدام
+</div>
+
+استخدام الكلمة المفتاحية `FINAL`
+
+```sql
+SELECT x, y FROM mytable FINAL WHERE x > 1;
+```
+
+استخدام `FINAL` كإعداد على مستوى الاستعلام
+
+```sql
+SELECT x, y FROM mytable WHERE x > 1 SETTINGS final = 1;
+```
+
+استخدام `FINAL` كإعداد على مستوى الجلسة
+
+```sql
+SET final = 1;
+SELECT x, y FROM mytable WHERE x > 1;
+```
+
+<div id="aliases-and-final">
+  ### الأسماء المستعارة وFINAL
+</div>
+
+عندما يكون للجدول اسم مستعار، يأتي `FINAL` بعد الاسم المستعار. ويظهر ذلك بوضوح أكبر في استعلامات [`JOIN`](/ar/reference/statements/select/join)، حيث تُستخدم عادةً أسماء مستعارة للجداول:
+
+```sql
+SELECT t1.id, t2.name
+FROM table1 AS t1 FINAL
+INNER JOIN table2 AS t2 FINAL ON t1.id = t2.id;
+```
+
+يُعد `FINAL` مُعدِّلًا على مرجع الجدول، لذا يجب أن يأتي بعد الصيغة الكاملة `table [AS alias]`. ووضعه قبل الاسم المستعار (`FROM table1 FINAL AS t1`) يُعد خطأً نحويًا.
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+إذا حُذف بند `FROM`، فستُقرأ البيانات من جدول `system.one`.
+يحتوي جدول `system.one` على صف واحد فقط (ويؤدي هذا الجدول الغرض نفسه الذي يؤديه جدول DUAL في أنظمة إدارة قواعد البيانات الأخرى).
+
+لتنفيذ استعلام، تُستخرج جميع الأعمدة المذكورة في الاستعلام من الجدول المناسب. وتُستبعَد من الاستعلامات الفرعية أي أعمدة لا يلزمها الاستعلام الخارجي.
+إذا لم يذكر الاستعلام أي أعمدة (على سبيل المثال، `SELECT count() FROM t`)، فسيُستخرج أحد الأعمدة من الجدول على أي حال (مع تفضيل أصغرها)، وذلك لحساب عدد الصفوف.

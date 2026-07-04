@@ -1,0 +1,85 @@
+---
+description: '该引擎支持将数据导入到 SQLite 和从 SQLite 导出数据，并支持直接从 ClickHouse 查询 SQLite 表。'
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'SQLite 表引擎'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+该引擎支持将数据导入到 SQLite 和从 SQLite 导出数据，也支持直接从 ClickHouse 查询 SQLite 表。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**引擎参数**
+
+* `db_path` — SQLite 数据库文件的路径。
+* `table` — SQLite 数据库中的表名。
+
+<div id="data-types-support">
+  ## 数据类型支持
+</div>
+
+当在表定义中显式指定 ClickHouse 列类型时，可从 SQLite 的 TEXT 列中解析出以下 ClickHouse 类型：
+
+* [Date](/zh/reference/data-types/date), [Date32](/zh/reference/data-types/date32)
+* [DateTime](/zh/reference/data-types/datetime), [DateTime64](/zh/reference/data-types/datetime64)
+* [UUID](/zh/reference/data-types/uuid)
+* [Enum8, Enum16](/zh/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/zh/reference/data-types/decimal)
+* [FixedString](/zh/reference/data-types/fixedstring)
+* 所有整数类型 ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/zh/reference/data-types/int-uint))
+* [Float32, Float64](/zh/reference/data-types/float)
+
+有关默认类型映射，请参见 [SQLite database engine](/zh/reference/engines/database-engines/sqlite#data_types-support)。
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+显示创建 SQLite 表的查询：
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+返回该表中的数据：
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**另请参见**
+
+* [SQLite](/zh/reference/engines/database-engines/sqlite) 引擎
+* [sqlite](/zh/reference/functions/table-functions/sqlite) 表函数

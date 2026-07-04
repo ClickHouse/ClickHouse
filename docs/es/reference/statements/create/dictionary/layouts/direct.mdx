@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'layout de diccionario direct'
+sidebarTitle: 'direct'
+description: 'Un layout de diccionario que consulta la fuente directamente sin caché.'
+doc_type: 'reference'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+El diccionario no se almacena en memoria y consulta directamente la fuente al procesar una solicitud.
+
+La clave del diccionario es de tipo [UInt64](/es/reference/data-types/int-uint).
+
+Se admiten todos los tipos de [fuentes](/es/reference/statements/create/dictionary/sources/overview#dictionary-sources), excepto los archivos locales.
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+Este tipo de almacenamiento se utiliza con [claves](/es/reference/statements/create/dictionary/attributes#composite-key) compuestas. Similar a `direct`.

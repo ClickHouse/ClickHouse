@@ -11,26 +11,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # free-memory limiter actually kicks in, then count parallel stages from the
 # `EXPLAIN PIPELINE` output.
 
-CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 04117_config.XXXXXX.xml)
-trap 'rm -f "$CONFIG_FILE"' EXIT
-
-# `max_server_memory_usage` gives the free-memory limiter a deterministic budget.
-# `memory_worker_use_cgroup` is disabled so `clickhouse-local` tracks its own
-# process memory instead of the (shared) cgroup: in CI the cgroup spans the whole
-# container, and under load the worker would seed `total_memory_tracker` with the
-# container-wide usage (e.g. ~8 GiB), tripping the 4G hard limit on the first
-# allocation of any query. `memory_worker_dynamic_hard_limit` is disabled so the
-# 4G hard limit (and thus the limiter's budget) stays fixed regardless of host load.
-cat > "$CONFIG_FILE" <<'EOF'
-<clickhouse>
-    <max_server_memory_usage>4G</max_server_memory_usage>
-    <memory_worker_use_cgroup>false</memory_worker_use_cgroup>
-    <memory_worker_dynamic_hard_limit>false</memory_worker_dynamic_hard_limit>
-</clickhouse>
-EOF
-
 run_local() {
-    ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" "$@"
+    local server_opts=(
+        --max_server_memory_usage=4G
+        # we cannot use cgroups since this will sum RSS of all processes and clickhouse-local may fail with MEMORY_LIMIT_EXCEEDED
+        --memory_worker_use_cgroup=0
+        --memory_worker_dynamic_hard_limit=false
+    )
+    ${CLICKHOUSE_LOCAL} "$@" -- "${server_opts[@]}"
 }
 
 # `EXPLAIN PIPELINE SELECT ...` produces text output where the source stage

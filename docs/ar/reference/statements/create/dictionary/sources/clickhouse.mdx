@@ -1,0 +1,66 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/clickhouse
+title: 'مصدر قاموس ClickHouse'
+sidebarTitle: 'ClickHouse'
+description: 'تهيئة جدول ClickHouse كمصدر قاموس.'
+doc_type: 'reference'
+---
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CLICKHOUSE(
+        host 'example01-01-1'
+        port 9000
+        user 'default'
+        password ''
+        db 'default'
+        table 'ids'
+        where 'id=10'
+        secure 1
+        query 'SELECT id, value_1, value_2 FROM default.ids'
+    ));
+    ```
+  </Tab>
+
+  <Tab title="ملف التكوين">
+    ```xml
+    <source>
+        <clickhouse>
+            <host>example01-01-1</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>default</db>
+            <table>ids</table>
+            <where>id=10</where>
+            <secure>1</secure>
+            <query>SELECT id, value_1, value_2 FROM default.ids</query>
+        </clickhouse>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعداد:
+
+| الإعداد            | الوصف                                                                                                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`             | مضيف ClickHouse. إذا كان مضيفًا محليًا، فستُعالَج الاستعلامات من دون أي نشاط على الشبكة. ولتحسين تحمّل الأعطال، يمكنك إنشاء جدول [Distributed](/ar/reference/engines/table-engines/special/distributed) واستخدامه في الإعدادات اللاحقة. |
+| `port`             | المنفذ على خادم ClickHouse.                                                                                                                                                                                                          |
+| `user`             | اسم مستخدم ClickHouse.                                                                                                                                                                                                               |
+| `password`         | كلمة مرور مستخدم ClickHouse.                                                                                                                                                                                                         |
+| `db`               | اسم قاعدة البيانات.                                                                                                                                                                                                                  |
+| `table`            | اسم الجدول.                                                                                                                                                                                                                          |
+| `where`            | معايير التحديد. اختياري.                                                                                                                                                                                                             |
+| `invalidate_query` | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [تحديث بيانات القاموس باستخدام LIFETIME](/ar/reference/statements/create/dictionary/lifetime).                                                                              |
+| `secure`           | استخدام SSL للاتصال.                                                                                                                                                                                                                 |
+| `query`            | الاستعلام المخصص. اختياري.                                                                                                                                                                                                           |
+
+<Note>
+  لا يمكن استخدام الحقل `query` مع الحقلين `table` أو `where` في الوقت نفسه. ويجب التصريح بأحد الحقلين `table` أو `query`.
+</Note>

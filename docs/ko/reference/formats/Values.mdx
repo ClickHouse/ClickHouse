@@ -1,0 +1,117 @@
+---
+alias: []
+description: 'Values 형식 문서'
+input_format: true
+keywords: ['Values']
+output_format: true
+slug: /interfaces/formats/Values
+title: 'Values'
+doc_type: 'guide'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`Values` 형식은 모든 행을 괄호로 감싸 출력합니다.
+
+* 행은 쉼표로 구분되며 마지막 행 뒤에는 쉼표가 붙지 않습니다.
+* 괄호 안의 값도 쉼표로 구분됩니다.
+* 숫자는 따옴표 없이 10진수 포맷으로 출력됩니다.
+* 배열은 `[]`로 출력됩니다.
+* 문자열, 날짜, 날짜/시간 값은 따옴표로 감싸 출력됩니다.
+* 이스케이프 규칙과 파싱은 [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated) 포맷과 유사합니다.
+
+포맷팅 중에는 추가 공백이 삽입되지 않지만, 파싱 중에는 공백이 허용되며 무시됩니다(단, 배열 값 내부의 공백은 허용되지 않음).
+[`NULL`](/ko/reference/syntax)은 `NULL`로 표현됩니다.
+
+`Values` 형식으로 데이터를 전달할 때 이스케이프해야 하는 최소 문자 집합은 다음과 같습니다.
+
+* 작은따옴표
+* 백슬래시
+
+이 포맷은 `INSERT INTO t VALUES ...`에서 사용되며, 쿼리 결과를 포맷팅할 때도 사용할 수 있습니다.
+
+<div id="example-usage">
+  ## 예시 사용
+</div>
+
+<div id="inserting-data">
+  ### 데이터 삽입
+</div>
+
+`Values 형식`은 `INSERT`에서 사용되므로 `INSERT ... VALUES` 구문은 모두
+이미 이 포맷을 사용합니다. `FORMAT Values` 절을 명시적으로 지정할 수도 있으며,
+행은 스트림이나 파일에서 제공할 수 있습니다. 각 행은 괄호로 묶인
+쉼표로 구분된 튜플이고, 각 튜플도 쉼표로 구분됩니다:
+
+```sql title="Query"
+CREATE TABLE t (id UInt32, name String, values Array(UInt32)) ENGINE = Memory;
+
+INSERT INTO t FORMAT Values (1, 'a', [10, 20]), (2, 'b', [30]);
+
+SELECT * FROM t ORDER BY id;
+```
+
+```response title="Response"
+┌─id─┬─name─┬─values──┐
+│  1 │ a    │ [10,20] │
+│  2 │ b    │ [30]    │
+└────┴──────┴─────────┘
+```
+
+<div id="using-expressions">
+  ### 입력 시 표현식 사용
+</div>
+
+대부분의 입력 형식과 달리, `Values`는 리터럴만 허용하는 것이 아니라 각 필드에서 SQL 표현식을 평가할 수
+있습니다. 이는
+[`input_format_values_interpret_expressions`](#format-settings)로 제어되며(기본적으로
+활성화됨), 필드를 빠른 스트리밍 파서로 읽을 수 없으면 ClickHouse는
+SQL 파서로 전환하여 해당 필드를 표현식으로 해석합니다.
+
+```sql title="Query"
+CREATE TABLE prices (item String, total UInt32) ENGINE = Memory;
+
+INSERT INTO prices FORMAT Values ('apple', 3 * 4), ('pear', length('hello') + 10);
+
+SELECT * FROM prices ORDER BY total;
+```
+
+```response title="Response"
+┌─item──┬─total─┐
+│ apple │    12 │
+│ pear  │    15 │
+└───────┴───────┘
+```
+
+<div id="selecting-data">
+  ### 데이터 선택
+</div>
+
+`Values 형식`은 쿼리 결과의 포맷을 지정하는 데에도 사용할 수 있습니다. 숫자는
+따옴표 없이 작성하고, 배열은 `[]`로, 문자열과 날짜는 작은따옴표로 작성합니다.
+문자열 안의 작은따옴표와 백슬래시는 백슬래시로 이스케이프하며,
+[`NULL`](/ko/reference/syntax)은 `NULL`로 작성합니다:
+
+```sql title="Query"
+SELECT 1 AS a, 'O''Reilly' AS b, NULL::Nullable(String) AS c FORMAT Values;
+```
+
+```response title="Response"
+(1,'O\'Reilly',NULL)
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+| 설정                                                                                                                                       | 설명                                                                                                                | 기본값    |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------ |
+| [`input_format_values_interpret_expressions`](/ko/reference/settings/formats#input_format_values_interpret_expressions)                     | 필드를 스트리밍 파서로 파싱할 수 없으면 SQL 파서를 실행하여 해당 값을 SQL 표현식으로 해석하려고 시도합니다.                                                  | `true` |
+| [`input_format_values_deduce_templates_of_expressions`](/ko/reference/settings/formats#input_format_values_deduce_templates_of_expressions) | 필드를 스트리밍 파서로 파싱할 수 없으면 SQL 파서를 실행하여 SQL 표현식의 Template을 추론하고, 그 Template으로 모든 행을 파싱한 다음 모든 행에 대해 표현식을 해석하려고 시도합니다. | `true` |
+| [`input_format_values_accurate_types_of_literals`](/ko/reference/settings/formats#input_format_values_accurate_types_of_literals)           | Template을 사용해 표현식을 파싱하고 해석할 때는, 발생 가능한 오버플로우 및 정밀도 문제를 방지하기 위해 리터럴의 실제 타입을 확인합니다.                                 | `true` |
