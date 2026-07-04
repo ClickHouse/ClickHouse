@@ -10,9 +10,11 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/config_version.h>
 #include <Core/Settings.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/ServerSettings.h>
+#include <Core/ProtocolDefines.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
@@ -1029,6 +1031,17 @@ try
     insert_context->setInitialQueryStartTime(query_start_time);
     insert_context->setCurrentQueryId(insert_query_id);
     insert_context->setInitialQueryId(insert_query_id);
+
+    /// This context is created from the global context, which has no client version. This server is
+    /// the real initiator of the flushed insert and of any distributed sub-query it spawns (e.g. the
+    /// insert targets a `Distributed` table, or a triggered materialized view reads from one), so
+    /// fill the version with this server's version. Otherwise remote shards treat the initiator as a
+    /// pre-23.3 server and apply legacy compatibility downgrades, and `RemoteQueryExecutor` rejects
+    /// the zero version outright.
+    if (insert_context->getClientInfo().client_version_major == 0
+        && insert_context->getClientInfo().client_version_minor == 0
+        && insert_context->getClientInfo().client_version_patch == 0)
+        insert_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     DB::QueryScope query_scope;
     if (current_query_thread_group)
