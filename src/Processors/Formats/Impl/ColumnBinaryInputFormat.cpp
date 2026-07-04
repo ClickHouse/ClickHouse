@@ -48,6 +48,16 @@ Chunk ColumnBinaryInputFormat::read()
     std::memcpy(&num_rows, hdr_buf, 4);
     std::memcpy(&num_cols, hdr_buf + 4, 4);
 
+    // num_cols comes straight from the (network-facing) frame and is otherwise
+    // untrusted; reject it before sizing any buffer off of it. The schema is
+    // known ahead of time, so a frame claiming more columns than the schema
+    // has is always invalid — this also caps desc_total/hdr_desc_size below
+    // to a small, trusted bound instead of an attacker-chosen one.
+    if (num_cols > header_->columns())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: frame declares {} columns, expected at most {}",
+            num_cols, header_->columns());
+
     // Read header + descriptor table into a single buffer.
     const size_t desc_total = static_cast<size_t>(num_cols) * ColumnarV1::COLUMNAR_DESC_BYTES;
     const size_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + desc_total;
