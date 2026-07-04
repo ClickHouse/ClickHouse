@@ -1,17 +1,56 @@
 <test>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) &lt; toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) &gt; toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) = toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
+    <!--
+        This PR routes `FixedString(N)` comparison through `memcmpSmallMultipleOf16` / `memcmp16`
+        when `N` is a multiple of 16. Its advantage over `memcmpSmallAllowOverflow15` only shows up
+        when several 16-byte blocks actually have to be compared, so every stored value shares a long
+        common prefix (a run of `_`) and keeps the varying part (`reinterpretAsFixedString(number)`,
+        8 bytes) in the last 16-byte block. Column `a` holds `number`, column `b` holds `number + 1`,
+        so `a` and `b` are identical except in their final block, and comparing them scans the whole
+        prefix block by block.
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) &lt; toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) &gt; toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) = toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
+        The values are materialized in tables so the (heavy) string construction happens once in the
+        fill query and the measured queries are dominated by the comparison itself.
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) &lt; toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) &gt; toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) = toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
+        Two comparison surfaces changed by this PR are exercised:
+          - `<` / `>` go through `StringComparisonImpl`;
+          - `ORDER BY` goes through `ColumnFixedString::compareAt` and its sort comparator.
+        `=` / `!=` are intentionally not benchmarked: they use `memequalSmallAllowOverflow15`, which
+        this PR does not touch.
+    -->
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) &lt; toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) &gt; toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) = toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
+    <create_query>CREATE TABLE fixstr_cmp_16 (a FixedString(16), b FixedString(16)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_32 (a FixedString(32), b FixedString(32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_64 (a FixedString(64), b FixedString(64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_128 (a FixedString(128), b FixedString(128)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO fixstr_cmp_16 SELECT toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(number)), 16), toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(number + 1)), 16) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO fixstr_cmp_32 SELECT toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(number)), 32), toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(number + 1)), 32) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO fixstr_cmp_64 SELECT toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(number)), 64), toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(number + 1)), 64) FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO fixstr_cmp_128 SELECT toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(number)), 128), toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(number + 1)), 128) FROM numbers(10000000)</fill_query>
+
+    <!-- `<` / `>` : StringComparisonImpl; the shared prefix forces a full multi-block compare. -->
+    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &gt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &gt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &gt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; b)</query>
+    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &gt; b)</query>
+
+    <!-- Equal strings: the compare scans every 16-byte block before returning 0. -->
+    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; a)</query>
+    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; a)</query>
+    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; a)</query>
+    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; a)</query>
+
+    <!-- ORDER BY : ColumnFixedString::compareAt and its sort comparator on equal-prefix data. -->
+    <query>SELECT a FROM fixstr_cmp_32 ORDER BY a FORMAT Null</query>
+    <query>SELECT a FROM fixstr_cmp_64 ORDER BY a FORMAT Null</query>
+    <query>SELECT a FROM fixstr_cmp_128 ORDER BY a FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS fixstr_cmp_16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixstr_cmp_32</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixstr_cmp_64</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fixstr_cmp_128</drop_query>
 </test>
