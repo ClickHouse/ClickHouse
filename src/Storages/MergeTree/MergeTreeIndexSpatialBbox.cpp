@@ -203,12 +203,17 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
             }
         }
 
-        /// Recurse into AND children to find qualifying sub-predicates.
-        for (const auto * child : node->children)
+        /// Only recurse into `and` children: an `or` (or any other function) can be true
+        /// via a branch unrelated to the indexed column, so deriving a bbox from just one
+        /// of its arguments would incorrectly prune granules.
+        if (node->function_base && node->function_base->getName() == "and")
         {
-            auto result = extractQueryBbox(child, col_name);
-            if (result)
-                return result;
+            for (const auto * child : node->children)
+            {
+                auto result = extractQueryBbox(child, col_name);
+                if (result)
+                    return result;
+            }
         }
     }
 
