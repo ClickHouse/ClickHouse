@@ -1,0 +1,5 @@
+rejected: config tcp_port=70000
+rejected: config tcp_port=-1
+rejected: config http_port=99999
+rejected: config http_port=-5
+accepted: config tcp_port=0

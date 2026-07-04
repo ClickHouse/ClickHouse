@@ -72,6 +72,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
@@ -128,7 +129,8 @@ DatabaseDataLake::DatabaseDataLake(
     const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_,
     ASTPtr table_engine_definition_,
-    UUID uuid)
+    UUID uuid,
+    bool lazy_init)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
@@ -138,7 +140,14 @@ DatabaseDataLake::DatabaseDataLake(
     , db_uuid(uuid)
 {
     validateSettings();
-    initialize();
+    /// On ATTACH (server startup) defer catalog construction to first use: building it can
+    /// perform network I/O or credential validation that must not block startup. On CREATE
+    /// build eagerly so misconfiguration is reported immediately.
+    if (!lazy_init)
+    {
+        std::lock_guard lock(catalog_mutex);
+        initialize();
+    }
 }
 
 void DatabaseDataLake::validateSettings()
@@ -158,11 +167,10 @@ void DatabaseDataLake::validateSettings()
     }
 }
 
-void DatabaseDataLake::initialize()
+void DatabaseDataLake::initialize() const
 {
-    /// This function is intentionally not synchronized: it is invoked only from the
-    /// constructor, before the `DatabaseDataLake` instance becomes reachable by any
-    /// other thread.
+    /// Caller holds `catalog_mutex`: this runs either from the constructor (CREATE, eager)
+    /// or from `getCatalog` on first access (ATTACH, lazy).
     if (settings[DatabaseDataLakeSetting::catalog_type].value == DatabaseDataLakeCatalogType::NONE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unspecified catalog type");
 
@@ -199,6 +207,7 @@ void DatabaseDataLake::initialize()
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_secret].value,
+                settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
@@ -308,6 +317,10 @@ void DatabaseDataLake::initialize()
 
 std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
 {
+    std::lock_guard lock(catalog_mutex);
+    /// Lazily build the catalog on first access for databases attached at startup (see ctor).
+    if (!catalog_impl)
+        initialize();
     return catalog_impl;
 }
 
@@ -643,6 +656,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
             rest_catalog->getTenantId(),
+            rest_catalog->getBearerToken(),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
@@ -878,6 +892,28 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     return result;
 }
 
+VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /*context*/) const
+{
+    VectorWithMemoryTracking<String> result;
+
+    /// Do not throw here, because this is called from the typo-hint path
+    /// (IDatabase::getTable -> TableNameHints -> getAllRegisteredNames) which
+    /// must not fail even when the catalog is temporarily unreachable.
+    try
+    {
+        Names tables = getCatalog()->getTables();
+        result.reserve(tables.size());
+        for (auto & table : tables)
+            result.push_back(std::move(table));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return result;
+}
+
 ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = make_intrusive<ASTCreateQuery>();
@@ -981,9 +1017,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        if (!auth_header_str.empty())
+        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// `auth_header` was accepted by an older version must still attach at startup, so a
+        /// single misconfigured database cannot block the server from starting. The malformed
+        /// header is then reported lazily on first use of the database.
+        if (!args.create_query.attach && !auth_header_str.empty())
         {
-            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
             if (pos != std::string::npos)
@@ -1047,6 +1087,23 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+                {
+                    /// Require exactly one auth method: a bearer token, or a client id + secret pair.
+                    const bool has_bearer = !database_settings[DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+                    const bool has_client_id = !database_settings[DatabaseDataLakeSetting::onelake_client_id].value.empty();
+                    const bool has_client_secret = !database_settings[DatabaseDataLakeSetting::onelake_client_secret].value.empty();
+
+                    const bool has_client_pair = has_client_id && has_client_secret;
+                    bool has_exactly_one_method = has_bearer != has_client_pair;
+                    bool has_conflicting_fields = has_client_id != has_client_secret;
+
+                    if (!has_exactly_one_method || has_conflicting_fields)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "OneLake catalog requires exactly one authentication method: either `onelake_bearer_token` "
+                            "or both `onelake_client_id` and `onelake_client_secret`");
                 }
 
                 engine_func->name = "Iceberg";
@@ -1114,7 +1171,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings,
             database_engine_define->clone(),
             std::move(engine_for_tables),
-            args.uuid);
+            args.uuid,
+            /*lazy_init=*/args.create_query.attach);
     };
     /// TODO: DataLakeCatalog is polymorphic — underlying source (S3, Azure, HDFS, etc.) depends
     /// on the catalog type chosen at runtime. Consider adding source_access_type once a mechanism
@@ -1201,6 +1259,10 @@ SETTINGS
 SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```
+    To authenticate without sharing a client secret, set `onelake_bearer_token` to a pre-obtained
+    bearer token (scoped to https://storage.azure.com) instead of
+    `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
+    database must be recreated after it expires.
 )DOCS_MD",
         .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
         .related = {}});

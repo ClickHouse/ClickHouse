@@ -91,10 +91,12 @@ private:
     /// Storage names of overwritten columns that an on-fly MUTATION step genuinely consumes
     /// as a function input before any step overwrites them. They must still be converted to
     /// the post-`MODIFY` metadata type, otherwise the consuming action sees a type/storage
-    /// mismatch. The synthetic keep-old fallback of an `UPDATE` (`if(cond, expr, col)`'s third
-    /// argument) is not a genuine read and is ignored; a real same-step read such as
-    /// `UPDATE col = f(col)` does force conversion. Columns referenced only by that fallback
-    /// stay skipped; query PREWHERE steps are excluded (they convert at their own turn).
+    /// mismatch. The keep-old fallback of an `UPDATE` (`if(cond, expr, col)`'s third argument)
+    /// counts as a genuine consume too; it is ignored ONLY when `cond` is a compile-time
+    /// constant-true, because then `FunctionIf` never reads the on-disk `col`. A real same-step
+    /// read such as `UPDATE col = f(col)` always forces conversion. Columns whose sole reference
+    /// is a constant-true fallback stay skipped; query PREWHERE steps are excluded (they convert
+    /// at their own turn).
     /// See `collectColumnsConsumedByChainActions` and `executeActionsBeforePrewhere`.
     NameSet columns_consumed_by_chain_actions;
 

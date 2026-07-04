@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -36,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -240,7 +242,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (i >= hyperrectangle.size())
             break;
 
-        if (!column_type->isNullable() && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
+        if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
@@ -1138,6 +1140,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
 
+    /// The reader holds only the index; resolve the archive's current location here so a part
+    /// that has since been renamed or moved still reads from the right place.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
+    const auto disk = disk_storage->getDisk();
+    const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+
     for (const auto & filename : reader.getFileNames())
     {
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
@@ -1148,7 +1158,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
             continue;
 
         size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(filename, read_settings, file_size);
+        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
         try
@@ -1561,6 +1571,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
         result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
     return result;
+}
+
+std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
+{
+    if (uuid == UUIDHelpers::Nil)
+        return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    return toString(uuid);
 }
 
 void IMergeTreeDataPart::loadDefaultCompressionCodec()
