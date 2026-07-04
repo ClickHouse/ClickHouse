@@ -77,6 +77,15 @@ namespace
         }
     }
 
+    void parseURLRoutingFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        PrometheusRequestHandlerConfig & res)
+    {
+        if (config.has(config_prefix + ".enable_table_name_url_routing"))
+            res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
+    }
+
     /// Parses a configuration like this:
     /// <!-- <type>write</type> (Implied, not actually parsed) -->
     /// <table>db.time_series_table_name</table>
@@ -85,8 +94,7 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::Write;
         parseTableNameFromConfig(config, config_prefix, res);
-        if (config.has(config_prefix + ".enable_table_name_url_routing"))
-            res.enable_table_name_url_routing = config.getBool(config_prefix + ".enable_table_name_url_routing");
+        parseURLRoutingFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         return res;
     }
@@ -125,6 +133,7 @@ namespace
         PrometheusRequestHandlerConfig res;
         res.type = PrometheusRequestHandlerConfig::Type::APIv1;
         parseTableNameFromConfig(config, config_prefix, res);
+        parseURLRoutingFromConfig(config, config_prefix, res);
         parseCommonConfig(config, res);
         parseUserFromConfig(config, config_prefix, res);
         return res;

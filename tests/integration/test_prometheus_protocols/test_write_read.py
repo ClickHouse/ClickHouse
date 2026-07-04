@@ -14,6 +14,7 @@ from .prometheus_test_utils import (
 import re
 import requests
 import time
+import urllib.parse
 
 
 cluster = ClickHouseCluster(__file__)
@@ -182,6 +183,56 @@ def test_remote_write_dynamic_routing():
     assert_eq_with_retry(
         node, "SELECT count() > 0 FROM timeSeriesData(prometheus_dynamic)", "1"
     )
+
+
+def test_api_v1_remote_write_dynamic_routing():
+    timestamp = time.time()
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "dynamic_api_v1_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    )
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        9093,
+        "default/prometheus_dynamic/api/v1/write",
+        write_request,
+    )
+    assert_eq_with_retry(
+        node,
+        "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
+        "WHERE metric_name = 'dynamic_api_v1_metric'",
+        "1",
+    )
+
+
+def test_remote_write_dynamic_routing_decodes_url_path_segments():
+    table_name = "prometheus dynamic encoded"
+    quoted_table_name = f"`{table_name}`"
+    node.query(f"DROP TABLE IF EXISTS {quoted_table_name} SYNC")
+    node.query(
+        f"CREATE TABLE {quoted_table_name} ENGINE=TimeSeries "
+        "SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1"
+    )
+
+    try:
+        timestamp = time.time()
+        write_request = convert_time_series_to_protobuf(
+            [({"__name__": "dynamic_encoded_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+        )
+        encoded_table_name = urllib.parse.quote(table_name, safe="")
+        send_protobuf_to_remote_write(
+            node.ip_address,
+            9093,
+            f"default/{encoded_table_name}/write",
+            write_request,
+        )
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM timeSeriesTags({quoted_table_name}) "
+            "WHERE metric_name = 'dynamic_encoded_metric'",
+            "1",
+        )
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {quoted_table_name} SYNC")
 
 
 def test_remote_write_dynamic_routing_disabled_for_table():

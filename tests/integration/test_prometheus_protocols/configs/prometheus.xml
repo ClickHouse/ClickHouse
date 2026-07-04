@@ -16,6 +16,13 @@
                     <enable_table_name_url_routing>true</enable_table_name_url_routing>
                 </handler>
             </my_rule_1_dynamic>
+            <my_rule_1_dynamic_api_v1>
+                <url>regex:^/[^/]+/[^/]+/api/v1/write$</url>
+                <handler>
+                    <type>prometheus_api_v1</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic_api_v1>
             <my_rule_2>
                 <url>/read</url>
                 <handler>

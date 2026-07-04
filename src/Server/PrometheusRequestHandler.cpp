@@ -41,6 +41,8 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
+#include <vector>
+
 
 namespace DB
 {
@@ -65,15 +67,6 @@ namespace TimeSeriesSetting
 namespace
 {
 #if USE_PROMETHEUS_PROTOBUFS
-    String getRequestPath(const HTTPServerRequest & request)
-    {
-        const auto & uri = request.getURI();
-        auto query_pos = uri.find('?');
-        if (query_pos == String::npos)
-            return uri;
-        return uri.substr(0, query_pos);
-    }
-
     QualifiedTableName resolveTableNameFromRequest(
         const PrometheusRequestHandlerConfig & config,
         const HTTPServerRequest & request)
@@ -81,30 +74,22 @@ namespace
         if (!config.enable_table_name_url_routing)
             return config.time_series_table_name;
 
-        const String path = getRequestPath(request);
-        auto start = path.begin();
-        if (start != path.end() && *start == '/')
-            ++start;
-        auto first_sep = std::find(start, path.end(), '/');
-        if (first_sep == path.end())
+        Poco::URI uri(request.getURI());
+        std::vector<String> path_segments;
+        uri.getPathSegments(path_segments);
+        if (path_segments.size() < 2)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "URL path '{}' does not contain a database and a table name",
-                path);
-        auto second_sep = std::find(first_sep + 1, path.end(), '/');
-        if (second_sep == path.end())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "URL path '{}' does not contain a database and a table name",
-                path);
+                uri.getPath());
 
-        String database(start, first_sep);
-        String table(first_sep + 1, second_sep);
+        String database = path_segments[0];
+        String table = path_segments[1];
         if (database.empty() || table.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "URL path '{}' does not contain a database and a table name",
-                path);
+                uri.getPath());
 
         return QualifiedTableName{database, table};
     }
