@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: 'Только локальный режим'
+description: 'Развертывание ClickStack только в локальном режиме — стек обсервабилити ClickHouse'
+doc_type: 'guide'
+keywords: ['clickstack', 'развертывание', 'установка', 'конфигурация', 'обсервабилити']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import JSONSupport from '/snippets/ru/_json_support.mdx';
+
+Подобно [образу «всё в одном»](/ru/clickstack/deployment/docker-compose), этот комплексный Docker-образ включает все компоненты ClickStack:
+
+* **ClickHouse**
+* **HyperDX**
+* **коллектор OpenTelemetry (OTel)** (предоставляет OTLP на портах `4317` и `4318`)
+* **MongoDB** (для постоянного хранения состояния приложения)
+
+**Однако в этом дистрибутиве HyperDX аутентификация пользователей отключена**
+
+<div id="suitable-for">
+  ### Подходит для
+</div>
+
+* Демонстраций
+* Отладки
+* Разработки с использованием HyperDX
+
+<div id="deployment-steps">
+  ## Шаги развертывания
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Развертывание через Docker
+
+    В локальном режиме интерфейс HyperDX разворачивается на порту 8080.
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### Перейдите в интерфейс HyperDX
+
+    Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс HyperDX.
+
+    **Вам не будет предложено создать пользователя, так как в этом режиме развертывания аутентификация не включена.**
+
+    Подключитесь к своему внешнему кластеру ClickHouse, например к ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Создание входа в систему" size="md" />
+
+    Создайте источник, оставьте все значения по умолчанию и заполните поле `Table` значением `otel_logs`. Все остальные настройки должны определиться автоматически, после чего можно нажать `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Создание источника логов" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

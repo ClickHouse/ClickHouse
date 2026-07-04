@@ -1,0 +1,172 @@
+---
+slug: /use-cases/observability/clickstack/event_deltas
+title: 'Event deltas con ClickStack'
+sidebarTitle: 'Event deltas'
+description: 'Analiza distribuciones de atributos en traces y compara spans atípicos con Event deltas en ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'event deltas', 'heatmap', 'distribución de atributos', 'análisis de traces', 'observabilidad']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Event deltas combina un mapa de calor de latencia con análisis automático de atributos para que puedas ver la forma de tus datos de trazas y encontrar qué diferencia a los spans lentos, sin escribir consultas. Hay tres formas de usarlo:
+
+* **Modo de distribución (siempre activo)**: cuando no hay ninguna selección en el mapa de calor, se muestra la distribución de valores de cada atributo para la población actual de spans. Es útil para detectar valores dominantes o inusualmente raros (anomalías de cardinalidad).
+* **Modo de comparación**: arrastra un rectángulo sobre el mapa de calor para comparar los spans del interior (Selección) con todo lo que queda fuera (Fondo). Es útil para aislar desviaciones.
+* **Drill-down iterativo**: haz clic en cualquier barra para filtrar (o excluir) ese valor. El mapa de calor se actualiza según la población filtrada, por lo que puedes seguir acotando hasta que la causa sea evidente.
+
+<Image img="/images/clickstack/event-deltas/overview.webp" alt="Vista general de Event deltas en el servicio de pagos, con la banda brillante ascendiendo a mitad de la ventana y sin recuperación dentro del encuadre" size="lg" />
+
+En la captura de pantalla anterior, el borde derecho del mapa de calor está aproximadamente en 10 ms, no de vuelta en la línea base de 1 ms que se mantuvo durante la mañana. La degradación sigue en curso, así que la estamos captando en pleno incidente.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+Event deltas requieren una **fuente de datos de Trace** con una expresión de duración. Cualquier servicio instrumentado con OpenTelemetry que genere datos de spans funciona. Disponible en todos los despliegues de ClickStack (gestionado, de código abierto, ClickHouse Cloud).
+
+<div id="getting-started">
+  ## Primeros pasos
+</div>
+
+1. En el menú desplegable **Data Source**, selecciona una fuente que contenga trazas. Los nombres de las fuentes son arbitrarios; lo importante es que la fuente esté configurada como de tipo Trace. La pestaña **Event Deltas** solo está habilitada para ese tipo de fuentes.
+2. En la sección **Analysis Mode**, haz clic en la pestaña **Event Deltas**.
+
+Event deltas es un modo de análisis independiente, junto con **Results Table** y **Event Patterns**. Al cambiar a este modo, la vista pasa a mostrar un mapa de calor y una cuadrícula de análisis de atributos, pero se conservan los filtros de búsqueda y el intervalo de tiempo, y puedes volver en cualquier momento.
+
+<div id="the-heatmap">
+  ## El mapa de calor
+</div>
+
+El mapa de calor muestra spans en dos dimensiones:
+
+* **Eje X**: tiempo
+* **Eje Y**: un valor numérico, que por defecto es la duración del span en milisegundos (escala logarítmica)
+
+La intensidad del color indica el número de eventos por intervalo; cuanto más intenso, más spans.
+
+Puedes identificar patrones directamente en el mapa de calor: latencia bimodal, picos de latencia en momentos concretos, una banda de spans sistemáticamente lentos o una banda lenta que se desplaza hacia arriba con el tiempo (una regresión gradual). Para investigar una región, haz clic y arrastra un rectángulo sobre ella. Eso se convierte en tu **Selección** y cambia el análisis de abajo al modo de comparación.
+
+<div id="distribution-mode">
+  ## Modo de distribución: valores atípicos de cardinalidad
+</div>
+
+Sin ninguna selección en el mapa de calor, el panel de análisis muestra un gráfico de barras por atributo, calculado a partir de todos los spans coincidentes. La leyenda dice **Todos los spans** (visible en la captura de pantalla de Overview de arriba).
+
+Los atributos se ordenan según el grado de concentración de sus valores: los dominados por unos pocos valores aparecen primero; los atributos uniformes y de alta entropía se priorizan menos.
+
+Use el modo de distribución cuando quiera entender la **forma de la cardinalidad** de sus datos:
+
+* **Altos**: ¿qué servicios, endpoints, códigos de estado o hosts dominan su población de spans? A menudo pone de manifiesto un único tenant, versión o ruta que concentra la mayor parte del tráfico.
+* **Bajos**: valores que aparecen, pero rara vez. Un código de estado que aparece en solo el `0.5%` de los spans, o un host que apenas se muestra, puede ser la señal más interesante. La cola larga es donde se esconden las regresiones y los actores problemáticos.
+
+Combínelo con la barra de búsqueda para acotar primero la población (por ejemplo, solo spans con error, solo spans de cliente, solo un endpoint) y luego consulte las distribuciones de ese subconjunto.
+
+<div id="comparison-mode">
+  ## Modo de comparación: desviaciones respecto a lo normal
+</div>
+
+Haz clic y arrastra un rectángulo en el mapa de calor para entrar en modo de comparación. Los spans seleccionados pasan a ser la **Selección** (barras naranjas); todo lo que queda fuera pasa a ser el **Fondo** (barras verdes). Luego, cada gráfico de atributos muestra ambas poblaciones lado a lado, ordenadas de forma que los atributos con mayor divergencia aparezcan primero. Un valor presente casi exclusivamente en uno de los lados, o ausente en uno de ellos, es el indicio más claro de qué es lo que difiere.
+
+La forma del rectángulo que dibujas cambia la pregunta que estás planteando. A continuación se describen las dos formas más habituales.
+
+<div id="before-vs-after">
+  ### Caso de uso 1: Antes vs. después de una regresión
+</div>
+
+Cuando el mapa de calor muestra que la latencia va aumentando a lo largo de la línea temporal (la banda lenta se engrosa, la banda brillante asciende o un punto de inflexión claro separa un período saludable de uno degradado), arrastra un rectángulo desde el punto de inflexión del ascenso hasta el borde derecho de la ventana. Para hacer más precisa la comparación, coloca la parte inferior del rectángulo en la línea base saludable en lugar de en la parte inferior del eje: así se aíslan los spans que realmente son más lentos de lo normal en la ventana degradada, en vez de incluir spans rápidos que siguen siendo saludables y que simplemente caen dentro del mismo intervalo temporal.
+
+<Image img="/images/clickstack/event-deltas/before-after.webp" alt="Modo de comparación en el servicio de pagos, con el rectángulo trazado desde el punto de inflexión del ascenso hasta el borde derecho y la parte inferior apoyada en la línea base de 1 ms" size="lg" />
+
+Las barras de atributos situadas debajo del mapa de calor están ordenadas de mayor a menor divergencia. En este ejemplo, los gráficos de la fila superior muestran las señales más claras: `SpanKind`, `SpanName` y `ScopeName` presentan cada uno una marcada separación entre el naranja y el verde, entre la Selección lenta y el Fondo saludable. Leídos en conjunto, permiten identificar con precisión qué cambió en el punto de inflexión.
+
+Esta es la forma adecuada cuando quieres plantear la pregunta &quot;¿qué cambió?&quot;. Una variante más ajustada sigue el mismo flujo de trabajo: cuando un pequeño grupo de spans lentos aparece en una banda por lo demás tranquila (un breve repunte en el borde derecho, un grupo en medio de un período estable), dibuja en su lugar un recuadro pequeño alrededor de ese grupo. La forma cambia la pregunta: una franja vertical plantea *qué cambió en el tiempo*; un recuadro pequeño y centrado plantea *qué tiene de especial este grupo*.
+
+<div id="slow-vs-fast">
+  ### Caso de uso 2: Lento frente a rápido
+</div>
+
+Cuando el mapa de calor muestra dos poblaciones de latencia claramente separadas en el eje de duración, arrastra un rectángulo ancho que abarque todo el intervalo temporal, pero cubra solo la banda superior, bien separada. La población lenta pasa a ser la Selección; el grueso de las rápidas pasa a ser el Fondo.
+
+<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="Comparación de lento frente a rápido en frontend-proxy con el rectángulo cubriendo solo la banda superior claramente separada, bien alejada del grueso denso" size="lg" />
+
+Dibuja el rectángulo ceñido a la banda superior, con una separación horizontal visible entre esta y el grueso denso. Un rectángulo demasiado amplio que invada la población rápida diluye la divergencia.
+
+La línea límite de 100 s ya es informativa por sí sola: una línea horizontal constante en un número redondo es la señal de un timeout fijo. Si ningún atributo de span diferencia claramente ambas poblaciones, eso también es un resultado útil: te orienta hacia métricas a nivel de host y de runtime (pausas de GC, contención de E/S, latencia del planificador, efectos de caché fría, vecinos ruidosos) en lugar de hacia atributos de span.
+
+Esta es la forma adecuada cuando quieres preguntarte &quot;¿qué hace que los spans lentos sean distintos de los rápidos?&quot; en lugar de ir tras una anomalía concreta. Un atributo divergente apunta a una causa en la ruta de código o en la entrada; una comparación plana apunta a una causa sistémica.
+
+<div id="drill-down">
+  ## Drill-down iterativo
+</div>
+
+Los modos de comparación y distribución son más potentes cuando se usan en cadena. Haz clic en cualquier barra para abrir una ventana emergente con tres acciones:
+
+* **Filtrar**: conservar solo los spans con este valor
+* **Excluir**: eliminar los spans con este valor
+* **Copiar**: copiar el valor al portapapeles
+
+<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="Ventana emergente al hacer clic en una barra de ScopeVersion que muestra los porcentajes de Selección frente a Fondo y las acciones de filtrar, excluir y copiar" size="lg" />
+
+Después de aplicar un filtro o una exclusión, se borra la selección del mapa de calor, el mapa de calor se vuelve a generar para la nueva población y el modo de distribución se reanuda para ese conjunto filtrado. Observa cómo cambia la forma del mapa de calor; un filtro eficaz elimina visiblemente la banda lenta, hace desaparecer la división bimodal o aplana la tendencia ascendente. Repite: detecta el siguiente valor sospechoso, filtra, observa el nuevo mapa de calor y observa las nuevas distribuciones. Unas pocas iteraciones suelen acotar una regresión a uno o dos atributos.
+
+<Note>
+  Los buckets agregados **Other (N)** que agrupan valores de baja frecuencia no se pueden pulsar. Para filtrar un valor específico dentro de ese bucket, usa directamente la [barra de búsqueda](/es/clickstack/features/search).
+</Note>
+
+Cuando la población sea lo bastante pequeña, cambia a la pestaña **Results Table** para inspeccionar traces individuales; tus filtros se mantienen.
+
+<div id="customize">
+  ## Personaliza el mapa de calor
+</div>
+
+El icono de engranaje en la esquina superior derecha del mapa de calor abre el panel lateral de **Display Settings**.
+
+<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Panel lateral de Display Settings con campos de Scale, Value y Count" size="lg" />
+
+| Parámetro | Predeterminado   | Descripción                                                                                                 |
+| --------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Scale** | Log              | Log abarca rangos amplios de latencia; Linear es mejor para distribuciones estrechas y uniformes.           |
+| **Value** | `(Duration)/1e6` | Cualquier expresión numérica: tamaño de la respuesta, tasa de errores o un atributo personalizado de span.  |
+| **Count** | `count()`        | Agregación para el color. Cámbialo por `avg()`, `sum()`, `p95()` o expresiones como `countDistinct(field)`. |
+
+Haz clic en **Apply** para actualizar el mapa de calor; el análisis de atributos de abajo se ajusta en consecuencia.
+
+<Tip>
+  **Mapa de calor en dashboards**
+
+  El mismo mapa de calor también está disponible como un [tile de dashboard](/es/clickstack/features/dashboards/overview#create-a-tile-heatmap), lo que resulta útil cuando quieres supervisar la forma de la distribución a lo largo del tiempo fuera del flujo de drill-down de Event Deltas.
+</Tip>
+
+Escenarios habituales en los que querrás cambiar estos valores predeterminados:
+
+* **Cambia Scale a Linear** cuando el rango de latencia sea estrecho (por ejemplo, un servicio cuyos spans se ejecutan todos entre 5 y 50 ms). La escala Log desperdicia rango vertical en el extremo superior, donde no hay datos.
+* **Representa algo distinto de la duración en el eje Y.** Configurar **Value** como `SpanAttributes.http.response.size` te permite investigar respuestas lentas y *grandes*; una expresión como `if(StatusCode = 'Error', 1, 0)` representa la frecuencia de errores a lo largo del tiempo en todos los servicios.
+* **Colorea según algo distinto del recuento.** Configurar **Count** como `p95(Duration)` colorea cada bucket según la latencia de cola en lugar del volumen, lo que saca a la luz zonas poco frecuentes pero lentas que una vista basada en recuento oculta. `countDistinct(TraceId)` distingue el volumen de traces del volumen de spans cuando un trace produce muchos spans.
+
+<div id="tips">
+  ## Consejos para un uso eficaz
+</div>
+
+Hay algunas prácticas que hacen que Event deltas sea mucho más útil:
+
+* **Primero, filtra por un solo servicio.** La latencia varía mucho entre servicios, y mezclarlos oculta la señal. Usa la barra de búsqueda para limitarte a un `ServiceName` (o a un endpoint) antes de empezar, de modo que el mapa de calor y las distribuciones reflejen una población comparable.
+* **Elige selecciones con un contraste visual claro.** El modo de comparación funciona mejor cuando la banda de Selección se distingue claramente del Fondo; por ejemplo, un período degradado que empieza en un momento reconocible o una cola lenta claramente separada del grueso. Las selecciones que se superponen demasiado con el resto de los datos tienden a mostrar ruido en lugar de la desviación real.
+* **Itera: filtro, mapa de calor, filtro.** Una sola selección rara vez identifica la causa. Toma la primera comparación como una hipótesis, filtra por el valor más divergente y vuelve a examinar el nuevo mapa de calor y las distribuciones. Dos o tres iteraciones suelen bastar para acotar una regresión a uno o dos atributos.
+* **Usa el modo de distribución sin ninguna selección** cuando todavía no se aprecie contraste visual (sabes que hay un problema, pero el mapa de calor se ve uniforme). Aplica un filtro basado en una hipótesis, como solo spans con error, solo spans del cliente o solo un endpoint, y deja que las distribuciones de atributos te indiquen los valores de mayor impacto antes de dibujar cualquier rectángulo.
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+<div id="tab-not-visible">
+  ### La pestaña Event Deltas no está visible
+</div>
+
+La pestaña **Event Deltas** de **Analysis Mode** solo aparece cuando se selecciona una fuente **Trace** con una expresión de duración. Verifica que la fuente de datos esté configurada como de tipo Trace y que tenga datos de span con información de duración.
+
+<div id="few-results">
+  ### Los gráficos de atributos muestran pocos resultados o ninguno
+</div>
+
+Si la muestra es demasiado pequeña (menos de unas pocas docenas de spans), es posible que las distribuciones no sean estadísticamente significativas. Amplía el rango de tiempo o haz menos restrictivos los filtros de búsqueda.

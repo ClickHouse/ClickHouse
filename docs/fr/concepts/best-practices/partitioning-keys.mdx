@@ -1,0 +1,71 @@
+---
+slug: /best-practices/choosing-a-partitioning-key
+sidebarTitle: 'Choisir une clé de partitionnement'
+title: 'Choisir une clé de partitionnement'
+description: 'Page expliquant comment choisir une clé de partitionnement'
+keywords: ['clé de partitionnement']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<Info>
+  **Une technique de gestion des données**
+
+  Le partitionnement est avant tout une technique de gestion des données, et non un outil d’optimisation des requêtes. S’il peut améliorer les performances pour certaines charges de travail, ce ne doit pas être le premier mécanisme utilisé pour accélérer les requêtes ; la clé de partitionnement doit être choisie avec soin, avec une compréhension claire de ses implications, et ne doit être utilisée que lorsqu’elle répond aux besoins du cycle de vie des données ou à des schémas d’accès bien compris.
+</Info>
+
+Dans ClickHouse, le partitionnement organise les données en segments logiques selon une clé définie. Il est spécifié à l’aide de la clause `PARTITION BY` lors de la création de la table et sert couramment à regrouper les lignes par intervalles de temps, catégories ou autres dimensions métier pertinentes. Chaque valeur unique de l’expression de partitionnement forme sa propre partition physique sur disque, et ClickHouse stocke les données dans des parts distinctes pour chacune de ces valeurs. Le partitionnement améliore la gestion des données, simplifie les politiques de rétention et peut être utile pour certains types de requêtes.
+
+Par exemple, considérons la table suivante du jeu de données UK price paid, avec `toStartOfMonth(date)` comme clé de partitionnement.
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+  date Date,
+  town LowCardinality(String),
+  street LowCardinality(String),
+  price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date)
+```
+
+Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer (au[ moins](/fr/reference/settings/session-settings#max_insert_block_size)) une seule part de données contenant toutes les lignes insérées (comme décrit [ici](/fr/concepts/core-concepts/parts)), ClickHouse crée une nouvelle part de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
+
+<Image img="/images/bestpractices/partitions.webp" size="lg" alt="Partitions" />
+
+Le serveur ClickHouse commence par scinder les 4 lignes de l’insertion d’exemple représentée dans le schéma ci-dessus selon leur valeur de clé de partition `toStartOfMonth(date)`. Ensuite, pour chaque partition identifiée, les lignes sont traitées comme d’[habitude](/fr/concepts/core-concepts/parts) en exécutant plusieurs étapes séquentielles (① Tri, ② Découpage en colonnes, ③ Compression, ④ Écriture sur disque).
+
+Pour une explication plus détaillée du partitionnement, nous recommandons [ce guide](/fr/concepts/core-concepts/partitions).
+
+Lorsque le partitionnement est activé, ClickHouse [fusionne](/fr/concepts/core-concepts/merges) les parts de données uniquement au sein d’une même partition, et non entre plusieurs partitions. Nous l’illustrons pour notre table d’exemple ci-dessus :
+
+<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="Partitions" />
+
+<div id="applications-of-partitioning">
+  ## Applications du partitionnement
+</div>
+
+Le partitionnement est un outil puissant pour gérer de grands jeux de données dans ClickHouse, en particulier pour les cas d’usage liés à l’observabilité et à l’analytique. Il permet d’effectuer efficacement les opérations du cycle de vie des données en autorisant la suppression, le déplacement ou l’archivage de partitions entières, souvent alignées sur le temps ou la logique métier, en une seule opération sur les métadonnées. C’est nettement plus rapide et bien moins gourmand en ressources que des opérations de suppression ou de copie au niveau des lignes. Le partitionnement s’intègre également bien aux fonctionnalités de ClickHouse comme le TTL et le stockage hiérarchisé, ce qui permet de mettre en œuvre des politiques de rétention ou des stratégies de stockage à chaud/à froid sans orchestration personnalisée. Par exemple, les données récentes peuvent être conservées sur un stockage rapide adossé à des SSD, tandis que les partitions plus anciennes sont automatiquement déplacées vers un stockage objet moins coûteux.
+
+Bien que le partitionnement puisse améliorer les performances des requêtes pour certaines charges de travail, il peut aussi avoir un impact négatif sur le temps de réponse.
+
+Si la clé de partitionnement ne figure pas dans la clé primaire et que vous filtrez dessus, les utilisateurs peuvent constater une amélioration des performances des requêtes grâce au partitionnement. Voir [ici](/fr/concepts/core-concepts/partitions#query-optimization) pour un exemple.
+
+À l’inverse, si les requêtes doivent interroger plusieurs partitions, les performances peuvent se dégrader en raison d’un nombre total plus élevé de parts. Pour cette raison, les utilisateurs doivent comprendre leurs schémas d’accès avant d’envisager le partitionnement comme une technique d’optimisation des requêtes.
+
+En résumé, les utilisateurs doivent avant tout considérer le partitionnement comme une technique de gestion des données. Pour un exemple de gestion des données, consultez [&quot;Managing Data&quot;](/fr/guides/use-cases/observability/build-your-own/managing-data) dans le guide du cas d’usage observability et [&quot;What are table partitions used for?&quot;](/fr/concepts/core-concepts/partitions#data-management) dans Core Concepts - Table partitions.
+
+<div id="choose-a-low-cardinality-partitioning-key">
+  ## Choisissez une clé de partitionnement à faible cardinalité
+</div>
+
+Il est important de noter qu’un plus grand nombre de parts nuit aux performances des requêtes. ClickHouse renverra donc une erreur [« too many parts »](/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) si le nombre de parts dépasse les limites spécifiées, soit au [total](/fr/reference/settings/merge-tree-settings#max_parts_in_total), soit [par partition](/fr/reference/settings/merge-tree-settings#parts_to_throw_insert).
+
+Choisir la bonne **cardinalité** pour la clé de partitionnement est essentiel. Une clé de partitionnement à forte cardinalité — c’est-à-dire avec un grand nombre de valeurs de partition distinctes — peut entraîner une prolifération de parts de données. Comme ClickHouse ne fusionne pas les parts entre les partitions, un trop grand nombre de partitions se traduit par trop de parts non fusionnées, ce qui finit par déclencher l’erreur « Too many parts ». Les [fusions sont essentielles](/fr/concepts/core-concepts/merges) pour réduire la fragmentation du stockage et optimiser la vitesse des requêtes, mais avec des partitions à forte cardinalité, ce potentiel de fusion est perdu.
+
+À l’inverse, une **clé de partitionnement à faible cardinalité** — avec moins de 100 à 1 000 valeurs distinctes — est généralement optimale. Elle permet de fusionner efficacement les parts, limite la surcharge liée aux métadonnées et évite une création excessive d’objets dans le stockage. En outre, ClickHouse crée automatiquement des index MinMax sur les colonnes de partitionnement, ce qui peut considérablement accélérer les requêtes qui filtrent sur ces colonnes. Par exemple, filtrer par mois lorsqu’une table est partitionnée par `toStartOfMonth(date)` permet au moteur d’ignorer entièrement les partitions non pertinentes et leurs parts.
+
+Bien que le partitionnement puisse améliorer les performances pour certains types de requêtes, il s’agit avant tout d’une fonctionnalité de gestion des données. Dans de nombreux cas, interroger l’ensemble des partitions peut être plus lent qu’utiliser une table non partitionnée, en raison d’une fragmentation accrue des données et d’un plus grand nombre de parts à analyser. Utilisez donc le partitionnement avec discernement et veillez toujours à ce que la clé choisie soit à faible cardinalité et cohérente avec les politiques de cycle de vie de vos données (par ex., la rétention via TTL). Si vous ne savez pas si le partitionnement est nécessaire, il peut être préférable de commencer sans partitionnement, puis d’optimiser plus tard en fonction des schémas d’accès observés.
