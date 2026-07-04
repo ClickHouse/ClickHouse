@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""
+Shared helpers for the catalog-domain generators (table engines, database
+engines, data types, formats): frontmatter parsing/synthesis, matching system
+catalog names to existing pages, and rendering the `| Page | Description |`
+listing tables on index pages.
+"""
+
+import os
+import re
+from pathlib import Path
+
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?", re.DOTALL)
+
+
+def full_transform(migrate, body, title, src_docu, dest, lk):
+    """The Docusaurus->Mintlify body transform sequence migrate.py runs on a
+    migrated page, applied to an embedded full-page description. Verified to
+    reproduce the migrated pages byte-for-byte (modulo genuine docs<->C++
+    content drift)."""
+    issues = []
+    text = migrate.drop_redundant_h1(body, title)
+    text = migrate.transform_heading_anchors(text)
+    json_vars = {}
+    text, image_vars = migrate.transform_imports(
+        text, lk, issues, source_docu_path=Path(src_docu),
+        json_vars=json_vars, dest_path=Path(dest),
+    )
+    text = migrate.transform_use_base_url(text)
+    text = migrate.transform_tocinline(text)
+    text = migrate.transform_iframes(text)
+    text = migrate.transform_admonitions(text)
+    text = migrate.transform_details(text)
+    text = migrate.transform_tabs(text)
+    text = migrate.transform_image_components(text, image_vars)
+    text = migrate.transform_svg_components(text, image_vars)
+    text = migrate.transform_image_logo_to_img(text)
+    text = migrate.transform_static_image_paths(text)
+    text = migrate.transform_inline_anchor(text)
+    text = migrate.transform_vertical_stepper(text)
+    text = migrate.transform_card_primary(text)
+    text = migrate.transform_horizontal_divide(text)
+    text = migrate.transform_two_column_list(text, json_vars)
+    text, _used_runnable = migrate.transform_runnable(text)
+    text = migrate.transform_highlight_comments(text)
+    text = migrate.rewrite_links(text, src_docu, lk, issues, dest_path=Path(dest))
+    text = migrate.prune_unused_mdx_imports(text)
+    text = migrate.strip_snippet_component_imports(text, Path(dest))
+    text = migrate.transform_html_comments(text)
+    text = migrate.ensure_blank_after_imports(text)
+    return text
+
+
+def parse_frontmatter(page):
+    """Parse the frontmatter subset the migrated pages use: `key: value` with
+    optional single/double quotes, values folded onto indented continuation
+    lines, and inline `[a, b]` arrays. Returns {} when there is none."""
+    match = FRONTMATTER_RE.match(page)
+    if not match:
+        return {}
+    # Join folded continuation lines (indented) onto their logical line.
+    logical = []
+    for line in match.group(1).split("\n"):
+        if line[:1].isspace() and logical:
+            logical[-1] += " " + line.strip()
+        else:
+            logical.append(line)
+    fm = {}
+    for line in logical:
+        if ":" not in line or line.lstrip().startswith("#"):
+            continue
+        key, value = line.split(":", 1)
+        value = value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            items = [v.strip().strip("'\"") for v in value[1:-1].split(",")]
+            fm[key.strip()] = [v for v in items if v]
+        elif value.startswith("'") and value.endswith("'") and len(value) >= 2:
+            fm[key.strip()] = value[1:-1].replace("''", "'")
+        else:
+            fm[key.strip()] = value.strip('"')
+    return fm
+
+
+def page_body(page):
+    """The page content with the frontmatter block stripped."""
+    return FRONTMATTER_RE.sub("", page, count=1)
+
+
+def yaml_quote(value):
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def first_sentence(text):
+    """First sentence of a description, single-line, for frontmatter."""
+    text = " ".join(text.split())
+    match = re.match(r"(.+?[.!?])(?:\s|$)", text)
+    return (match.group(1) if match else text)[:300]
+
+
+def normalize_name(name):
+    """Key for matching a catalog name against a page filename: lowercase
+    alphanumerics only, so `EmbeddedRocksDB` matches `embedded-rocksdb` and
+    `AzureQueue` matches `azure-queue`."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def scan_pages(docs_dir, rel_dirs):
+    """Index the existing pages of a domain: {normalized_basename: rel_path}.
+    `rel_dirs` are docs-relative directories, scanned recursively; index and
+    overview pages are skipped."""
+    index = {}
+    for rel_dir in rel_dirs:
+        root = os.path.join(docs_dir, rel_dir)
+        for dirpath, _dirnames, filenames in sorted(os.walk(root)):
+            for filename in sorted(filenames):
+                if not filename.endswith(".mdx"):
+                    continue
+                stem = filename[: -len(".mdx")]
+                if stem in ("index", "overview"):
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, filename), docs_dir)
+                index.setdefault(normalize_name(stem), rel)
+    return index
+
+
+def render_listing(docs_dir, page_ids):
+    """Render the `| Page | Description |` table for an index page from the
+    frontmatter of the listed pages (same data the legacy
+    autogenerate-table-of-contents script used), in the given order."""
+    lines = ["| Page | Description |", "|-----|-----|"]
+    for page_id in page_ids:
+        path = os.path.join(docs_dir, page_id + ".mdx")
+        if not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            fm = parse_frontmatter(f.read())
+        title = fm.get("title") or os.path.basename(page_id)
+        description = " ".join(str(fm.get("description", "")).split())
+        # Escape characters that would break the markdown table.
+        title = title.replace("|", "\\|")
+        description = description.replace("|", "\\|")
+        lines.append(f"| [{title}](/{page_id}) | {description} |")
+    return "\n".join(lines) + "\n"
