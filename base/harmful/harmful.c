@@ -194,7 +194,12 @@ TRAP(lgamma)
 TRAP(lgammaf)
 TRAP(lgammal)
 TRAP(nftw)
+#ifndef USE_MUSL
+/// In a static musl link this trap wins over musl's own definition and is then reached from
+/// inside libc itself: musl's strptime calls nl_langinfo for locale-dependent formats.
+/// musl's implementation returns pointers to constant strings, so it is not harmful there.
 TRAP(nl_langinfo)
+#endif
 TRAP(putc_unlocked)
 /** In  the current POSIX.1 specification (POSIX.1-2008), readdir() is not required to be thread-safe.  However, in modern
   * implementations (including the glibc implementation), concurrent calls to readdir() that specify different directory streams
