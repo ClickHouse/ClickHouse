@@ -555,6 +555,16 @@
             margin-left: 0;
         }
 
+        /* In the drop-down the button becomes a third full-width story below user/password,
+           overlapping their bottom border for a single seam. */
+        #connection-dropdown #cloud-login
+        {
+            flex: 1 1 100%;
+            width: auto;
+            margin-left: 0;
+            margin-top: -1px;
+        }
+
         /* The connection-status dot sits at the right end of the url (first) row. The inline
            layout relies on its static position after the url input; in the wrapped two-story
            layout that position moves to the next row, so pin it explicitly instead. */
@@ -1183,6 +1193,112 @@
             margin-left: -1px;
         }
 
+        /* Shown (via `updateCloudLoginVisibility`) only when the configured URL is a ClickHouse
+           Cloud endpoint; it offers OAuth device-code login as an alternative to typing a
+           username and password. On the single inline row it sits just to the right of the
+           password field. */
+        #cloud-login
+        {
+            margin-left: -1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+            font-weight: bold;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            border: 1px solid var(--border-color);
+        }
+
+        #cloud-login[hidden]
+        {
+            display: none;
+        }
+
+        #cloud-login:hover, #cloud-login:focus
+        {
+            color: var(--button-active-text-color);
+            background-color: var(--button-active-color);
+        }
+
+        /* When the Cloud login button is visible, make room for it on the single inline row by
+           shrinking the url and credential inputs; the four widths sum to 100%. */
+        #inputs.has-cloud-login #url
+        {
+            width: 44%;
+        }
+
+        #inputs.has-cloud-login #user, #inputs.has-cloud-login #password
+        {
+            width: calc(13% + 1px);
+        }
+
+        #inputs.has-cloud-login #cloud-login
+        {
+            width: 30%;
+        }
+
+        /* Modal that guides the user through the Cloud OAuth device-code login. */
+        #cloud-login-modal
+        {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--shadow-color);
+            backdrop-filter: blur(2px);
+        }
+
+        #cloud-login-modal[hidden]
+        {
+            display: none;
+        }
+
+        #cloud-login-box
+        {
+            position: relative;
+            max-width: 32rem;
+            padding: 1.5rem 2rem;
+            background: var(--background-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            color: var(--text-color);
+        }
+
+        #cloud-login-box h2
+        {
+            margin-top: 0;
+        }
+
+        #cloud-login-close
+        {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.75rem;
+            border: none;
+            background: none;
+            font-size: 1.5rem;
+            line-height: 1;
+            cursor: pointer;
+            color: var(--text-color);
+        }
+
+        #cloud-login-code
+        {
+            font-size: 1.75rem;
+            font-weight: bold;
+            letter-spacing: 0.1em;
+            text-align: center;
+            user-select: all;
+        }
+
+        #cloud-login-error
+        {
+            color: var(--element-color-fail, #C00);
+        }
+
         input.ok
         {
             color: var(--element-color-ok);
@@ -1537,7 +1653,7 @@
         </div>
         <form id="controls">
             <div id="inputs">
-                <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input name="url" form="controls" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" form="controls" spellcheck="false" class="monospace shadow" id="user" type="text" value="" placeholder="user" /><input name="password" form="controls" class="monospace shadow" id="password" type="password" placeholder="password" /><button type="button" class="monospace shadow" id="cloud-login" hidden title="Authenticate using your ClickHouse Cloud account instead of a username and password">Log in with ClickHouse Cloud</button>
             </div>
             <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
             <div id="query-params"></div>
@@ -1587,6 +1703,19 @@
                 <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
             </div>
             <button id="download-button">Download</button>
+        </div>
+    </div>
+    <div id="cloud-login-modal" hidden>
+        <div id="cloud-login-box" class="shadow">
+            <button type="button" id="cloud-login-close" title="Close">×</button>
+            <h2>Log in with ClickHouse Cloud</h2>
+            <p id="cloud-login-status"></p>
+            <div id="cloud-login-code-block" hidden>
+                <p>Confirm this code in the browser tab that just opened:</p>
+                <p id="cloud-login-code" class="monospace"></p>
+                <p>If the tab did not open, visit <a id="cloud-login-link" target="_blank" rel="noopener">this link</a>.</p>
+            </div>
+            <p id="cloud-login-error" hidden></p>
         </div>
     </div>
 </body>
@@ -3526,6 +3655,30 @@ if (color_modes_from_url) {
 let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
+let inputs_elem = document.getElementById('inputs');
+let cloud_login_elem = document.getElementById('cloud-login');
+
+/// The ClickHouse JWT obtained via "Log in with ClickHouse Cloud" (see the section below).
+/// While set, requests authenticate with `Authorization: Bearer <jwt>` instead of the
+/// username/password query parameters.
+let jwt_token = '';
+
+/// Credentials appended to a request URL. Empty when a Cloud JWT is in use, because the JWT
+/// travels in the `Authorization` header instead (see `authorizationHeader`).
+function credentialParams(user, password) {
+    if (jwt_token) return '';
+    let params = '';
+    if (user) params += '&user=' + encodeURIComponent(user);
+    if (password) params += '&password=' + encodeURIComponent(password);
+    return params;
+}
+
+/// Value for the `Authorization` request header. When authenticated with a Cloud JWT we send
+/// it as a Bearer token; otherwise we send the literal `never` sentinel, which tells the server
+/// to ignore any Basic credentials the browser may have remembered for this origin.
+function authorizationHeader() {
+    return jwt_token ? ('Bearer ' + jwt_token) : 'never';
+}
 let progressEl = document.getElementById('query-progress');
 let resultEl = document.getElementById('query-result');
 let logoEl = document.getElementById('logo-container');
@@ -3566,6 +3719,216 @@ if (pass_from_url) {
             + replaced_pass.toString() + window.location.hash);
     }
 }
+
+/// --- Log in with ClickHouse Cloud (OAuth 2.0 device authorization grant) ---
+///
+/// This mirrors `clickhouse-client --login` against Cloud endpoints (see `CloudJWTProvider`
+/// in `src/Client/CloudJWTProvider.cpp`): request a device code from the identity provider,
+/// have the user confirm it in the browser, poll for the resulting IdP token, then exchange
+/// that token for a ClickHouse JWT scoped to the target host. The JWT then authenticates every
+/// request via the `Authorization: Bearer` header (see
+/// `docs/en/operations/external-authenticators/jwt.md`) instead of a username and password.
+///
+/// The endpoint constants below are copied verbatim from
+/// `CloudJWTProvider::managed_service_endpoints`.
+const CLOUD_AUTH_ENDPOINTS = [
+    {
+        suffix: '.clickhouse-staging.com',
+        auth_url: 'https://auth.control-plane.clickhouse-staging.com',
+        client_id: 'rpEkizLMmAU95MP4JL8ERefbVXtUQSFs',
+        api_host: 'https://console-api-internal.clickhouse-staging.com',
+    },
+    {
+        suffix: '.clickhouse.cloud',
+        auth_url: 'https://auth.clickhouse.cloud',
+        client_id: '9Wf1YpSocOg5sp7GOcCjtrt6DWRAJ19S',
+        api_host: 'https://console-api-internal.clickhouse.cloud',
+    },
+];
+
+/// The matching Cloud endpoint config for the configured server URL, or null when the host is
+/// not a recognized Cloud endpoint (in which case the login button stays hidden).
+function cloudEndpointForURL(url_string) {
+    let host;
+    try { host = new URL(url_string).hostname; } catch (e) { return null; }
+    for (const endpoint of CLOUD_AUTH_ENDPOINTS) {
+        if (host.endsWith(endpoint.suffix)) return endpoint;
+    }
+    return null;
+}
+
+/// Show the "Log in with ClickHouse Cloud" button only for Cloud endpoints. Leaving a Cloud
+/// host also drops any JWT minted for it, since it is not valid elsewhere.
+function updateCloudLoginVisibility() {
+    const is_cloud = cloudEndpointForURL(url_elem.value) !== null;
+    cloud_login_elem.hidden = !is_cloud;
+    inputs_elem.classList.toggle('has-cloud-login', is_cloud);
+    if (!is_cloud && jwt_token) clearCloudLogin();
+}
+
+/// Drop the Cloud JWT and revert to username/password authentication.
+function clearCloudLogin() {
+    jwt_token = '';
+    cloud_login_elem.textContent = 'Log in with ClickHouse Cloud';
+    [user_elem, password_elem].forEach(e => { e.disabled = false; });
+    resetConnectionScopedState();
+    checkCredentials();
+}
+
+/// A tiny controller over the login modal (`#cloud-login-modal`).
+function openCloudLoginModal() {
+    const modal = document.getElementById('cloud-login-modal');
+    const status_elem = document.getElementById('cloud-login-status');
+    const code_block = document.getElementById('cloud-login-code-block');
+    const code_elem = document.getElementById('cloud-login-code');
+    const link_elem = document.getElementById('cloud-login-link');
+    const error_elem = document.getElementById('cloud-login-error');
+
+    status_elem.textContent = '';
+    code_block.hidden = true;
+    error_elem.hidden = true;
+    error_elem.textContent = '';
+    modal.hidden = false;
+
+    return {
+        setStatus(text) { status_elem.textContent = text; },
+        showCode(user_code, verification_uri) {
+            code_elem.textContent = user_code;
+            link_elem.href = verification_uri;
+            code_block.hidden = false;
+        },
+        showError(text) {
+            status_elem.textContent = '';
+            code_block.hidden = true;
+            error_elem.textContent = text;
+            error_elem.hidden = false;
+        },
+        close() { modal.hidden = true; },
+    };
+}
+
+let cloud_login_in_progress = false;
+
+async function cloudLogin() {
+    if (cloud_login_in_progress) return;
+    const endpoint = cloudEndpointForURL(url_elem.value);
+    if (!endpoint) return;
+
+    let hostname;
+    try { hostname = new URL(url_elem.value).hostname; }
+    catch (e) { alert('The server URL is not valid.'); return; }
+
+    /// Open the browser tab *synchronously*, while the click's user activation is still in
+    /// effect. Opening it later (after the `await` for the device code) counts as a
+    /// programmatic pop-up and is blocked by the browser. We start it blank and navigate it to
+    /// the verification URL once we have it; `noopener` cannot be used here because we need to
+    /// keep the reference to navigate it.
+    const login_window = window.open('', '_blank');
+    let login_window_navigated = false;
+
+    cloud_login_in_progress = true;
+    cloud_login_elem.disabled = true;
+    const previous_label = cloud_login_elem.textContent;
+    cloud_login_elem.textContent = 'Logging in…';
+    const modal = openCloudLoginModal();
+
+    try {
+        /// 1. Request a device code from the identity provider.
+        modal.setStatus('Requesting a login code…');
+        const device_body =
+            'client_id=' + encodeURIComponent(endpoint.client_id) +
+            '&scope=' + encodeURIComponent('openid profile email offline_access') +
+            '&audience=' + encodeURIComponent('token-exchange');
+        const device_response = await fetch(endpoint.auth_url + '/oauth/device/code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: device_body,
+        });
+        if (!device_response.ok)
+            throw new Error('Failed to request device code: ' + device_response.status + ' ' + (await device_response.text()));
+        const device = await device_response.json();
+
+        /// 2. Ask the user to confirm the code in their browser. `verification_uri_complete`
+        ///    already carries the code, so we navigate the tab opened above to it, and also show
+        ///    the code in the modal as a fallback in case the pop-up was blocked.
+        modal.showCode(device.user_code, device.verification_uri_complete);
+        if (login_window && !login_window.closed) {
+            login_window.location.href = device.verification_uri_complete;
+            login_window_navigated = true;
+        }
+
+        /// 3. Poll the token endpoint until the user completes the login (or the code expires).
+        const deadline = Date.now() + (device.expires_in || 300) * 1000;
+        let interval_ms = (device.interval || 5) * 1000;
+        let access_token = '';
+        while (Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, interval_ms));
+            const token_body =
+                'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:device_code') +
+                '&device_code=' + encodeURIComponent(device.device_code) +
+                '&client_id=' + encodeURIComponent(endpoint.client_id);
+            const token_response = await fetch(endpoint.auth_url + '/oauth/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: token_body,
+            });
+            const token_json = await token_response.json().catch(() => ({}));
+            if (token_response.ok) {
+                access_token = token_json.access_token;
+                break;
+            }
+            /// `authorization_pending` and `slow_down` are the expected "keep waiting" replies.
+            const error = token_json.error || 'unknown_error';
+            if (error === 'slow_down') { interval_ms += 5000; continue; }
+            if (error === 'authorization_pending') continue;
+            throw new Error('Login failed: ' + (token_json.error_description || error));
+        }
+        if (!access_token) throw new Error('Login timed out. Please try again.');
+
+        /// 4. Exchange the IdP token for a ClickHouse JWT scoped to this host.
+        modal.setStatus('Authenticating with ' + hostname + '…');
+        const exchange_response = await fetch(endpoint.api_host + '/.api/auth/tokenExchange', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + access_token,
+                'Content-Type': 'application/json; charset=utf-8',
+            },
+            body: JSON.stringify({ hostname }),
+        });
+        if (!exchange_response.ok)
+            throw new Error('Token exchange failed: ' + exchange_response.status + ' ' + (await exchange_response.text()));
+        const exchange_json = await exchange_response.json();
+        jwt_token = exchange_json.token;
+        if (!jwt_token) throw new Error('Token exchange returned an empty token.');
+
+        /// Switch the UI into "logged in" mode: the JWT now replaces username/password.
+        cloud_login_elem.textContent = 'Logged in to ClickHouse Cloud (log out)';
+        [user_elem, password_elem].forEach(e => { e.disabled = true; e.classList.remove('fail'); });
+        resetConnectionScopedState();
+        checkCredentials();
+        modal.close();
+    } catch (e) {
+        jwt_token = '';
+        cloud_login_elem.textContent = previous_label;
+        /// Close the tab only if it is still blank (we never sent the user there); if they are
+        /// already in the middle of confirming, leave it alone.
+        if (login_window && !login_window.closed && !login_window_navigated) login_window.close();
+        modal.showError(e.message || String(e));
+    } finally {
+        cloud_login_in_progress = false;
+        cloud_login_elem.disabled = false;
+    }
+}
+
+cloud_login_elem.addEventListener('click', () => {
+    if (jwt_token) clearCloudLogin();
+    else cloudLogin();
+});
+document.getElementById('cloud-login-close').addEventListener('click', () => {
+    document.getElementById('cloud-login-modal').hidden = true;
+});
+url_elem.addEventListener('input', updateCloudLoginVisibility);
+updateCloudLoginVisibility();
 
 async function ping(url) {
     try {
@@ -3629,8 +3992,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1&default_format=JSON' + url_params;
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    url += credentialParams(user, password);
 
     /// Whether this request still belongs to the active connection. Re-evaluated after the
     /// `await` (not captured up front) because the connection can change while the fetch is in
@@ -3639,7 +4001,7 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 
     let response;
     try {
-        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await fetch(url, { method: "POST", body: query, headers: { 'Authorization': authorizationHeader() } });
     } catch (e) {
         if (!quiet && belongs_to_active_connection()) {
             clear();
@@ -3667,10 +4029,9 @@ async function getServerStatus(server_address, user, password) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         'add_http_cors_header=1&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    url += credentialParams(user, password);
     try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
+        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': authorizationHeader() } });
         if (!response.ok) return false;
         json = await response.json();
         return json;
@@ -4397,8 +4758,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
         /// Ask server to allow cross-domain requests.
         'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    url += credentialParams(user, password);
     url += '&default_format=' + default_format + '&enable_http_compression=1';
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
@@ -4424,7 +4784,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
     reply = '';
     try {
         response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
-            headers: { 'Authorization': 'never' } });
+            headers: { 'Authorization': authorizationHeader() } });
 
         format = response.headers.get('X-ClickHouse-Format') ?? default_format;
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
@@ -5136,7 +5496,7 @@ const tabs_elem = document.getElementById('tabs');
 /// three inputs carry `form="controls"`, so once moved out of the form's subtree they still count
 /// as its fields: pressing `Enter` in url/user/password keeps submitting `#controls` (running the
 /// query), matching the inline single-tab layout.
-const inputs_elem = document.getElementById('inputs');
+/// `inputs_elem` is declared earlier (near the other connection-field references).
 const controls_elem = document.getElementById('controls');
 const connection_menu_elem = document.getElementById('connection-menu');
 const connection_key_elem = document.getElementById('connection-key');
@@ -6956,8 +7316,7 @@ function buildCompletionUrl() {
     const password = password_elem.value;
     const server_address = url_elem.value;
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    url += credentialParams(user, password);
     url += '&default_format=TSVRaw';
     return url;
 }
@@ -6991,7 +7350,7 @@ async function loadCompletions() {
         const response = await fetch(buildCompletionUrl(), {
             method: "POST",
             body: COMPLETION_QUERY,
-            headers: { 'Authorization': 'never' },
+            headers: { 'Authorization': authorizationHeader() },
         });
         /// The connection settings changed while loading — discard this stale result.
         if (generation !== connectionGeneration) {
@@ -8237,8 +8596,7 @@ document.getElementById('download-button').addEventListener('click', async funct
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    url += credentialParams(user, password);
 
     for (const [name, value] of Object.entries(last_params_for_download))
     {
@@ -8246,6 +8604,35 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
 
     let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
+
+    // A form submission cannot carry an `Authorization` header, so when authenticated with a
+    // Cloud JWT we fetch the result with the Bearer token and save it from a blob instead.
+    if (jwt_token) {
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                body: downloadQuery,
+                headers: { 'Authorization': authorizationHeader() },
+            });
+            if (!response.ok) {
+                alert('Download failed: ' + (await response.text()));
+                return;
+            }
+            const blob = await response.blob();
+            const object_url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = object_url;
+            link.download = 'result.' + extension;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(object_url);
+        } catch (e) {
+            alert('Download failed: ' + (e.message || String(e)));
+        }
+        document.getElementById('download-dropdown').classList.remove('show');
+        return;
+    }
 
     // Create a form and submit it to trigger download
     const form = document.createElement('form');
