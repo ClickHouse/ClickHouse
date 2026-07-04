@@ -11,7 +11,10 @@
 -- All plan-affecting settings are pinned in each query's SETTINGS clause (query-level settings
 -- take precedence over the CI settings randomizer): read-in-order enabled so the deferral path
 -- is live; spilling off so joinMayHaveDelayedBlocks is false; join side pinned so the deferral
--- is otherwise satisfiable and preservesLeftBlockOrder() is the only remaining gate.
+-- is otherwise satisfiable and preservesLeftBlockOrder() is the only remaining gate. Parallel
+-- replicas is pinned off too: it is a plan-affecting setting the ParallelReplicas CI variant
+-- turns on in the default profile, under which the MergeTree read is remote and the local
+-- read-in-order / topK plan (and the direct key-value join path) do not apply.
 --
 -- The join is one-to-one (each left key matches exactly one right row), so the correctness probes
 -- return the exact top-10 pk 0..9. That makes the pushed limit's value and side observable: a
@@ -51,7 +54,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
@@ -64,7 +67,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
@@ -77,7 +80,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
@@ -109,7 +112,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -123,7 +126,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
@@ -141,7 +144,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -160,7 +163,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -184,7 +187,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -198,7 +201,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
@@ -214,7 +217,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%';
 
@@ -240,7 +243,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -254,7 +257,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
@@ -270,7 +273,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
@@ -284,7 +287,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0,
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
@@ -296,13 +299,13 @@ SETTINGS enable_analyzer = 1;
 SELECT tl_04499.pk
 FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
 ORDER BY tl_04499.pk LIMIT 10
-SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0,
+SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 SELECT tl_04499.pk
 FROM tl_04499 LEFT ALL JOIN tr_04499 ON tl_04499.j = tr_04499.j
 ORDER BY tl_04499.pk LIMIT 10
-SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0,
+SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
     max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 -- The pass-1 deferral must be algorithm-aware about spilling. A nonzero max_bytes_*_before_external_join
@@ -329,7 +332,7 @@ SELECT count() FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0
 ) WHERE explain LIKE '%Limit' AND explain NOT LIKE '%LIMIT%'
 SETTINGS enable_analyzer = 1;
 
@@ -342,7 +345,7 @@ SELECT count() > 0 FROM (
         query_plan_enable_optimizations = 1, optimize_read_in_order = 1,
         query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         query_plan_top_k_through_join = 1, query_plan_max_limit_for_top_k_optimization = 1000,
-        query_plan_join_swap_table = 0
+        query_plan_join_swap_table = 0, enable_parallel_replicas = 0
 ) WHERE explain ILIKE '%Read type: InOrder%'
 SETTINGS enable_analyzer = 1;
 
@@ -350,7 +353,7 @@ SETTINGS enable_analyzer = 1;
 SELECT tl_04499.pk
 FROM tl_04499 LEFT ANY JOIN trd_04499 ON tl_04499.j = trd_04499.j
 ORDER BY tl_04499.pk LIMIT 10
-SETTINGS join_algorithm = 'direct', enable_analyzer = 1, query_plan_join_swap_table = 0;
+SETTINGS join_algorithm = 'direct', enable_analyzer = 1, query_plan_join_swap_table = 0, enable_parallel_replicas = 0;
 
 DROP TABLE tl_04499;
 DROP TABLE tr_04499;

@@ -37,12 +37,15 @@ INSERT INTO tr_04500 SELECT (number % 8)::UInt64 + 4, number + 4 FROM numbers(4)
 -- Pin the whole read-in-order trio on every query (the stateless runner randomizes all three): with
 -- query_plan_read_in_order = 0 the in-order LimitBy consumer is never planted, so the query is correct
 -- even on an unfixed binary and the guard goes blind. Spilling is pinned off and join_swap_table off so
--- preservesLeftBlockOrder() is the only remaining gate.
+-- preservesLeftBlockOrder() is the only remaining gate. Parallel replicas is pinned off too: it is a
+-- plan-affecting setting the ParallelReplicas CI variant enables in the default profile, under which
+-- the MergeTree read is remote and the local read-in-order LimitBy plan does not apply (the InOrder
+-- plan probe would then read 0 instead of the expected 1).
 
 SELECT count() FROM (
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
@@ -50,7 +53,7 @@ SELECT count() FROM (
 SELECT count() FROM (
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'prefer_partial_merge', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'prefer_partial_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
@@ -58,7 +61,7 @@ SELECT count() FROM (
 SELECT count() FROM (
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
@@ -70,7 +73,7 @@ SELECT count() FROM (
     EXPLAIN PLAN
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'partial_merge', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%';
@@ -82,7 +85,7 @@ SELECT count() FROM (
 SELECT count() FROM (
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
@@ -91,7 +94,7 @@ SELECT count() > 0 FROM (
     EXPLAIN PLAN
     SELECT a FROM tl_04500 LEFT ALL JOIN tr_04500 ON tl_04500.j = tr_04500.j
     LIMIT 3 BY a
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0,
+    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 0, enable_parallel_replicas = 0,
         optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
         max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 ) WHERE explain ILIKE '%Read type: InOrder%';

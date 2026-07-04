@@ -15,6 +15,12 @@ INSERT INTO t2_04498 VALUES (0,0),(4,42),(5,50);
 
 SET optimize_distinct_in_order = 1;
 
+-- read-in-order-through-join is a local-coordinator plan optimization. Under parallel replicas the
+-- MergeTree read is remote (ReadFromRemoteParallelReplicas), so the sorted consumer is never planted
+-- on the local plan and the InOrder plan probes below would read 0 instead of the expected 1. The
+-- ParallelReplicas CI variant enables parallel replicas in the default profile, so pin it off here.
+SET enable_parallel_replicas = 0;
+
 -- Pin the whole read-in-order trio on every DISTINCT query below. buildInputOrderInfo(DistinctStep)
 -- only traverses the join when query_plan_read_in_order_through_join is on (optimizeReadInOrder.cpp),
 -- and the sorted consumer is only planted when optimize_read_in_order / query_plan_read_in_order are on.
