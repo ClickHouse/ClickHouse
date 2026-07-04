@@ -695,20 +695,6 @@ static bool computePreserveConstColumns(const ContextPtr & context, const std::s
     return !format->expectMaterializedColumns() || format->supportsColumnSchema();
 }
 
-static bool computeSupportsColumnSchema(const ContextPtr & context, const std::shared_ptr<UserDefinedWebAssemblyFunction> & udf)
-{
-    const String fmt = udf->getSettings().getValue("serialization_format").safeGet<String>();
-    StringWithMemoryTracking dummy_buf;
-    WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
-    Block sample_block;
-    size_t arg_idx = 0;
-    for (const auto & arg : udf->getArguments())
-        sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
-    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
-    return format->supportsColumnSchema();
-}
-
-
 class FunctionUserDefinedWasm final : public IFunction
 {
 public:
@@ -719,7 +705,6 @@ public:
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
         , preserve_const_columns(computePreserveConstColumns(context, user_defined_function))
-        , supports_column_schema(computeSupportsColumnSchema(context, user_defined_function))
         , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
@@ -966,11 +951,13 @@ private:
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
             /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
-            /// For formats that support column schema (e.g. ColumnBinary), skip the cast
-            /// to allow type narrowing — the format writes the actual type tag and the
-            /// WASM side casts up as needed.
+            /// ColumnBinary's descriptor only encodes a coarse width class (COL_FIXED8/16/32/64),
+            /// not exact signedness — a UInt8(255) and an Int8(-1) both serialize to the same
+            /// single 0xff byte, so a guest reading a declared Int32 has no way to tell them
+            /// apart. Always cast here regardless of format until the wire format carries
+            /// real logical type/signedness information.
             const DataTypePtr & declared_type = declared_arguments[i];
-            if (!supports_column_schema && !arguments[i].type->equals(*declared_type))
+            if (!arguments[i].type->equals(*declared_type))
                 column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
             arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
         }
@@ -983,7 +970,6 @@ private:
     Strings argument_names;
     ContextPtr context;
     bool preserve_const_columns;
-    bool supports_column_schema;
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
