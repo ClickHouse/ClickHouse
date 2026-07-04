@@ -182,13 +182,13 @@ Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rh
     const auto * lhs_data = chars.data() + p1 * n;
     const auto * rhs_data = rhs.chars.data() + p2 * n;
 
-    Int64 res = memcmpSmallAllowOverflow15(lhs_data, rhs_data, n);
+    Int64 res = compare(lhs_data, rhs_data);
 
     if (res < 0)
     {
         const auto * lhs_end = chars.data() + chars.size();
         lhs_data += n;
-        while (lhs_data < lhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) < 0))
+        while (lhs_data < lhs_end && (compare(lhs_data, rhs_data) < 0))
         {
             --res;
             lhs_data += n;
@@ -198,7 +198,7 @@ Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rh
     {
         const auto * rhs_end = rhs.chars.data() + rhs.chars.size();
         rhs_data += n;
-        while (rhs_data < rhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) > 0))
+        while (rhs_data < rhs_end && (compare(lhs_data, rhs_data) > 0))
         {
             ++res;
             rhs_data += n;
@@ -246,7 +246,7 @@ struct ColumnFixedString::ComparatorBase
 
     ALWAYS_INLINE int compare(size_t lhs, size_t rhs) const
     {
-        int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
+        int res = parent.compare(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n);
 
         return res;
     }
@@ -271,7 +271,7 @@ size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end,
         return begin;
 
     const UInt8 * ref = chars.data() + begin * n;
-    auto equals = [&](size_t i) { return 0 == memcmpSmallAllowOverflow15(chars.data() + i * n, ref, n); };
+    auto equals = [&](size_t i) { return 0 == compare(chars.data() + i * n, ref); };
 
     /// A fixed-size memcmp is cheap, so use a longer linear probe (the default is 8).
     static constexpr size_t linear_probe = 16;

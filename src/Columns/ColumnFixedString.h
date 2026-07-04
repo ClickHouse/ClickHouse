@@ -143,6 +143,14 @@ public:
 
     void updateHashFast(SipHash & hash) const override;
 
+    ALWAYS_INLINE int compare(const UInt8 * a, const UInt8 * b) const
+    {
+        if (n & 0x0F)
+            return memcmpSmallAllowOverflow15(a, b, n);
+        else
+            return memcmpSmallMultipleOf16(a, b, n);
+    }
+
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
 #else
@@ -151,7 +159,7 @@ public:
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
         chassert(this->n == rhs.n);
-        return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
+        return compare(chars.data() + p1 * n, rhs.chars.data() + p2 * n);
     }
 
     [[nodiscard]] Int64 compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const final;
