@@ -2412,7 +2412,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         }
 
         auto nested_type = array_type->getNestedType();
-        if (is_null_mode && nested_type->canBeInsideNullable())
+        if (nested_type->canBeInsideNullable())
             nested_type = makeNullable(nested_type);
         return std::make_shared<DataTypeArray>(nested_type);
     }

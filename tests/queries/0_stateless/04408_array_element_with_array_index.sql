@@ -7,11 +7,11 @@ SELECT [10, 20, 30, 40][[]::Array(Int32)];
 SELECT ['a', 'b', 'c'][[-1, -2]];
 SELECT [10, 20, 30][[-1, 1]];
 
--- Out of bounds (Zero mode - returns default)
+-- Out of bounds (returns NULL for array-index mode)
 SELECT [10, 20, 30][[1, 5, 2]];
 SELECT ['a', 'b'][[1, 3]];
 
--- Index zero (treated as OOB in non-const context)
+-- Index zero (treated as OOB)
 SELECT [10, 20, 30][[0, 1, 2]];
 
 -- arrayElementOrNull mode (OOB -> NULL)
@@ -98,3 +98,10 @@ INSERT INTO test_const_src VALUES ([1, 3]), ([2, 2, 1]), ([3]);
 SELECT [100, 200, 300][idx] FROM test_const_src;
 SELECT arrayElementOrNull([100, 200, 300], idx) FROM test_const_src;
 DROP TABLE test_const_src;
+
+-- Nullable(Array(T)) source: NULL rows should produce array of NULLs
+DROP TABLE IF EXISTS test_nullable_arr;
+CREATE TABLE test_nullable_arr (arr Nullable(Array(UInt8)), idx Array(UInt32)) ENGINE = Memory;
+INSERT INTO test_nullable_arr VALUES ([10, 20, 30], [1, 2]), (NULL, [1, 2]), ([5, 6], [2]);
+SELECT arr[idx] FROM test_nullable_arr;
+DROP TABLE test_nullable_arr;
