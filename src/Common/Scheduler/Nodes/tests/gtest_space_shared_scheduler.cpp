@@ -98,6 +98,15 @@ struct SpaceSharedResourceHolder
         f.get();
     }
 
+    /// Blocks until the scheduler thread has drained all events enqueued so far (FIFO barrier).
+    void sync()
+    {
+        std::promise<void> p;
+        auto f = p.get_future();
+        t.scheduler.event_queue.enqueue([&] { p.set_value(); });
+        f.get();
+    }
+
     void registerResource()
     {
         std::promise<void> p;
@@ -835,67 +844,165 @@ TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
 }
 
 
-/// Perf smoke test. Measures scheduler throughput for reclaimable-related operations. The iteration count
-/// is tiny by default (functional coverage); set env `SCHED_PERF_ITERS` to a large value for a manual
-/// perf run. Reports ops/sec via a test property and to stderr.
-TEST(SchedulerSpaceShared, ReclaimablePerf)
+/// Reads `SCHED_PERF_ITERS` (default 1000: functional coverage). Set it large for a manual perf run,
+/// ideally against a non-sanitizer release build (`build_release/src/unit_tests_dbms
+/// --gtest_filter='*ReclaimablePerf*'`).
+static size_t perfIters()
 {
-    size_t iters = 1000;
     if (const char * env = std::getenv("SCHED_PERF_ITERS")) // NOLINT(concurrency-mt-unsafe): test setup, single-threaded
     {
         if (Int64 v = strtoll(env, nullptr, 10); v > 0)
-            iters = static_cast<size_t>(v);
+            return static_cast<size_t>(v);
     }
+    return 1000;
+}
 
-    SpaceSharedTest t;
-    SpaceSharedResourceHolder r(t);
+static void reportPerf(const String & name, size_t ops, double seconds)
+{
+    double ops_per_sec = seconds > 0 ? static_cast<double>(ops) / seconds : 0.0;
+    double ns_per_op = ops > 0 ? seconds * 1e9 / static_cast<double>(ops) : 0.0;
+    fmt::print(stderr, "[ perf     ] {:<34} {:>9.1f} ns/op   {:>14.0f} ops/sec\n", name, ns_per_op, ops_per_sec);
+}
+
+/// Builds `limit -> fair^depth -> queue`; returns {limit, leaf queue}. `depth` internal fair nodes let us
+/// measure how scheduler cost scales with hierarchy depth (number of internal nodes on the root-leaf path).
+static std::pair<AllocationLimit *, AllocationQueue *> buildChain(SpaceSharedResourceHolder & r, size_t depth)
+{
     AllocationLimit * limit = r.addLimit("/", 1000000000);
-    AllocationQueue * queue = r.addQueue("/queue");
-    r.registerResource();
-    r.setSoftLimit(limit, 500000000); // high enough that this workload never spills here
-
-    auto report = [&](const char * name, size_t ops, double seconds)
+    ISpaceSharedNode * parent = limit;
+    String path;
+    for (size_t i = 0; i < depth; ++i)
     {
-        double ops_per_sec = seconds > 0 ? static_cast<double>(ops) / seconds : 0.0;
-        RecordProperty(fmt::format("{}_ops_per_sec", name), std::to_string(static_cast<Int64>(ops_per_sec)));
-        fmt::print(stderr, "[ perf     ] {}: {} ops in {:.3f}s = {:.0f} ops/sec\n", name, ops, seconds, ops_per_sec);
-    };
-
-    // (a) increase/decrease churn on a single running allocation.
-    {
-        SpillableAllocation a(queue, "a", 1000);
-        Stopwatch sw;
-        for (size_t i = 0; i < iters; ++i)
-        {
-            a.setSize(2000);
-            a.setSize(1000);
-        }
-        report("increase_decrease", 2 * iters, sw.elapsedSeconds());
+        path += fmt::format("/f{}", i);
+        parent = r.addFair(path, parent);
     }
+    AllocationQueue * queue = r.addQueueUnder(path + "/q", parent);
+    return {limit, queue};
+}
 
-    // (b) setReclaimable churn (aggregate propagation to the root on every toggle).
+/// Isolates the pure scheduler-thread cost of `selectAllocationToSpill` (the spill victim descent): runs
+/// the loop entirely on the scheduler thread, so there is no cross-thread round-trip or event-queue cost.
+static double measureDescent(SpaceSharedTest & t, AllocationLimit * limit, size_t n)
+{
+    std::promise<double> pr;
+    auto fut = pr.get_future();
+    t.scheduler.event_queue.enqueue([&, limit, n]
     {
+        String details;
+        ResourceAllocation * sink = nullptr;
+        Stopwatch sw;
+        for (size_t i = 0; i < n; ++i)
+            sink = limit->selectAllocationToSpill(1, details);
+        double seconds = sw.elapsedSeconds();
+        ASSERT_NE(sink, nullptr); // the tree is populated; keeps the loop from being optimized away
+        pr.set_value(seconds);
+    });
+    return fut.get();
+}
+
+/// Spill victim selection (`selectAllocationToSpill`) cost as a function of hierarchy DEPTH.
+/// Expected O(depth): one reclaimable allocation, so each internal node just takes its set extremum.
+TEST(SchedulerSpaceShared, ReclaimablePerfDescentByDepth)
+{
+    const size_t iters = perfIters();
+    for (size_t depth : {0uz, 2uz, 8uz, 32uz})
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        auto [limit, queue] = buildChain(r, depth);
+        r.registerResource();
+
+        std::list<SpillableAllocation> allocs;
+        allocs.emplace_back(queue, "a", 10000);
+        allocs.back().reportReclaimable(5000);
+        r.sync(); // ensure the reclaimable set is populated before measuring
+
+        double seconds = measureDescent(t, limit, iters);
+        reportPerf(fmt::format("descent depth={}", depth), iters, seconds);
+    }
+}
+
+/// Spill victim selection cost as a function of WIDTH (sibling queues under one fair node), each holding a
+/// reclaimable allocation. The reclaimable-filtered set is ordered, so taking its extremum stays about
+/// constant regardless of width — this test demonstrates that spill selection does not degrade with the
+/// number of sibling workloads.
+TEST(SchedulerSpaceShared, ReclaimablePerfDescentByWidth)
+{
+    const size_t iters = perfIters();
+    for (size_t width : {1uz, 16uz, 256uz})
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        AllocationLimit * limit = r.addLimit("/", 1000000000);
+        FairAllocation * fair = r.addFair("/fair", limit);
+        std::vector<AllocationQueue *> queues;
+        for (size_t i = 0; i < width; ++i)
+            queues.push_back(r.addQueueUnder(fmt::format("/fair/q{}", i), fair));
+        r.registerResource();
+
+        std::list<SpillableAllocation> allocs;
+        for (size_t i = 0; i < width; ++i)
+        {
+            allocs.emplace_back(queues[i], fmt::format("a{}", i), 10000);
+            allocs.back().reportReclaimable(5000);
+        }
+        r.sync();
+
+        double seconds = measureDescent(t, limit, iters);
+        reportPerf(fmt::format("descent width={}", width), iters, seconds);
+    }
+}
+
+/// Spill victim selection cost as a function of the number of reclaimable ALLOCATIONS in a single queue.
+/// The queue keeps them in an ordered set, so selecting the largest stays about constant regardless of N.
+TEST(SchedulerSpaceShared, ReclaimablePerfDescentByAllocations)
+{
+    const size_t iters = perfIters();
+    for (size_t count : {1uz, 100uz, 1000uz})
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        auto [limit, queue] = buildChain(r, 0);
+        r.registerResource();
+
+        std::list<SpillableAllocation> allocs;
+        for (size_t i = 0; i < count; ++i)
+        {
+            allocs.emplace_back(queue, fmt::format("a{}", i), 10000);
+            allocs.back().reportReclaimable(5000);
+        }
+        r.sync();
+
+        double seconds = measureDescent(t, limit, iters);
+        reportPerf(fmt::format("descent allocs={}", count), iters, seconds);
+    }
+}
+
+/// End-to-end synchronous increase/decrease churn on one reclaimable allocation, swept over hierarchy
+/// depth. Each `setSize` is a full round-trip through the scheduler thread (request, approve, propagate,
+/// re-key the reclaimable set at every level), so this reflects realistic throughput including cross-thread
+/// wakeup latency, not just the algorithmic cost.
+TEST(SchedulerSpaceShared, ReclaimablePerfChurnByDepth)
+{
+    const size_t iters = perfIters();
+    for (size_t depth : {0uz, 2uz, 8uz})
+    {
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        auto [limit, queue] = buildChain(r, depth);
+        r.registerResource();
+        (void)limit;
+
         SpillableAllocation a(queue, "a", 10000);
-        Stopwatch sw;
-        for (size_t i = 0; i < iters; ++i)
-        {
-            a.reportReclaimable(5000);
-            a.reportReclaimable(0);
-        }
-        report("set_reclaimable", 2 * iters, sw.elapsedSeconds());
-    }
+        a.reportReclaimable(5000); // reclaimable, so each resize also re-keys the reclaimable set
+        r.sync();
 
-    // (c) over-soft spill trigger: lower the soft limit below the allocation size so each reclaimable
-    //     report drives a full `selectAllocationToSpill` descent.
-    {
-        r.setSoftLimit(limit, 1000);
-        SpillableAllocation a(queue, "a", 10000); // always above the soft limit
         Stopwatch sw;
         for (size_t i = 0; i < iters; ++i)
         {
-            a.reportReclaimable(5000); // triggers a spill selection while over soft
-            a.reportReclaimable(0);    // ends the episode (nothing reclaimable)
+            a.setSize(20000);
+            a.setSize(10000);
         }
-        report("spill_trigger", iters, sw.elapsedSeconds());
+        reportPerf(fmt::format("churn depth={}", depth), 2 * iters, sw.elapsedSeconds());
     }
 }
