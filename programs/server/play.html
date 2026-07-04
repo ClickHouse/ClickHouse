@@ -4339,18 +4339,30 @@ function checkCredentials() {
     });
 }
 
+/// Clear the current indication and, crucially, invalidate any in-flight `checkCredentials`.
+/// Bumping the request number is what prevents the stale-response bug: `checkCredentials` guards
+/// its response against this counter, so without the bump a check started against an earlier
+/// (wrong or incomplete) value could still land and paint the field red after the user has
+/// already typed the correct credentials — with the green connection dot left untouched, since
+/// that is driven by the independent `checkURL` ping.
 function resetCredentialsStatus() {
+    ++check_credentials_request_num;
     [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
 }
 
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
+/// Re-check credentials shortly after the user stops typing (or pastes), so that correct
+/// credentials turn green and wrong ones red without any explicit action. Debounced to avoid a
+/// request per keystroke; the delay also lets a paste's value settle into the field before it is
+/// read (a `paste` reaches here through the `input` event it triggers, once the value is updated).
+let credentials_check_timer = null;
+function scheduleCredentialsCheck() {
+    resetCredentialsStatus();
+    clearTimeout(credentials_check_timer);
+    credentials_check_timer = setTimeout(checkCredentials, 300);
+}
 
-/// The password is usually copy-pasted.
-/// To not worry about extracting the clipboard data, but use the value instead,
-/// and not worry too much about input/paste race, add the timeout.
-user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
-password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+user_elem.addEventListener('input', scheduleCredentialsCheck);
+password_elem.addEventListener('input', scheduleCredentialsCheck);
 
 
 function queryToColor(str) {
