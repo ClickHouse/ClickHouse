@@ -125,19 +125,25 @@ static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 
 // Forward declaration — complexDataSize and writeComplexData are mutually recursive
 // only via lambdas; we declare the inline wrappers here.
-inline uint32_t complexDataSize(const IColumn & col, uint32_t n);
+//
+// complexDataSize/writeComplexData return/take byte *sizes* as uint64_t even though
+// element counts (n) stay uint32_t: a single String or Array column can legitimately
+// carry more than 4 GiB of payload in one row without needing a huge row count, so
+// any uint32_t size intermediate here would silently wrap and underallocate the
+// output frame.
+inline uint64_t complexDataSize(const IColumn & col, uint32_t n);
 inline void     writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst);
 
-inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
+inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
 {
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
-        return (n + 1u) * 8u + complexDataSize(arr->getData(), total);
+        return (static_cast<uint64_t>(n) + 1u) * 8u + complexDataSize(arr->getData(), total);
     }
     if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
     {
-        uint32_t sz = 0;
+        uint64_t sz = 0;
         for (const auto & field : tup->getColumns())
             sz += complexDataSize(*field, n);
         return sz;
@@ -145,8 +151,8 @@ inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
     if (typeid_cast<const ColumnString *>(&col))
     {
         const auto & str = assert_cast<const ColumnString &>(col);
-        uint32_t chars = static_cast<uint32_t>(str.getChars().size());
-        return (n + 1u) * 8u + chars;
+        uint64_t chars = str.getChars().size();
+        return (static_cast<uint64_t>(n) + 1u) * 8u + chars;
     }
     if (typeid_cast<const ColumnNullable *>(&col))
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -157,7 +163,7 @@ inline uint32_t complexDataSize(const IColumn & col, uint32_t n)
             "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
             "use a flat variant column or a different format");
     // Fixed-width fallback (ColumnVector<T>, ColumnUInt8, etc.)
-    return n * static_cast<uint32_t>(col.sizeOfValueIfFixed());
+    return static_cast<uint64_t>(n) * col.sizeOfValueIfFixed();
 }
 
 inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
@@ -167,17 +173,17 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
         const auto & ch_offs = arr->getOffsets();
         unalignedStore<uint64_t>(dst, 0ull);
         for (uint32_t i = 0; i < n; ++i)
-            unalignedStore<uint64_t>(dst + (i + 1u) * 8u, static_cast<uint64_t>(ch_offs[i]));
+            unalignedStore<uint64_t>(dst + (static_cast<uint64_t>(i) + 1u) * 8u, static_cast<uint64_t>(ch_offs[i]));
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
-        writeComplexData(arr->getData(), total, dst + (n + 1u) * 8u);
+        writeComplexData(arr->getData(), total, dst + (static_cast<uint64_t>(n) + 1u) * 8u);
         return;
     }
     if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
     {
-        uint32_t pos = 0;
+        uint64_t pos = 0;
         for (const auto & field : tup->getColumns())
         {
-            uint32_t field_sz = complexDataSize(*field, n);
+            uint64_t field_sz = complexDataSize(*field, n);
             writeComplexData(*field, n, dst + pos);
             pos += field_sz;
         }
@@ -187,7 +193,7 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     {
         const auto & ch_offs = str->getOffsets();
         const auto & chars   = str->getChars();
-        uint8_t  * chars_dst = dst + (n + 1u) * 8u;
+        uint8_t  * chars_dst = dst + (static_cast<uint64_t>(n) + 1u) * 8u;
         unalignedStore<uint64_t>(dst, 0ull);
         uint64_t wire_pos = 0ull;
         uint64_t ch_pos   = 0ull;
@@ -197,7 +203,7 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
             uint64_t len = end - ch_pos;
             std::memcpy(chars_dst + wire_pos, chars.data() + ch_pos, len);
             wire_pos += len;
-            unalignedStore<uint64_t>(dst + (i + 1u) * 8u, wire_pos);
+            unalignedStore<uint64_t>(dst + (static_cast<uint64_t>(i) + 1u) * 8u, wire_pos);
             ch_pos = end;
         }
         return;
