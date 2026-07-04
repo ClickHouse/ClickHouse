@@ -630,7 +630,9 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto * column_sparse = checkAndGetColumn<ColumnSparse>(arguments[i].column.get());
-            has_any_sparse_column |= (column_sparse != nullptr);
+            /// A sparse column may also be nested inside a Tuple or Replicated column, in which case
+            /// `recursiveRemoveSparse` (used below) still has to convert it, so detect it recursively.
+            has_any_sparse_column |= recursiveHasSparse(arguments[i].column);
             /// In rare case, when sparse column doesn't have default values,
             /// it's more convenient to convert it to full before execution of function.
             if (column_sparse && column_sparse->getNumberOfDefaultRows())
