@@ -103,7 +103,7 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                 std::cout << "=== Snapshot: " << snapshot_file << " ===\n";
 
                 // Create a snapshot manager for each snapshot
-                auto snapshot_manager = KeeperSnapshotManager<KeeperMemoryStorage>(
+                auto snapshot_manager = KeeperSnapshotManager(
                     std::numeric_limits<size_t>::max(), // snapshots_to_keep
                     keeper_context,
                     true, // compress_snapshots_zstd
@@ -352,7 +352,7 @@ void spliceChangelogFile(const std::string & source_path, const std::string & de
     }
 }
 
-void dumpSessions(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output)
+void dumpSessions(const DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output)
 {
 
     // Get session info
@@ -449,12 +449,12 @@ void dumpSessions(const DB::KeeperMemoryStorage & storage, const std::string & o
     }
 }
 
-void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
+void dumpNodes(const DB::KeeperStorage & storage, const std::string & output_file, const std::string & output_format, bool parallel_output, bool with_acl)
 {
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
-    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperMemoryStorage::Node & value)>;
+    using PrintFunction = std::function<void(const std::string & key, const DB::KeeperStorage::Node & value)>;
 
     const auto print_nodes = [&](const PrintFunction print_function)
     {
@@ -644,7 +644,7 @@ int dumpStateMachine(
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", log_path));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", snapshot_path));
 
-    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_committed_index = state_machine->last_commit_index();
 
@@ -749,7 +749,7 @@ int deserializeChangelog(
         KeeperContextPtr keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", fs::temp_directory_path() / "keeper-utils-log"));
         keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", fs::temp_directory_path() / "keeper-utils-snapshot"));
-        auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
+        auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
 
         if (!output_file.empty())
         {
