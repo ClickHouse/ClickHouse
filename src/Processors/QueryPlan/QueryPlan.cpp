@@ -799,6 +799,7 @@ namespace QueryPlanOptimizations
 
 bool canExecuteRemotely(const QueryPlan::Node & node);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
+void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 }
@@ -816,6 +817,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
                 "make_distributed_plan cannot distribute this query: it contains distributed exchange "
                 "steps but a step that cannot run on a remote worker, and the exchanges would be no-ops "
                 "if executed locally (producing wrong results)");
+        /// Joins were kept logical for distributed planning; running locally needs them physical.
+        QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
         return;
     }
 

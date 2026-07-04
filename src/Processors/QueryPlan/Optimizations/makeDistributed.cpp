@@ -107,6 +107,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
+void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -167,6 +168,36 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
 
         for (const auto * child : node->children)
             stack.push_back(child);
+    }
+}
+
+/// The local fallback executes the plan directly, so the logical joins kept for distributed
+/// planning must be converted here; the distributed path converts them when a worker rebuilds
+/// its fragment.
+void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    QueryPlanOptimizationSettings local_settings = optimization_settings;
+    local_settings.make_distributed_plan = false;
+    local_settings.keep_logical_steps = false;
+
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        size_t next_child = 0;
+    };
+    std::vector<Frame> stack;
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        if (frame.next_child < frame.node->children.size())
+        {
+            stack.push_back({.node = frame.node->children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+        convertLogicalJoinToPhysical(*frame.node, nodes, local_settings);
+        stack.pop_back();
     }
 }
 

@@ -23,7 +23,9 @@ DROP TABLE t_unserializable;
 -- the exchange into a no-op and drop the redistribution, so conversion must reject it instead.
 DROP TABLE IF EXISTS t_local_exchange;
 
-CREATE TABLE t_local_exchange (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+-- No materialized statistics: the row-count hints below must stay authoritative.
+CREATE TABLE t_local_exchange (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+  SETTINGS auto_statistics_types = '';
 INSERT INTO t_local_exchange SELECT number % 1000, number FROM numbers(10000);
 
 SET enable_cascades_optimizer = 1;
@@ -36,5 +38,13 @@ SELECT count() FROM t_local_exchange
 INNER JOIN (SELECT number AS k FROM numbers(10)) AS n USING (k)
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+-- When the same plan ends up with no exchange at all (a single-node cluster), the local fallback
+-- must run it: the joins kept logical for distributed planning are converted for local execution.
+SET param__internal_cascades_cluster_node_count = 1;
+SELECT count() FROM t_local_exchange
+INNER JOIN (SELECT number AS k FROM numbers(10)) AS n USING (k)
+SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
 DROP TABLE t_local_exchange;
